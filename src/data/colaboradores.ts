@@ -167,6 +167,10 @@ function construir(spec: Spec, i: number): Colaborador {
   // v2 — motivação (0-100), tempo no cargo, filhos e contato de emergência
   if (!spec.semPessoais) {
     base.cidade = "Montes Claros/MG";
+    const cnhOpts = spec.areaId === "montagem" || spec.areaId === "serralheria" || spec.areaId === "producao"
+      ? ["B", "AB", "AB", "D", "E", "B", "Não possui"]
+      : ["B", "B", "Não possui", "AB", "Não possui", "B", "A"];
+    base.cnh = cnhOpts[i % cnhOpts.length];
     const baseMot = spec.humor === "Motivado" ? 82 : spec.humor === "Estável" ? 56 : spec.humor === "Desmotivado" ? 28 : 62;
     base.motivacao = Math.max(5, Math.min(100, baseMot + rint(-8, 12)));
     base.motivacaoAnterior = Math.max(5, Math.min(100, base.motivacao + rint(-10, 8)));
@@ -208,4 +212,5 @@ function construir(spec: Spec, i: number): Colaborador {
   return base;
 }
 
-export const COLABORADORES: Colaborador[] = [...DIRECAO, ...EQUIPE].map(construir);
+// Empresa Neon removida do quadro a pedido do RH (v3).
+export const COLABORADORES: Colaborador[] = [...DIRECAO, ...EQUIPE.filter((s) => s.empresa !== "Neon")].map(construir);

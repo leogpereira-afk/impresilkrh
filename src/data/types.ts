@@ -110,6 +110,7 @@ export interface Colaborador {
   motivacao?: number; // 0-100 (indicador de motivação / rosto)
   motivacaoAnterior?: number; // registro anterior (tendência)
   cidade?: string;
+  cnh?: string; // categoria da CNH: Não possui, A, B, AB, C, D, E, ACC
   filhos?: Familiar[];
   contatoEmergencia?: ContatoEmergencia;
 
@@ -406,5 +407,40 @@ export interface ArquivoRepositorio {
   arquivoNome?: string | null;
   arquivoDataUrl?: string | null;
   tamanhoBytes?: number | null;
+  criadoEm: string;
+}
+
+// ===================== Treinamento (v3) =====================
+export interface Treinamento {
+  id: string;
+  colaboradorId: string;
+  titulo: string;
+  tipo: string; // Obrigatório, Reciclagem, Onboarding, Técnico, Segurança
+  status: string; // Pendente, Em andamento, Concluído
+  progresso: number; // 0-100
+  prazo?: string | null;
+  descricao?: string;
+}
+
+// ===================== Gamificação de evolução de cargo (v3) =====================
+export interface EtapaEvolucao {
+  id: string;
+  colaboradorId: string;
+  titulo: string;
+  descricao?: string;
+  concluida: boolean;
+  ordem: number;
+  cargoAlvo?: string; // cargo/nível pretendido
+}
+
+// ===================== Usuários e permissões (v3) =====================
+export interface Usuario {
+  id: string;
+  nome: string;
+  email: string;
+  perfil: Perfil;
+  colaboradorId?: string | null;
+  permissoes: string[]; // chaves de módulos liberados, ou ["*"] para tudo
+  ativo: boolean;
   criadoEm: string;
 }

@@ -192,7 +192,38 @@ export const ESTILOS_APRENDIZAGEM = ["Visual", "Auditivo", "Cinestésico"] as co
 export const TIPOS_ADVERTENCIA = ["Verbal", "Escrita", "Suspensão"] as const;
 
 // Empresas do grupo
-export const EMPRESAS = ["Impresilk", "Neon", "Forte Mais"] as const;
+export const EMPRESAS = ["Impresilk", "Forte Mais"] as const;
+
+// Categoria de CNH (carteira de motorista)
+export const CATEGORIAS_CNH = ["Não possui", "A", "B", "AB", "C", "D", "E", "ACC"] as const;
+
+// Treinamento (v3)
+export const TIPOS_TREINAMENTO = ["Obrigatório", "Reciclagem", "Onboarding", "Técnico", "Segurança"] as const;
+export const STATUS_TREINAMENTO = ["Pendente", "Em andamento", "Concluído"] as const;
+
+// Módulos do sistema (para o controle de permissões por usuário)
+export const MODULOS: { chave: string; label: string }[] = [
+  { chave: "painel", label: "Painel" },
+  { chave: "colaboradores", label: "Colaboradores" },
+  { chave: "organograma", label: "Organograma" },
+  { chave: "carreira", label: "Carreira e Salários" },
+  { chave: "desempenho", label: "Desempenho" },
+  { chave: "treinamento", label: "Treinamento" },
+  { chave: "ponto", label: "Frequência e Advertências" },
+  { chave: "ferias", label: "Férias" },
+  { chave: "integracao", label: "Integração / Desligamento" },
+  { chave: "viagens", label: "Viagens e Diárias" },
+  { chave: "comunicacao", label: "Comunicação" },
+  { chave: "mensagens", label: "Comunicação em Massa" },
+  { chave: "pops", label: "POPs e Procedimentos" },
+  { chave: "documentos", label: "Documentos Institucionais" },
+  { chave: "sst", label: "Saúde e Segurança (SST)" },
+  { chave: "meu-perfil", label: "Meu perfil" },
+  { chave: "aceites", label: "Termos e Aceites" },
+  { chave: "relatorios", label: "Relatórios Gerenciais" },
+  { chave: "painel-controle", label: "Painel de Controle" },
+  { chave: "lgpd", label: "Registros de Acesso (LGPD)" },
+];
 
 // Indicador de motivação (rosto 0–100)
 export interface FaixaMotivacao {
