@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { NineBox, type PontoNineBox } from "@/components/desempenho/nine-box";
 import { DesempenhoPessoal } from "@/components/desempenho/desempenho-pessoal";
+import { FormAvaliacao } from "@/components/desempenho/form-avaliacao";
+import { salvarAvaliacao } from "./actions";
 import { formatDate } from "@/lib/format";
 import { Grid3x3, ClipboardCheck, Award, CalendarRange, Target } from "lucide-react";
 
@@ -85,6 +87,28 @@ export default async function DesempenhoPage() {
       ? avaliacoesCiclo.reduce((s, a) => s + (a.notaFinal ?? 0), 0) / avaliacoesCiclo.length
       : 0;
 
+  // Dados para o formulário de avaliação (criar/editar)
+  const existentes = Object.fromEntries(
+    avaliacoesCiclo.map((a) => [
+      a.colaboradorId,
+      {
+        notaTecnico: a.notaTecnico,
+        notaComportamental: a.notaComportamental,
+        notaResultado: a.notaResultado,
+        tempoNoNivelMeses: a.tempoNoNivelMeses,
+        advertencia: a.advertencia,
+        liderancaAprovou: a.liderancaAprovou,
+        planoAcao: a.planoAcao,
+        comentarios: a.comentarios,
+      },
+    ]),
+  );
+  const colaboradoresForm = colaboradores.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    cargo: c.cargo?.nome ?? null,
+  }));
+
   return (
     <>
       <PageHeader
@@ -117,9 +141,33 @@ export default async function DesempenhoPage() {
         </CardBody>
       </Card>
 
+      {/* Formulário de avaliação (criar/editar) */}
+      {ciclo && colaboradoresForm.length > 0 && (
+        <div className="mb-4">
+          <FormAvaliacao
+            action={salvarAvaliacao}
+            cicloId={ciclo.id}
+            cicloNome={ciclo.nome}
+            pesos={{
+              tecnico: ciclo.pesoTecnico,
+              comportamental: ciclo.pesoComportamental,
+              resultado: ciclo.pesoResultado,
+            }}
+            notaMinPromocao={ciclo.notaMinPromocao}
+            mesesMinNivel={ciclo.mesesMinNivel}
+            colaboradores={colaboradoresForm}
+            existentes={existentes}
+          />
+        </div>
+      )}
+
       {/* Avaliações do ciclo */}
       <Card>
-        <CardHeader title="Avaliações do ciclo" icon={<ClipboardCheck className="h-4 w-4" />} />
+        <CardHeader
+          title="Avaliações do ciclo"
+          subtitle="Selecione um colaborador no formulário acima para editar uma avaliação existente"
+          icon={<ClipboardCheck className="h-4 w-4" />}
+        />
         <CardBody className="p-0">
           {avaliacoesCiclo.length === 0 ? (
             <div className="p-5"><EmptyState title="Nenhuma avaliação no ciclo atual" /></div>

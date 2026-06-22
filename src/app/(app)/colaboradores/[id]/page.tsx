@@ -39,6 +39,7 @@ import {
   Trash2,
   ShieldAlert,
   Briefcase,
+  Pencil,
 } from "lucide-react";
 
 export default async function ColaboradorDetailPage({
@@ -382,6 +383,11 @@ export default async function ColaboradorDetailPage({
             )}
           </div>
         </div>
+        {podeEditar && (
+          <Link href={`/colaboradores/${c.id}/editar`} className="btn-outline flex items-center gap-2">
+            <Pencil className="h-4 w-4" /> Editar
+          </Link>
+        )}
       </div>
 
       <Tabs

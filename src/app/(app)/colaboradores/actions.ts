@@ -223,6 +223,96 @@ export async function criarColaborador(formData: FormData) {
   redirect(`/colaboradores/${novo.id}`);
 }
 
+// ---- Edição de colaborador ----
+export async function atualizarColaborador(formData: FormData) {
+  const sessao = await lerSessao();
+  if (!sessao || !podeEditarColaboradores(sessao)) {
+    return { erro: "Sem permissão para editar colaboradores." };
+  }
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { erro: "Colaborador inválido." };
+
+  const atual = await db.colaborador.findUnique({
+    where: { id },
+    include: { cargo: { select: { nome: true } }, nivel: { select: { codigo: true } } },
+  });
+  if (!atual) return { erro: "Colaborador não encontrado." };
+
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) return { erro: "Informe o nome." };
+
+  const cargoId = String(formData.get("cargoId") ?? "") || null;
+  const nivelId = String(formData.get("nivelId") ?? "") || null;
+  const salario = parseFloatOpcional(formData.get("salario"));
+  const cargo = cargoId
+    ? await db.cargo.findUnique({ where: { id: cargoId }, select: { areaId: true, nome: true } })
+    : null;
+  const nivel = nivelId
+    ? await db.nivel.findUnique({ where: { id: nivelId }, select: { codigo: true } })
+    : null;
+
+  await db.colaborador.update({
+    where: { id },
+    data: {
+      nome,
+      email: String(formData.get("email") ?? "") || null,
+      telefone: String(formData.get("telefone") ?? "") || null,
+      cpf: String(formData.get("cpf") ?? "").replace(/\D/g, "") || null,
+      dataNascimento: parseDataOpcional(formData.get("dataNascimento")),
+      dataAdmissao: parseDataOpcional(formData.get("dataAdmissao")),
+      dataDesligamento: parseDataOpcional(formData.get("dataDesligamento")),
+      enderecoRua: String(formData.get("enderecoRua") ?? "") || null,
+      enderecoNumero: String(formData.get("enderecoNumero") ?? "") || null,
+      enderecoBairro: String(formData.get("enderecoBairro") ?? "") || null,
+      enderecoCep: String(formData.get("enderecoCep") ?? "") || null,
+      conjugeNome: String(formData.get("conjugeNome") ?? "") || null,
+      qtdFilhos: parseInt(String(formData.get("qtdFilhos") ?? "0")) || 0,
+      valeTransporte: formData.get("valeTransporte") === "on",
+      cargoId,
+      areaId: cargo?.areaId ?? (String(formData.get("areaId") ?? "") || null),
+      nivelId,
+      statusId: String(formData.get("statusId") ?? "") || null,
+      gestorId: String(formData.get("gestorId") ?? "") || null,
+      salario,
+      riscoSaida: String(formData.get("riscoSaida") ?? atual.riscoSaida ?? "Baixo"),
+      potencial: String(formData.get("potencial") ?? atual.potencial ?? "Médio"),
+    },
+  });
+
+  // Registra movimentação se cargo, nível ou salário mudaram
+  const mudouCargo = (cargo?.nome ?? null) !== (atual.cargo?.nome ?? null) && cargoId;
+  const mudouNivel = (nivel?.codigo ?? null) !== (atual.nivel?.codigo ?? null) && nivelId;
+  const mudouSalario = salario != null && salario !== atual.salario;
+  if (mudouCargo || mudouNivel || mudouSalario) {
+    await db.movimentacao.create({
+      data: {
+        colaboradorId: id,
+        tipo: mudouCargo ? "Mudança de Cargo" : mudouNivel ? "Promoção" : "Reajuste",
+        data: new Date(),
+        descricao: "Atualização cadastral",
+        cargoAnterior: atual.cargo?.nome ?? null,
+        cargoNovo: cargo?.nome ?? null,
+        nivelAnterior: atual.nivel?.codigo ?? null,
+        nivelNovo: nivel?.codigo ?? null,
+        salarioAnterior: atual.salario,
+        salarioNovo: salario,
+        registradoPor: sessao.nome,
+      },
+    });
+  }
+
+  await registrarAcesso({
+    usuarioId: sessao.sub,
+    acao: "EDITAR_COLABORADOR",
+    recurso: "Colaborador:Ficha",
+    colaboradorId: id,
+    detalhe: nome,
+  });
+
+  revalidatePath(`/colaboradores/${id}`);
+  redirect(`/colaboradores/${id}`);
+}
+
 // Registra a visualização de dados sensíveis (LGPD) — chamado ao abrir o detalhe.
 export async function logVisualizacaoSensivel(colaboradorId: string) {
   const sessao = await lerSessao();
