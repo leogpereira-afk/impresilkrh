@@ -190,6 +190,7 @@ model Colaborador {
   feedbacksRecebidos Feedback[] @relation("FeedbackColaborador")
   feedbacksDados     Feedback[] @relation("FeedbackAutor")
   viagens       Viagem[]
+  tarefas       Tarefa[]
   consentimentos ConsentimentoLGPD[]
 
   @@index([areaId])
@@ -383,8 +384,8 @@ model ConsentimentoLGPD {
   @@index([colaboradorId])
 }
 
-// ===================== MÓDULO FUTURO: VIAGENS E DIÁRIAS =====================
-// Arquitetura preparada para o controle de diárias da equipe de campo.
+// ===================== VIAGENS E DIÁRIAS =====================
+// Controle de deslocamentos e diárias da equipe de campo.
 
 model Viagem {
   id            String   @id @default(cuid())
@@ -397,7 +398,26 @@ model Viagem {
   valorDiaria   Float    @default(0)
   valorTotal    Float    @default(0)
   finalidade    String?
-  status        String   @default("Planejada") // Planejada, Em andamento, Concluída
+  status        String   @default("Planejada") // Planejada, Aprovada, Em andamento, Concluída, Cancelada
+  criadoEm      DateTime @default(now())
+
+  @@index([colaboradorId])
+}
+
+// ===================== ONBOARDING / OFFBOARDING =====================
+// Checklists de integração (admissão) e desligamento.
+
+model Tarefa {
+  id            String   @id @default(cuid())
+  colaborador   Colaborador @relation(fields: [colaboradorId], references: [id], onDelete: Cascade)
+  colaboradorId String
+  tipo          String // Admissão, Desligamento
+  titulo        String
+  responsavel   String?
+  prazo         DateTime?
+  concluida     Boolean  @default(false)
+  concluidaEm   DateTime?
+  ordem         Int      @default(0)
   criadoEm      DateTime @default(now())
 
   @@index([colaboradorId])

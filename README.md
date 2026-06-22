@@ -18,10 +18,13 @@ desktop e dispositivos móveis. Interface 100% em **português do Brasil**.
 | **Carreira e Cargos** | Régua de senioridade (N1–N5), tabela salarial por cargo/área, posição do colaborador na carreira e **simulador de progressão**. |
 | **Desempenho e Retenção** | Ciclos de avaliação com **lançamento de notas e cálculo automático** (nota ponderada + elegibilidade a promoção), **matriz 9-Box** (desempenho × potencial), gestão de **metas, PDI e feedbacks** e exportação das avaliações. |
 | **Férias** | Painel de controle de saldos, programação, quem está de férias, próximos retornos e **alertas de conformidade com a CLT** (períodos a vencer/vencidos). |
+| **Integração e Desligamento** | Checklists de **onboarding e offboarding** com modelos padrão, acompanhamento de progresso e tarefas personalizáveis por colaborador. |
+| **Viagens e Diárias** | Controle de deslocamentos da equipe de campo: cálculo automático de diárias, status (planejada/aprovada/em andamento/concluída) e gasto no mês. |
+| **Saúde e Segurança (SST)** | Conformidade de exames ocupacionais (ASO, periódicos) com alertas de vencimento e registro dos programas obrigatórios (PGR, PCMSO). |
+| **Relatórios Gerenciais** | Folha por área, custo médio, movimentação de pessoal (12 meses), turnover, enquadramento salarial e tempo de casa (somente RH). |
 | **Documentos Institucionais** | Código de Ética, POPs, treinamentos e SST. |
 | **Registros de Acesso (LGPD)** | Trilha de auditoria de acessos a dados pessoais/sensíveis (somente RH). |
 | **Configurações** | Status do quadro, ciclos de avaliação e visão da estrutura organizacional (somente RH). |
-| **Viagens e Diárias** | Módulo preparado na arquitetura para uma próxima etapa (controle de diárias da equipe de campo). |
 
 ## Perfis de acesso (RBAC)
 

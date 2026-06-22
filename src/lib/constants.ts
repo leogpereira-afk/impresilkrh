@@ -114,3 +114,49 @@ export const MAPA_SENIORIDADE: Record<string, string> = {
 
 // Janela (em dias) para alertas de vencimento de documentos/contratos
 export const JANELA_ALERTA_DIAS = 60;
+
+// Status de viagens / diárias
+export const STATUS_VIAGEM = [
+  "Planejada",
+  "Aprovada",
+  "Em andamento",
+  "Concluída",
+  "Cancelada",
+] as const;
+
+export const COR_STATUS_VIAGEM: Record<string, string> = {
+  Planejada: "#64748b",
+  Aprovada: "#2563eb",
+  "Em andamento": "#d97706",
+  Concluída: "#16a34a",
+  Cancelada: "#dc2626",
+};
+
+// Modelo de checklist de integração (admissão)
+export const MODELO_ONBOARDING: { titulo: string; responsavel: string }[] = [
+  { titulo: "Assinatura do contrato de trabalho", responsavel: "RH" },
+  { titulo: "Entrega e conferência de documentos (RG, CPF, CTPS)", responsavel: "RH" },
+  { titulo: "Exame admissional (ASO)", responsavel: "SST" },
+  { titulo: "Cadastro no eSocial", responsavel: "RH" },
+  { titulo: "Abertura de conta salário / dados bancários", responsavel: "RH" },
+  { titulo: "Entrega de uniforme e EPIs", responsavel: "SST" },
+  { titulo: "Criação de e-mail e acessos", responsavel: "Gestor" },
+  { titulo: "Apresentação à equipe e tour pela empresa", responsavel: "Gestor" },
+  { titulo: "Leitura e aceite do Código de Ética", responsavel: "Colaborador" },
+  { titulo: "Treinamento inicial do cargo", responsavel: "Gestor" },
+];
+
+// Modelo de checklist de desligamento (offboarding)
+export const MODELO_OFFBOARDING: { titulo: string; responsavel: string }[] = [
+  { titulo: "Comunicado e aviso prévio", responsavel: "RH" },
+  { titulo: "Exame demissional (ASO)", responsavel: "SST" },
+  { titulo: "Devolução de uniforme, EPIs e equipamentos", responsavel: "Gestor" },
+  { titulo: "Revogação de acessos e e-mail", responsavel: "Gestor" },
+  { titulo: "Cálculo das verbas rescisórias", responsavel: "RH" },
+  { titulo: "Baixa na CTPS e eSocial", responsavel: "RH" },
+  { titulo: "Entrevista de desligamento", responsavel: "RH" },
+  { titulo: "Homologação e entrega de documentos", responsavel: "RH" },
+];
+
+// Categorias de documentos relacionados à saúde ocupacional (SST)
+export const CATEGORIAS_SST = ["ASO", "Exame Periódico"] as const;

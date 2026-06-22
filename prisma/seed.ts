@@ -803,17 +803,19 @@ async function main() {
     }
   }
 
-  // ----------------- Viagens (módulo futuro — amostra) -----------------
+  // ----------------- Viagens e diárias (amostra) -----------------
   console.log("🌱  Viagens/diárias (amostra)...");
   const viagens = [
-    { nome: "Adriano Pinheiro Lima", destino: "Janaúba/MG", dias: 3, diaria: 90 },
-    { nome: "Douglas Thiago Silva", destino: "Pirapora/MG", dias: 2, diaria: 90 },
-    { nome: "Lucas Natalino Ferreira", destino: "Bocaiúva/MG", dias: 1, diaria: 80 },
-    { nome: "Ronivon Cardoso dos Santos", destino: "Salinas/MG", dias: 4, diaria: 100 },
+    { nome: "Adriano Pinheiro Lima", destino: "Janaúba/MG", dias: 3, diaria: 90, offset: -25, status: "Concluída" },
+    { nome: "Douglas Thiago Silva", destino: "Pirapora/MG", dias: 2, diaria: 90, offset: -10, status: "Concluída" },
+    { nome: "Lucas Natalino Ferreira", destino: "Bocaiúva/MG", dias: 1, diaria: 80, offset: -1, status: "Em andamento" },
+    { nome: "Ronivon Cardoso dos Santos", destino: "Salinas/MG", dias: 4, diaria: 100, offset: 5, status: "Aprovada" },
+    { nome: "Adriano Pinheiro Lima", destino: "Diamantina/MG", dias: 2, diaria: 90, offset: 12, status: "Planejada" },
+    { nome: "Douglas Thiago Silva", destino: "Curvelo/MG", dias: 3, diaria: 90, offset: 20, status: "Planejada" },
   ];
   for (const v of viagens) {
     if (!colabMap[v.nome]) continue;
-    const inicio = addDias(hoje, -rint(5, 30));
+    const inicio = addDias(hoje, v.offset);
     await db.viagem.create({
       data: {
         colaboradorId: colabMap[v.nome],
@@ -824,8 +826,73 @@ async function main() {
         valorDiaria: v.diaria,
         valorTotal: v.dias * v.diaria,
         finalidade: "Instalação e montagem em campo",
-        status: "Concluída",
+        status: v.status,
       },
+    });
+  }
+
+  // ----------------- Onboarding / Offboarding (amostra) -----------------
+  console.log("🌱  Checklists de integração e desligamento...");
+  const modeloOnboarding = [
+    { titulo: "Assinatura do contrato de trabalho", responsavel: "RH" },
+    { titulo: "Entrega e conferência de documentos (RG, CPF, CTPS)", responsavel: "RH" },
+    { titulo: "Exame admissional (ASO)", responsavel: "SST" },
+    { titulo: "Cadastro no eSocial", responsavel: "RH" },
+    { titulo: "Abertura de conta salário / dados bancários", responsavel: "RH" },
+    { titulo: "Entrega de uniforme e EPIs", responsavel: "SST" },
+    { titulo: "Criação de e-mail e acessos", responsavel: "Gestor" },
+    { titulo: "Apresentação à equipe e tour pela empresa", responsavel: "Gestor" },
+    { titulo: "Leitura e aceite do Código de Ética", responsavel: "Colaborador" },
+    { titulo: "Treinamento inicial do cargo", responsavel: "Gestor" },
+  ];
+  const modeloOffboarding = [
+    { titulo: "Comunicado e aviso prévio", responsavel: "RH" },
+    { titulo: "Exame demissional (ASO)", responsavel: "SST" },
+    { titulo: "Devolução de uniforme, EPIs e equipamentos", responsavel: "Gestor" },
+    { titulo: "Revogação de acessos e e-mail", responsavel: "Gestor" },
+    { titulo: "Cálculo das verbas rescisórias", responsavel: "RH" },
+    { titulo: "Baixa na CTPS e eSocial", responsavel: "RH" },
+    { titulo: "Entrevista de desligamento", responsavel: "RH" },
+    { titulo: "Homologação e entrega de documentos", responsavel: "RH" },
+  ];
+
+  // Onboarding para as 2 admissões mais recentes (ativas)
+  const recentes = await db.colaborador.findMany({
+    where: { dataDesligamento: null, dataAdmissao: { not: null } },
+    orderBy: { dataAdmissao: "desc" },
+    take: 2,
+    select: { id: true },
+  });
+  for (const c of recentes) {
+    await db.tarefa.createMany({
+      data: modeloOnboarding.map((t, i) => ({
+        colaboradorId: c.id,
+        tipo: "Admissão",
+        titulo: t.titulo,
+        responsavel: t.responsavel,
+        ordem: i,
+        concluida: i < 6, // primeiras etapas concluídas
+        concluidaEm: i < 6 ? addDias(hoje, -rint(1, 10)) : null,
+      })),
+    });
+  }
+
+  // Offboarding para os desligados
+  const desligadosOff = await db.colaborador.findMany({
+    where: { dataDesligamento: { not: null } },
+    select: { id: true },
+  });
+  for (const c of desligadosOff) {
+    await db.tarefa.createMany({
+      data: modeloOffboarding.map((t, i) => ({
+        colaboradorId: c.id,
+        tipo: "Desligamento",
+        titulo: t.titulo,
+        responsavel: t.responsavel,
+        ordem: i,
+        concluida: true,
+        concluidaEm: addDias(hoje, -rint(1, 20)),
+      })),
     });
   }
 
