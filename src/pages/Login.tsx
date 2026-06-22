@@ -50,7 +50,7 @@ export default function Login() {
     <div className="flex min-h-screen flex-col bg-white lg:flex-row">
       {/* Apresentação */}
       <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-ink via-brand to-brand-light p-14 text-white lg:flex">
-        <Logo variant="white" className="h-12 animate-fade-in" />
+        <Logo variant="white" className="h-14 w-auto max-w-[280px] self-start object-contain animate-fade-in" />
         <div className="max-w-md animate-slide-up">
           <h1 className="text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
             Gestão de pessoas, centralizada e sob controle.
@@ -68,8 +68,8 @@ export default function Login() {
       {/* Formulário */}
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="w-full max-w-md animate-scale-in rounded-3xl bg-white p-8 shadow-soft ring-1 ring-slate-100 sm:p-10">
-          <div className="mb-7 flex justify-center lg:justify-start">
-            <Logo variant="color" className="h-14" />
+          <div className="mb-7 flex justify-center">
+            <Logo variant="color" className="h-14 w-auto max-w-[220px] object-contain" />
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-brand-ink">Acessar o sistema</h2>
           <p className="mt-1.5 text-sm text-slate-500">Informe seu nome e sua senha.</p>
@@ -120,8 +120,7 @@ export default function Login() {
           <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
             <p className="font-medium text-slate-600">Acesso</p>
             <p className="mt-1">
-              Use seu nome e a senha cadastrada no Painel de Controle. Sem senha individual, use a padrão{" "}
-              <code className="rounded bg-white px-1.5 py-0.5 font-mono text-brand">{SENHA_DEMO}</code>.
+              Entre com seu nome e a sua senha. Esqueceu a senha? Fale com o RH para redefinir no Painel de Controle.
             </p>
           </div>
         </div>

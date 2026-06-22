@@ -30,7 +30,7 @@ export function Logo({
       src={SRC[variant] ?? logoColor}
       alt="Impresilk · Soluções Visuais"
       draggable={false}
-      className={cn("h-9 w-auto select-none", className)}
+      className={cn("h-9 w-auto max-w-full select-none object-contain", className)}
     />
   );
 }
