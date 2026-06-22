@@ -155,8 +155,8 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen bg-[#f5f5f7]">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200/70 bg-white/80 backdrop-blur-xl lg:flex">
-        <div className="flex h-16 items-center border-b border-slate-100 px-5">
-          <Logo variant="color" className="h-8" />
+        <div className="flex h-20 items-center justify-center border-b border-slate-100 px-5">
+          <Logo variant="color" className="h-12" />
         </div>
         <NavConteudo />
         <Rodape />
@@ -166,8 +166,8 @@ export function AppShell() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm animate-fade-in" onClick={() => setAberto(false)} />
           <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-white shadow-soft animate-scale-in">
-            <div className="flex h-16 items-center justify-between border-b border-slate-100 px-5">
-              <Logo variant="color" className="h-8" />
+            <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
+              <Logo variant="color" className="h-11" />
               <button onClick={() => setAberto(false)} className="btn-ghost p-1.5">
                 <X className="h-5 w-5" />
               </button>

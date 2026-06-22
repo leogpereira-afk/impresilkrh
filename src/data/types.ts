@@ -443,6 +443,7 @@ export interface Usuario {
   perfil: Perfil;
   colaboradorId?: string | null;
   permissoes: string[]; // chaves de módulos liberados, ou ["*"] para tudo
+  senha?: string; // senha de acesso individual (vazio = usa a senha padrão do sistema)
   ativo: boolean;
   criadoEm: string;
 }

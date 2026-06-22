@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Users, UserCircle, LogIn, Eye, EyeOff } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { useDominio } from "@/lib/dominio";
+import { useColecao } from "@/lib/store";
 import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 import { cn } from "@/lib/cn";
@@ -18,6 +19,7 @@ export default function Login() {
   const navigate = useNavigate();
   const sessao = useSessao();
   const { colaboradores, colabById } = useDominio();
+  const { items: usuarios } = useColecao("usuarios");
   const [perfil, setPerfil] = useState<Perfil>("ADMIN_RH");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
@@ -42,11 +44,16 @@ export default function Login() {
 
   const submeter = (e: React.FormEvent) => {
     e.preventDefault();
-    if (senha !== SENHA_DEMO) {
-      setErro("Senha incorreta. Use a senha de demonstração.");
+    const id = alvoId && colabById.get(alvoId) ? alvoId : rhId;
+    // Senha individual do usuário (cadastrada no Painel de Controle), se houver.
+    // A senha padrão do sistema continua válida como chave mestra (evita travar acesso).
+    const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === id);
+    const senhaUsuario = usuario?.senha?.trim();
+    const ok = senha === SENHA_DEMO || (!!senhaUsuario && senha === senhaUsuario);
+    if (!ok) {
+      setErro(senhaUsuario ? "Senha incorreta para este usuário." : "Senha incorreta. Use a senha de demonstração.");
       return;
     }
-    const id = alvoId && colabById.get(alvoId) ? alvoId : rhId;
     entrar(perfil, id);
     navigate("/painel");
   };

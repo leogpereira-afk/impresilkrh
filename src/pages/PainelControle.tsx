@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
-  ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock,
+  ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock, Eye, EyeOff,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -516,7 +516,7 @@ function UsuarioEditor({
   usuario: Usuario | null;
   colaboradores: { id: string; nome: string }[];
   onFechar: () => void;
-  onSalvar: (dados: Pick<Usuario, "nome" | "email" | "perfil" | "colaboradorId" | "permissoes" | "ativo">) => void;
+  onSalvar: (dados: Pick<Usuario, "nome" | "email" | "perfil" | "colaboradorId" | "permissoes" | "ativo" | "senha">) => void;
 }) {
   const toast = useToast();
   const [nome, setNome] = useState(usuario?.nome ?? "");
@@ -525,6 +525,8 @@ function UsuarioEditor({
   const [colaboradorId, setColaboradorId] = useState<string>(usuario?.colaboradorId ?? "");
   const [ativo, setAtivo] = useState<boolean>(usuario?.ativo ?? true);
   const [permissoes, setPermissoes] = useState<string[]>(usuario?.permissoes ?? []);
+  const [senha, setSenha] = useState(usuario?.senha ?? "");
+  const [verSenha, setVerSenha] = useState(false);
 
   const acessoTotal = permissoes.includes("*");
   const colabsOrdenados = [...colaboradores].sort((a, b) => a.nome.localeCompare(b.nome));
@@ -552,6 +554,7 @@ function UsuarioEditor({
       colaboradorId: colaboradorId || null,
       permissoes,
       ativo,
+      senha: senha.trim() || undefined,
     });
   };
 
@@ -568,6 +571,14 @@ function UsuarioEditor({
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo label="Nome" obrigatorio><Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo" /></Campo>
           <Campo label="E-mail" obrigatorio><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@impresilk.com.br" /></Campo>
+          <Campo label="Senha de acesso" hint="Senha individual de login. Em branco = usa a senha padrão do sistema." className="sm:col-span-2">
+            <div className="relative">
+              <Input type={verSenha ? "text" : "password"} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Defina uma senha para este usuário" className="pr-10" />
+              <button type="button" onClick={() => setVerSenha((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
+                {verSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </Campo>
           <Campo label="Perfil de acesso">
             <Select value={perfil} onChange={(e) => trocarPerfil(e.target.value as Perfil)}>
               {PERFIS_OPCOES.map((p) => <option key={p} value={p}>{PERFIL_LABEL[p] ?? p}</option>)}
