@@ -62,6 +62,19 @@ export function podeVerDadosSensiveis(sessao: Sessao | null, colaboradorId: stri
   return sessao.colaboradorId === colaboradorId;
 }
 
+// Dados de gestão (perfil comportamental, motivação): visíveis ao RH e ao gestor
+// da área, mas NUNCA ao próprio colaborador (uso interno de gestão de pessoas).
+export function podeVerGestao(
+  sessao: Sessao | null,
+  colaboradorId: string,
+  colaboradores: Colaborador[],
+): boolean {
+  if (!sessao) return false;
+  if (sessao.perfil === "ADMIN_RH") return true;
+  if (sessao.perfil === "GESTOR") return idsDaEquipe(sessao.colaboradorId, colaboradores).includes(colaboradorId);
+  return false; // colaborador não vê dados de gestão (nem os próprios)
+}
+
 export function ehRH(sessao: Sessao | null): boolean {
   return sessao?.perfil === "ADMIN_RH";
 }

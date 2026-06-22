@@ -193,3 +193,100 @@ export const TIPOS_ADVERTENCIA = ["Verbal", "Escrita", "Suspensão"] as const;
 
 // Empresas do grupo
 export const EMPRESAS = ["Impresilk", "Neon", "Forte Mais"] as const;
+
+// Indicador de motivação (rosto 0–100)
+export interface FaixaMotivacao {
+  min: number;
+  max: number;
+  label: string;
+  cor: string;
+  rosto: "muito-feliz" | "feliz" | "neutro" | "triste" | "muito-triste";
+}
+export const FAIXAS_MOTIVACAO: FaixaMotivacao[] = [
+  { min: 80, max: 100, label: "Muito motivado", cor: "#16a34a", rosto: "muito-feliz" },
+  { min: 60, max: 79, label: "Motivado", cor: "#65a30d", rosto: "feliz" },
+  { min: 40, max: 59, label: "Neutro", cor: "#eab308", rosto: "neutro" },
+  { min: 20, max: 39, label: "Desmotivado", cor: "#f97316", rosto: "triste" },
+  { min: 0, max: 19, label: "Crítico (risco)", cor: "#dc2626", rosto: "muito-triste" },
+];
+export function faixaMotivacao(score: number): FaixaMotivacao {
+  return FAIXAS_MOTIVACAO.find((f) => score >= f.min && score <= f.max) ?? FAIXAS_MOTIVACAO[2];
+}
+
+// Perfil comportamental completo (arquétipos) — conteúdo base, ajustável pelo gestor.
+export interface Arquetipo {
+  arquetipo: string;
+  disc: string;
+  explicacao: string;
+  fortes: string[];
+  atencao: string[];
+  comoLidar: {
+    comunicacao: string;
+    motiva: string;
+    feedback: string;
+    delegacao: string;
+    evite: string;
+  };
+}
+export const ARQUETIPOS: Record<string, Arquetipo> = {
+  Colérico: {
+    arquetipo: "O Executor",
+    disc: "D (Dominância)",
+    explicacao:
+      "Pessoa direta, orientada a resultado e ação. Decide rápido, gosta de assumir o comando e busca vencer desafios.",
+    fortes: ["Foco em resultado", "Decisão rápida", "Iniciativa e liderança", "Resiliência sob pressão"],
+    atencao: ["Pode ser impaciente", "Tende ao autoritarismo", "Escuta pouco quando acelerado"],
+    comoLidar: {
+      comunicacao: "Direta, objetiva, focada em resultado e metas.",
+      motiva: "Desafios, autonomia, poder de decisão, vencer.",
+      feedback: "Rápido e factual, sem rodeios, focado no resultado.",
+      delegacao: "Entregue o objetivo e a liberdade do como, depois cobre o resultado.",
+      evite: "Microgerenciar, reuniões longas sem conclusão e ambiguidade.",
+    },
+  },
+  Sanguíneo: {
+    arquetipo: "O Comunicador",
+    disc: "I (Influência)",
+    explicacao:
+      "Pessoa calorosa, entusiasmada e sociável. Conecta gente, vende ideias e traz energia para o time.",
+    fortes: ["Comunicação e persuasão", "Entusiasmo e energia", "Relacionamento", "Criatividade"],
+    atencao: ["Pode se dispersar", "Atenção a detalhes e prazos", "Sensível à crítica pública"],
+    comoLidar: {
+      comunicacao: "Calorosa, entusiasmada, com espaço para conversa.",
+      motiva: "Reconhecimento público, relacionamento, novidade e variedade.",
+      feedback: "Comece pelo positivo, mantenha o clima leve, reforce o reconhecimento.",
+      delegacao: "Envolva e dê visibilidade, mas acompanhe prazos de perto.",
+      evite: "Isolamento, excesso de detalhe técnico e crítica seca em público.",
+    },
+  },
+  Fleumático: {
+    arquetipo: "O Harmonizador",
+    disc: "S (Estabilidade)",
+    explicacao:
+      "Pessoa calma, paciente e cooperativa. Valoriza estabilidade, mantém a constância e evita conflitos.",
+    fortes: ["Estabilidade e constância", "Cooperação", "Paciência", "Lealdade ao time"],
+    atencao: ["Resistência a mudanças bruscas", "Evita confronto necessário", "Ritmo cai sob urgência constante"],
+    comoLidar: {
+      comunicacao: "Calma, paciente, previsível, sem pressão.",
+      motiva: "Estabilidade, segurança, pertencimento e processos claros.",
+      feedback: "Gentil e gradual, explique o porquê das mudanças, evite confronto.",
+      delegacao: "Dê passos claros e tempo de adaptação, valorize a constância.",
+      evite: "Mudanças bruscas, urgência constante e conflito aberto.",
+    },
+  },
+  Melancólico: {
+    arquetipo: "O Analista",
+    disc: "C (Conformidade)",
+    explicacao:
+      "Pessoa precisa, analítica e detalhista. Busca qualidade, trabalha com critérios e cuida para fazer certo.",
+    fortes: ["Análise e precisão", "Qualidade e padrão", "Organização", "Especialização técnica"],
+    atencao: ["Perfeccionismo", "Autocrítica", "Pode travar por excesso de detalhe"],
+    comoLidar: {
+      comunicacao: "Precisa, baseada em dados e fatos, com tempo para analisar.",
+      motiva: "Qualidade, exatidão, fazer certo e especialização.",
+      feedback: "Específico e lógico, com evidências, sem generalizações.",
+      delegacao: "Dê critérios e padrões claros, respeite o cuidado com o detalhe.",
+      evite: "Cobrança emocional, prazos irreais e falta de informação.",
+    },
+  },
+};

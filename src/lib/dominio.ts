@@ -72,11 +72,45 @@ export function useDominio() {
       return enquadrar(c.salario, cargo?.faixas);
     };
 
+    // Subárea (nível abaixo da área) — usa o valor salvo ou deriva do cargo/função.
+    const subareaDe = (c: Colaborador): string => {
+      if (c.subarea) return c.subarea;
+      const fn = (c.funcao ?? "").toLowerCase();
+      const cid = c.cargoId ?? "";
+      switch (c.areaId) {
+        case "adm":
+          if (cid === "rh-dp" || /\brh\b/.test(fn)) return "RH e DP";
+          if (cid === "assistente-suprimentos" || /(compra|suprim|almox)/.test(fn)) return "Compras e Suprimentos";
+          if (cid === "analista-pcp" || /pcp/.test(fn)) return "PCP";
+          if (/financ/.test(fn)) return "Financeiro";
+          if (cid === "gerente-operacoes" || cid === "gerente-administrativo" || cid === "coordenador-administrativo") return "Gestão";
+          return "Administração";
+        case "producao":
+          if (cid === "impressor") return "Impressão";
+          if (cid === "operador-cnc") return "CNC";
+          if (cid === "designer-grafico" || cid === "projetista") return "Design e Projetos";
+          if (cid === "pintor-cv") return "Pintura";
+          if (cid === "lider-producao") return "Liderança de Produção";
+          return "Operação de Comunicação Visual";
+        case "comercial":
+          if (cid === "consultor-vendas" || /vend/.test(fn)) return "Vendas";
+          return "Atendimento";
+        case "montagem":
+          return "Montagem e Instalação";
+        case "serralheria":
+          return "Serralheria e Metalurgia";
+        case "direcao":
+          return "Diretoria";
+        default:
+          return nomeArea(c.areaId);
+      }
+    };
+
     return {
       areas, cargos, niveis, status, colaboradores,
       areaById, cargoById, nivelById, statusById, colabById,
       nomeArea, nomeCargo, nomeNivel, nomeColab, corStatus, nomeStatus,
-      ativos, faixaColab, enquadrarColab,
+      ativos, faixaColab, enquadrarColab, subareaDe,
     };
   }, [areas, cargos, niveis, status, colaboradores]);
 }

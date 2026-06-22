@@ -164,6 +164,39 @@ function construir(spec: Spec, i: number): Colaborador {
       base.conjugeTelefone = base.conjugeNome ? `(38) 9${rint(8000, 9999)}-${rint(1000, 9999)}` : null;
     }
   }
+  // v2 — motivação (0-100), tempo no cargo, filhos e contato de emergência
+  if (!spec.semPessoais) {
+    base.cidade = "Montes Claros/MG";
+    const baseMot = spec.humor === "Motivado" ? 82 : spec.humor === "Estável" ? 56 : spec.humor === "Desmotivado" ? 28 : 62;
+    base.motivacao = Math.max(5, Math.min(100, baseMot + rint(-8, 12)));
+    base.motivacaoAnterior = Math.max(5, Math.min(100, base.motivacao + rint(-10, 8)));
+    if (spec.admissao) {
+      const adm = new Date(spec.admissao);
+      const mesesCasa = Math.max(0, Math.round((HOJE.getTime() - adm.getTime()) / (86400000 * 30.44)));
+      const ini = new Date(adm);
+      ini.setMonth(ini.getMonth() + rint(0, Math.floor(mesesCasa / 2)));
+      base.dataInicioCargo = ini.toISOString().slice(0, 10);
+    }
+    const nF = base.qtdFilhos ?? 0;
+    if (nF > 0 && !spec.ehDirecao) {
+      const nomesF = ["Ana", "Pedro", "Maria", "João", "Laura", "Lucas", "Sofia", "Gabriel"];
+      base.filhos = Array.from({ length: nF }, (_, k) => {
+        const idade = rint(1, 17);
+        const nasc = new Date(HOJE);
+        nasc.setFullYear(nasc.getFullYear() - idade);
+        return { nome: nomesF[(i + k) % nomesF.length], nascimento: nasc.toISOString().slice(0, 10) };
+      });
+    }
+    if (!spec.ehDirecao) {
+      const parentesco = base.conjugeNome ? "Cônjuge" : ["Mãe", "Pai", "Irmão(ã)"][i % 3];
+      base.contatoEmergencia = {
+        nome: base.conjugeNome ?? `${CONJ_NOMES[(i + 2) % CONJ_NOMES.length]} ${CONJ_SOBRE[(i + 1) % CONJ_SOBRE.length]}`,
+        parentesco,
+        telefone: base.conjugeTelefone ?? `(38) 9${rint(8000, 9999)}-${rint(1000, 9999)}`,
+      };
+    }
+  }
+
   // Desligados: data de desligamento sintética (a planilha não a traz) para
   // alimentar turnover e offboarding — entre 6 e 30 meses após a admissão.
   if (spec.statusId === "inativo" && spec.admissao) {

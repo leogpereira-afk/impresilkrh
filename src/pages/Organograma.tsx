@@ -1,9 +1,12 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Network,
   SlidersHorizontal,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Users,
   UserPlus,
   UserMinus,
@@ -24,12 +27,14 @@ import { slug } from "@/data/_gen";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
 
-function corNode(c: Colaborador, ehGer: boolean): { box: string; sub: string } {
-  if (!c.gestorId && c.ehDirecao) return { box: "bg-green-600 text-white", sub: "text-green-100" };
-  if (c.cargoLivre === "Diretor Geral") return { box: "bg-brand text-white", sub: "text-brand-100" };
-  if (c.statusId === "externo") return { box: "bg-slate-100 text-slate-600 border border-dashed border-slate-300", sub: "text-slate-400" };
-  if (ehGer) return { box: "bg-teal-500 text-white", sub: "text-teal-50" };
-  return { box: "bg-white text-slate-700 border border-slate-200", sub: "text-slate-400" };
+// Mantém a lógica de papéis do organograma, agora aplicada como um indicador
+// colorido (ponto/faixa lateral) por se tratar de uma linha e não mais de um card.
+function corNode(c: Colaborador, ehGer: boolean): { dot: string; rotulo: string } {
+  if (!c.gestorId && c.ehDirecao) return { dot: "bg-green-600", rotulo: "Fundador(a)" };
+  if (c.cargoLivre === "Diretor Geral") return { dot: "bg-brand", rotulo: "Diretoria" };
+  if (c.statusId === "externo") return { dot: "bg-slate-300", rotulo: "Assessoria externa" };
+  if (ehGer) return { dot: "bg-teal-500", rotulo: "Gestor(a) / Líder" };
+  return { dot: "bg-slate-300", rotulo: "Equipe" };
 }
 
 export default function Organograma() {
@@ -72,6 +77,10 @@ export default function Organograma() {
       return n;
     });
 
+  const expandirTudo = () => setColapsados(new Set());
+  // Recolher tudo: colapsa todos os nós que possuem subordinados.
+  const recolherTudo = () => setColapsados(new Set(filhosPorGestor.keys()));
+
   // Remove uma pessoa do organograma: os subordinados diretos são reposicionados
   // sob o gestor da pessoa removida (reparent) e, em seguida, o registro é excluído.
   const removerDoOrganograma = (c: Colaborador) => {
@@ -112,69 +121,115 @@ export default function Organograma() {
     reader.readAsDataURL(file);
   };
 
+  // Cada nó é uma linha (estilo explorador de arquivos): a indentação por nível
+  // vem do aninhamento dos <ul>, cada um com uma guia vertical à esquerda
+  // conectando pais e filhos. Expandir/recolher por ramo. Nunca há sobreposição:
+  // a árvore cresce apenas verticalmente.
   const Node = ({ c }: { c: Colaborador }) => {
     const filhos = filhosPorGestor.get(c.id) ?? [];
+    const temFilhos = filhos.length > 0;
     const ger = ehGerente(c);
     const cor = corNode(c, ger);
     const colapsado = colapsados.has(c.id);
+
     return (
       <li>
-        <div className="org-node">
-          <div className={cn("group relative mx-auto w-44 rounded-xl px-3 py-2 text-center shadow-card", cor.box)}>
-            {podeEditar && (
-              <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
-                <button
-                  type="button"
-                  onClick={() => setAdicionarEm(c)}
-                  title="Adicionar subordinado"
-                  aria-label={`Adicionar subordinado a ${c.nome}`}
-                  className="rounded-full bg-black/10 p-1 hover:bg-black/20"
-                >
-                  <UserPlus className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => abrirSeletorFoto(c.id)}
-                  title="Enviar foto"
-                  aria-label={`Enviar foto de ${c.nome}`}
-                  className="rounded-full bg-black/10 p-1 hover:bg-black/20"
-                >
-                  <Camera className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRemoverAlvo(c)}
-                  title="Remover do organograma"
-                  aria-label={`Remover ${c.nome} do organograma`}
-                  className="rounded-full bg-black/10 p-1 hover:bg-black/20"
-                >
-                  <UserMinus className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-            {c.fotoDataUrl ? (
-              <img
-                src={c.fotoDataUrl}
-                alt={c.nome}
-                title={c.nome}
-                className="mx-auto mb-1 h-8 w-8 rounded-full object-cover ring-2 ring-white/70"
-              />
-            ) : (
-              <Avatar nome={c.nome} size="sm" className="mx-auto mb-1 ring-2 ring-white/70" />
-            )}
-            <p className="truncate text-sm font-semibold">{c.nome}</p>
-            <p className={cn("truncate text-[11px]", cor.sub)}>{d.nomeCargo(c)}</p>
-            {filhos.length > 0 && (
-              <button onClick={() => toggle(c.id)} className="mx-auto mt-1 flex items-center gap-1 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium">
-                {colapsado ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {filhos.length}
+        <div className="group flex items-center gap-2 rounded-lg py-1.5 pl-1 pr-2 transition hover:bg-slate-50">
+          {/* Chevron de expandir/recolher (ocupa espaço fixo mesmo sem filhos) */}
+          {temFilhos ? (
+            <button
+              type="button"
+              onClick={() => toggle(c.id)}
+              title={colapsado ? "Expandir" : "Recolher"}
+              aria-label={colapsado ? `Expandir equipe de ${c.nome}` : `Recolher equipe de ${c.nome}`}
+              aria-expanded={!colapsado}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+            >
+              {colapsado ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          ) : (
+            <span className="h-5 w-5 shrink-0" aria-hidden />
+          )}
+
+          {/* Indicador colorido de papel (faixa lateral) */}
+          <span
+            className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)}
+            title={cor.rotulo}
+            aria-hidden
+          />
+
+          {/* Foto / avatar */}
+          {c.fotoDataUrl ? (
+            <img
+              src={c.fotoDataUrl}
+              alt={c.nome}
+              title={c.nome}
+              className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+            />
+          ) : (
+            <Avatar nome={c.nome} size="sm" className="ring-1 ring-slate-200" />
+          )}
+
+          {/* Nome + cargo (clicar navega para a ficha) */}
+          <Link
+            to={`/colaboradores/${c.id}`}
+            className="min-w-0 flex-1"
+            title={`Abrir ficha de ${c.nome}`}
+          >
+            <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">
+              {c.nome}
+            </p>
+            <p className="truncate text-[11px] text-slate-400">{d.nomeCargo(c)}</p>
+          </Link>
+
+          {/* Badge de subordinados diretos */}
+          {temFilhos && (
+            <Badge variant="neutral" className="shrink-0">
+              {filhos.length} {filhos.length === 1 ? "direto" : "diretos"}
+            </Badge>
+          )}
+
+          {/* Ações de RH (aparecem no hover quando podeEditar) */}
+          {podeEditar && (
+            <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+              <button
+                type="button"
+                onClick={() => setAdicionarEm(c)}
+                title="Adicionar subordinado"
+                aria-label={`Adicionar subordinado a ${c.nome}`}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
+              >
+                <UserPlus className="h-4 w-4" />
               </button>
-            )}
-          </div>
+              <button
+                type="button"
+                onClick={() => abrirSeletorFoto(c.id)}
+                title="Enviar foto"
+                aria-label={`Enviar foto de ${c.nome}`}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
+              >
+                <Camera className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setRemoverAlvo(c)}
+                title="Remover do organograma"
+                aria-label={`Remover ${c.nome} do organograma`}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"
+              >
+                <UserMinus className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
-        {filhos.length > 0 && !colapsado && (
-          <ul>
-            {filhos.map((f) => <Node key={f.id} c={f} />)}
+
+        {/* Filhos: container indentado com guia vertical (a indentação se acumula
+            pelo aninhamento dos <ul>) */}
+        {temFilhos && !colapsado && (
+          <ul className="ml-4 border-l border-slate-200 pl-1.5">
+            {filhos.map((f) => (
+              <Node key={f.id} c={f} />
+            ))}
           </ul>
         )}
       </li>
@@ -183,7 +238,13 @@ export default function Organograma() {
 
   return (
     <div>
-      <PageHeader title="Organograma" description="Estrutura hierárquica da Impresilk — navegue expandindo e recolhendo as equipes.">
+      <PageHeader title="Organograma" description="Estrutura hierárquica da Impresilk. Navegue expandindo e recolhendo as equipes.">
+        <button className="btn-outline" onClick={expandirTudo}>
+          <ChevronsUpDown className="h-4 w-4" /> Expandir tudo
+        </button>
+        <button className="btn-outline" onClick={recolherTudo}>
+          <ChevronsDownUp className="h-4 w-4" /> Recolher tudo
+        </button>
         {podeEditar && (
           <button className="btn-outline" onClick={() => setMostrarPainel((v) => !v)}>
             <SlidersHorizontal className="h-4 w-4" /> {mostrarPainel ? "Ocultar" : "Editar hierarquia"}
@@ -199,10 +260,11 @@ export default function Organograma() {
         <Legenda cor="bg-white border border-slate-300" label="Equipe" />
       </div>
 
-      <Card className="overflow-x-auto">
+      <Card>
         <CardBody>
-          <div className="min-w-[720px] pb-4">
-            <ul className="org-tree">
+          {/* overflow-x-auto só atua como rede de segurança em telas muito estreitas */}
+          <div className="overflow-x-auto">
+            <ul className="min-w-[280px]">
               {raizes.map((c) => <Node key={c.id} c={c} />)}
             </ul>
           </div>

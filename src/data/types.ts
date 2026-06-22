@@ -4,6 +4,17 @@
 
 export type Perfil = "ADMIN_RH" | "GESTOR" | "COLABORADOR";
 
+export interface Familiar {
+  nome: string;
+  nascimento?: string; // ISO; idade calculada quando informada
+}
+
+export interface ContatoEmergencia {
+  nome: string;
+  parentesco: string;
+  telefone: string;
+}
+
 export interface Area {
   id: string;
   nome: string;
@@ -91,6 +102,16 @@ export interface Colaborador {
   humor?: string; // Motivado, Estável, Desmotivado (engajamento/clima)
   estiloAprendizagem?: string; // Visual, Auditivo, Cinestésico
   adicionais?: number; // adicionais/benefícios (R$) — painel financeiro
+
+  // v2 — gestão de pessoas
+  setor?: string; // agrupamento intermediário (pode espelhar a área)
+  subarea?: string; // subárea dentro do setor (Financeiro, RH, Compras...)
+  dataInicioCargo?: string; // início no cargo atual (tempo no cargo)
+  motivacao?: number; // 0-100 (indicador de motivação / rosto)
+  motivacaoAnterior?: number; // registro anterior (tendência)
+  cidade?: string;
+  filhos?: Familiar[];
+  contatoEmergencia?: ContatoEmergencia;
 
   // Acesso / hierarquia institucional
   perfil?: Perfil; // perfil de login (quando aplicável)

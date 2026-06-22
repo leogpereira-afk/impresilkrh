@@ -191,6 +191,15 @@ export function ColaboradorForm({
               {gestoresPossiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </Select>
           </Campo>
+          <Campo label="Subárea" hint="Financeiro, RH, Compras…">
+            <Input value={form.subarea ?? ""} onChange={(e) => set({ subarea: e.target.value })} />
+          </Campo>
+          <Campo label="Motivação (0–100)" hint="Indicador interno de gestão">
+            <Input type="number" min={0} max={100} value={form.motivacao ?? ""} onChange={(e) => set({ motivacao: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          </Campo>
+          <Campo label="Início no cargo atual">
+            <Input type="date" value={(form.dataInicioCargo ?? "").slice(0, 10)} onChange={(e) => set({ dataInicioCargo: e.target.value })} />
+          </Campo>
         </div>
       </div>
     </Modal>

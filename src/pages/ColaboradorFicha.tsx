@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
-  IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain,
+  IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
-import { HumorIndicador, PerfilComportamentalBadge } from "@/components/ui/indicadores";
+import { HumorIndicador, PerfilComportamentalBadge, MotivacaoRosto, PerfilComportamentalGuia } from "@/components/ui/indicadores";
 import { DESC_PERFIL_COMPORTAMENTAL } from "@/lib/constants";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
@@ -17,13 +17,24 @@ import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { podeVerColaborador, podeVerDadosSensiveis, ehRH } from "@/lib/rbac";
+import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
 import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa } from "@/lib/format";
 import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
 const diasAte = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / 86400000) : NaN);
+
+// Idade em anos a partir de uma data de nascimento (ISO). Retorna null se ausente/inválida.
+function idadeAnos(nascimento?: string | null): number | null {
+  if (!nascimento) return null;
+  const n = new Date(nascimento);
+  if (isNaN(n.getTime())) return null;
+  let anos = HOJE.getFullYear() - n.getFullYear();
+  const m = HOJE.getMonth() - n.getMonth();
+  if (m < 0 || (m === 0 && HOJE.getDate() < n.getDate())) anos -= 1;
+  return anos < 0 ? 0 : anos;
+}
 
 export default function ColaboradorFicha() {
   const { id = "" } = useParams();
@@ -32,6 +43,7 @@ export default function ColaboradorFicha() {
   const c = d.colabById.get(id);
   const podeVer = podeVerColaborador(sessao, id, d.colaboradores);
   const sens = podeVerDadosSensiveis(sessao, id);
+  const verGestao = podeVerGestao(sessao, id, d.colaboradores);
 
   useEffect(() => {
     if (podeVer && sens && sessao && sessao.colaboradorId !== id) {
@@ -46,10 +58,10 @@ export default function ColaboradorFicha() {
     return <EmptyState title="Acesso restrito" description="Você não tem permissão para ver este colaborador." icon={<Lock className="h-8 w-8" />} />;
   }
 
-  return <FichaConteudo c={c} sens={sens} podeEditar={ehRH(sessao)} />;
+  return <FichaConteudo c={c} sens={sens} verGestao={verGestao} podeEditar={ehRH(sessao)} />;
 }
 
-function FichaConteudo({ c, sens, podeEditar }: { c: import("@/data/types").Colaborador; sens: boolean; podeEditar: boolean }) {
+function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/types").Colaborador; sens: boolean; verGestao: boolean; podeEditar: boolean }) {
   const d = useDominio();
   const [editar, setEditar] = useState(false);
   const [desligar, setDesligar] = useState(false);
@@ -94,9 +106,18 @@ function FichaConteudo({ c, sens, podeEditar }: { c: import("@/data/types").Cola
             <p className="mt-0.5 text-sm text-slate-500">
               {d.nomeCargo(c)} · {d.nomeArea(c.areaId)} · Nível {d.nomeNivel(c.nivelId)} ({senioridade(c.nivelId)})
             </p>
-            <p className="mt-1 text-xs text-slate-400">{tempoDeCasa(c.dataAdmissao)} de casa · Admissão em {formatDate(c.dataAdmissao)}</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {tempoDeCasa(c.dataAdmissao)} de casa · Admissão em {formatDate(c.dataAdmissao)}
+              {c.dataInicioCargo && <> · {tempoDeCasa(c.dataInicioCargo)} no cargo atual</>}
+            </p>
           </div>
           <div className="flex items-center gap-2">
+            {verGestao && c.motivacao != null && (
+              <div className="flex flex-col items-center rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Motivação</span>
+                <MotivacaoRosto score={c.motivacao} anterior={c.motivacaoAnterior} tamanho="lg" />
+              </div>
+            )}
             <DotBadge label={`Enquadramento: ${enq}`} cor={corEnq} />
             {podeEditar && (
               <>
@@ -116,6 +137,7 @@ function FichaConteudo({ c, sens, podeEditar }: { c: import("@/data/types").Cola
           { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} /> },
           { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro c={c} sens={sens} /> },
+          ...(verGestao ? [{ id: "comportamental", label: "Comportamental", icon: <Brain className="h-4 w-4" />, conteudo: <AbaComportamental c={c} /> }] : []),
           { id: "desenv", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: <AbaDesenvolvimento colaboradorId={c.id} /> },
           { id: "hist", label: "Histórico", icon: <History className="h-4 w-4" />, conteudo: <AbaHistorico colaboradorId={c.id} /> },
         ]}
@@ -142,10 +164,34 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
             <Field label="Telefone" value={c.telefone} />
             <Field label="Endereço" value={c.enderecoRua ? `${c.enderecoRua}, ${c.enderecoNumero ?? ""}` : "—"} className="col-span-2" />
             <Field label="Bairro" value={c.enderecoBairro} />
+            <Field label="Cidade" value={c.cidade} />
             <Field label="CEP" value={c.enderecoCep} />
             {sens && <Field label="Cônjuge" value={c.conjugeNome ?? "—"} />}
-            {sens && <Field label="Filhos" value={c.qtdFilhos ?? 0} />}
+            {sens && <Field label="Filhos" value={c.filhos?.length ?? c.qtdFilhos ?? 0} />}
           </dl>
+          {sens && (c.filhos?.length ?? 0) > 0 && (
+            <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Filhos</p>
+              <ul className="mt-2 space-y-1">
+                {c.filhos!.map((f, i) => {
+                  const idade = idadeAnos(f.nascimento);
+                  return (
+                    <li key={i} className="flex items-center justify-between text-sm text-slate-600">
+                      <span className="font-medium text-slate-700">{f.nome}</span>
+                      <span className="text-xs text-slate-400">{idade != null ? `${idade} ${idade === 1 ? "ano" : "anos"}` : "idade não informada"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {sens && c.contatoEmergencia && (
+            <div className="mt-3 rounded-lg border border-red-100 bg-red-50/40 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-red-700">Contato de emergência</p>
+              <p className="mt-1.5 text-sm font-medium text-slate-700">{c.contatoEmergencia.nome} <span className="text-xs font-normal text-slate-400">({c.contatoEmergencia.parentesco})</span></p>
+              <p className="text-sm text-slate-600">{c.contatoEmergencia.telefone}</p>
+            </div>
+          )}
           {!sens && (
             <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
               <Lock className="h-3.5 w-3.5" /> Dados sensíveis ocultados (LGPD).
@@ -160,6 +206,7 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
           <dl className="grid grid-cols-2 gap-4">
             <Field label="Cargo" value={d.nomeCargo(c)} />
             <Field label="Área" value={d.nomeArea(c.areaId)} />
+            <Field label="Subárea" value={d.subareaDe(c)} />
             <Field label="Nível" value={`${d.nomeNivel(c.nivelId)} · ${senioridade(c.nivelId)}`} />
             <Field label="Gestor" value={d.nomeColab(c.gestorId)} />
             <Field label="Salário" value={sens ? formatBRL(c.salario) : "•••••"} />
@@ -169,6 +216,18 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
             <Field label="Enquadramento" value={<Badge variant={enqVar(d.enquadrarColab(c))}>{d.enquadrarColab(c)}</Badge>} />
             <Field label="Risco de saída" value={c.riscoSaida} />
           </dl>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-brand-100 bg-brand-50/40 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tempo no cargo atual</p>
+              <p className="mt-1 text-lg font-semibold text-brand-ink">{tempoDeCasa(c.dataInicioCargo)}</p>
+              {c.dataInicioCargo && <p className="text-xs text-slate-400">Desde {formatDate(c.dataInicioCargo)}</p>}
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tempo de casa</p>
+              <p className="mt-1 text-lg font-semibold text-brand-ink">{tempoDeCasa(c.dataAdmissao)}</p>
+              {c.dataAdmissao && <p className="text-xs text-slate-400">Admissão em {formatDate(c.dataAdmissao)}</p>}
+            </div>
+          </div>
           {cargo && (
             <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Faixa salarial do cargo</p>
@@ -188,14 +247,9 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
       </Card>
 
       <Card className="lg:col-span-2">
-        <CardHeader title="Perfil comportamental & clima" subtitle="Mapeamento de perfil, engajamento e estilo de aprendizagem" icon={<Brain className="h-[18px] w-[18px]" />} />
+        <CardHeader title="Clima & estilo" subtitle="Engajamento, estilo de aprendizagem e enquadramento na empresa" icon={<Smile className="h-[18px] w-[18px]" />} />
         <CardBody>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Perfil comportamental</p>
-              <div className="mt-1.5"><PerfilComportamentalBadge perfil={c.perfilComportamental} /></div>
-              {c.perfilComportamental && <p className="mt-1.5 text-xs text-slate-500">{DESC_PERFIL_COMPORTAMENTAL[c.perfilComportamental]}</p>}
-            </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Humor / engajamento</p>
               <div className="mt-1.5"><HumorIndicador humor={c.humor} tamanho="lg" /></div>
@@ -206,6 +260,70 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
           </div>
         </CardBody>
       </Card>
+    </div>
+  );
+}
+
+function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
+  const score = c.motivacao;
+  const tem = score != null;
+  const delta = tem && c.motivacaoAnterior != null ? score! - c.motivacaoAnterior : null;
+  const tendTexto =
+    delta == null ? "Sem registro anterior para comparar."
+    : delta > 2 ? `Em alta · ${delta} pontos acima da medição anterior.`
+    : delta < -2 ? `Em queda · ${Math.abs(delta)} pontos abaixo da medição anterior.`
+    : "Estável em relação à medição anterior.";
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Card className="lg:col-span-2">
+        <CardHeader
+          title="Perfil comportamental"
+          subtitle="Mapeamento de temperamento e guia prático de gestão (uso interno)"
+          icon={<Brain className="h-[18px] w-[18px]" />}
+          action={c.perfilComportamental ? <PerfilComportamentalBadge perfil={c.perfilComportamental} /> : undefined}
+        />
+        <CardBody>
+          <PerfilComportamentalGuia perfil={c.perfilComportamental} />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Motivação" subtitle="Indicador de engajamento (0 a 100)" icon={<Activity className="h-[18px] w-[18px]" />} />
+        <CardBody>
+          {tem ? (
+            <div className="space-y-4">
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-5">
+                <MotivacaoRosto score={score} anterior={c.motivacaoAnterior} tamanho="lg" />
+                <p className="text-xs text-slate-500">Medição atual</p>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                  <span>Nível de motivação</span>
+                  <span className="font-medium text-slate-600">{score ?? 0}/100</span>
+                </div>
+                <Progress value={score ?? 0} />
+              </div>
+              <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                {tendTexto}
+                {c.humor && <p className="mt-2 flex items-center gap-2 text-xs text-slate-400">Clima atual: <HumorIndicador humor={c.humor} tamanho="sm" /></p>}
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="Motivação não informada" description="Ainda não há medição de motivação para este colaborador." icon={<Activity className="h-8 w-8" />} />
+          )}
+        </CardBody>
+      </Card>
+
+      {c.perfilComportamental && (
+        <Card className="lg:col-span-3">
+          <CardBody>
+            <p className="flex items-start gap-2 text-xs text-slate-400">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Informação restrita à gestão. Perfil comportamental e motivação destinam-se ao RH e ao gestor da área para apoiar a liderança, e não são exibidos ao próprio colaborador. {DESC_PERFIL_COMPORTAMENTAL[c.perfilComportamental]}
+            </p>
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }

@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
-import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight } from "lucide-react";
+import { Link } from "react-router-dom";
+import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/form";
-import { EmptyState } from "@/components/ui/misc";
+import { EmptyState, Avatar } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useDominio, indiceNivel } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeVerDadosSensiveis, ehRH } from "@/lib/rbac";
-import { formatBRL, formatPercent } from "@/lib/format";
+import { formatBRL, formatPercent, tempoDeCasa } from "@/lib/format";
 
 const CORES_NIVEL = ["#7ea4c6", "#4f7ea8", "#16334f", "#a9883a", "#c2a14d"];
 
@@ -19,6 +20,8 @@ export default function Carreira() {
   const drill = useDrill();
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !c.ehDirecao && c.cargoId), [sessao, d.colaboradores]);
   const [colabId, setColabId] = useState(() => (sessao?.perfil === "COLABORADOR" ? sessao.colaboradorId : escopo[0]?.id ?? ""));
+  // Conjunto de cargos expandidos na tabela salarial (Módulo 3 — "Pessoas no cargo").
+  const [cargosExpandidos, setCargosExpandidos] = useState<Set<string>>(() => new Set());
 
   // Ativos por nível (todos os cargos) — para os badges e o drill da régua.
   const ativosPorNivel = useMemo(() => {
@@ -72,6 +75,15 @@ export default function Carreira() {
   const abrirCargo = (cargo: import("@/data/types").Cargo) => {
     const lista = d.ativos.filter((c) => c.cargoId === cargo.id);
     drill.abrir(cargo.nome, lista, `${lista.length} colaborador(es) ativo(s) no cargo`);
+  };
+  // Alterna a expansão de um cargo para listar as pessoas reais enquadradas.
+  const alternarCargo = (cargoId: string) => {
+    setCargosExpandidos((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(cargoId)) proximo.delete(cargoId);
+      else proximo.add(cargoId);
+      return proximo;
+    });
   };
 
   return (
@@ -167,7 +179,18 @@ export default function Carreira() {
             </thead>
             <tbody>
               {cargosPorArea.map((g) => (
-                <FragmentArea key={g.area.id} nome={g.area.nome} cargos={g.cargos} colabCargoId={cargo?.id} onCargo={abrirCargo} onCargoNivel={abrirCargoNivel} />
+                <FragmentArea
+                  key={g.area.id}
+                  nome={g.area.nome}
+                  cargos={g.cargos}
+                  colabCargoId={cargo?.id}
+                  ativos={d.ativos}
+                  niveis={d.niveis}
+                  expandidos={cargosExpandidos}
+                  onToggle={alternarCargo}
+                  onCargo={abrirCargo}
+                  onCargoNivel={abrirCargoNivel}
+                />
               ))}
             </tbody>
           </table>
@@ -183,12 +206,20 @@ function FragmentArea({
   nome,
   cargos,
   colabCargoId,
+  ativos,
+  niveis,
+  expandidos,
+  onToggle,
   onCargo,
   onCargoNivel,
 }: {
   nome: string;
   cargos: import("@/data/types").Cargo[];
   colabCargoId?: string;
+  ativos: import("@/data/types").Colaborador[];
+  niveis: import("@/data/types").Nivel[];
+  expandidos: Set<string>;
+  onToggle: (cargoId: string) => void;
   onCargo: (cargo: import("@/data/types").Cargo) => void;
   onCargoNivel: (cargo: import("@/data/types").Cargo, nivelId: string) => void;
 }) {
@@ -197,33 +228,150 @@ function FragmentArea({
       <tr className="bg-brand-50/40">
         <td colSpan={6} className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand">{nome}</td>
       </tr>
-      {cargos.map((c) => (
-        <tr key={c.id} className={`border-b border-slate-50 ${c.id === colabCargoId ? "bg-gold-50/40" : "hover:bg-slate-50/50"}`}>
-          <td className="td font-medium text-slate-700">
+      {cargos.map((c) => {
+        const pessoas = ativos.filter((p) => p.cargoId === c.id);
+        const aberto = expandidos.has(c.id);
+        return (
+          <FragmentCargo
+            key={c.id}
+            cargo={c}
+            pessoas={pessoas}
+            niveis={niveis}
+            aberto={aberto}
+            destacado={c.id === colabCargoId}
+            onToggle={onToggle}
+            onCargo={onCargo}
+            onCargoNivel={onCargoNivel}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function FragmentCargo({
+  cargo,
+  pessoas,
+  niveis,
+  aberto,
+  destacado,
+  onToggle,
+  onCargo,
+  onCargoNivel,
+}: {
+  cargo: import("@/data/types").Cargo;
+  pessoas: import("@/data/types").Colaborador[];
+  niveis: import("@/data/types").Nivel[];
+  aberto: boolean;
+  destacado: boolean;
+  onToggle: (cargoId: string) => void;
+  onCargo: (cargo: import("@/data/types").Cargo) => void;
+  onCargoNivel: (cargo: import("@/data/types").Cargo, nivelId: string) => void;
+}) {
+  const Chevron = aberto ? ChevronDown : ChevronRight;
+  return (
+    <>
+      <tr className={`border-b border-slate-50 ${destacado ? "bg-gold-50/40" : aberto ? "bg-slate-50/60" : "hover:bg-slate-50/50"}`}>
+        <td className="td font-medium text-slate-700">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => onCargo(c)}
-              className="group inline-flex items-center gap-1 text-left font-medium text-slate-700 hover:text-brand"
-              title={`Ver colaboradores no cargo ${c.nome}`}
+              onClick={() => onToggle(cargo.id)}
+              aria-expanded={aberto}
+              className="flex shrink-0 items-center text-slate-400 transition-colors hover:text-brand"
+              title={aberto ? `Recolher pessoas no cargo ${cargo.nome}` : `Ver pessoas no cargo ${cargo.nome}`}
             >
-              {c.nome}
-              <ChevronRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-brand" />
+              <Chevron className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onCargo(cargo)}
+              className="group inline-flex items-center gap-2 text-left font-medium text-slate-700 hover:text-brand"
+              title={`Ver colaboradores no cargo ${cargo.nome}`}
+            >
+              {cargo.nome}
+              {pessoas.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-600 transition-colors group-hover:bg-brand-50 group-hover:text-brand">{pessoas.length}</span>
+              )}
+            </button>
+          </div>
+        </td>
+        {cargo.faixas.map((v, i) => (
+          <td key={i} className="td p-0 text-right">
+            <button
+              type="button"
+              onClick={() => onCargoNivel(cargo, `N${i + 1}`)}
+              className="w-full px-4 py-3 text-right tabular-nums text-slate-600 transition-colors hover:bg-brand-50/50 hover:text-brand"
+              title={`Ver colaboradores · ${cargo.nome} · N${i + 1}`}
+            >
+              {formatBRL(v)}
             </button>
           </td>
-          {c.faixas.map((v, i) => (
-            <td key={i} className="td p-0 text-right">
-              <button
-                type="button"
-                onClick={() => onCargoNivel(c, `N${i + 1}`)}
-                className="w-full px-4 py-3 text-right tabular-nums text-slate-600 transition-colors hover:bg-brand-50/50 hover:text-brand"
-                title={`Ver colaboradores · ${c.nome} · N${i + 1}`}
-              >
-                {formatBRL(v)}
-              </button>
-            </td>
-          ))}
+        ))}
+      </tr>
+      {aberto && (
+        <tr className="border-b border-slate-100 bg-slate-50/40">
+          <td colSpan={6} className="px-4 py-3 sm:px-6">
+            {pessoas.length === 0 ? (
+              <p className="text-sm text-slate-400">Nenhum colaborador ativo enquadrado neste cargo.</p>
+            ) : (
+              <div className="space-y-3">
+                {niveis.map((n) => {
+                  const doNivel = pessoas.filter((p) => p.nivelId === n.id);
+                  if (doNivel.length === 0) return null;
+                  return (
+                    <div key={n.id}>
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-brand">{n.codigo}</span>
+                        <span className="text-xs text-slate-400">{n.senioridade} · {doNivel.length} pessoa(s)</span>
+                      </div>
+                      <ul className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                        {doNivel.map((p) => (
+                          <PessoaItem key={p.id} pessoa={p} cargo={cargo} />
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </td>
         </tr>
-      ))}
+      )}
     </>
+  );
+}
+
+function PessoaItem({
+  pessoa,
+  cargo,
+}: {
+  pessoa: import("@/data/types").Colaborador;
+  cargo: import("@/data/types").Cargo;
+}) {
+  const idx = indiceNivel(pessoa.nivelId);
+  const faixa = idx > 0 ? cargo.faixas[idx - 1] : null;
+  return (
+    <li>
+      <Link
+        to={`/colaboradores/${pessoa.id}`}
+        className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-brand-200 hover:bg-brand-50/40"
+        title={`Abrir ficha de ${pessoa.nome}`}
+      >
+        {pessoa.fotoDataUrl ? (
+          <img src={pessoa.fotoDataUrl} alt={pessoa.nome} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+        ) : (
+          <Avatar nome={pessoa.nome} size="sm" />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-slate-700 group-hover:text-brand">{pessoa.nome}</p>
+          <p className="truncate text-xs text-slate-400">{tempoDeCasa(pessoa.dataInicioCargo)} no cargo</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-xs font-semibold tabular-nums text-slate-600">{faixa != null ? formatBRL(faixa) : "—"}</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{pessoa.nivelId ?? "—"}</p>
+        </div>
+      </Link>
+    </li>
   );
 }

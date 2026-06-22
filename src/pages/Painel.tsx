@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree, Cake,
   AlertTriangle, CalendarClock, Award, Target, Laugh, Brain, PartyPopper,
+  Wallet, ShieldAlert,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -16,7 +17,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, contaHeadcount } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { formatBRL, formatDate, MESES_PT } from "@/lib/format";
+import { formatBRL, formatPercent, formatDate, MESES_PT } from "@/lib/format";
 import { COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
@@ -32,6 +33,7 @@ export default function Painel() {
   const { items: avaliacoes } = useColecao("avaliacoes");
   const { items: pdis } = useColecao("pdis");
   const { items: aceites } = useColecao("aceites");
+  const { items: advertencias } = useColecao("advertencias");
 
   const escopo = useMemo(
     () => colaboradoresVisiveis(sessao, d.colaboradores),
@@ -45,8 +47,10 @@ export default function Painel() {
   const ids = new Set(escopo.map((c) => c.id));
   const ativos = escopo.filter((c) => contaHeadcount(c, d.statusById));
 
-  const admissoes12m = escopo.filter((c) => mesesAtras(c.dataAdmissao) <= 12).length;
-  const desligamentos12m = escopo.filter((c) => c.dataDesligamento && mesesAtras(c.dataDesligamento) <= 12).length;
+  const admitidos12m = escopo.filter((c) => mesesAtras(c.dataAdmissao) <= 12);
+  const desligados12m = escopo.filter((c) => c.dataDesligamento && mesesAtras(c.dataDesligamento) <= 12);
+  const admissoes12m = admitidos12m.length;
+  const desligamentos12m = desligados12m.length;
   const turnover = ativos.length + desligamentos12m > 0 ? desligamentos12m / ((ativos.length + (ativos.length + desligamentos12m)) / 2) : 0;
 
   const docsAlerta = documentos.filter((doc) => ids.has(doc.colaboradorId) && doc.dataVencimento && dias(doc.dataVencimento) <= JANELA_ALERTA_DIAS);
@@ -67,6 +71,42 @@ export default function Painel() {
 
   const risco = { Alto: 0, Médio: 0, Baixo: 0 } as Record<string, number>;
   ativos.forEach((c) => (risco[c.riscoSaida ?? "Baixo"] = (risco[c.riscoSaida ?? "Baixo"] ?? 0) + 1));
+
+  // Advertências no escopo — colaboradores que possuem ao menos uma advertência
+  const advertenciasEscopo = advertencias.filter((a) => ids.has(a.colaboradorId));
+  const idsComAdvertencia = new Set(advertenciasEscopo.map((a) => a.colaboradorId));
+  const colabsComAdvertencia = escopo.filter((c) => idsComAdvertencia.has(c.id));
+
+  // ---------- Folha de pagamento (somente Administrador de RH) ----------
+  const folhaDe = (c: { salario?: number | null; adicionais?: number }) => (c.salario ?? 0) + (c.adicionais ?? 0);
+  // Folha do mês corrente = soma sobre os colaboradores ativos (headcount).
+  const folhaTotal = ativos.reduce((acc, c) => acc + folhaDe(c), 0);
+  // Estimativa da folha do mês anterior:
+  //  - exclui admitidos nos últimos 30 dias (ainda não estavam na folha)
+  //  - soma de volta os desligados nos últimos 30 dias (ainda estavam na folha)
+  const admitidosUlt30 = ativos.filter((c) => dias(c.dataAdmissao) >= -30);
+  const desligadosUlt30 = escopo.filter((c) => c.dataDesligamento && dias(c.dataDesligamento) >= -30);
+  const folhaMesAnterior =
+    folhaTotal - admitidosUlt30.reduce((acc, c) => acc + folhaDe(c), 0) + desligadosUlt30.reduce((acc, c) => acc + folhaDe(c), 0);
+  const folhaVariacao = folhaTotal - folhaMesAnterior;
+  const folhaVariacaoPct = folhaMesAnterior !== 0 ? folhaVariacao / folhaMesAnterior : 0;
+  const folhaSubiu = folhaVariacao >= 0;
+  // Abertura por setor (setor = área; exceto "direcao")
+  const folhaPorArea = d.areas
+    .filter((a) => a.id !== "direcao")
+    .map((a) => {
+      const pessoas = ativos.filter((c) => c.areaId === a.id);
+      return { id: a.id, nome: a.nome.split(" ")[0], nomeCompleto: a.nome, pessoas: pessoas.length, folha: pessoas.reduce((acc, c) => acc + folhaDe(c), 0) };
+    })
+    .filter((x) => x.folha > 0)
+    .sort((a, b) => b.folha - a.folha);
+  const folhaBarras = folhaPorArea.map((x) => ({ nome: x.nome, valor: x.folha }));
+  const abrirFolhaArea = (id: string, nomeCompleto: string) =>
+    drill.abrir(`Folha · ${nomeCompleto}`, ativos.filter((c) => c.areaId === id), "Composição da folha");
+  const abrirFolhaPorRotulo = (nome: string) => {
+    const area = folhaPorArea.find((x) => x.nome === nome);
+    if (area) abrirFolhaArea(area.id, area.nomeCompleto);
+  };
 
   const porArea = d.areas
     .filter((a) => a.id !== "direcao")
@@ -134,21 +174,93 @@ export default function Painel() {
         description={sessao?.perfil === "GESTOR" ? "Visão da sua equipe (hierarquia recursiva)." : "Visão geral do quadro de colaboradores da Impresilk."}
       />
 
+      {sessao?.perfil === "ADMIN_RH" && (
+        <div className="mb-6">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <StatCard
+              label="Folha de pagamento do mês"
+              value={formatBRL(folhaTotal)}
+              icon={<Wallet className="h-5 w-5" />}
+              accent="gold"
+              hint={`${ativos.length} colaborador(es) · salário + adicionais`}
+              trend={{ value: `${folhaSubiu ? "+" : "−"}${formatBRL(Math.abs(folhaVariacao))} (${formatPercent(Math.abs(folhaVariacaoPct))}) vs. mês anterior`, positivo: folhaSubiu }}
+            />
+            <Card className="lg:col-span-2">
+              <CardHeader title="Folha por setor" subtitle="Clique no gráfico ou na linha para ver a composição" icon={<Wallet className="h-[18px] w-[18px]" />} />
+              <CardBody>
+                {folhaPorArea.length === 0 ? (
+                  <EmptyState title="Sem dados de folha" />
+                ) : (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <BarrasVerticais data={folhaBarras} moeda cor="#c2a14d" onItemClick={abrirFolhaPorRotulo} />
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="border-b border-slate-100">
+                          <tr>
+                            <th className="th">Setor</th>
+                            <th className="th text-right">Pessoas</th>
+                            <th className="th text-right">Folha</th>
+                            <th className="th text-right">% total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {folhaPorArea.map((x) => (
+                            <tr
+                              key={x.id}
+                              className="cursor-pointer hover:bg-slate-50/60"
+                              onClick={() => abrirFolhaArea(x.id, x.nomeCompleto)}
+                            >
+                              <td className="td font-medium text-slate-700">{x.nomeCompleto}</td>
+                              <td className="td text-right text-slate-500">{x.pessoas}</td>
+                              <td className="td text-right text-slate-700">{formatBRL(x.folha)}</td>
+                              <td className="td text-right text-slate-500">{formatPercent(folhaTotal ? x.folha / folhaTotal : 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="border-t border-slate-200">
+                          <tr>
+                            <td className="td font-semibold text-brand-ink">Total</td>
+                            <td className="td text-right font-semibold text-brand-ink">{ativos.length}</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(folhaTotal)}</td>
+                            <td className="td text-right font-semibold text-brand-ink">100%</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Headcount ativo", ativos, "Colaboradores que contam no quadro")}>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Headcount ativo", ativos, "Colaboradores que contam no quadro")}>
           <StatCard label="Headcount ativo" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Colaboradores que contam no quadro" />
         </button>
-        <StatCard label="Admissões 12m" value={admissoes12m} icon={<TrendingUp className="h-5 w-5" />} accent="green" />
-        <StatCard label="Desligamentos 12m" value={desligamentos12m} icon={<TrendingDown className="h-5 w-5" />} accent="red" />
-        <StatCard label="Turnover 12m" value={`${(turnover * 100).toFixed(1)}%`} icon={<TrendingDown className="h-5 w-5" />} accent="amber" />
-        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Documentos a vencer", escopo.filter((c) => docsAlerta.some((doc) => doc.colaboradorId === c.id)), `${docsAlerta.length} documento(s) · ${docsVencidos.length} vencido(s)`)}>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Admissões 12m", admitidos12m, "Admitidos nos últimos 12 meses")}>
+          <StatCard label="Admissões 12m" value={admissoes12m} icon={<TrendingUp className="h-5 w-5" />} accent="green" />
+        </button>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Desligamentos 12m", desligados12m, "Desligados nos últimos 12 meses")}>
+          <StatCard label="Desligamentos 12m" value={desligamentos12m} icon={<TrendingDown className="h-5 w-5" />} accent="red" />
+        </button>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Turnover 12m", desligados12m, "Desligamentos que compõem o índice")}>
+          <StatCard label="Turnover 12m" value={`${(turnover * 100).toFixed(1)}%`} icon={<TrendingDown className="h-5 w-5" />} accent="amber" />
+        </button>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Documentos a vencer", escopo.filter((c) => docsAlerta.some((doc) => doc.colaboradorId === c.id)), `${docsAlerta.length} documento(s) · ${docsVencidos.length} vencido(s)`)}>
           <StatCard label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"} />
         </button>
-        <StatCard label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />
-        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Avaliações pendentes", avaliacoesPendentes, "Ciclo 2026.1 · ainda sem avaliação do gestor")}>
+          <StatCard label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />
+        </button>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}>
           <StatCard label="De férias agora" value={feriasAtivas.length} icon={<Palmtree className="h-5 w-5" />} accent="green" />
         </button>
-        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Risco de saída alto", colabsPorRisco("Risco alto"), "Atenção à retenção de talentos")}>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Com advertência", colabsComAdvertencia, `${advertenciasEscopo.length} advertência(s) registrada(s)`)}>
+          <StatCard label="Advertências" value={advertenciasEscopo.length} hint={`${colabsComAdvertencia.length} colaborador(es)`} icon={<ShieldAlert className="h-5 w-5" />} accent="amber" />
+        </button>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Risco de saída alto", colabsPorRisco("Risco alto"), "Atenção à retenção de talentos")}>
           <StatCard label="Risco de saída alto" value={risco.Alto ?? 0} icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
         </button>
       </div>
@@ -318,7 +430,14 @@ export default function Painel() {
         </Card>
       </div>
 
-      <DrillModal {...drill.props} />
+      <DrillModal
+        {...drill.props}
+        colunaExtra={
+          drill.props.titulo.startsWith("Folha · ")
+            ? { titulo: "Folha", render: (c) => formatBRL((c.salario ?? 0) + (c.adicionais ?? 0)) }
+            : undefined
+        }
+      />
     </div>
   );
 }
