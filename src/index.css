@@ -3,13 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Tipografia: usa a fonte do sistema (SF Pro em Apple) e cai para Inter. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
   /* Identidade Impresilk (editável) */
   --brand-ink: #0f2236;
   --brand-primary: #16334f;
   --brand-accent: #c2a14d;
-  --bg: #f5f7fa;
+  --bg: #f5f5f7; /* cinza Apple */
   --surface: #ffffff;
+  --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 * {
@@ -24,60 +27,83 @@ body,
   min-height: 100%;
 }
 
-body {
-  background-color: var(--bg);
-  color: #1e293b;
-  font-family: var(--font-sans);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  -webkit-font-smoothing: antialiased;
+html {
+  scroll-behavior: smooth;
 }
 
-/* Barra de rolagem sóbria */
+body {
+  background-color: var(--bg);
+  color: #1d1d1f; /* quase-preto Apple */
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  letter-spacing: -0.01em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Barra de rolagem fina e discreta (estilo macOS) */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #c7c7cc;
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #a1a1a6;
   background-clip: content-box;
+}
+
+/* Transições suaves por padrão em elementos interativos */
+button,
+a,
+input,
+select,
+textarea {
+  transition-timing-function: var(--ease-apple);
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-slate-200/80 bg-white shadow-card;
+    @apply rounded-2xl border border-slate-200/60 bg-white shadow-card transition-shadow duration-300;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover;
+  }
+  /* Vidro fosco (estilo Apple) para barras fixas */
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl backdrop-saturate-150;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400;
+    @apply w-full rounded-xl border border-slate-300/80 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-all duration-200 focus:border-brand-400 focus:ring-4 focus:ring-brand-100/70 placeholder:text-slate-400;
   }
   .label {
     @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100;
   }
   .btn-primary {
-    @apply btn bg-brand text-white hover:bg-brand-600 shadow-sm;
+    @apply btn bg-brand text-white shadow-sm hover:bg-brand-600 hover:shadow-md;
   }
   .btn-gold {
-    @apply btn bg-gold text-white hover:bg-gold-500 shadow-sm;
+    @apply btn bg-gold text-white shadow-sm hover:bg-gold-500 hover:shadow-md;
   }
   .btn-outline {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+    @apply btn border border-slate-300/80 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300;
   }
   .btn-ghost {
     @apply btn text-slate-600 hover:bg-slate-100;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 shadow-sm;
+    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700 hover:shadow-md;
   }
   .th {
     @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500;

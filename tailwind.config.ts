@@ -38,18 +38,33 @@ const config: Config = {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
       },
       boxShadow: {
-        card: "0 1px 2px 0 rgba(15, 34, 54, 0.04), 0 1px 3px 0 rgba(15, 34, 54, 0.08)",
+        // Sombras difusas e suaves (estilo Apple)
+        card: "0 1px 2px rgba(15, 34, 54, 0.04), 0 6px 20px -8px rgba(15, 34, 54, 0.10)",
         "card-hover":
-          "0 4px 12px -2px rgba(15, 34, 54, 0.12), 0 2px 6px -2px rgba(15, 34, 54, 0.08)",
+          "0 2px 4px rgba(15, 34, 54, 0.05), 0 16px 36px -12px rgba(15, 34, 54, 0.18)",
+        soft: "0 10px 40px -12px rgba(15, 34, 54, 0.18)",
+      },
+      transitionTimingFunction: {
+        apple: "cubic-bezier(0.32, 0.72, 0, 1)",
       },
       keyframes: {
         "fade-in": {
-          from: { opacity: "0", transform: "translateY(4px)" },
+          from: { opacity: "0", transform: "translateY(6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "scale-in": {
+          from: { opacity: "0", transform: "scale(0.97)" },
+          to: { opacity: "1", transform: "scale(1)" },
+        },
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(16px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
       },
       animation: {
-        "fade-in": "fade-in 0.25s ease-out",
+        "fade-in": "fade-in 0.4s var(--ease-apple) both",
+        "scale-in": "scale-in 0.3s var(--ease-apple) both",
+        "slide-up": "slide-up 0.5s var(--ease-apple) both",
       },
     },
   },

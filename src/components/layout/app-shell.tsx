@@ -107,11 +107,11 @@ export function AppShell() {
                     to={item.href}
                     onClick={() => setAberto(false)}
                     className={cn(
-                      "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
-                      ativo ? "bg-brand text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                      "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
+                      ativo ? "bg-brand text-white shadow-sm" : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
                     )}
                   >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0", ativo ? "text-gold-200" : "text-slate-400 group-hover:text-slate-600")} />
+                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", ativo ? "text-gold-200" : "text-slate-400 group-hover:text-slate-600")} />
                     <span className="flex-1">{item.label}</span>
                   </NavLink>
                 );
@@ -152,10 +152,10 @@ export function AppShell() {
   );
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
+    <div className="flex min-h-screen bg-[#f5f5f7]">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200/70 bg-white/80 backdrop-blur-xl lg:flex">
         <div className="flex h-16 items-center border-b border-slate-100 px-5">
-          <Logo variant="dark" />
+          <Logo variant="color" className="h-8" />
         </div>
         <NavConteudo />
         <Rodape />
@@ -163,10 +163,10 @@ export function AppShell() {
 
       {aberto && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm" onClick={() => setAberto(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-white shadow-xl animate-fade-in">
+          <div className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm animate-fade-in" onClick={() => setAberto(false)} />
+          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-white shadow-soft animate-scale-in">
             <div className="flex h-16 items-center justify-between border-b border-slate-100 px-5">
-              <Logo variant="dark" />
+              <Logo variant="color" className="h-8" />
               <button onClick={() => setAberto(false)} className="btn-ghost p-1.5">
                 <X className="h-5 w-5" />
               </button>
@@ -178,13 +178,13 @@ export function AppShell() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
+        <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
           <button onClick={() => setAberto(true)} className="btn-ghost p-1.5 lg:hidden" aria-label="Abrir menu">
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex flex-1 items-center justify-between">
             <div className="lg:hidden">
-              <Logo variant="dark" showTagline={false} />
+              <Logo variant="color" className="h-7" />
             </div>
             <div className="hidden lg:block" />
             <div className="flex items-center gap-3">
@@ -197,7 +197,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
           {rotaBloqueada ? (
             <EmptyState
               title="Acesso restrito"

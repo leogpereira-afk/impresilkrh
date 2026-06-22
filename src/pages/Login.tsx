@@ -52,33 +52,34 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-brand-ink via-brand to-brand-light lg:flex-row">
+    <div className="flex min-h-screen flex-col bg-white lg:flex-row">
       {/* Apresentação */}
-      <div className="relative hidden flex-1 flex-col justify-between overflow-hidden p-12 text-white lg:flex">
-        <Logo variant="light" />
-        <div className="max-w-md">
-          <h1 className="text-3xl font-semibold leading-tight tracking-tight">
+      <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-ink via-brand to-brand-light p-14 text-white lg:flex">
+        <Logo variant="white" className="h-12 animate-fade-in" />
+        <div className="max-w-md animate-slide-up">
+          <h1 className="text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
             Gestão de pessoas, centralizada e sob controle.
           </h1>
-          <p className="mt-4 text-sm leading-relaxed text-brand-100">
+          <p className="mt-5 text-[15px] leading-relaxed text-brand-100">
             Colaboradores, carreira, desempenho, férias, conformidade e comunicação interna — tudo
             em um só lugar, com a clareza que a Impresilk constrói há mais de 40 anos.
           </p>
         </div>
-        <p className="text-xs text-brand-200">Impresilk Comunicação Visual · Montes Claros/MG</p>
-        <div className="pointer-events-none absolute -right-24 top-1/3 h-72 w-72 rounded-full bg-gold/10 blur-3xl" />
+        <p className="text-xs tracking-wide text-brand-200">Impresilk Soluções Visuais · Montes Claros/MG</p>
+        <div className="pointer-events-none absolute -right-32 top-1/4 h-96 w-96 rounded-full bg-gold/15 blur-3xl" />
+        <div className="pointer-events-none absolute -left-24 -bottom-24 h-80 w-80 rounded-full bg-brand-300/10 blur-3xl" />
       </div>
 
       {/* Formulário */}
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl">
-          <div className="mb-6 lg:hidden">
-            <Logo variant="dark" />
+        <div className="w-full max-w-md animate-scale-in rounded-3xl bg-white p-8 shadow-soft ring-1 ring-slate-100 sm:p-10">
+          <div className="mb-7 flex justify-center lg:justify-start">
+            <Logo variant="color" className="h-14" />
           </div>
-          <h2 className="text-lg font-semibold text-brand-ink">Acessar o sistema</h2>
-          <p className="mt-1 text-sm text-slate-500">Selecione o perfil de demonstração e informe a senha.</p>
+          <h2 className="text-2xl font-semibold tracking-tight text-brand-ink">Acessar o sistema</h2>
+          <p className="mt-1.5 text-sm text-slate-500">Selecione o perfil de demonstração e informe a senha.</p>
 
-          <form onSubmit={submeter} className="mt-6 space-y-5">
+          <form onSubmit={submeter} className="mt-7 space-y-5">
             <div className="grid gap-2">
               {PERFIS.map((p) => {
                 const Icon = p.icon;
@@ -92,11 +93,11 @@ export default function Login() {
                       setErro("");
                     }}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl border p-3 text-left transition",
-                      ativo ? "border-brand bg-brand-50/60 ring-1 ring-brand" : "border-slate-200 hover:border-slate-300",
+                      "flex items-center gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200 active:scale-[0.99]",
+                      ativo ? "border-brand bg-brand-50/60 ring-1 ring-brand shadow-sm" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/60",
                     )}
                   >
-                    <span className={cn("flex h-10 w-10 items-center justify-center rounded-lg", ativo ? "bg-brand text-white" : "bg-slate-100 text-slate-500")}>
+                    <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl transition-colors", ativo ? "bg-brand text-white" : "bg-slate-100 text-slate-500")}>
                       <Icon className="h-5 w-5" />
                     </span>
                     <span className="flex-1">

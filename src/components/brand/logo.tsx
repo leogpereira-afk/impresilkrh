@@ -1,49 +1,48 @@
 import { cn } from "@/lib/cn";
+import logoColor from "@/assets/brand/logo-color.png";
+import logoWhite from "@/assets/brand/logo-white.png";
+import logoBlack from "@/assets/brand/logo-black.png";
+import iconColor from "@/assets/brand/icon.png";
 
-// Wordmark discreto e elegante da Impresilk.
+// Logomarca oficial Impresilk (eagle CMYK + wordmark). Variantes:
+//  - color: colorida (fundos claros)
+//  - white: branca (fundos escuros, ex.: sidebar navy)
+//  - black: preta (fundos claros, uso monocromático)
+const SRC: Record<string, string> = {
+  color: logoColor,
+  white: logoWhite,
+  black: logoBlack,
+  // compatibilidade com chamadas antigas
+  light: logoWhite,
+  dark: logoColor,
+};
+
 export function Logo({
   className,
-  variant = "light",
-  showTagline = true,
+  variant = "color",
 }: {
   className?: string;
-  variant?: "light" | "dark";
+  variant?: "color" | "white" | "black" | "light" | "dark";
   showTagline?: boolean;
 }) {
-  const cor = variant === "light" ? "text-white" : "text-brand-ink";
-  const tagline = variant === "light" ? "text-gold-200" : "text-gold-600";
   return (
-    <div className={cn("flex flex-col leading-none", className)}>
-      <div className="flex items-baseline gap-[2px]">
-        <span className={cn("text-xl font-semibold tracking-tight", cor)}>
-          impresilk
-        </span>
-        <span className="h-1.5 w-1.5 rounded-full bg-gold" aria-hidden />
-      </div>
-      {showTagline && (
-        <span
-          className={cn(
-            "mt-1 text-[9px] font-medium uppercase tracking-[0.32em]",
-            tagline,
-          )}
-        >
-          Comunicação Visual
-        </span>
-      )}
-    </div>
+    <img
+      src={SRC[variant] ?? logoColor}
+      alt="Impresilk · Soluções Visuais"
+      draggable={false}
+      className={cn("h-9 w-auto select-none", className)}
+    />
   );
 }
 
+// Marca compacta (apenas o "águia") para favicons, cabeçalhos colapsados, etc.
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <div
-      className={cn(
-        "flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white shadow-sm",
-        className,
-      )}
-    >
-      <span className="text-sm font-bold tracking-tight">i</span>
-      <span className="ml-[1px] h-1 w-1 rounded-full bg-gold" aria-hidden />
-    </div>
+    <img
+      src={iconColor}
+      alt="Impresilk"
+      draggable={false}
+      className={cn("h-8 w-auto select-none", className)}
+    />
   );
 }
