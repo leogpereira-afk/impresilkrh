@@ -19,6 +19,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Avatar } from "@/components/ui/misc";
 import { Badge } from "@/components/ui/badge";
 import { useColecao } from "@/lib/store";
+import { comprimirImagem } from "@/lib/imagem";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { idsDaEquipe, ehRH } from "@/lib/rbac";
@@ -100,7 +101,7 @@ export default function Organograma() {
     fotoInputRef.current?.click();
   };
 
-  const aoSelecionarFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const aoSelecionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const id = fotoAlvoRef.current;
     e.target.value = ""; // permite reenviar o mesmo arquivo
@@ -109,16 +110,17 @@ export default function Organograma() {
       toast("Selecione um arquivo de imagem.", "erro");
       return;
     }
-    if (file.size > 1024 * 1024) {
-      toast("Imagem acima de 1 MB. Escolha um arquivo menor.", "erro");
+    if (file.size > 8 * 1024 * 1024) {
+      toast("Imagem muito grande. Escolha uma de até 8 MB.", "erro");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      atualizar(id, { fotoDataUrl: String(reader.result) });
+    try {
+      const thumb = await comprimirImagem(file);
+      atualizar(id, { fotoDataUrl: thumb });
       toast("Foto atualizada.");
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      toast("Não foi possível processar a imagem.", "erro");
+    }
   };
 
   // Cada nó é uma linha (estilo explorador de arquivos): a indentação por nível

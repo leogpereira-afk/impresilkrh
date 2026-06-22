@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
@@ -11,6 +11,7 @@ import { Avatar } from "@/components/ui/misc";
 import { PERFIL_LABEL } from "@/lib/constants";
 import { useSessao, sair } from "@/lib/session";
 import { useDominio } from "@/lib/dominio";
+import { useToast } from "@/components/ui/toast";
 import { DadosControls } from "./dados-controls";
 
 interface ItemNav {
@@ -55,7 +56,20 @@ export function AppShell() {
   const navigate = useNavigate();
   const sessao = useSessao();
   const { colabById } = useDominio();
+  const toast = useToast();
   const [aberto, setAberto] = useState(false);
+
+  // Aviso quando o armazenamento do navegador encher (cota do localStorage).
+  // Sem isto, gravações falhavam em silêncio e os dados "sumiam" ao recarregar.
+  useEffect(() => {
+    const aviso = () =>
+      toast(
+        "Armazenamento do navegador cheio: exporte um backup (Administração) e remova arquivos grandes. As últimas alterações podem não ter sido salvas.",
+        "erro",
+      );
+    window.addEventListener("impresilk:armazenamento-cheio", aviso);
+    return () => window.removeEventListener("impresilk:armazenamento-cheio", aviso);
+  }, [toast]);
 
   if (!sessao) return null;
   const colab = colabById.get(sessao.colaboradorId);

@@ -128,7 +128,8 @@ export interface Documento {
   categoria: string;
   nome: string;
   arquivoNome?: string | null;
-  arquivoDataUrl?: string | null; // upload no navegador (data URL)
+  arquivoDataUrl?: string | null; // legado: data URL inline. Novos uploads vão para IndexedDB.
+  arquivoEmBlob?: boolean; // true => conteúdo guardado no IndexedDB sob a chave "doc:<id>"
   tamanhoBytes?: number | null;
   dataEmissao?: string | null;
   dataVencimento?: string | null;
@@ -405,7 +406,8 @@ export interface ArquivoRepositorio {
   categoria: string; // Política, Manual, Formulário, Comunicado, Outro
   descricao?: string;
   arquivoNome?: string | null;
-  arquivoDataUrl?: string | null;
+  arquivoDataUrl?: string | null; // legado inline
+  arquivoEmBlob?: boolean; // true => conteúdo no IndexedDB sob "doc:<id>"
   tamanhoBytes?: number | null;
   criadoEm: string;
 }

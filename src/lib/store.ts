@@ -68,9 +68,28 @@ function ler<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
   return val as ColecaoMap[K][];
 }
 
+// Escrita resiliente no localStorage. Se a cota estourar (ou o storage estiver
+// indisponível), NÃO perde a sessão: o cache em memória continua válido e a UI
+// é avisada (evento) para o usuário liberar espaço / exportar backup. Retorna
+// false quando não conseguiu persistir em disco.
+function escrever(key: string, valor: string): boolean {
+  if (!temWindow) return true;
+  try {
+    window.localStorage.setItem(key, valor);
+    return true;
+  } catch {
+    try {
+      window.dispatchEvent(new CustomEvent("impresilk:armazenamento-cheio", { detail: { key } }));
+    } catch {
+      /* ignora */
+    }
+    return false;
+  }
+}
+
 function gravar<K extends NomeColecao>(nome: K, val: ColecaoMap[K][]) {
   cache.set(nome, val);
-  if (temWindow) window.localStorage.setItem(keyCol(nome), JSON.stringify(val));
+  escrever(keyCol(nome), JSON.stringify(val));
   emit(nome);
 }
 
@@ -153,7 +172,7 @@ export function obterConfig(): Config {
 export function salvarConfig(patch: Partial<Config>): void {
   const novo = { ...obterConfig(), ...patch };
   configCache = novo;
-  if (temWindow) window.localStorage.setItem(CONFIG_KEY, JSON.stringify(novo));
+  escrever(CONFIG_KEY, JSON.stringify(novo));
   emit("__config__");
 }
 

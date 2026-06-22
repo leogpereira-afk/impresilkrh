@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
+import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
@@ -167,6 +168,11 @@ function formatarBytes(bytes?: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Há arquivo anexado? (novo no IndexedDB ou legado inline)
+function temAnexo(arq: { arquivoEmBlob?: boolean; arquivoDataUrl?: string | null }): boolean {
+  return !!arq.arquivoEmBlob || !!arq.arquivoDataUrl;
+}
+
 // Dispara o download de um arquivo (data URL) criando um <a> temporário.
 function baixar(dataUrl: string, nome: string) {
   const a = document.createElement("a");
@@ -181,7 +187,7 @@ function Repositorio() {
   const sessao = useSessao();
   const toast = useToast();
   const podeGerir = ehRH(sessao);
-  const { items, criar, remover } = useColecao("repositorio");
+  const { items, criar, atualizar, remover } = useColecao("repositorio");
   const [busca, setBusca] = useState("");
   const [novo, setNovo] = useState(false);
   const [excluir, setExcluir] = useState<ArquivoRepositorio | null>(null);
@@ -226,9 +232,24 @@ function Repositorio() {
   }, [items]);
 
   const totalCategorias = porCategoria.size;
-  const comArquivo = items.filter((a) => !!a.arquivoDataUrl).length;
+  const comArquivo = items.filter((a) => temAnexo(a)).length;
 
-  const abrir = (dataUrl?: string | null) => {
+  // Resolve o conteúdo do arquivo: IndexedDB (novos) ou data URL inline (legado).
+  const resolver = async (arq: ArquivoRepositorio): Promise<string | null> =>
+    arq.arquivoEmBlob ? await getBlob(`doc:${arq.id}`) : (arq.arquivoDataUrl ?? null);
+
+  // Adiciona ao repositório: metadados no localStorage, conteúdo no IndexedDB.
+  const adicionar = async (meta: Partial<ArquivoRepositorio>, dataUrl: string | null) => {
+    const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
+    if (dataUrl) {
+      const ok = await putBlob(`doc:${rec.id}`, dataUrl);
+      if (ok) atualizar(rec.id, { arquivoEmBlob: true });
+      else atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback inline
+    }
+  };
+
+  const abrir = async (arq: ArquivoRepositorio) => {
+    const dataUrl = await resolver(arq);
     if (!dataUrl) {
       toast("Este documento não possui arquivo anexado.", "info");
       return;
@@ -241,16 +262,18 @@ function Repositorio() {
     }
   };
 
-  const baixarArquivo = (arq: ArquivoRepositorio) => {
-    if (!arq.arquivoDataUrl) {
+  const baixarArquivo = async (arq: ArquivoRepositorio) => {
+    const dataUrl = await resolver(arq);
+    if (!dataUrl) {
       toast("Este documento não possui arquivo anexado.", "info");
       return;
     }
-    baixar(arq.arquivoDataUrl, arq.arquivoNome ?? arq.nome);
+    baixar(dataUrl, arq.arquivoNome ?? arq.nome);
   };
 
   const confirmarExclusao = () => {
     if (!excluir) return;
+    if (excluir.arquivoEmBlob) delBlob(`doc:${excluir.id}`);
     remover(excluir.id);
     toast("Documento removido do repositório.");
     setExcluir(null);
@@ -343,7 +366,7 @@ function Repositorio() {
                     key={arq.id}
                     arq={arq}
                     podeGerir={podeGerir}
-                    onAbrir={() => abrir(arq.arquivoDataUrl)}
+                    onAbrir={() => abrir(arq)}
                     onBaixar={() => baixarArquivo(arq)}
                     onExcluir={() => setExcluir(arq)}
                   />
@@ -358,7 +381,7 @@ function Repositorio() {
         <NovoArquivoModal
           aberto={novo}
           onFechar={() => setNovo(false)}
-          onCriar={criar}
+          onCriar={adicionar}
         />
       )}
       <ConfirmDialog
@@ -391,7 +414,7 @@ function ArquivoCard({
   onBaixar: () => void;
   onExcluir: () => void;
 }) {
-  const temArquivo = !!arq.arquivoDataUrl;
+  const temArquivo = temAnexo(arq);
   return (
     <Card>
       <CardBody className="flex items-start gap-3">
@@ -452,7 +475,7 @@ function NovoArquivoModal({
 }: {
   aberto: boolean;
   onFechar: () => void;
-  onCriar: (item: Partial<ArquivoRepositorio>) => void;
+  onCriar: (item: Partial<ArquivoRepositorio>, dataUrl: string | null) => void;
 }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -464,8 +487,8 @@ function NovoArquivoModal({
   );
 
   const onFile = (f: File) => {
-    if (f.size > 2 * 1024 * 1024) {
-      toast("Arquivo acima de 2 MB. Escolha um arquivo menor.", "erro");
+    if (f.size > 10 * 1024 * 1024) {
+      toast("Arquivo acima de 10 MB. Escolha um arquivo menor.", "erro");
       return;
     }
     const reader = new FileReader();
@@ -476,15 +499,17 @@ function NovoArquivoModal({
 
   const salvar = () => {
     if (!nome.trim()) return toast("Informe o nome do documento.", "erro");
-    onCriar({
-      nome: nome.trim(),
-      categoria,
-      descricao: descricao.trim() || undefined,
-      arquivoNome: arquivo?.nome ?? null,
-      arquivoDataUrl: arquivo?.dataUrl ?? null,
-      tamanhoBytes: arquivo?.tamanho ?? null,
-      criadoEm: new Date().toISOString(),
-    });
+    onCriar(
+      {
+        nome: nome.trim(),
+        categoria,
+        descricao: descricao.trim() || undefined,
+        arquivoNome: arquivo?.nome ?? null,
+        tamanhoBytes: arquivo?.tamanho ?? null,
+        criadoEm: new Date().toISOString(),
+      },
+      arquivo?.dataUrl ?? null,
+    );
     toast("Documento adicionado ao repositório.");
     onFechar();
   };
@@ -494,7 +519,7 @@ function NovoArquivoModal({
       aberto={aberto}
       onFechar={onFechar}
       titulo="Adicionar documento"
-      descricao="O arquivo é guardado no navegador (até 2 MB) e abre em nova aba."
+      descricao="O arquivo é guardado no navegador (até 10 MB) e abre em nova aba."
       rodape={
         <>
           <button className="btn-outline" onClick={onFechar}>

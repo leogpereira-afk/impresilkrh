@@ -21,6 +21,8 @@ import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH } from "
 import { registrarAcesso } from "@/lib/lgpd";
 import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa } from "@/lib/format";
 import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
+import { comprimirImagem } from "@/lib/imagem";
+import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
@@ -79,21 +81,23 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
   const aniversarioEmpresa = !!c.dataAdmissao && new Date(c.dataAdmissao).getMonth() === mesAtual;
   const anosCasa = c.dataAdmissao ? HOJE.getFullYear() - new Date(c.dataAdmissao).getFullYear() : 0;
 
-  const onFoto = (f: File) => {
+  const onFoto = async (f: File) => {
     if (!f.type.startsWith("image/")) {
       toast("Selecione um arquivo de imagem.", "erro");
       return;
     }
-    if (f.size > 1024 * 1024) {
-      toast("Imagem acima de 1 MB. Escolha uma menor.", "erro");
+    if (f.size > 8 * 1024 * 1024) {
+      toast("Imagem muito grande. Escolha uma de até 8 MB.", "erro");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      atualizar(c.id, { fotoDataUrl: String(reader.result) });
+    try {
+      // Comprime para miniatura leve (~20 KB) antes de salvar — evita estourar o armazenamento.
+      const thumb = await comprimirImagem(f);
+      atualizar(c.id, { fotoDataUrl: thumb });
       toast("Foto atualizada.");
-    };
-    reader.readAsDataURL(f);
+    } catch {
+      toast("Não foi possível processar a imagem.", "erro");
+    }
   };
 
   return (
@@ -483,17 +487,31 @@ function enqVar(e: string): "danger" | "warning" | "success" | "info" {
 
 function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; podeEditar: boolean }) {
   const toast = useToast();
-  const { items, criar, remover } = useColecao("documentos");
+  const { items, criar, atualizar, remover } = useColecao("documentos");
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
   const [novo, setNovo] = useState(false);
 
-  const abrir = (dataUrl?: string | null) => {
+  // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior).
+  const adicionar = async (meta: Record<string, unknown>, dataUrl: string | null) => {
+    const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false } as never);
+    if (dataUrl) {
+      const ok = await putBlob(`doc:${rec.id}`, dataUrl);
+      atualizar(rec.id, ok ? { arquivoEmBlob: true } : { arquivoDataUrl: dataUrl });
+    }
+  };
+
+  const abrir = async (doc: import("@/data/types").Documento) => {
+    const dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
     if (!dataUrl) {
       toast("Este registro não possui arquivo anexado.", "info");
       return;
     }
     const w = window.open();
     if (w) w.document.write(`<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`);
+  };
+  const excluirDoc = (doc: import("@/data/types").Documento) => {
+    if (doc.arquivoEmBlob) delBlob(`doc:${doc.id}`);
+    remover(doc.id);
   };
 
   return (
@@ -512,11 +530,11 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
               const dd = diasAte(doc.dataVencimento);
               return (
                 <div key={doc.id} className="flex items-center justify-between gap-3 py-3">
-                  <button onClick={() => abrir(doc.arquivoDataUrl)} className="flex min-w-0 items-center gap-3 text-left">
+                  <button onClick={() => abrir(doc)} className="flex min-w-0 items-center gap-3 text-left">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand"><FileText className="h-4 w-4" /></span>
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5 truncate text-sm font-medium text-slate-800">
-                        {doc.nome} {doc.arquivoDataUrl && <ExternalLink className="h-3 w-3 text-slate-400" />}
+                        {doc.nome} {(doc.arquivoEmBlob || doc.arquivoDataUrl) && <ExternalLink className="h-3 w-3 text-slate-400" />}
                       </span>
                       <span className="text-xs text-slate-400">{doc.categoria} · emitido {formatDate(doc.dataEmissao)}</span>
                     </span>
@@ -528,7 +546,7 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
                       </Badge>
                     )}
                     {podeEditar && (
-                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => remover(doc.id)}><Trash2 className="h-4 w-4" /></button>
+                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => excluirDoc(doc)}><Trash2 className="h-4 w-4" /></button>
                     )}
                   </div>
                 </div>
@@ -537,12 +555,12 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
           </div>
         )}
       </CardBody>
-      {novo && <NovoDocumentoModal aberto={novo} onFechar={() => setNovo(false)} colaboradorId={colaboradorId} onCriar={criar} />}
+      {novo && <NovoDocumentoModal aberto={novo} onFechar={() => setNovo(false)} colaboradorId={colaboradorId} onCriar={adicionar} />}
     </Card>
   );
 }
 
-function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aberto: boolean; onFechar: () => void; colaboradorId: string; onCriar: (x: Record<string, unknown>) => void }) {
+function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aberto: boolean; onFechar: () => void; colaboradorId: string; onCriar: (x: Record<string, unknown>, dataUrl: string | null) => void }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [nome, setNome] = useState("");
@@ -552,8 +570,8 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
   const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string; tamanho: number } | null>(null);
 
   const onFile = (f: File) => {
-    if (f.size > 2 * 1024 * 1024) {
-      toast("Arquivo acima de 2 MB. Escolha um arquivo menor.", "erro");
+    if (f.size > 10 * 1024 * 1024) {
+      toast("Arquivo acima de 10 MB. Escolha um arquivo menor.", "erro");
       return;
     }
     const reader = new FileReader();
@@ -563,11 +581,14 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
 
   const salvar = () => {
     if (!nome.trim()) return toast("Informe o nome do documento.", "erro");
-    onCriar({
-      colaboradorId, categoria, nome,
-      arquivoNome: arquivo?.nome ?? null, arquivoDataUrl: arquivo?.dataUrl ?? null, tamanhoBytes: arquivo?.tamanho ?? null,
-      dataEmissao: emissao || null, dataVencimento: vencimento || null, enviadoPor: "RH", criadoEm: new Date().toISOString(),
-    });
+    onCriar(
+      {
+        colaboradorId, categoria, nome,
+        arquivoNome: arquivo?.nome ?? null, tamanhoBytes: arquivo?.tamanho ?? null,
+        dataEmissao: emissao || null, dataVencimento: vencimento || null, enviadoPor: "RH", criadoEm: new Date().toISOString(),
+      },
+      arquivo?.dataUrl ?? null,
+    );
     toast("Documento anexado.");
     onFechar();
   };
