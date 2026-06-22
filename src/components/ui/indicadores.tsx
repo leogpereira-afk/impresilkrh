@@ -41,7 +41,7 @@ export function PerfilComportamentalBadge({
       title={DESC_PERFIL_COMPORTAMENTAL[perfil]}
     >
       <Brain className="h-3.5 w-3.5" />
-      {perfil}
+      {ARQUETIPOS[perfil]?.arquetipo ?? perfil}
     </span>
   );
 }
@@ -92,6 +92,8 @@ export function PerfilComportamentalGuia({ perfil }: { perfil?: string | null })
     { icon: CheckCircle2, label: "Como dar feedback", texto: a.comoLidar.feedback },
     { icon: Send, label: "Como delegar", texto: a.comoLidar.delegacao },
     { icon: XCircle, label: "O que evitar", texto: a.comoLidar.evite },
+    { icon: AlertTriangle, label: "Em situações críticas", texto: a.comoLidar.situacoesCriticas },
+    { icon: Frown, label: "Ao dar notícias ruins", texto: a.comoLidar.noticiasRuins },
   ];
   return (
     <div className="space-y-4">
@@ -101,7 +103,7 @@ export function PerfilComportamentalGuia({ perfil }: { perfil?: string | null })
         </span>
         <div>
           <p className="text-base font-semibold text-brand-ink">{a.arquetipo}</p>
-          <p className="text-xs text-slate-500">Temperamento {perfil} · DISC {a.disc}</p>
+          <p className="text-xs text-slate-500">Arquétipo comportamental (uso interno de gestão)</p>
         </div>
       </div>
       <p className="text-sm leading-relaxed text-slate-600">{a.explicacao}</p>

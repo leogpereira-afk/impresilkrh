@@ -4,7 +4,7 @@ import { Campo, Input, Select } from "@/components/ui/form";
 import { useColecao } from "@/lib/store";
 import { useDominio, enquadrar } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
-import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS } from "@/lib/constants";
+import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
 import type { Colaborador } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
@@ -199,6 +199,12 @@ export function ColaboradorForm({
           </Campo>
           <Campo label="Início no cargo atual">
             <Input type="date" value={(form.dataInicioCargo ?? "").slice(0, 10)} onChange={(e) => set({ dataInicioCargo: e.target.value })} />
+          </Campo>
+          <Campo label="Categoria de CNH">
+            <Select value={form.cnh ?? ""} onChange={(e) => set({ cnh: e.target.value })}>
+              <option value="">—</option>
+              {CATEGORIAS_CNH.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
           </Campo>
         </div>
       </div>

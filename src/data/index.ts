@@ -6,6 +6,7 @@ import type {
   GuiaComunicacao, POP, Ferias, Movimentacao, CicloAvaliacao, Avaliacao, Meta, PDI,
   Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Aceite, Config,
   Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
+  Treinamento, EtapaEvolucao, Usuario,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -26,6 +27,9 @@ import { CONSENTIMENTOS, ACESSOS, ACEITES } from "./lgpd";
 import { ADVERTENCIAS, AUSENCIAS } from "./frequencia";
 import { CONTATOS, TEMPLATES, AGENDAMENTOS } from "./mensagens";
 import { REPOSITORIO } from "./repositorio";
+import { TREINAMENTOS } from "./treinamentos";
+import { EVOLUCAO } from "./evolucao";
+import { USUARIOS } from "./usuarios";
 
 export const VERSAO_DADOS = "1.0.0";
 
@@ -66,6 +70,9 @@ export interface ColecaoMap {
   templatesMensagem: TemplateMensagem;
   agendamentos: Agendamento;
   repositorio: ArquivoRepositorio;
+  treinamentos: Treinamento;
+  evolucao: EtapaEvolucao;
+  usuarios: Usuario;
 }
 
 export type NomeColecao = keyof ColecaoMap;
@@ -102,6 +109,9 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     templatesMensagem: TEMPLATES,
     agendamentos: AGENDAMENTOS,
     repositorio: REPOSITORIO,
+    treinamentos: TREINAMENTOS,
+    evolucao: EVOLUCAO,
+    usuarios: USUARIOS,
   });
 }
 

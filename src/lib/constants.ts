@@ -257,6 +257,8 @@ export interface Arquetipo {
     feedback: string;
     delegacao: string;
     evite: string;
+    situacoesCriticas: string;
+    noticiasRuins: string;
   };
 }
 export const ARQUETIPOS: Record<string, Arquetipo> = {
@@ -273,6 +275,8 @@ export const ARQUETIPOS: Record<string, Arquetipo> = {
       feedback: "Rápido e factual, sem rodeios, focado no resultado.",
       delegacao: "Entregue o objetivo e a liberdade do como, depois cobre o resultado.",
       evite: "Microgerenciar, reuniões longas sem conclusão e ambiguidade.",
+      situacoesCriticas: "Vá direto ao ponto, apresente o plano de ação e as opções de decisão. Mantenha o controle e foque na solução, não no problema.",
+      noticiasRuins: "Seja franco e objetivo, sem rodeios. Explique o impacto e já traga o próximo passo, evitando emocionalizar.",
     },
   },
   Sanguíneo: {
@@ -288,6 +292,8 @@ export const ARQUETIPOS: Record<string, Arquetipo> = {
       feedback: "Comece pelo positivo, mantenha o clima leve, reforce o reconhecimento.",
       delegacao: "Envolva e dê visibilidade, mas acompanhe prazos de perto.",
       evite: "Isolamento, excesso de detalhe técnico e crítica seca em público.",
+      situacoesCriticas: "Mantenha a calma e a proximidade, fale olho no olho e reforce que vão resolver juntos. Evite expor a pessoa em público.",
+      noticiasRuins: "Comece acolhendo, seja humano e transparente e mostre que há apoio. Faça em um momento reservado e com leveza.",
     },
   },
   Fleumático: {
@@ -303,6 +309,8 @@ export const ARQUETIPOS: Record<string, Arquetipo> = {
       feedback: "Gentil e gradual, explique o porquê das mudanças, evite confronto.",
       delegacao: "Dê passos claros e tempo de adaptação, valorize a constância.",
       evite: "Mudanças bruscas, urgência constante e conflito aberto.",
+      situacoesCriticas: "Traga estabilidade e passos claros, sem urgência exagerada. Reforce a segurança e dê tempo para absorver.",
+      noticiasRuins: "Seja gentil e gradual, explique o porquê com calma e ofereça suporte e tempo de adaptação. Evite confronto.",
     },
   },
   Melancólico: {
@@ -318,6 +326,8 @@ export const ARQUETIPOS: Record<string, Arquetipo> = {
       feedback: "Específico e lógico, com evidências, sem generalizações.",
       delegacao: "Dê critérios e padrões claros, respeite o cuidado com o detalhe.",
       evite: "Cobrança emocional, prazos irreais e falta de informação.",
+      situacoesCriticas: "Traga dados e contexto, explique a causa e o plano com critérios claros. Dê tempo para analisar antes de decidir.",
+      noticiasRuins: "Seja específico, lógico e baseado em fatos, com evidências. Antecipe as perguntas e evite generalizações.",
     },
   },
 };
