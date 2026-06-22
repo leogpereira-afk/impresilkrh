@@ -9,7 +9,7 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
-import { Campo, Input, Select, Textarea } from "@/components/ui/form";
+import { Campo, Input, Select, Textarea, Toggle } from "@/components/ui/form";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais, BarrasColoridas } from "@/components/charts/charts";
@@ -80,7 +80,7 @@ export default function Ponto() {
             id: "absenteismo",
             label: "Absenteísmo",
             icon: <BarChart3 className="h-4 w-4" />,
-            conteudo: <AbaAbsenteismo escopo={escopo} idsEscopo={idsEscopo} drill={drill} />,
+            conteudo: <AbaAbsenteismo escopo={escopo} idsEscopo={idsEscopo} drill={drill} podeEditar={podeEditar} />,
           },
         ]}
       />
@@ -416,13 +416,18 @@ function AbaAbsenteismo({
   escopo,
   idsEscopo,
   drill,
+  podeEditar,
 }: {
   escopo: Colaborador[];
   idsEscopo: Set<string>;
   drill: Drill;
+  podeEditar: boolean;
 }) {
   const d = useDominio();
-  const { items: ausencias } = useColecao("ausencias");
+  const toast = useToast();
+  const { items: ausencias, criar, remover } = useColecao("ausencias");
+  const [lancar, setLancar] = useState(false);
+  const [excluir, setExcluir] = useState<string | null>(null);
 
   const [de, setDe] = useState(() => iso(new Date(HOJE.getTime() - 90 * 86400000)));
   const [ate, setAte] = useState(() => iso(HOJE));
@@ -488,6 +493,13 @@ function AbaAbsenteismo({
 
   return (
     <div>
+      {podeEditar && (
+        <div className="mb-4 flex justify-end">
+          <button className="btn-primary" onClick={() => setLancar(true)}>
+            <Plus className="h-4 w-4" /> Lançar falta / ausência
+          </button>
+        </div>
+      )}
       {/* Filtro de período */}
       <Card className="mb-6">
         <CardBody className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -615,6 +627,7 @@ function AbaAbsenteismo({
                   <th className="th">Tipo</th>
                   <th className="th">Justificada</th>
                   <th className="th hidden md:table-cell">Horas</th>
+                  {podeEditar && <th className="th" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -638,6 +651,13 @@ function AbaAbsenteismo({
                     <td className="td hidden md:table-cell text-slate-500">
                       {a.horas ? `${formatNumber(a.horas)}h` : "—"}
                     </td>
+                    {podeEditar && (
+                      <td className="td text-right">
+                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(a.id)} title="Excluir lançamento">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -645,6 +665,97 @@ function AbaAbsenteismo({
           </div>
         )}
       </Card>
+
+      {lancar && (
+        <ModalLancarAusencia
+          escopo={escopo}
+          onFechar={() => setLancar(false)}
+          onSalvar={(dados) => {
+            criar(dados);
+            toast("Ausência lançada.");
+            setLancar(false);
+          }}
+        />
+      )}
+      <ConfirmDialog
+        aberto={!!excluir}
+        onFechar={() => setExcluir(null)}
+        onConfirmar={() => {
+          if (excluir) {
+            remover(excluir);
+            toast("Lançamento excluído.");
+          }
+        }}
+        titulo="Excluir lançamento?"
+        mensagem="Este registro de ausência será removido permanentemente."
+      />
     </div>
+  );
+}
+
+function ModalLancarAusencia({
+  escopo,
+  onFechar,
+  onSalvar,
+}: {
+  escopo: Colaborador[];
+  onFechar: () => void;
+  onSalvar: (dados: { colaboradorId: string; data: string; tipo: string; horas?: number; justificada: boolean; observacao?: string }) => void;
+}) {
+  const toast = useToast();
+  const [colaboradorId, setColaboradorId] = useState(escopo[0]?.id ?? "");
+  const [data, setData] = useState(iso(HOJE));
+  const [tipo, setTipo] = useState<string>("Falta");
+  const [justificada, setJustificada] = useState(false);
+  const [horas, setHoras] = useState("");
+  const [observacao, setObservacao] = useState("");
+  const comHoras = tipo === "Atraso" || tipo === "Saída antecipada";
+
+  const salvar = () => {
+    if (!colaboradorId) return toast("Selecione o colaborador.", "erro");
+    if (!data) return toast("Informe a data.", "erro");
+    onSalvar({
+      colaboradorId,
+      data,
+      tipo,
+      justificada,
+      horas: comHoras && horas ? Number(horas) : undefined,
+      observacao: observacao.trim() || undefined,
+    });
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo="Lançar falta / ausência"
+      descricao="Registro manual de frequência da equipe."
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Lançar</button></>}
+    >
+      <div className="space-y-3">
+        <Campo label="Colaborador" obrigatorio>
+          <Select value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
+            {escopo.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </Select>
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Data" obrigatorio><Input type="date" value={data} max={iso(HOJE)} onChange={(e) => setData(e.target.value)} /></Campo>
+          <Campo label="Tipo">
+            <Select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              {TIPOS_AUSENCIA.map((t) => <option key={t} value={t}>{t}</option>)}
+            </Select>
+          </Campo>
+        </div>
+        {comHoras && (
+          <Campo label="Horas" hint="Horas de atraso / saída antecipada">
+            <Input type="number" min={0} step={0.5} value={horas} onChange={(e) => setHoras(e.target.value)} />
+          </Campo>
+        )}
+        <div className="pt-1">
+          <Toggle checked={justificada} onChange={setJustificada} label="Ausência justificada" />
+        </div>
+        <Campo label="Observação"><Input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Opcional" /></Campo>
+      </div>
+    </Modal>
   );
 }
