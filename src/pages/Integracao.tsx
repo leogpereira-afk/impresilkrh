@@ -22,6 +22,8 @@ import { Campo, Input, Select, Toggle } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
+import { useDrill, DrillModal } from "@/components/ui/drilldown";
+import { BarrasColoridas } from "@/components/charts/charts";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -62,29 +64,80 @@ export default function Integracao() {
     [tarefas, idsEscopo],
   );
 
-  // Estatísticas de cabeçalho
+  // Estatísticas de cabeçalho — mantém também os conjuntos de colaboradorIds
+  // de cada grupo para tornar cartões e gráfico clicáveis (auditoria).
   const resumo = useMemo(() => {
-    const grupos = new Map<string, { tipo: string; total: number; feitas: number }>();
+    const grupos = new Map<
+      string,
+      { colaboradorId: string; tipo: string; total: number; feitas: number }
+    >();
     for (const t of tarefasEscopo) {
       const chave = `${t.colaboradorId}::${t.tipo}`;
-      const g = grupos.get(chave) ?? { tipo: t.tipo, total: 0, feitas: 0 };
+      const g =
+        grupos.get(chave) ??
+        { colaboradorId: t.colaboradorId, tipo: t.tipo, total: 0, feitas: 0 };
       g.total += 1;
       if (t.concluida) g.feitas += 1;
       grupos.set(chave, g);
     }
-    let onAndamento = 0;
-    let onConcluidos = 0;
-    let offTotal = 0;
+    const idsAndamento = new Set<string>();
+    const idsConcluidos = new Set<string>();
+    const idsOff = new Set<string>();
     for (const g of grupos.values()) {
       if (g.tipo === "Admissão") {
-        if (g.feitas >= g.total) onConcluidos += 1;
-        else onAndamento += 1;
+        if (g.feitas >= g.total) idsConcluidos.add(g.colaboradorId);
+        else idsAndamento.add(g.colaboradorId);
       } else if (g.tipo === "Desligamento") {
-        offTotal += 1;
+        idsOff.add(g.colaboradorId);
       }
     }
-    return { onAndamento, onConcluidos, offTotal };
+    return {
+      onAndamento: idsAndamento.size,
+      onConcluidos: idsConcluidos.size,
+      offTotal: idsOff.size,
+      idsAndamento,
+      idsConcluidos,
+      idsOff,
+    };
   }, [tarefasEscopo]);
+
+  const drill = useDrill();
+
+  // Converte um conjunto de colaboradorIds em colaboradores (ignora ausentes).
+  const colabsDe = (ids: Set<string>) =>
+    [...ids].map((id) => d.colabById.get(id)).filter(Boolean) as ReturnType<
+      typeof useDominio
+    >["colaboradores"];
+
+  const dadosJornada = useMemo(
+    () => [
+      { nome: "Onboarding em andamento", valor: resumo.onAndamento, cor: "#16334f" },
+      { nome: "Onboarding concluído", valor: resumo.onConcluidos, cor: "#16a34a" },
+      { nome: "Offboarding", valor: resumo.offTotal, cor: "#d97706" },
+    ],
+    [resumo],
+  );
+
+  const abrirJornada = (nome: string) => {
+    if (nome === "Onboarding em andamento")
+      drill.abrir(
+        "Onboardings em andamento",
+        colabsDe(resumo.idsAndamento),
+        "Admissões com itens pendentes",
+      );
+    else if (nome === "Onboarding concluído")
+      drill.abrir(
+        "Onboardings concluídos",
+        colabsDe(resumo.idsConcluidos),
+        "Admissões com checklist 100% concluído",
+      );
+    else if (nome === "Offboarding")
+      drill.abrir(
+        "Offboardings",
+        colabsDe(resumo.idsOff),
+        "Colaboradores em processo de desligamento",
+      );
+  };
 
   const alternar = (t: Tarefa, valor: boolean) => {
     atualizar(t.id, {
@@ -106,26 +159,88 @@ export default function Integracao() {
         )}
       </PageHeader>
 
+      <p className="mb-3 text-xs text-slate-400">
+        Clique nos cartões e barras para ver os colaboradores.
+      </p>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Onboardings em andamento"
-          value={resumo.onAndamento}
-          icon={<ClipboardList className="h-5 w-5" />}
-          accent="brand"
-          hint="Admissões com itens pendentes"
-        />
-        <StatCard
-          label="Onboardings concluídos"
-          value={resumo.onConcluidos}
-          icon={<CheckCircle2 className="h-5 w-5" />}
-          accent="green"
-        />
-        <StatCard
-          label="Offboardings"
-          value={resumo.offTotal}
-          icon={<UserMinus className="h-5 w-5" />}
-          accent="amber"
-        />
+        <button
+          className="text-left w-full"
+          onClick={() =>
+            drill.abrir(
+              "Onboardings em andamento",
+              colabsDe(resumo.idsAndamento),
+              "Admissões com itens pendentes",
+            )
+          }
+        >
+          <StatCard
+            label="Onboardings em andamento"
+            value={resumo.onAndamento}
+            icon={<ClipboardList className="h-5 w-5" />}
+            accent="brand"
+            hint="Admissões com itens pendentes"
+          />
+        </button>
+        <button
+          className="text-left w-full"
+          onClick={() =>
+            drill.abrir(
+              "Onboardings concluídos",
+              colabsDe(resumo.idsConcluidos),
+              "Admissões com checklist 100% concluído",
+            )
+          }
+        >
+          <StatCard
+            label="Onboardings concluídos"
+            value={resumo.onConcluidos}
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            accent="green"
+          />
+        </button>
+        <button
+          className="text-left w-full"
+          onClick={() =>
+            drill.abrir(
+              "Offboardings",
+              colabsDe(resumo.idsOff),
+              "Colaboradores em processo de desligamento",
+            )
+          }
+        >
+          <StatCard
+            label="Offboardings"
+            value={resumo.offTotal}
+            icon={<UserMinus className="h-5 w-5" />}
+            accent="amber"
+          />
+        </button>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader
+            title={
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <UserPlus className="h-4 w-4 text-brand" />
+                Jornada do colaborador
+              </div>
+            }
+            action={
+              <span className="hidden text-xs text-slate-400 sm:inline">
+                Clique em uma barra para auditar os colaboradores
+              </span>
+            }
+          />
+          <CardBody>
+            <BarrasColoridas
+              data={dadosJornada}
+              altura={240}
+              onItemClick={abrirJornada}
+            />
+          </CardBody>
+        </Card>
       </div>
 
       <div className="mt-6">
@@ -179,6 +294,8 @@ export default function Integracao() {
           }}
         />
       )}
+
+      <DrillModal {...drill.props} />
     </div>
   );
 }

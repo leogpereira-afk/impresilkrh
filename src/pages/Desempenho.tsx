@@ -11,6 +11,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
+import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
 import { useDominio, indiceNivel } from "@/lib/dominio";
@@ -115,6 +116,7 @@ export default function Desempenho() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
+  const drill = useDrill();
 
   const { items: avaliacoes, criar: criarAval, atualizar: atualizarAval } = useColecao("avaliacoes");
   const { items: metas, criar: criarMeta, atualizar: atualizarMeta } = useColecao("metas");
@@ -149,13 +151,26 @@ export default function Desempenho() {
     return m;
   }, [avaliacoes, ciclo]);
 
-  // KPIs do topo.
-  const comNota = escopo
+  // KPIs do topo (listas para drill-down + contagens derivadas).
+  const avaliadosColabs = useMemo(
+    () => escopo.filter((c) => avalGestorPorColab.get(c.id)?.notaFinal != null),
+    [escopo, avalGestorPorColab],
+  );
+  const elegiveisColabs = useMemo(
+    () => escopo.filter((c) => avalGestorPorColab.get(c.id)?.elegivelPromocao),
+    [escopo, avalGestorPorColab],
+  );
+  const riscoAltoColabs = useMemo(
+    () => escopo.filter((c) => c.riscoSaida === "Alto"),
+    [escopo],
+  );
+
+  const comNota = avaliadosColabs
     .map((c) => avalGestorPorColab.get(c.id)?.notaFinal)
     .filter((n): n is number => n != null);
   const notaMedia = comNota.length ? comNota.reduce((s, n) => s + n, 0) / comNota.length : null;
-  const elegiveis = escopo.filter((c) => avalGestorPorColab.get(c.id)?.elegivelPromocao).length;
-  const riscoAlto = escopo.filter((c) => c.riscoSaida === "Alto").length;
+  const elegiveis = elegiveisColabs.length;
+  const riscoAlto = riscoAltoColabs.length;
 
   // Metas / PDIs / Feedbacks restritos ao escopo (individuais por colaborador; metas de área sempre visíveis).
   const metasVisiveis = useMemo(
@@ -176,7 +191,7 @@ export default function Desempenho() {
       id: "9box",
       label: "9-Box",
       icon: <Grid3x3 className="h-4 w-4" />,
-      conteudo: <NoveBox escopo={escopo} avalPorColab={avalGestorPorColab} d={d} />,
+      conteudo: <NoveBox escopo={escopo} avalPorColab={avalGestorPorColab} d={d} drill={drill} />,
     },
     {
       id: "avaliacoes",
@@ -252,15 +267,35 @@ export default function Desempenho() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Avaliados" value={comNota.length} hint={`de ${escopo.length} no escopo`} icon={<Users className="h-5 w-5" />} accent="brand" />
+        <button
+          type="button"
+          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+          onClick={() => drill.abrir("Colaboradores avaliados", avaliadosColabs, `${avaliadosColabs.length} com nota lançada · de ${escopo.length} no escopo`)}
+        >
+          <StatCard label="Avaliados" value={comNota.length} hint={`de ${escopo.length} no escopo`} icon={<Users className="h-5 w-5" />} accent="brand" />
+        </button>
         <StatCard label="Nota média" value={notaMedia != null ? notaMedia.toFixed(1) : "—"} hint="Média das notas finais" icon={<Gauge className="h-5 w-5" />} accent="gold" />
-        <StatCard label="Elegíveis a promoção" value={elegiveis} hint={ciclo ? `Nota mín. ${ciclo.notaMinPromocao}` : undefined} icon={<Award className="h-5 w-5" />} accent="green" />
-        <StatCard label="Risco de saída alto" value={riscoAlto} hint="Atenção à retenção" icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
+        <button
+          type="button"
+          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+          onClick={() => drill.abrir("Elegíveis a promoção", elegiveisColabs, ciclo ? `${elegiveisColabs.length} colaborador(es) · nota mín. ${ciclo.notaMinPromocao}` : `${elegiveisColabs.length} colaborador(es)`)}
+        >
+          <StatCard label="Elegíveis a promoção" value={elegiveis} hint={ciclo ? `Nota mín. ${ciclo.notaMinPromocao}` : undefined} icon={<Award className="h-5 w-5" />} accent="green" />
+        </button>
+        <button
+          type="button"
+          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+          onClick={() => drill.abrir("Risco de saída alto", riscoAltoColabs, `${riscoAltoColabs.length} colaborador(es) · atenção à retenção`)}
+        >
+          <StatCard label="Risco de saída alto" value={riscoAlto} hint="Atenção à retenção" icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
+        </button>
       </div>
 
       <div className="mt-6">
         <Tabs abas={abas} />
       </div>
+
+      <DrillModal {...drill.props} />
     </div>
   );
 }
@@ -270,10 +305,12 @@ function NoveBox({
   escopo,
   avalPorColab,
   d,
+  drill,
 }: {
   escopo: Colaborador[];
   avalPorColab: Map<string, Avaliacao>;
   d: ReturnType<typeof useDominio>;
+  drill: ReturnType<typeof useDrill>;
 }) {
   // matriz[yPotencial][xDesempenho] => colaboradores
   const matriz = useMemo(() => {
@@ -299,6 +336,11 @@ function NoveBox({
         title="Matriz 9-Box"
         subtitle="Eixo X: Desempenho (avaliação do gestor) · Eixo Y: Potencial"
         icon={<Grid3x3 className="h-[18px] w-[18px]" />}
+        action={
+          <span className="hidden text-xs text-slate-400 sm:inline">
+            Clique em uma célula para ver os nomes.
+          </span>
+        }
       />
       <CardBody>
         <div className="flex gap-3">
@@ -317,10 +359,27 @@ function NoveBox({
                   const idxDes = NIVEIS.indexOf(des);
                   const idxPot = NIVEIS.indexOf(pot);
                   const rotulo = ROTULOS_9BOX[`${des}-${pot}`] ?? "—";
+                  const temPessoas = colabs.length > 0;
                   return (
-                    <div
+                    <button
                       key={`${pot}-${des}`}
-                      className={`flex min-h-[150px] flex-col rounded-xl border p-3 ${corCelula(idxDes, idxPot)}`}
+                      type="button"
+                      disabled={!temPessoas}
+                      onClick={
+                        temPessoas
+                          ? () =>
+                              drill.abrir(
+                                `9-Box · ${pot} potencial × ${des} desempenho`,
+                                colabs,
+                                `${rotulo} · ${colabs.length} colaborador(es)`,
+                              )
+                          : undefined
+                      }
+                      className={`flex min-h-[150px] flex-col rounded-xl border p-3 text-left transition ${corCelula(idxDes, idxPot)} ${
+                        temPessoas
+                          ? "cursor-pointer hover:shadow-md hover:ring-2 hover:ring-brand/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                          : "cursor-default"
+                      }`}
                     >
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <div>
@@ -329,8 +388,9 @@ function NoveBox({
                             Desemp. {des} · Potenc. {pot}
                           </p>
                         </div>
-                        <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-slate-600">
                           {colabs.length}
+                          {temPessoas && <span className="font-medium text-brand">ver</span>}
                         </span>
                       </div>
                       <div className="flex flex-1 flex-col gap-1.5">
@@ -349,7 +409,7 @@ function NoveBox({
                           ))
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 }),
               )}
