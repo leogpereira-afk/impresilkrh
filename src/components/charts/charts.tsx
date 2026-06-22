@@ -1,5 +1,3 @@
-"use client";
-
 import {
   ResponsiveContainer,
   BarChart,
@@ -70,7 +68,6 @@ export function BarrasVerticais({
   );
 }
 
-// Barras agrupadas (duas séries) — ex.: admissões x desligamentos
 export function BarrasDuplas({
   data,
   serieA,
@@ -131,27 +128,13 @@ export function Rosca({
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <PieChart>
-        <Pie
-          data={data}
-          dataKey="valor"
-          nameKey="nome"
-          cx="50%"
-          cy="50%"
-          innerRadius={58}
-          outerRadius={88}
-          paddingAngle={2}
-        >
+        <Pie data={data} dataKey="valor" nameKey="nome" cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={2}>
           {data.map((d, i) => (
             <Cell key={i} fill={d.cor} />
           ))}
         </Pie>
         <Tooltip contentStyle={tooltipStyle} />
-        <Legend
-          verticalAlign="bottom"
-          height={36}
-          iconType="circle"
-          formatter={(v) => <span style={{ fontSize: 12, color: "#475569" }}>{v}</span>}
-        />
+        <Legend verticalAlign="bottom" height={36} iconType="circle" formatter={(v) => <span style={{ fontSize: 12, color: "#475569" }}>{v}</span>} />
       </PieChart>
     </ResponsiveContainer>
   );

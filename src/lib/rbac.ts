@@ -1,20 +1,17 @@
-import { db } from "./db";
-import { PERFIS } from "./constants";
-import type { SessionPayload } from "./session";
-import type { Prisma } from "@prisma/client";
+// RBAC client-side. Calcula o escopo de visibilidade conforme o perfil e a
+// hierarquia (gestor recursivo). Mascaramento de dados sensíveis segue a LGPD.
 
-// Calcula recursivamente os IDs da equipe de um gestor (subordinados diretos e indiretos),
-// incluindo o próprio gestor. Usado para restringir o acesso do perfil GESTOR à sua área.
-export async function idsDaEquipe(colaboradorId: string): Promise<string[]> {
-  const todos = await db.colaborador.findMany({
-    select: { id: true, gestorId: true },
-  });
+import type { Colaborador } from "@/data/types";
+import type { Sessao } from "./session";
+
+// IDs da equipe de um gestor (diretos e indiretos), incluindo ele mesmo.
+export function idsDaEquipe(colaboradorId: string, colaboradores: Colaborador[]): string[] {
   const filhosPorGestor = new Map<string, string[]>();
-  for (const c of todos) {
+  for (const c of colaboradores) {
     if (c.gestorId) {
-      const lista = filhosPorGestor.get(c.gestorId) ?? [];
-      lista.push(c.id);
-      filhosPorGestor.set(c.gestorId, lista);
+      const arr = filhosPorGestor.get(c.gestorId) ?? [];
+      arr.push(c.id);
+      filhosPorGestor.set(c.gestorId, arr);
     }
   }
   const resultado = new Set<string>([colaboradorId]);
@@ -31,51 +28,46 @@ export async function idsDaEquipe(colaboradorId: string): Promise<string[]> {
   return [...resultado];
 }
 
-// Retorna o filtro Prisma (where) com os colaboradores visíveis para a sessão.
-export async function escopoColaboradores(
-  sessao: SessionPayload,
-): Promise<Prisma.ColaboradorWhereInput> {
-  if (sessao.perfil === PERFIS.ADMIN_RH) return {};
-  if (sessao.perfil === PERFIS.GESTOR && sessao.colaboradorId) {
-    const ids = await idsDaEquipe(sessao.colaboradorId);
-    return { id: { in: ids } };
+// Conjunto de colaboradores visíveis para a sessão.
+export function colaboradoresVisiveis(
+  sessao: Sessao | null,
+  colaboradores: Colaborador[],
+): Colaborador[] {
+  if (!sessao) return [];
+  if (sessao.perfil === "ADMIN_RH") return colaboradores;
+  if (sessao.perfil === "GESTOR") {
+    const ids = new Set(idsDaEquipe(sessao.colaboradorId, colaboradores));
+    return colaboradores.filter((c) => ids.has(c.id));
   }
-  // Colaborador: apenas ele mesmo
-  return { id: sessao.colaboradorId ?? "__sem_acesso__" };
+  return colaboradores.filter((c) => c.id === sessao.colaboradorId);
 }
 
-// Verifica se a sessão pode acessar um colaborador específico.
-export async function podeVerColaborador(
-  sessao: SessionPayload,
+export function podeVerColaborador(
+  sessao: Sessao | null,
   colaboradorId: string,
-): Promise<boolean> {
-  if (sessao.perfil === PERFIS.ADMIN_RH) return true;
-  if (sessao.perfil === PERFIS.COLABORADOR)
-    return sessao.colaboradorId === colaboradorId;
-  if (sessao.perfil === PERFIS.GESTOR && sessao.colaboradorId) {
-    const ids = await idsDaEquipe(sessao.colaboradorId);
-    return ids.includes(colaboradorId);
-  }
-  return false;
-}
-
-// Pode ver/editar dados sensíveis (CPF completo, salário, dados familiares)?
-// RH vê tudo; gestor vê de sua equipe; colaborador vê só os próprios.
-export function podeVerDadosSensiveis(
-  sessao: SessionPayload,
-  colaboradorId: string,
+  colaboradores: Colaborador[],
 ): boolean {
-  if (sessao.perfil === PERFIS.ADMIN_RH) return true;
-  if (sessao.perfil === PERFIS.COLABORADOR)
-    return sessao.colaboradorId === colaboradorId;
-  // Gestor: dados de cargo/área sim; salário só do próprio (regra conservadora LGPD)
+  if (!sessao) return false;
+  if (sessao.perfil === "ADMIN_RH") return true;
+  if (sessao.perfil === "COLABORADOR") return sessao.colaboradorId === colaboradorId;
+  return idsDaEquipe(sessao.colaboradorId, colaboradores).includes(colaboradorId);
+}
+
+// Dados sensíveis = CPF completo, salário, dados familiares.
+// RH vê tudo; demais só os próprios (regra conservadora LGPD — gestor NÃO vê
+// salário de subordinado).
+export function podeVerDadosSensiveis(sessao: Sessao | null, colaboradorId: string): boolean {
+  if (!sessao) return false;
+  if (sessao.perfil === "ADMIN_RH") return true;
   return sessao.colaboradorId === colaboradorId;
 }
 
-export function podeEditarColaboradores(sessao: SessionPayload): boolean {
-  return sessao.perfil === PERFIS.ADMIN_RH;
+export function ehRH(sessao: Sessao | null): boolean {
+  return sessao?.perfil === "ADMIN_RH";
 }
-
-export function podeAvaliar(sessao: SessionPayload): boolean {
-  return sessao.perfil === PERFIS.ADMIN_RH || sessao.perfil === PERFIS.GESTOR;
+export function ehGestor(sessao: Sessao | null): boolean {
+  return sessao?.perfil === "GESTOR";
+}
+export function podeGerir(sessao: Sessao | null): boolean {
+  return sessao?.perfil === "ADMIN_RH" || sessao?.perfil === "GESTOR";
 }

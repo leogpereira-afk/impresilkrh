@@ -1,14 +1,13 @@
-# Configuração de deploy no Netlify (Next.js + Prisma)
-
+# Publicação estática no Netlify — sem variáveis de ambiente, sem banco.
 [build]
   command = "npm run build"
-  publish = ".next"
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
-  # Evita que o Prisma baixe engines desnecessárias no build.
-  PRISMA_SKIP_POSTINSTALL_GENERATE = "1"
 
-# Plugin oficial do Next.js (App Router, Server Actions e rotas dinâmicas).
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+# SPA: todas as rotas caem no index.html (navegação client-side via React Router).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

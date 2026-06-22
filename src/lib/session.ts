@@ -1,58 +1,59 @@
-import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
-import { COOKIE_SESSAO } from "./constants";
+import { useCallback, useSyncExternalStore } from "react";
+import type { Perfil } from "@/data/types";
 
-export interface SessionPayload {
-  sub: string; // userId
-  email: string;
-  perfil: string;
-  nome: string;
-  colaboradorId: string | null;
-  [key: string]: unknown;
+export const SENHA_DEMO = "Impresilk@2026";
+const SESSAO_KEY = "impresilk.rh.v1:sessao";
+
+export interface Sessao {
+  perfil: Perfil;
+  colaboradorId: string;
 }
 
-const secret = new TextEncoder().encode(
-  process.env.AUTH_SECRET ?? "dev-secret-troque-em-producao",
-);
+const temWindow = typeof window !== "undefined";
+let cache: Sessao | null | undefined = undefined;
+const listeners = new Set<() => void>();
 
-const DURACAO = 60 * 60 * 8; // 8 horas
-
-export async function assinarSessao(payload: SessionPayload): Promise<string> {
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${DURACAO}s`)
-    .sign(secret);
-}
-
-export async function verificarSessao(
-  token: string | undefined,
-): Promise<SessionPayload | null> {
-  if (!token) return null;
-  try {
-    const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
-    return payload as SessionPayload;
-  } catch {
-    return null;
+function ler(): Sessao | null {
+  if (cache !== undefined) return cache;
+  let val: Sessao | null = null;
+  if (temWindow) {
+    const raw = window.localStorage.getItem(SESSAO_KEY);
+    if (raw) {
+      try {
+        val = JSON.parse(raw);
+      } catch {
+        val = null;
+      }
+    }
   }
+  cache = val;
+  return val;
 }
 
-export async function criarSessaoCookie(payload: SessionPayload) {
-  const token = await assinarSessao(payload);
-  cookies().set(COOKIE_SESSAO, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: DURACAO,
-    path: "/",
-  });
+function emit() {
+  listeners.forEach((cb) => cb());
 }
 
-export async function lerSessao(): Promise<SessionPayload | null> {
-  const token = cookies().get(COOKIE_SESSAO)?.value;
-  return verificarSessao(token);
+export function entrar(perfil: Perfil, colaboradorId: string): void {
+  cache = { perfil, colaboradorId };
+  if (temWindow) window.localStorage.setItem(SESSAO_KEY, JSON.stringify(cache));
+  emit();
 }
 
-export function destruirSessaoCookie() {
-  cookies().delete(COOKIE_SESSAO);
+export function sair(): void {
+  cache = null;
+  if (temWindow) window.localStorage.removeItem(SESSAO_KEY);
+  emit();
+}
+
+export function obterSessao(): Sessao | null {
+  return ler();
+}
+
+export function useSessao(): Sessao | null {
+  const subscribe = useCallback((cb: () => void) => {
+    listeners.add(cb);
+    return () => listeners.delete(cb);
+  }, []);
+  return useSyncExternalStore(subscribe, ler, ler);
 }

@@ -1,0 +1,126 @@
+import type { GuiaComunicacao } from "./types";
+import { HOJE } from "./_gen";
+
+const ts = HOJE.toISOString();
+
+// Apêndice D — Comunicação interna (conteúdo COMPLETO, na íntegra).
+export const GUIAS_COMUNICACAO: GuiaComunicacao[] = [
+  {
+    id: "guia-comunicacao",
+    titulo: 'Guia de Comunicação — "Fluxos claros, menos ruído, mais resultado"',
+    descricao: "Princípios e regras da comunicação interna na Impresilk.",
+    versao: "1.0",
+    ordem: 1,
+    atualizadoEm: ts,
+    blocos: [
+      { tipo: "paragrafo", texto: 'Comunicação boa evita retrabalho, respeita o fluxo e chega clara para quem executa. "Aqui não é sobre pessoas. É sobre fluxo."' },
+      { tipo: "destaque", texto: "Antes de falar, pedir ou decidir: Isso está claro? Está no fluxo? Está no canal certo?" },
+      { tipo: "subtitulo", texto: "Canais oficiais" },
+      { tipo: "lista", itens: [
+        "Pedidos e demandas → canal oficial definido.",
+        "Urgências → canal exclusivo de urgência.",
+        "Decisões → dentro do fluxo.",
+        "Informações importantes → nada de conversa paralela.",
+      ] },
+      { tipo: "paragrafo", texto: "Mensagem fora do canal não orienta execução." },
+      { tipo: "subtitulo", texto: "Prazos (SLA)" },
+      { tipo: "lista", itens: [
+        "Validação de pedido no PCP: até 24h.",
+        "Revisão técnica: até 12h úteis.",
+        "Retorno sobre urgência: até 4h úteis.",
+      ] },
+      { tipo: "paragrafo", texto: "Responder no prazo evita urgência artificial." },
+      { tipo: "subtitulo", texto: "Boas práticas" },
+      { tipo: "lista", itens: [
+        "Seja claro.",
+        "Use o canal certo.",
+        "Respeite o fluxo.",
+        "Avise antes de mudar prioridade.",
+        "Pense no impacto no outro setor.",
+      ] },
+      { tipo: "subtitulo", texto: "Quem acionar" },
+      { tipo: "lista", itens: [
+        "Pedido incompleto → PCP.",
+        "Dúvida técnica → Design/PCP.",
+        "Urgência → PCP + liderança.",
+        "Produção → PCP.",
+        "Decisão fora do padrão → liderança.",
+      ] },
+      { tipo: "subtitulo", texto: "FAQ" },
+      { tipo: "lista", itens: [
+        '"Posso pedir direto para a produção?" → Não, tudo passa pelo fluxo.',
+        '"WhatsApp pessoal vale?" → Não, só canal oficial.',
+        '"Se for urgente posso pular etapa?" → Não, urgência também tem fluxo.',
+      ] },
+    ],
+  },
+  {
+    id: "plano-comunicacao-interna",
+    titulo: "Plano de Comunicação Interna",
+    descricao: "Padronização da comunicação entre áreas, fluxos e responsabilidades.",
+    versao: "1.0",
+    ordem: 2,
+    atualizadoEm: ts,
+    blocos: [
+      { tipo: "subtitulo", texto: "Objetivo" },
+      { tipo: "paragrafo", texto: "Padronizar a comunicação entre áreas, definir fluxos e responsabilidades, garantir previsibilidade e eficiência." },
+      { tipo: "subtitulo", texto: "Diagnóstico" },
+      { tipo: "lista", itens: [
+        "Comunicação descentralizada/informal.",
+        "Pedidos incompletos chegando à produção.",
+        "Uso indevido de canais (WhatsApp pessoal).",
+        "Falta de clareza nos fluxos.",
+        "Retrabalho e urgências desnecessárias.",
+      ] },
+      { tipo: "subtitulo", texto: "Princípios" },
+      { tipo: "lista", itens: ["Clareza", "Fluxo", "Canal correto"] },
+      { tipo: "subtitulo", texto: "Fluxo padrão" },
+      { tipo: "passos", itens: [
+        "Comercial → PCP → Produção.",
+        "Pedido só entra completo.",
+        "PCP valida antes.",
+        "Produção recebe só pedidos liberados.",
+        "Mudança de prioridade exige autorização.",
+      ] },
+      { tipo: "subtitulo", texto: "Resultado esperado" },
+      { tipo: "lista", itens: [
+        "Menos retrabalho e urgências.",
+        "Mais organização.",
+        "Produtividade.",
+        "Melhor clima.",
+      ] },
+    ],
+  },
+  {
+    id: "plano-endomarketing",
+    titulo: "Plano de Endomarketing (campanhas internas)",
+    descricao: "Engajamento, reconhecimento e pertencimento.",
+    versao: "1.0",
+    ordem: 3,
+    atualizadoEm: ts,
+    blocos: [
+      { tipo: "subtitulo", texto: "Objetivo" },
+      { tipo: "paragrafo", texto: "Engajamento, reconhecimento e pertencimento." },
+      { tipo: "subtitulo", texto: "Campanha 1 — Orgulho de Fazer Parte (mensal)" },
+      { tipo: "destaque", texto: '"Cada projeto entregue carrega o trabalho de muitas mãos."' },
+      { tipo: "passos", itens: [
+        "Seleção do projeto do mês (PCP + liderança).",
+        "Coleta de informações (cliente, serviço, desafio, setores).",
+        "Registro visual (fotos).",
+        "Montagem do material (Admin/Design).",
+        "Divulgação (mural + reunião).",
+        "Fechamento na reunião mensal.",
+      ] },
+      { tipo: "subtitulo", texto: "Campanha 2 — Bastidores da Produção (quinzenal/mensal)" },
+      { tipo: "destaque", texto: '"Por trás de cada entrega, existe processo, cuidado e dedicação."' },
+      { tipo: "paragrafo", texto: "Mostrar a execução real (impressão, corte, montagem, instalação) e a equipe envolvida." },
+      { tipo: "subtitulo", texto: "Campanha 3 — Resultado do Mês (mensal)" },
+      { tipo: "destaque", texto: '"Resultado é consequência de processo bem feito."' },
+      { tipo: "passos", itens: [
+        "Levantar dados (pedidos, entregas, destaques).",
+        "Organizar de forma simples e visual.",
+        "Divulgar na reunião mensal e no mural.",
+      ] },
+    ],
+  },
+];
