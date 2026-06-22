@@ -1,5 +1,18 @@
 // Helpers de formatação (pt-BR)
 
+// Parser de datas robusto a fuso horário. Strings "YYYY-MM-DD" (date-only, como
+// nascimento/admissão) são lidas como data LOCAL — senão o JS as interpreta como
+// meia-noite UTC e, em fusos atrás de UTC (Brasil), o dia/mês "voltam" um dia
+// (ex.: aniversário 02/06 vira 01/06). Datas com hora/Z seguem o parse nativo.
+export function parseData(data: Date | string | null | undefined): Date | null {
+  if (!data) return null;
+  if (data instanceof Date) return isNaN(data.getTime()) ? null : data;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data.trim());
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(data);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function formatBRL(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return "—";
   return new Intl.NumberFormat("pt-BR", {
@@ -26,16 +39,14 @@ export function formatPercent(valor: number | null | undefined, casas = 1): stri
 }
 
 export function formatDate(data: Date | string | null | undefined): string {
-  if (!data) return "—";
-  const d = typeof data === "string" ? new Date(data) : data;
-  if (isNaN(d.getTime())) return "—";
+  const d = parseData(data);
+  if (!d) return "—";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(d);
 }
 
 export function formatDateLong(data: Date | string | null | undefined): string {
-  if (!data) return "—";
-  const d = typeof data === "string" ? new Date(data) : data;
-  if (isNaN(d.getTime())) return "—";
+  const d = parseData(data);
+  if (!d) return "—";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(d);
 }
 
@@ -61,9 +72,8 @@ export function iniciais(nome: string): string {
 }
 
 export function tempoDeCasa(dataAdmissao: Date | string | null | undefined): string {
-  if (!dataAdmissao) return "—";
-  const d = typeof dataAdmissao === "string" ? new Date(dataAdmissao) : dataAdmissao;
-  if (isNaN(d.getTime())) return "—";
+  const d = parseData(dataAdmissao);
+  if (!d) return "—";
   const agora = new Date();
   let meses =
     (agora.getFullYear() - d.getFullYear()) * 12 + (agora.getMonth() - d.getMonth());
@@ -77,9 +87,8 @@ export function tempoDeCasa(dataAdmissao: Date | string | null | undefined): str
 }
 
 export function mesesDeCasa(dataAdmissao: Date | string | null | undefined): number {
-  if (!dataAdmissao) return 0;
-  const d = typeof dataAdmissao === "string" ? new Date(dataAdmissao) : dataAdmissao;
-  if (isNaN(d.getTime())) return 0;
+  const d = parseData(dataAdmissao);
+  if (!d) return 0;
   const agora = new Date();
   let meses =
     (agora.getFullYear() - d.getFullYear()) * 12 + (agora.getMonth() - d.getMonth());

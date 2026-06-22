@@ -684,6 +684,7 @@ function AbaAbsenteismo({
           if (excluir) {
             remover(excluir);
             toast("Lançamento excluído.");
+            setExcluir(null);
           }
         }}
         titulo="Excluir lançamento?"

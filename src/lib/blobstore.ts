@@ -65,12 +65,17 @@ export async function getBlob(key: string): Promise<string | null> {
 export async function delBlob(key: string): Promise<void> {
   const db = await abrir();
   if (!db) return;
-  try {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).delete(key);
-  } catch {
-    /* ignora */
-  }
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }
 
 // Hook reativo: carrega um blob de forma assíncrona. Retorna o data URL ou null.
@@ -78,10 +83,8 @@ export function useBlob(key: string | null | undefined): string | null {
   const [val, setVal] = useState<string | null>(null);
   useEffect(() => {
     let vivo = true;
-    if (!key) {
-      setVal(null);
-      return;
-    }
+    setVal(null); // evita mostrar o blob da chave anterior enquanto carrega a nova
+    if (!key) return;
     getBlob(key).then((v) => {
       if (vivo) setVal(v);
     });

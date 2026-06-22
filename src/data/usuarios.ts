@@ -4,9 +4,12 @@ import { email as emailDe, HOJE } from "./_gen";
 
 // Usuários e permissões (v3). O nível máximo (ADMIN_RH) gere usuários e o que
 // cada um pode ver. ["*"] = acesso total.
+// Default de um GESTOR = todos os módulos que o perfil GESTOR alcança (o RH pode
+// restringir por usuário depois). Precisa cobrir tudo que é GESTAO/TODOS no menu,
+// senão o gestor perderia acesso a um módulo que o perfil dele permite.
 const GESTOR_MODULOS = [
   "painel", "colaboradores", "organograma", "desempenho", "treinamento", "ponto",
-  "ferias", "integracao", "viagens", "comunicacao", "pops", "documentos", "sst",
+  "ferias", "integracao", "viagens", "comunicacao", "mensagens", "pops", "documentos", "sst",
   "meu-perfil", "aceites",
 ];
 

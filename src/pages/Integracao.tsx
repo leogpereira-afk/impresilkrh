@@ -28,7 +28,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { BarrasColoridas } from "@/components/charts/charts";
-import { useColecao } from "@/lib/store";
+import { useColecao, obter } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
@@ -74,8 +74,9 @@ export default function Integracao() {
   const gere = podeGerir(sessao);
   const [iniciar, setIniciar] = useState(false);
 
+  // Inativos não entram em estatística/jornada/drill (alinhado aos demais módulos).
   const escopo = useMemo(
-    () => colaboradoresVisiveis(sessao, d.colaboradores),
+    () => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => c.statusId !== "inativo"),
     [sessao, d.colaboradores],
   );
   const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
@@ -613,17 +614,15 @@ function CardChecklist({
   const docsAbertos = docs.filter((t) => !t.concluida).length;
 
   // Semeia os documentos de RH padrão na 1ª vez (apenas onboarding).
-  const semeouDocs = useRef(false);
+  // Idempotente: lê o estado VIVO do store (não as props, que podem estar
+  // defasadas em remontagens/reordenações) e só cria o que ainda falta.
   useEffect(() => {
     if (tipo !== "Admissão") return;
-    if (semeouDocs.current) return;
-    if (docs.length > 0) {
-      semeouDocs.current = true;
-      return;
-    }
-    semeouDocs.current = true;
-    const baseOrdem =
-      jornada.reduce((max, t) => Math.max(max, t.ordem), -1) + 1;
+    const atuais = obter("tarefas").filter(
+      (t) => t.colaboradorId === colaboradorId && t.titulo.startsWith(PREFIXO_DOC),
+    );
+    if (atuais.length > 0) return; // já semeado
+    const baseOrdem = jornada.reduce((max, t) => Math.max(max, t.ordem), -1) + 1;
     DOCS_RH_PADRAO.forEach((nome, i) => {
       criar({
         colaboradorId,
@@ -635,7 +634,7 @@ function CardChecklist({
         ordem: baseOrdem + i,
       });
     });
-  }, [tipo, docs.length, jornada, colaboradorId, criar]);
+  }, [tipo, colaboradorId, jornada, criar]);
 
   // Candidatos a padrinho: colaboradores ativos, exceto o próprio.
   const candidatosPadrinho = useMemo(

@@ -281,6 +281,8 @@ export default function Treinamento() {
                             const patch: Partial<Treinamento> = { status };
                             if (status === "Concluído") patch.progresso = 100;
                             else if (status === "Pendente") patch.progresso = 0;
+                            // "Em andamento" precisa ficar entre 1 e 99 (senão herda 0/100 incoerente).
+                            else patch.progresso = Math.min(99, Math.max(1, t.progresso || 0));
                             atualizar(t.id, patch);
                             toast("Status atualizado.");
                           }}

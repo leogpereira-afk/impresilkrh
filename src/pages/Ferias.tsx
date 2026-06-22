@@ -101,7 +101,13 @@ export default function Ferias() {
     () =>
       lista
         .filter((f) => f.status === "Em andamento")
-        .sort((a, b) => diasAte(a.dataRetorno) - diasAte(b.dataRetorno)),
+        // registros sem data de retorno (NaN) vão para o fim, sem embaralhar a ordem.
+        .sort((a, b) => {
+          const da = diasAte(a.dataRetorno), db = diasAte(b.dataRetorno);
+          if (isNaN(da)) return isNaN(db) ? 0 : 1;
+          if (isNaN(db)) return -1;
+          return da - db;
+        }),
     [lista],
   );
   const agendadas = useMemo(() => lista.filter((f) => f.status === "Agendada"), [lista]);

@@ -164,8 +164,9 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
   const sincronizarDoQuadro = () => {
     const jaTem = new Set(contatos.map((c) => c.colaboradorId).filter(Boolean));
     let adicionados = 0;
-    for (const colab of d.colaboradores) {
-      if (colab.ehDirecao || colab.statusId === "inativo" || !colab.telefone) continue;
+    // d.ativos = quadro ativo (exclui direção, inativos, afastados e desligados).
+    for (const colab of d.ativos) {
+      if (!colab.telefone) continue;
       if (jaTem.has(colab.id)) continue;
       criar({
         nome: colab.nome,
@@ -599,10 +600,17 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   };
 
   // Simula o disparo: marca como enviada e avisa quantos contatos receberiam.
+  // O corpo é personalizado por destinatário (substitui {{nome}}); mostramos um exemplo real.
   const marcarEnviada = (a: Agendamento) => {
-    const n = contar(a.grupoAlvo);
+    const alvo = a.grupoAlvo;
+    const destinatarios = !alvo || alvo === TODOS ? contatos : contatos.filter((c) => (c.grupo?.trim() || "") === alvo);
     atualizar(a.id, { status: "Enviada" });
-    toast(`Envio simulado para ${n} contato(s).`, "info");
+    if (a.mensagem?.includes("{{nome}}") && destinatarios[0]) {
+      const exemplo = aplicarPlaceholders(a.mensagem, destinatarios[0].nome);
+      toast(`Envio simulado para ${destinatarios.length} contato(s). Ex.: "${exemplo.slice(0, 70)}${exemplo.length > 70 ? "…" : ""}"`, "info");
+    } else {
+      toast(`Envio simulado para ${destinatarios.length} contato(s).`, "info");
+    }
   };
   const cancelar = (a: Agendamento) => {
     atualizar(a.id, { status: "Cancelada" });

@@ -27,11 +27,13 @@ export const ordemDoTipo = (tipo: string) => ORDEM.get(tipo) ?? 99;
 // "2026-01" -> "Jan/2026"
 export function competenciaLabel(comp: string): string {
   const [y, m] = comp.split("-").map(Number);
+  if (!m || isNaN(m) || isNaN(y)) return comp;
   return `${MESES_PT[(m - 1 + 12) % 12].slice(0, 3)}/${y}`;
 }
 // "2026-01" -> "Janeiro/2026"
 export function competenciaLabelLongo(comp: string): string {
   const [y, m] = comp.split("-").map(Number);
+  if (!m || isNaN(m) || isNaN(y)) return comp;
   return `${MESES_PT[(m - 1 + 12) % 12]}/${y}`;
 }
 

@@ -211,12 +211,12 @@ export function importarDados(json: string): void {
     const v = parsed.dados[nome];
     if (Array.isArray(v)) {
       cache.set(nome, v);
-      if (temWindow) window.localStorage.setItem(keyCol(nome), JSON.stringify(v));
+      escrever(keyCol(nome), JSON.stringify(v));
     }
   }
   if (parsed.config) {
     configCache = { ...CONFIG_DEFAULT, ...parsed.config };
-    if (temWindow) window.localStorage.setItem(CONFIG_KEY, JSON.stringify(configCache));
+    escrever(CONFIG_KEY, JSON.stringify(configCache));
   }
   emitTudo();
 }

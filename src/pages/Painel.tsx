@@ -17,7 +17,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, contaHeadcount } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { formatBRL, formatPercent, formatDate, MESES_PT } from "@/lib/format";
+import { formatBRL, formatPercent, formatDate, parseData, MESES_PT } from "@/lib/format";
 import { somaPorTipo, serieMensal, corDoTipo, totalDe } from "@/lib/folha";
 import { ARQUETIPOS, COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
@@ -27,9 +27,8 @@ const mesesAtras = (d?: string | null) => (d ? (HOJE.getTime() - new Date(d).get
 
 // dd/MM (dois dígitos) a partir de uma data ISO. Ex.: 02/06.
 const ddmm = (iso?: string | null) => {
-  if (!iso) return "—";
-  const dt = new Date(iso);
-  if (isNaN(dt.getTime())) return "—";
+  const dt = parseData(iso);
+  if (!dt) return "—";
   const dia = String(dt.getDate()).padStart(2, "0");
   const mes = String(dt.getMonth() + 1).padStart(2, "0");
   return `${dia}/${mes}`;
@@ -88,14 +87,20 @@ export default function Painel() {
   const ativos = escopo.filter((c) => contaHeadcount(c, d.statusById));
 
   // ---------- Métricas de PERÍODO (respeitam o filtro de mês/ano) ----------
-  const admitidosPeriodo = escopo.filter((c) => noPeriodo(c.dataAdmissao));
-  const desligadosPeriodo = escopo.filter((c) => noPeriodo(c.dataDesligamento));
+  // Admissões/desligamentos saem do escopo BRUTO: quem foi desligado é inativo e,
+  // do contrário, ficaria de fora (só inativos têm dataDesligamento) — zerando o turnover.
+  const admitidosPeriodo = escopoBruto.filter((c) => noPeriodo(c.dataAdmissao));
+  const desligadosPeriodo = escopoBruto.filter((c) => noPeriodo(c.dataDesligamento));
   const admissoesPeriodo = admitidosPeriodo.length;
   const desligamentosPeriodo = desligadosPeriodo.length;
 
-  const desligados12m = escopo.filter((c) => c.dataDesligamento && mesesAtras(c.dataDesligamento) <= 12);
+  const desligados12m = escopoBruto.filter((c) => c.dataDesligamento && mesesAtras(c.dataDesligamento) <= 12);
   const desligamentos12m = desligados12m.length;
-  const turnover = ativos.length + desligamentos12m > 0 ? desligamentos12m / ((ativos.length + (ativos.length + desligamentos12m)) / 2) : 0;
+  const admissoes12m = escopoBruto.filter((c) => c.dataAdmissao && mesesAtras(c.dataAdmissao) <= 12).length;
+  // Turnover = desligados / headcount médio (início reconstruído = fim + desligados − admitidos).
+  const headcountInicio = Math.max(0, ativos.length + desligamentos12m - admissoes12m);
+  const headcountMedio = (ativos.length + headcountInicio) / 2;
+  const turnover = headcountMedio > 0 ? desligamentos12m / headcountMedio : 0;
 
   const docsAlerta = documentos.filter((doc) => ids.has(doc.colaboradorId) && doc.dataVencimento && dias(doc.dataVencimento) <= JANELA_ALERTA_DIAS);
   const docsVencidos = docsAlerta.filter((doc) => dias(doc.dataVencimento) < 0);
@@ -111,9 +116,11 @@ export default function Painel() {
 
   // Mês de referência para aniversários: o mês do filtro (ou HOJE quando "Ano inteiro").
   const mesAniversario = filtroMes === 0 ? HOJE.getMonth() + 1 : filtroMes;
+  const mesDe = (iso?: string | null) => { const d = parseData(iso); return d ? d.getMonth() + 1 : 0; };
+  const diaDe = (iso?: string | null) => { const d = parseData(iso); return d ? d.getDate() : 0; };
   const aniversariantes = ativos
-    .filter((c) => c.dataNascimento && new Date(c.dataNascimento).getMonth() + 1 === mesAniversario)
-    .sort((a, b) => new Date(a.dataNascimento!).getDate() - new Date(b.dataNascimento!).getDate());
+    .filter((c) => c.dataNascimento && mesDe(c.dataNascimento) === mesAniversario)
+    .sort((a, b) => diaDe(a.dataNascimento) - diaDe(b.dataNascimento));
 
   const risco = { Alto: 0, Médio: 0, Baixo: 0 } as Record<string, number>;
   ativos.forEach((c) => (risco[c.riscoSaida ?? "Baixo"] = (risco[c.riscoSaida ?? "Baixo"] ?? 0) + 1));
@@ -246,7 +253,7 @@ export default function Painel() {
   // Aniversário de empresa (tempo de casa) — admitidos no mês de referência
   const anosDeCasa = (d?: string | null) => (d ? HOJE.getFullYear() - new Date(d).getFullYear() : 0);
   const aniversariosEmpresa = ativos
-    .filter((c) => c.dataAdmissao && new Date(c.dataAdmissao).getMonth() + 1 === mesAniversario)
+    .filter((c) => c.dataAdmissao && mesDe(c.dataAdmissao) === mesAniversario)
     .sort((a, b) => new Date(a.dataAdmissao!).getDate() - new Date(b.dataAdmissao!).getDate());
 
   // Mapeia o rótulo clicado de volta para os colaboradores ativos correspondentes

@@ -19,7 +19,7 @@ import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
-import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa } from "@/lib/format";
+import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
 import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
 import { comprimirImagem } from "@/lib/imagem";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
@@ -31,9 +31,8 @@ const diasAte = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - 
 
 // Idade em anos a partir de uma data de nascimento (ISO). Retorna null se ausente/inválida.
 function idadeAnos(nascimento?: string | null): number | null {
-  if (!nascimento) return null;
-  const n = new Date(nascimento);
-  if (isNaN(n.getTime())) return null;
+  const n = parseData(nascimento);
+  if (!n) return null;
   let anos = HOJE.getFullYear() - n.getFullYear();
   const m = HOJE.getMonth() - n.getMonth();
   if (m < 0 || (m === 0 && HOJE.getDate() < n.getDate())) anos -= 1;
@@ -76,9 +75,11 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
   const enq = d.enquadrarColab(c);
   const corEnq = COR_POSICAO_FAIXA[enq];
   const mesAtual = HOJE.getMonth();
-  const aniversario = !!c.dataNascimento && new Date(c.dataNascimento).getMonth() === mesAtual;
-  const diaAniv = c.dataNascimento ? new Date(c.dataNascimento).getDate() : null;
-  const aniversarioEmpresa = !!c.dataAdmissao && new Date(c.dataAdmissao).getMonth() === mesAtual;
+  const nascDt = parseData(c.dataNascimento);
+  const admDt = parseData(c.dataAdmissao);
+  const aniversario = !!nascDt && nascDt.getMonth() === mesAtual;
+  const diaAniv = nascDt ? nascDt.getDate() : null;
+  const aniversarioEmpresa = !!admDt && admDt.getMonth() === mesAtual;
   const anosCasa = c.dataAdmissao ? HOJE.getFullYear() - new Date(c.dataAdmissao).getFullYear() : 0;
 
   const onFoto = async (f: File) => {
@@ -492,11 +493,13 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   const [novo, setNovo] = useState(false);
 
   // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior).
-  const adicionar = async (meta: Record<string, unknown>, dataUrl: string | null) => {
-    const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false } as never);
+  const adicionar = async (meta: Partial<import("@/data/types").Documento>, dataUrl: string | null) => {
+    const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
     if (dataUrl) {
       const ok = await putBlob(`doc:${rec.id}`, dataUrl);
-      atualizar(rec.id, ok ? { arquivoEmBlob: true } : { arquivoDataUrl: dataUrl });
+      if (ok) atualizar(rec.id, { arquivoEmBlob: true });
+      else if (dataUrl.length < 1_200_000) atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback só p/ arquivos pequenos
+      else toast("Não foi possível guardar o arquivo (armazenamento indisponível). O registro foi salvo sem anexo.", "erro");
     }
   };
 
@@ -509,8 +512,8 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
     const w = window.open();
     if (w) w.document.write(`<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`);
   };
-  const excluirDoc = (doc: import("@/data/types").Documento) => {
-    if (doc.arquivoEmBlob) delBlob(`doc:${doc.id}`);
+  const excluirDoc = async (doc: import("@/data/types").Documento) => {
+    if (doc.arquivoEmBlob) await delBlob(`doc:${doc.id}`); // remove o blob antes do metadado (evita órfão)
     remover(doc.id);
   };
 
@@ -595,7 +598,7 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
 
   return (
     <Modal aberto={aberto} onFechar={onFechar} titulo="Anexar documento"
-      descricao="O arquivo é guardado no navegador (até 2 MB) e abre em nova aba."
+      descricao="O arquivo é guardado no navegador (até 10 MB) e abre em nova aba."
       rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Anexar</button></>}>
       <div className="space-y-3">
         <Campo label="Nome do documento" obrigatorio><Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Contrato de Trabalho (CLT)" /></Campo>
@@ -609,8 +612,8 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
           <Campo label="Vencimento"><Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} /></Campo>
         </div>
         <div>
-          <input ref={fileRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> {arquivo ? arquivo.nome : "Selecionar arquivo (≤ 2 MB)"}</button>
+          <input ref={fileRef} type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) onFile(e.target.files[0]); e.target.value = ""; }} />
+          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> {arquivo ? arquivo.nome : "Selecionar arquivo (≤ 10 MB)"}</button>
         </div>
       </div>
     </Modal>

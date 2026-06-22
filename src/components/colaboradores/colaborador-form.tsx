@@ -45,7 +45,9 @@ export function ColaboradorForm({
       return;
     }
     const cargo = form.cargoId ? d.cargoById.get(form.cargoId) : undefined;
-    const enquadramento = cargo && form.salario != null ? enquadrar(form.salario, cargo.faixas) : form.enquadramento ?? null;
+    // Recalcula sempre que há cargo+salário; senão limpa (deixa o cálculo dinâmico assumir),
+    // em vez de manter um enquadramento antigo "grudado".
+    const enquadramento = cargo && form.salario != null ? enquadrar(form.salario, cargo.faixas) : null;
     const dados: Partial<Colaborador> = {
       ...form,
       refMin: cargo?.faixas[0] ?? form.refMin ?? null,

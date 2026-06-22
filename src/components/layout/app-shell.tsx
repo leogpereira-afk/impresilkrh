@@ -3,14 +3,16 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Plane, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database, Clock, Send, GraduationCap,
+  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database, Clock, Send, GraduationCap, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/brand/logo";
-import { Avatar } from "@/components/ui/misc";
+import { Avatar, EmptyState } from "@/components/ui/misc";
 import { PERFIL_LABEL } from "@/lib/constants";
 import { useSessao, sair } from "@/lib/session";
 import { useDominio } from "@/lib/dominio";
+import { useColecao } from "@/lib/store";
+import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { DadosControls } from "./dados-controls";
 
@@ -31,7 +33,7 @@ const NAV: ItemNav[] = [
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
-  { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: TODOS, grupo: "Pessoas" },
+  { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
@@ -56,6 +58,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const sessao = useSessao();
   const { colabById } = useDominio();
+  const { items: usuarios } = useColecao("usuarios");
   const toast = useToast();
   const [aberto, setAberto] = useState(false);
 
@@ -74,7 +77,15 @@ export function AppShell() {
   if (!sessao) return null;
   const colab = colabById.get(sessao.colaboradorId);
   const user = { nome: colab?.nome ?? "Usuário", perfil: sessao.perfil };
-  const itensVisiveis = NAV.filter((i) => i.perfis.includes(sessao.perfil));
+  // Permissões por módulo (Painel de Controle): além do perfil, respeita o que o
+  // RH liberou para cada usuário. null = sem restrição extra.
+  const liberados = modulosLiberados(sessao, usuarios);
+  const itensVisiveis = NAV.filter(
+    (i) => i.perfis.includes(sessao.perfil) && moduloAcessivel(i.href.slice(1), liberados),
+  );
+  // Bloqueio por URL direta: se o módulo da rota atual não está liberado, nega o acesso.
+  const moduloAtual = location.pathname.split("/")[1] || "painel";
+  const rotaBloqueada = !moduloAcessivel(moduloAtual, liberados);
 
   const NavConteudo = () => (
     <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
@@ -187,7 +198,15 @@ export function AppShell() {
         </header>
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <Outlet />
+          {rotaBloqueada ? (
+            <EmptyState
+              title="Acesso restrito"
+              description="Seu usuário não tem permissão para este módulo. Fale com o RH (Painel de Controle)."
+              icon={<Lock className="h-8 w-8" />}
+            />
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>

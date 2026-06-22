@@ -1,7 +1,7 @@
 // RBAC client-side. Calcula o escopo de visibilidade conforme o perfil e a
 // hierarquia (gestor recursivo). Mascaramento de dados sensíveis segue a LGPD.
 
-import type { Colaborador } from "@/data/types";
+import type { Colaborador, Usuario } from "@/data/types";
 import type { Sessao } from "./session";
 
 // IDs da equipe de um gestor (diretos e indiretos), incluindo ele mesmo.
@@ -83,4 +83,22 @@ export function ehGestor(sessao: Sessao | null): boolean {
 }
 export function podeGerir(sessao: Sessao | null): boolean {
   return sessao?.perfil === "ADMIN_RH" || sessao?.perfil === "GESTOR";
+}
+
+// Módulos liberados para a sessão, segundo o cadastro de Usuários (Painel de Controle).
+// Retorna null = SEM restrição por módulo (vale só o perfil) — caso de ADMIN_RH, de
+// quem não tem cadastro de usuário, ou de quem tem acesso total ("*").
+// Quando retorna um Set, a navegação e as rotas devem se limitar a esses módulos.
+export function modulosLiberados(sessao: Sessao | null, usuarios: Usuario[]): Set<string> | null {
+  if (!sessao || sessao.perfil === "ADMIN_RH") return null;
+  const u = usuarios.find((x) => x.ativo && x.colaboradorId === sessao.colaboradorId);
+  if (!u || !u.permissoes || u.permissoes.length === 0 || u.permissoes.includes("*")) return null;
+  return new Set(u.permissoes);
+}
+
+// O módulo (chave) está acessível para a sessão? "meu-perfil" é sempre liberado
+// para o usuário não ficar preso fora da própria conta.
+export function moduloAcessivel(modulo: string, liberados: Set<string> | null): boolean {
+  if (modulo === "meu-perfil") return true;
+  return liberados === null || liberados.has(modulo);
 }

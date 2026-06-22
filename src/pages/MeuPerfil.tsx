@@ -8,6 +8,7 @@ import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { useColecao } from "@/lib/store";
+import { getBlob } from "@/lib/blobstore";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { formatBRL, formatCPF, formatDate, tempoDeCasa } from "@/lib/format";
@@ -136,7 +137,8 @@ function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
   const { items } = useColecao("documentos");
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
 
-  const abrir = (dataUrl?: string | null) => {
+  const abrir = async (doc: import("@/data/types").Documento) => {
+    const dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
     if (!dataUrl) return;
     const w = window.open();
     if (w) w.document.write(`<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`);
@@ -158,8 +160,8 @@ function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
               return (
                 <div key={doc.id} className="flex items-center justify-between gap-3 py-3">
                   <button
-                    onClick={() => abrir(doc.arquivoDataUrl)}
-                    disabled={!doc.arquivoDataUrl}
+                    onClick={() => abrir(doc)}
+                    disabled={!doc.arquivoEmBlob && !doc.arquivoDataUrl}
                     className="flex min-w-0 items-center gap-3 text-left disabled:cursor-default"
                   >
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand">
@@ -167,7 +169,7 @@ function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
                     </span>
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5 truncate text-sm font-medium text-slate-800">
-                        {doc.nome} {doc.arquivoDataUrl && <ExternalLink className="h-3 w-3 text-slate-400" />}
+                        {doc.nome} {(doc.arquivoEmBlob || doc.arquivoDataUrl) && <ExternalLink className="h-3 w-3 text-slate-400" />}
                       </span>
                       <span className="text-xs text-slate-400">{doc.categoria} · emitido {formatDate(doc.dataEmissao)}</span>
                     </span>

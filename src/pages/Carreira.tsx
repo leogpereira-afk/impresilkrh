@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight, ChevronDown, Trophy, Medal, CheckCircle2, Plus, Circle, Trash2, Route } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -43,6 +43,11 @@ export default function Carreira() {
   const cargo = colab?.cargoId ? d.cargoById.get(colab.cargoId) : undefined;
   const nivelAtual = indiceNivel(colab?.nivelId);
   const [nivelAlvo, setNivelAlvo] = useState(Math.min(5, Math.max(nivelAtual + 1, 2)));
+  // Ao trocar o colaborador no simulador, o nível-alvo volta para "próximo nível"
+  // (evita alvo defasado/abaixo do nível atual da nova pessoa).
+  useEffect(() => {
+    setNivelAlvo(Math.min(5, Math.max(nivelAtual + 1, 2)));
+  }, [colabId, nivelAtual]);
   const podeVerSalario = colab ? podeVerDadosSensiveis(sessao, colab.id) : false;
 
   const valorAtualFaixa = cargo && nivelAtual ? cargo.faixas[nivelAtual - 1] : null;

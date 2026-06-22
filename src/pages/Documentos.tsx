@@ -244,7 +244,8 @@ function Repositorio() {
     if (dataUrl) {
       const ok = await putBlob(`doc:${rec.id}`, dataUrl);
       if (ok) atualizar(rec.id, { arquivoEmBlob: true });
-      else atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback inline
+      else if (dataUrl.length < 1_200_000) atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback só p/ arquivos pequenos
+      else toast("Não foi possível guardar o arquivo (armazenamento indisponível). O registro foi salvo sem anexo.", "erro");
     }
   };
 
@@ -271,9 +272,9 @@ function Repositorio() {
     baixar(dataUrl, arq.arquivoNome ?? arq.nome);
   };
 
-  const confirmarExclusao = () => {
+  const confirmarExclusao = async () => {
     if (!excluir) return;
-    if (excluir.arquivoEmBlob) delBlob(`doc:${excluir.id}`);
+    if (excluir.arquivoEmBlob) await delBlob(`doc:${excluir.id}`); // remove o blob antes do metadado (evita órfão)
     remover(excluir.id);
     toast("Documento removido do repositório.");
     setExcluir(null);
@@ -307,12 +308,12 @@ function Repositorio() {
           label="Maior categoria"
           value={
             porCategoria.size
-              ? [...porCategoria.entries()].sort((a, b) => b[1] - a[1])[0][0]
+              ? [...porCategoria.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
               : "—"
           }
           hint={
             porCategoria.size
-              ? `${[...porCategoria.entries()].sort((a, b) => b[1] - a[1])[0][1]} documento(s)`
+              ? `${[...porCategoria.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][1]} documento(s)`
               : undefined
           }
           icon={<FileText className="h-5 w-5" />}
@@ -560,11 +561,11 @@ function NovoArquivoModal({
             ref={fileRef}
             type="file"
             className="hidden"
-            onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+            onChange={(e) => { if (e.target.files?.[0]) onFile(e.target.files[0]); e.target.value = ""; }}
           />
           <button className="btn-outline w-full" onClick={() => fileRef.current?.click()}>
             <Upload className="h-4 w-4" />{" "}
-            {arquivo ? arquivo.nome : "Selecionar arquivo (≤ 2 MB)"}
+            {arquivo ? arquivo.nome : "Selecionar arquivo (≤ 10 MB)"}
           </button>
         </div>
       </div>
