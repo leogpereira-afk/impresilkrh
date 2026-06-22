@@ -3,12 +3,16 @@
 // com novos módulos (diárias e viagens, ponto, recrutamento, onboarding).
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" para desenvolvimento; "rhel-openssl-3.0.x" para o runtime serverless
+  // do Netlify (AWS Lambda / Amazon Linux). Necessário para o Prisma rodar em produção.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ===================== AUTENTICAÇÃO E ACESSO =====================

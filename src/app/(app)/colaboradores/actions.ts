@@ -38,10 +38,17 @@ export async function adicionarDocumento(formData: FormData) {
   const arquivo = formData.get("arquivo");
   if (arquivo instanceof File && arquivo.size > 0) {
     if (arquivo.size > 10 * 1024 * 1024) return { erro: "Arquivo excede o limite de 10 MB." };
-    const salvo = await salvarArquivo(arquivo);
-    arquivoPath = salvo.caminho;
-    arquivoNome = salvo.nome;
-    tamanhoBytes = salvo.tamanho;
+    try {
+      const salvo = await salvarArquivo(arquivo);
+      arquivoPath = salvo.caminho;
+      arquivoNome = salvo.nome;
+      tamanhoBytes = salvo.tamanho;
+    } catch (e) {
+      console.error("Falha ao salvar arquivo:", e);
+      return {
+        erro: "Não foi possível salvar o arquivo. Em produção serverless, configure um armazenamento de objetos (ex.: Netlify Blobs/S3). Os demais dados podem ser salvos sem anexo.",
+      };
+    }
   }
 
   await db.documento.create({

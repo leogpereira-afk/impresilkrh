@@ -40,7 +40,7 @@ desktop e dispositivos móveis. Interface 100% em **português do Brasil**.
 
 - **Next.js 14** (App Router, Server Components e Server Actions)
 - **TypeScript** (strict)
-- **Prisma ORM** + **SQLite** (arquivo local, sem dependências externas para o MVP/demo)
+- **Prisma ORM** + **PostgreSQL** (compatível com Neon / Netlify DB / Supabase)
 - **Tailwind CSS** com paleta de marca customizada
 - **jose** (JWT HS256, cookie httpOnly) + **bcryptjs** para autenticação
 - **Edge Middleware** para proteção de rotas
@@ -48,15 +48,19 @@ desktop e dispositivos móveis. Interface 100% em **português do Brasil**.
 
 ## Como executar
 
+> Requisito: um banco **PostgreSQL** acessível. Para desenvolvimento, use um Postgres
+> local ou um banco gratuito do [Neon](https://neon.tech).
+
 ```bash
 # 1. Instalar dependências
 npm install
 
 # 2. Configurar variáveis de ambiente
 cp .env.example .env
+# edite o .env e aponte DATABASE_URL (e DIRECT_URL) para o seu Postgres
 # (opcional) gere um AUTH_SECRET forte: openssl rand -base64 48
 
-# 3. Criar o banco e popular com dados de demonstração
+# 3. Criar as tabelas e popular com dados de demonstração
 npm run setup
 
 # 4. Iniciar em desenvolvimento
@@ -69,9 +73,38 @@ npm run dev
 | Script | Ação |
 | --- | --- |
 | `npm run dev` | Servidor de desenvolvimento |
-| `npm run build` | Build de produção |
+| `npm run build` | Build de produção (`prisma generate` + `next build`) |
+| `npm run db:push` | Sincroniza o schema com o banco |
 | `npm run db:seed` | Popula o banco com dados de exemplo |
 | `npm run db:reset` | Recria o banco do zero e popula novamente |
+
+## Deploy no Netlify (com banco PostgreSQL)
+
+O app usa **PostgreSQL** — obrigatório em produção serverless (o disco do Netlify é
+efêmero, então SQLite em arquivo não funciona). Passo a passo:
+
+```bash
+# 1. Provisione um Postgres. No Netlify, o mais simples é o "Netlify DB" (Neon):
+netlify db init          # cria um Neon Postgres e injeta a variável no site
+# (alternativa: crie um projeto grátis em neon.tech e copie a connection string)
+
+# 2. No painel do Netlify → Site settings → Environment variables, defina:
+#    DATABASE_URL  = connection string do Postgres (use a versão "pooled", com sslmode=require)
+#    AUTH_SECRET   = um valor forte (openssl rand -base64 48)
+
+# 3. Crie as tabelas e popule os dados, apontando para o banco de produção:
+DATABASE_URL="<sua-connection-string>" npm run db:push
+DATABASE_URL="<sua-connection-string>" npm run db:seed
+
+# 4. Faça o deploy (push para a branch conectada ao Netlify, ou `netlify deploy --prod`).
+```
+
+O `netlify.toml` já configura o build e o plugin oficial do Next.js. O `prisma generate`
+roda no build e inclui o engine do runtime do Netlify (`rhel-openssl-3.0.x`).
+
+> **Anexos de documentos:** o upload grava em disco local, que não persiste no Netlify.
+> O cadastro de documentos (metadados) funciona; para anexos em produção, configure um
+> armazenamento de objetos (Netlify Blobs/S3) trocando `src/lib/storage.ts`.
 
 ## Credenciais de demonstração
 

@@ -25,7 +25,7 @@ export default async function ColaboradoresPage({
 
   const filtro: Record<string, unknown> = { ...escopo };
   if (searchParams.q) {
-    filtro.nome = { contains: searchParams.q };
+    filtro.nome = { contains: searchParams.q, mode: "insensitive" };
   }
   if (searchParams.area) filtro.areaId = searchParams.area;
   if (searchParams.status) filtro.statusId = searchParams.status;

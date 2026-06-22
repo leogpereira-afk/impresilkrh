@@ -1,0 +1,14 @@
+# Configuração de deploy no Netlify (Next.js + Prisma)
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Evita que o Prisma baixe engines desnecessárias no build.
+  PRISMA_SKIP_POSTINSTALL_GENERATE = "1"
+
+# Plugin oficial do Next.js (App Router, Server Actions e rotas dinâmicas).
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
