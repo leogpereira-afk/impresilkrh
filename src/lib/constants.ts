@@ -208,6 +208,7 @@ export const MODULOS: { chave: string; label: string }[] = [
   { chave: "organograma", label: "Organograma" },
   { chave: "carreira", label: "Carreira e Salários" },
   { chave: "desempenho", label: "Desempenho" },
+  { chave: "custos", label: "Custos de Colaboradores" },
   { chave: "treinamento", label: "Treinamento" },
   { chave: "ponto", label: "Frequência e Advertências" },
   { chave: "ferias", label: "Férias" },

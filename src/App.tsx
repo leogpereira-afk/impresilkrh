@@ -31,6 +31,7 @@ const LGPD = lazy(() => import("@/pages/LGPD"));
 const Ponto = lazy(() => import("@/pages/Ponto"));
 const Mensagens = lazy(() => import("@/pages/Mensagens"));
 const Treinamento = lazy(() => import("@/pages/Treinamento"));
+const Custos = lazy(() => import("@/pages/Custos"));
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const sessao = useSessao();
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/organograma" element={<Organograma />} />
             <Route path="/carreira" element={<Restrito perfis={RH}><Carreira /></Restrito>} />
             <Route path="/desempenho" element={<Restrito perfis={GESTAO}><Desempenho /></Restrito>} />
+            <Route path="/custos" element={<Restrito perfis={GESTAO}><Custos /></Restrito>} />
             <Route path="/treinamento" element={<Restrito perfis={GESTAO}><Treinamento /></Restrito>} />
             <Route path="/ponto" element={<Restrito perfis={GESTAO}><Ponto /></Restrito>} />
             <Route path="/ferias" element={<Restrito perfis={GESTAO}><Ferias /></Restrito>} />

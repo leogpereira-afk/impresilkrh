@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
-  ClipboardList, Palette, Database, Award, UserCog, ShieldCheck,
+  ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -13,13 +13,19 @@ import { ConteudoManager } from "@/components/painel/conteudo-manager";
 import { DadosControls } from "@/components/layout/dados-controls";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
+import { useSessao } from "@/lib/session";
+import { ehMaster } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { formatBRL } from "@/lib/format";
 import { slug } from "@/data/_gen";
 import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
+import { competenciasPlano, compLabelLongo, confidencialDoMes } from "@/lib/custos";
+import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
 import type { Area, Cargo, CicloAvaliacao, ModeloChecklist, Nivel, Perfil, StatusColaborador, Usuario } from "@/data/types";
 
 export default function PainelControle() {
+  const sessao = useSessao();
+  const master = ehMaster(sessao);
   return (
     <div>
       <PageHeader title="Painel de Controle" description="Gerencie todo o conteúdo do sistema sem mexer no código. Tudo é salvo no navegador." />
@@ -30,9 +36,63 @@ export default function PainelControle() {
           { id: "conteudo", label: "Conteúdo (RH)", icon: <ClipboardList className="h-4 w-4" />, conteudo: <ConteudoSecao /> },
           { id: "aval", label: "Avaliação & Checklists", icon: <Award className="h-4 w-4" />, conteudo: <AvaliacaoSecao /> },
           { id: "usuarios", label: "Usuários e Permissões", icon: <UserCog className="h-4 w-4" />, conteudo: <UsuariosSecao /> },
+          ...(master ? [{ id: "confidencial", label: "Confidencial", icon: <Lock className="h-4 w-4" />, conteudo: <ConfidencialSecao /> }] : []),
           { id: "marca", label: "Marca & Backup", icon: <Palette className="h-4 w-4" />, conteudo: <MarcaSecao /> },
         ]}
       />
+    </div>
+  );
+}
+
+// ---------------- Confidencial (Diretoria — só o gestor master) ----------------
+function ConfidencialSecao() {
+  const { items: plano } = useColecao("planoContas");
+  const comps = competenciasPlano(plano);
+  const [comp, setComp] = useState<string>("");
+  const compSel = comp || comps[comps.length - 1] || "";
+  const cards = confidencialDoMes(plano, compSel, CARDS_CONFIDENCIAIS);
+  const totalGeral = cards.reduce((s, c) => s + c.total, 0);
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardBody className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white"><Lock className="h-5 w-5" /></span>
+            <div>
+              <p className="text-sm font-semibold text-brand-ink">Despesas societárias — confidencial</p>
+              <p className="text-xs text-slate-500">Visível apenas para a diretoria (você). Fora de todas as outras telas e do rateio.</p>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-slate-500">Competência</span>
+            <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-44">
+              {comps.map((k) => <option key={k} value={k}>{compLabelLongo(k)}</option>)}
+            </Select>
+          </label>
+        </CardBody>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {cards.map((card) => (
+          <div key={card.id} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white">
+            <p className="text-sm font-semibold">{card.titulo}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{compLabelLongo(compSel)}</p>
+            <table className="mt-3 w-full text-sm">
+              <tbody className="divide-y divide-slate-700/70">
+                {card.itens.length === 0 ? (
+                  <tr><td className="py-2 text-slate-400">Sem lançamentos neste mês.</td></tr>
+                ) : card.itens.map((it) => (
+                  <tr key={it.codigo}>
+                    <td className="py-2 text-slate-300">{it.nome}</td>
+                    <td className="py-2 text-right tabular-nums text-slate-100">{formatBRL(it.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t border-slate-600"><td className="pt-2 font-semibold">Total</td><td className="pt-2 text-right text-base font-semibold text-gold-300 tabular-nums">{formatBRL(card.total)}</td></tr></tfoot>
+            </table>
+          </div>
+        ))}
+      </div>
+      <Card><CardBody className="flex items-center justify-between"><span className="text-sm font-medium text-slate-600">Total confidencial · {compLabelLongo(compSel)}</span><span className="text-xl font-semibold text-brand-ink">{formatBRL(totalGeral)}</span></CardBody></Card>
     </div>
   );
 }

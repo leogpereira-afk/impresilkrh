@@ -85,6 +85,13 @@ export function podeGerir(sessao: Sessao | null): boolean {
   return sessao?.perfil === "ADMIN_RH" || sessao?.perfil === "GESTOR";
 }
 
+// Gestor master (diretoria) — único que vê os dados societários confidenciais
+// (Retiradas Leonardo, Arrendamento/Pedro). Nem o RH vê.
+export const MASTER_COLAB_ID = "leonardo-goncalves";
+export function ehMaster(sessao: Sessao | null): boolean {
+  return sessao?.colaboradorId === MASTER_COLAB_ID;
+}
+
 // Módulos liberados para a sessão, segundo o cadastro de Usuários (Painel de Controle).
 // Retorna null = SEM restrição por módulo (vale só o perfil) — caso de ADMIN_RH, de
 // quem não tem cadastro de usuário, ou de quem tem acesso total ("*").

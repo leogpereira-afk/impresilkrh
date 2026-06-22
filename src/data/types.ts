@@ -461,3 +461,28 @@ export interface Pagamento {
   dataPagamento: string; // ISO (vencimento)
   descricao?: string;
 }
+
+// ===================== Custos de colaboradores (v4) =====================
+// Plano de Contas mensal (árvore de despesas). folha=true => conta sem subcontas
+// (some só as folhas para não duplicar pai+filho).
+export interface ContaPlano {
+  competencia: string; // "2026-05"
+  codigo: string; // "2.1.15.4"
+  nome: string;
+  valor: number;
+  folha: boolean;
+}
+
+// Classe de custo de cada conta (editável na tela de Custos):
+//  individual = atribuível a uma pessoa (vai para a ficha/Pagamentos)
+//  rateio     = custo coletivo, dividido entre todos os colaboradores ativos
+//  encargo    = FGTS/INSS etc. (entra no "custo real", não no rateio)
+//  confidencial = societárias (Pedro/Leonardo), só o gestor master vê
+//  ignorar    = não é custo de colaborador
+export type ClasseCusto = "individual" | "rateio" | "encargo" | "confidencial" | "ignorar";
+export interface ClassificacaoConta {
+  id: string;
+  codigo: string; // "2.1.14"
+  nome: string;
+  classe: ClasseCusto;
+}

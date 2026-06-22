@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Plane, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database, Clock, Send, GraduationCap, Lock,
+  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database, Clock, Send, GraduationCap, Lock, Coins,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/brand/logo";
@@ -34,6 +34,7 @@ const NAV: ItemNav[] = [
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
@@ -193,6 +194,14 @@ export function AppShell() {
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
               </div>
               <Avatar nome={user.nome} size="sm" />
+              <button
+                onClick={() => { sair(); navigate("/login"); }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-[0.97]"
+                title="Sair do sistema"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Sair</span>
+              </button>
             </div>
           </div>
         </header>

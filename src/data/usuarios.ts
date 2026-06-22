@@ -8,7 +8,7 @@ import { email as emailDe, HOJE } from "./_gen";
 // restringir por usuário depois). Precisa cobrir tudo que é GESTAO/TODOS no menu,
 // senão o gestor perderia acesso a um módulo que o perfil dele permite.
 const GESTOR_MODULOS = [
-  "painel", "colaboradores", "organograma", "desempenho", "treinamento", "ponto",
+  "painel", "colaboradores", "organograma", "desempenho", "custos", "treinamento", "ponto",
   "ferias", "integracao", "viagens", "comunicacao", "mensagens", "pops", "documentos", "sst",
   "meu-perfil", "aceites",
 ];
