@@ -96,6 +96,8 @@ export interface Colaborador {
   perfil?: Perfil; // perfil de login (quando aplicável)
   ehDirecao?: boolean; // fundadores/diretor/assessorias — não contam como headcount
   cargoLivre?: string; // rótulo de cargo p/ Direção (sem cargoId)
+  padrinhoId?: string | null; // mentor/padrinho (onboarding)
+  fotoDataUrl?: string | null; // foto do colaborador (upload no navegador)
 }
 
 export interface Documento {
@@ -321,4 +323,67 @@ export interface Config {
   empresaCidade: string;
   corPrimaria: string;
   corAcento: string;
+}
+
+// ===================== Frequência e Advertências (Módulo C) =====================
+export interface Advertencia {
+  id: string;
+  colaboradorId: string;
+  tipo: string; // Verbal, Escrita, Suspensão
+  data: string;
+  motivo: string;
+  descricao?: string;
+  arquivoNome?: string | null;
+  arquivoDataUrl?: string | null;
+  registradoPor?: string;
+  criadoEm: string;
+}
+
+export interface Ausencia {
+  id: string;
+  colaboradorId: string;
+  data: string;
+  tipo: string; // Falta, Atraso, Atestado, Falta justificada, Saída antecipada
+  horas?: number; // horas de atraso/saída
+  justificada: boolean;
+  observacao?: string;
+}
+
+// ===================== Comunicação em massa (Módulo G) =====================
+export interface Contato {
+  id: string;
+  nome: string;
+  telefone: string;
+  colaboradorId?: string | null;
+  grupo?: string; // ex.: Produção, Comercial, Liderança
+}
+
+export interface TemplateMensagem {
+  id: string;
+  titulo: string;
+  corpo: string; // pode conter {{nome}}
+  criadoEm: string;
+}
+
+export interface Agendamento {
+  id: string;
+  templateId?: string | null;
+  titulo: string;
+  mensagem: string;
+  grupoAlvo?: string; // grupo ou "Todos"
+  quando: string; // data/hora do envio
+  status: string; // Agendada, Enviada, Cancelada
+  criadoEm: string;
+}
+
+// ===================== Repositório institucional (Módulo G) =====================
+export interface ArquivoRepositorio {
+  id: string;
+  nome: string;
+  categoria: string; // Política, Manual, Formulário, Comunicado, Outro
+  descricao?: string;
+  arquivoNome?: string | null;
+  arquivoDataUrl?: string | null;
+  tamanhoBytes?: number | null;
+  criadoEm: string;
 }

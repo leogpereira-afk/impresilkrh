@@ -5,6 +5,7 @@ import type {
   Area, Nivel, Cargo, StatusColaborador, Colaborador, Documento, DocumentoInstitucional,
   GuiaComunicacao, POP, Ferias, Movimentacao, CicloAvaliacao, Avaliacao, Meta, PDI,
   Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Aceite, Config,
+  Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -22,6 +23,9 @@ import { CICLOS, AVALIACOES, METAS, PDIS, FEEDBACKS } from "./desempenho";
 import { VIAGENS } from "./viagens";
 import { TAREFAS, MODELOS_CHECKLIST } from "./integracao";
 import { CONSENTIMENTOS, ACESSOS, ACEITES } from "./lgpd";
+import { ADVERTENCIAS, AUSENCIAS } from "./frequencia";
+import { CONTATOS, TEMPLATES, AGENDAMENTOS } from "./mensagens";
+import { REPOSITORIO } from "./repositorio";
 
 export const VERSAO_DADOS = "1.0.0";
 
@@ -56,6 +60,12 @@ export interface ColecaoMap {
   consentimentos: ConsentimentoLGPD;
   acessos: AccessLog;
   aceites: Aceite;
+  advertencias: Advertencia;
+  ausencias: Ausencia;
+  contatos: Contato;
+  templatesMensagem: TemplateMensagem;
+  agendamentos: Agendamento;
+  repositorio: ArquivoRepositorio;
 }
 
 export type NomeColecao = keyof ColecaoMap;
@@ -86,6 +96,12 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     consentimentos: CONSENTIMENTOS,
     acessos: ACESSOS,
     aceites: ACEITES,
+    advertencias: ADVERTENCIAS,
+    ausencias: AUSENCIAS,
+    contatos: CONTATOS,
+    templatesMensagem: TEMPLATES,
+    agendamentos: AGENDAMENTOS,
+    repositorio: REPOSITORIO,
   });
 }
 

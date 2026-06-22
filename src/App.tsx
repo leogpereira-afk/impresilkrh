@@ -28,6 +28,8 @@ const Aceites = lazy(() => import("@/pages/Aceites"));
 const Relatorios = lazy(() => import("@/pages/Relatorios"));
 const PainelControle = lazy(() => import("@/pages/PainelControle"));
 const LGPD = lazy(() => import("@/pages/LGPD"));
+const Ponto = lazy(() => import("@/pages/Ponto"));
+const Mensagens = lazy(() => import("@/pages/Mensagens"));
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const sessao = useSessao();
@@ -67,10 +69,12 @@ export default function App() {
             <Route path="/organograma" element={<Organograma />} />
             <Route path="/carreira" element={<Restrito perfis={RH}><Carreira /></Restrito>} />
             <Route path="/desempenho" element={<Desempenho />} />
+            <Route path="/ponto" element={<Restrito perfis={GESTAO}><Ponto /></Restrito>} />
             <Route path="/ferias" element={<Restrito perfis={GESTAO}><Ferias /></Restrito>} />
             <Route path="/integracao" element={<Restrito perfis={GESTAO}><Integracao /></Restrito>} />
             <Route path="/viagens" element={<Restrito perfis={GESTAO}><Viagens /></Restrito>} />
             <Route path="/comunicacao" element={<Comunicacao />} />
+          <Route path="/mensagens" element={<Restrito perfis={GESTAO}><Mensagens /></Restrito>} />
             <Route path="/pops" element={<Pops />} />
             <Route path="/documentos" element={<Documentos />} />
             <Route path="/sst" element={<Restrito perfis={GESTAO}><SST /></Restrito>} />

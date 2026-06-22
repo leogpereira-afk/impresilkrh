@@ -1,21 +1,23 @@
 import { useMemo, useState } from "react";
-import { Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus } from "lucide-react";
+import { Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus, BarChart3, Pencil, Trash2, Save } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
+import { BarrasColoridas, BarrasVerticais } from "@/components/charts/charts";
+import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
-import { JANELA_ALERTA_DIAS } from "@/lib/constants";
+import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
-import type { Ferias as TFerias } from "@/data/types";
+import type { Ferias as TFerias, Colaborador } from "@/data/types";
 
 const MS_DIA = 86400000;
 const diasAte = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / MS_DIA) : NaN);
@@ -23,6 +25,18 @@ const addDiasISO = (base: string, dias: number) => {
   const d = new Date(base);
   d.setDate(d.getDate() + dias);
   return d.toISOString();
+};
+
+// ISO -> "yyyy-MM-dd" para inputs type="date" (e o caminho inverso).
+const isoParaInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : "");
+const inputParaIso = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
+
+// Paleta dos status de férias (alinhada às variantes de Badge / Quadro de Comando).
+const CORES_STATUS: Record<string, string> = {
+  "Em andamento": "#16a34a",
+  Agendada: "#2563eb",
+  "Em aberto": "#d97706",
+  Concluída: "#94a3b8",
 };
 
 // Variante de Badge por status de férias (Apêndice — CLT).
@@ -49,11 +63,23 @@ export default function Ferias() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
-  const { items: ferias, criar } = useColecao("ferias");
+  const { items: ferias, criar, atualizar, remover } = useColecao("ferias");
+  const drill = useDrill();
 
   const [novo, setNovo] = useState(false);
   const [colabId, setColabId] = useState("");
   const [dataInicio, setDataInicio] = useState("");
+
+  // CRUD — edição/exclusão de um registro de férias (Quadro de Comando).
+  const [editando, setEditando] = useState<TFerias | null>(null);
+  const [edForm, setEdForm] = useState({
+    dataInicio: "",
+    dataRetorno: "",
+    diasGozados: "0",
+    saldoDias: "0",
+    status: "Em aberto" as string,
+  });
+  const [excluindo, setExcluindo] = useState<TFerias | null>(null);
 
   const podeEditar = podeGerir(sessao);
 
@@ -97,6 +123,51 @@ export default function Ferias() {
     [lista, d],
   );
 
+  // ---- Quadro de Comando: distribuição por status (gráfico clicável) ----
+  const porStatus = useMemo(
+    () =>
+      STATUS_FERIAS.map((s) => ({
+        nome: s,
+        valor: lista.filter((f) => f.status === s).length,
+        cor: CORES_STATUS[s] ?? "#64748b",
+      })),
+    [lista],
+  );
+
+  // Distribuição por área (somente registros com gozo programado/ativo/concluído).
+  const porArea = useMemo(() => {
+    const acc = new Map<string, number>();
+    for (const f of lista) {
+      const c = d.colabById.get(f.colaboradorId);
+      const area = d.nomeArea(c?.areaId);
+      acc.set(area, (acc.get(area) ?? 0) + 1);
+    }
+    return [...acc.entries()]
+      .map(([nome, valor]) => ({ nome, valor }))
+      .sort((a, b) => b.valor - a.valor);
+  }, [lista, d]);
+
+  // Mapeia uma lista de férias -> colaboradores (para o drill-down).
+  const colabsDe = (fs: TFerias[]): Colaborador[] =>
+    fs
+      .map((f) => d.colabById.get(f.colaboradorId))
+      .filter((c): c is Colaborador => !!c);
+
+  const abrirDrillStatus = (status: string) => {
+    const fs = lista.filter((f) => f.status === status);
+    if (fs.length === 0) {
+      toast(`Nenhum colaborador com férias "${status}".`, "erro");
+      return;
+    }
+    drill.abrir(`Férias — ${status}`, colabsDe(fs), `${fs.length} colaborador(es) neste status`);
+  };
+
+  const abrirDrillArea = (area: string) => {
+    const fs = lista.filter((f) => d.nomeArea(d.colabById.get(f.colaboradorId)?.areaId) === area);
+    if (fs.length === 0) return;
+    drill.abrir(`Férias — ${area}`, colabsDe(fs), `${fs.length} registro(s) na área`);
+  };
+
   const resetForm = () => {
     setColabId("");
     setDataInicio("");
@@ -121,6 +192,40 @@ export default function Ferias() {
     });
     toast(`Férias agendadas para ${d.nomeColab(colabId)}.`);
     resetForm();
+  };
+
+  // ---- Editar registro de férias ----
+  const abrirEdicao = (f: TFerias) => {
+    setEditando(f);
+    setEdForm({
+      dataInicio: isoParaInput(f.dataInicio),
+      dataRetorno: isoParaInput(f.dataRetorno),
+      diasGozados: String(f.diasGozados ?? 0),
+      saldoDias: String(f.saldoDias ?? 0),
+      status: f.status,
+    });
+  };
+
+  const salvarEdicao = () => {
+    if (!editando) return;
+    atualizar(editando.id, {
+      dataInicio: inputParaIso(edForm.dataInicio),
+      dataRetorno: inputParaIso(edForm.dataRetorno),
+      diasGozados: Math.max(0, Number(edForm.diasGozados) || 0),
+      saldoDias: Math.max(0, Number(edForm.saldoDias) || 0),
+      status: edForm.status,
+    });
+    toast(`Férias de ${d.nomeColab(editando.colaboradorId)} atualizadas.`);
+    setEditando(null);
+  };
+
+  // ---- Excluir registro de férias ----
+  const confirmarExclusao = () => {
+    if (!excluindo) return;
+    const nome = d.nomeColab(excluindo.colaboradorId);
+    remover(excluindo.id);
+    toast(`Registro de férias de ${nome} excluído.`);
+    setExcluindo(null);
   };
 
   return (
@@ -186,6 +291,53 @@ export default function Ferias() {
         </Card>
       </div>
 
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Quadro de Comando"
+            subtitle="Distribuição por status — clique numa barra para ver os colaboradores"
+            icon={<BarChart3 className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {lista.length === 0 ? (
+              <EmptyState title="Sem dados" description="Nenhum registro de férias no seu escopo." icon={<BarChart3 className="h-8 w-8" />} />
+            ) : (
+              <>
+                <BarrasColoridas data={porStatus} altura={240} onItemClick={abrirDrillStatus} />
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {porStatus.map((s) => (
+                    <button
+                      key={s.nome}
+                      type="button"
+                      onClick={() => abrirDrillStatus(s.nome)}
+                      className="inline-flex items-center gap-1.5 text-xs text-slate-500 transition hover:text-brand"
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.cor }} aria-hidden />
+                      {s.nome} <span className="font-medium text-slate-700">({s.valor})</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Férias por área"
+            subtitle="Volume de registros por área — clique para detalhar"
+            icon={<BarChart3 className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {porArea.length === 0 ? (
+              <EmptyState title="Sem dados" description="Nenhum registro de férias no seu escopo." icon={<BarChart3 className="h-8 w-8" />} />
+            ) : (
+              <BarrasVerticais data={porArea} altura={240} onItemClick={abrirDrillArea} />
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
       <Card className="mt-6 overflow-hidden">
         <CardHeader title="Controle de férias" subtitle={`${tabela.length} registro(s) no seu escopo`} icon={<Palmtree className="h-[18px] w-[18px]" />} />
         {tabela.length === 0 ? (
@@ -203,6 +355,7 @@ export default function Ferias() {
                   <th className="th">Saldo</th>
                   <th className="th">Status</th>
                   <th className="th">CLT</th>
+                  {podeEditar && <th className="th text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -235,6 +388,28 @@ export default function Ferias() {
                           <span className="text-xs text-slate-300">—</span>
                         )}
                       </td>
+                      {podeEditar && (
+                        <td className="td">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="btn-ghost p-1.5"
+                              title="Editar férias"
+                              aria-label={`Editar férias de ${d.nomeColab(f.colaboradorId)}`}
+                              onClick={() => abrirEdicao(f)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="btn-ghost p-1.5 text-red-500 hover:text-red-600"
+                              title="Excluir férias"
+                              aria-label={`Excluir férias de ${d.nomeColab(f.colaboradorId)}`}
+                              onClick={() => setExcluindo(f)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -282,6 +457,68 @@ export default function Ferias() {
           </div>
         </Modal>
       )}
+
+      {podeEditar && (
+        <Modal
+          aberto={!!editando}
+          onFechar={() => setEditando(null)}
+          titulo="Editar férias"
+          descricao={editando ? d.nomeColab(editando.colaboradorId) : undefined}
+          rodape={
+            <>
+              <button className="btn-outline" onClick={() => setEditando(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={salvarEdicao}>
+                <Save className="h-4 w-4" /> Salvar
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Campo label="Início do gozo">
+                <Input type="date" value={edForm.dataInicio} onChange={(e) => setEdForm((s) => ({ ...s, dataInicio: e.target.value }))} />
+              </Campo>
+              <Campo label="Retorno">
+                <Input type="date" value={edForm.dataRetorno} onChange={(e) => setEdForm((s) => ({ ...s, dataRetorno: e.target.value }))} />
+              </Campo>
+              <Campo label="Dias gozados">
+                <Input type="number" min={0} value={edForm.diasGozados} onChange={(e) => setEdForm((s) => ({ ...s, diasGozados: e.target.value }))} />
+              </Campo>
+              <Campo label="Saldo de dias">
+                <Input type="number" min={0} value={edForm.saldoDias} onChange={(e) => setEdForm((s) => ({ ...s, saldoDias: e.target.value }))} />
+              </Campo>
+            </div>
+            <Campo label="Status">
+              <Select value={edForm.status} onChange={(e) => setEdForm((s) => ({ ...s, status: e.target.value }))}>
+                {STATUS_FERIAS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </Select>
+            </Campo>
+          </div>
+        </Modal>
+      )}
+
+      {podeEditar && (
+        <ConfirmDialog
+          aberto={!!excluindo}
+          onFechar={() => setExcluindo(null)}
+          onConfirmar={confirmarExclusao}
+          titulo="Excluir registro de férias"
+          mensagem={
+            excluindo ? (
+              <>
+                Excluir o registro de férias de{" "}
+                <span className="font-medium text-slate-700">{d.nomeColab(excluindo.colaboradorId)}</span>? Esta ação não pode ser desfeita.
+              </>
+            ) : (
+              ""
+            )
+          }
+        />
+      )}
+
+      <DrillModal {...drill.props} />
     </div>
   );
 }

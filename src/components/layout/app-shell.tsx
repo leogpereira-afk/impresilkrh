@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Plane, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database,
+  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database, Clock, Send,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/brand/logo";
@@ -31,10 +31,12 @@ const NAV: ItemNav[] = [
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: TODOS, grupo: "Pessoas" },
+  { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Integração / Desligamento", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/comunicacao", label: "Comunicação", icon: Megaphone, perfis: TODOS, grupo: "RH" },
+  { href: "/mensagens", label: "Comunicação em Massa", icon: Send, perfis: GESTAO, grupo: "RH" },
   { href: "/pops", label: "POPs e Procedimentos", icon: BookOpen, perfis: TODOS, grupo: "RH" },
   { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "RH" },
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "RH" },

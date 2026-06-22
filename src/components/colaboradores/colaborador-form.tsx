@@ -4,7 +4,7 @@ import { Campo, Input, Select } from "@/components/ui/form";
 import { useColecao } from "@/lib/store";
 import { useDominio, enquadrar } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
-import { NIVEIS_RISCO } from "@/lib/constants";
+import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS } from "@/lib/constants";
 import type { Colaborador } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
@@ -150,6 +150,48 @@ export function ColaboradorForm({
 
         <Campo label="Endereço (rua)"><Input value={form.enderecoRua ?? ""} onChange={(e) => set({ enderecoRua: e.target.value })} /></Campo>
         <Campo label="Bairro"><Input value={form.enderecoBairro ?? ""} onChange={(e) => set({ enderecoBairro: e.target.value })} /></Campo>
+      </div>
+
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Perfil comportamental & clima</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Campo label="Empresa">
+            <Select value={form.empresa ?? "Impresilk"} onChange={(e) => set({ empresa: e.target.value })}>
+              {EMPRESAS.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Sexo">
+            <Select value={form.sexo ?? ""} onChange={(e) => set({ sexo: e.target.value })}>
+              <option value="">—</option>
+              <option value="Masculino">Masculino</option>
+              <option value="Feminino">Feminino</option>
+            </Select>
+          </Campo>
+          <Campo label="Perfil comportamental">
+            <Select value={form.perfilComportamental ?? ""} onChange={(e) => set({ perfilComportamental: e.target.value })}>
+              <option value="">—</option>
+              {PERFIS_COMPORTAMENTAIS.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Humor / engajamento">
+            <Select value={form.humor ?? ""} onChange={(e) => set({ humor: e.target.value })}>
+              <option value="">—</option>
+              {HUMORES.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Estilo de aprendizagem">
+            <Select value={form.estiloAprendizagem ?? ""} onChange={(e) => set({ estiloAprendizagem: e.target.value })}>
+              <option value="">—</option>
+              {ESTILOS_APRENDIZAGEM.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Padrinho (mentor)">
+            <Select value={form.padrinhoId ?? ""} onChange={(e) => set({ padrinhoId: e.target.value || null })}>
+              <option value="">— nenhum —</option>
+              {gestoresPossiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </Select>
+          </Campo>
+        </div>
       </div>
     </Modal>
   );

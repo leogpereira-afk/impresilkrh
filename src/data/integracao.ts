@@ -15,8 +15,11 @@ export const MODELOS_CHECKLIST: ModeloChecklist[] = [
       { titulo: "Entrega de uniforme e EPIs", responsavel: "SST" },
       { titulo: "Criação de e-mail e acessos", responsavel: "Gestor" },
       { titulo: "Apresentação à equipe e tour pela empresa", responsavel: "Gestor" },
+      { titulo: "Tour e conhecimento das instalações físicas", responsavel: "Gestor" },
       { titulo: "Leitura e aceite do Código de Ética", responsavel: "Colaborador" },
-      { titulo: "Treinamento inicial do cargo", responsavel: "Gestor" },
+      { titulo: "Treinamento inicial completo do cargo", responsavel: "Gestor" },
+      { titulo: "Aplicação do Perfil Comportamental", responsavel: "RH" },
+      { titulo: "Designação de Padrinho (mentor)", responsavel: "Gestor" },
     ],
   },
   {

@@ -1,14 +1,26 @@
-import { useMemo, useState } from "react";
-import { Network, SlidersHorizontal, ChevronDown, ChevronRight, Users } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import {
+  Network,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronRight,
+  Users,
+  UserPlus,
+  UserMinus,
+  Camera,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Select } from "@/components/ui/form";
+import { Campo, Input, Select } from "@/components/ui/form";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
+import { Avatar } from "@/components/ui/misc";
 import { Badge } from "@/components/ui/badge";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { idsDaEquipe, ehRH } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
+import { slug } from "@/data/_gen";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
 
@@ -23,8 +35,16 @@ function corNode(c: Colaborador, ehGer: boolean): { box: string; sub: string } {
 export default function Organograma() {
   const sessao = useSessao();
   const d = useDominio();
+  const toast = useToast();
+  const { criar, atualizar, remover } = useColecao("colaboradores");
+  const podeEditar = ehRH(sessao);
+
   const [colapsados, setColapsados] = useState<Set<string>>(new Set());
   const [mostrarPainel, setMostrarPainel] = useState(false);
+  const [adicionarEm, setAdicionarEm] = useState<Colaborador | null>(null);
+  const [removerAlvo, setRemoverAlvo] = useState<Colaborador | null>(null);
+  const fotoInputRef = useRef<HTMLInputElement>(null);
+  const fotoAlvoRef = useRef<string | null>(null);
 
   const filhosPorGestor = useMemo(() => {
     const m = new Map<string, Colaborador[]>();
@@ -52,6 +72,46 @@ export default function Organograma() {
       return n;
     });
 
+  // Remove uma pessoa do organograma: os subordinados diretos são reposicionados
+  // sob o gestor da pessoa removida (reparent) e, em seguida, o registro é excluído.
+  const removerDoOrganograma = (c: Colaborador) => {
+    const filhos = filhosPorGestor.get(c.id) ?? [];
+    for (const f of filhos) atualizar(f.id, { gestorId: c.gestorId ?? null });
+    remover(c.id);
+    toast(
+      filhos.length > 0
+        ? `${c.nome} removido(a) do organograma. ${filhos.length} subordinado(s) reposicionado(s).`
+        : `${c.nome} removido(a) do organograma.`,
+    );
+  };
+
+  // Upload de foto (≤ 1 MB) → data URL → atualiza o colaborador.
+  const abrirSeletorFoto = (id: string) => {
+    fotoAlvoRef.current = id;
+    fotoInputRef.current?.click();
+  };
+
+  const aoSelecionarFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const id = fotoAlvoRef.current;
+    e.target.value = ""; // permite reenviar o mesmo arquivo
+    if (!file || !id) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Selecione um arquivo de imagem.", "erro");
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      toast("Imagem acima de 1 MB. Escolha um arquivo menor.", "erro");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      atualizar(id, { fotoDataUrl: String(reader.result) });
+      toast("Foto atualizada.");
+    };
+    reader.readAsDataURL(file);
+  };
+
   const Node = ({ c }: { c: Colaborador }) => {
     const filhos = filhosPorGestor.get(c.id) ?? [];
     const ger = ehGerente(c);
@@ -60,7 +120,48 @@ export default function Organograma() {
     return (
       <li>
         <div className="org-node">
-          <div className={cn("mx-auto w-44 rounded-xl px-3 py-2 text-center shadow-card", cor.box)}>
+          <div className={cn("group relative mx-auto w-44 rounded-xl px-3 py-2 text-center shadow-card", cor.box)}>
+            {podeEditar && (
+              <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => setAdicionarEm(c)}
+                  title="Adicionar subordinado"
+                  aria-label={`Adicionar subordinado a ${c.nome}`}
+                  className="rounded-full bg-black/10 p-1 hover:bg-black/20"
+                >
+                  <UserPlus className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => abrirSeletorFoto(c.id)}
+                  title="Enviar foto"
+                  aria-label={`Enviar foto de ${c.nome}`}
+                  className="rounded-full bg-black/10 p-1 hover:bg-black/20"
+                >
+                  <Camera className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRemoverAlvo(c)}
+                  title="Remover do organograma"
+                  aria-label={`Remover ${c.nome} do organograma`}
+                  className="rounded-full bg-black/10 p-1 hover:bg-black/20"
+                >
+                  <UserMinus className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+            {c.fotoDataUrl ? (
+              <img
+                src={c.fotoDataUrl}
+                alt={c.nome}
+                title={c.nome}
+                className="mx-auto mb-1 h-8 w-8 rounded-full object-cover ring-2 ring-white/70"
+              />
+            ) : (
+              <Avatar nome={c.nome} size="sm" className="mx-auto mb-1 ring-2 ring-white/70" />
+            )}
             <p className="truncate text-sm font-semibold">{c.nome}</p>
             <p className={cn("truncate text-[11px]", cor.sub)}>{d.nomeCargo(c)}</p>
             {filhos.length > 0 && (
@@ -83,7 +184,7 @@ export default function Organograma() {
   return (
     <div>
       <PageHeader title="Organograma" description="Estrutura hierárquica da Impresilk — navegue expandindo e recolhendo as equipes.">
-        {ehRH(sessao) && (
+        {podeEditar && (
           <button className="btn-outline" onClick={() => setMostrarPainel((v) => !v)}>
             <SlidersHorizontal className="h-4 w-4" /> {mostrarPainel ? "Ocultar" : "Editar hierarquia"}
           </button>
@@ -108,8 +209,163 @@ export default function Organograma() {
         </CardBody>
       </Card>
 
-      {mostrarPainel && ehRH(sessao) && <PainelHierarquia />}
+      {mostrarPainel && podeEditar && <PainelHierarquia />}
+
+      {podeEditar && (
+        <>
+          <input
+            ref={fotoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={aoSelecionarFoto}
+          />
+          {adicionarEm && (
+            <ModalAdicionarSubordinado
+              gestor={adicionarEm}
+              onFechar={() => setAdicionarEm(null)}
+              onCriar={(dados) => {
+                const id = slug(dados.nome) || `colab_${Date.now().toString(36)}`;
+                if (d.colabById.has(id)) {
+                  toast("Já existe uma pessoa com esse nome. Ajuste o nome.", "erro");
+                  return;
+                }
+                criar({
+                  id,
+                  nome: dados.nome,
+                  areaId: dados.areaId || null,
+                  cargoId: dados.cargoId || null,
+                  nivelId: dados.nivelId || null,
+                  gestorId: adicionarEm.id,
+                  statusId: "ativo",
+                  perfil: "COLABORADOR",
+                });
+                toast(`${dados.nome} adicionado(a) sob ${adicionarEm.nome}.`);
+                setAdicionarEm(null);
+              }}
+            />
+          )}
+          {removerAlvo && (
+            <ConfirmDialog
+              aberto
+              onFechar={() => setRemoverAlvo(null)}
+              onConfirmar={() => removerDoOrganograma(removerAlvo)}
+              titulo="Remover do organograma"
+              textoConfirmar="Remover"
+              mensagem={
+                <>
+                  Remover <strong>{removerAlvo.nome}</strong> do organograma?
+                  {(filhosPorGestor.get(removerAlvo.id)?.length ?? 0) > 0 && (
+                    <>
+                      {" "}Os {filhosPorGestor.get(removerAlvo.id)!.length} subordinado(s) direto(s)
+                      passarão a se reportar ao gestor atual desta pessoa.
+                    </>
+                  )}
+                </>
+              }
+            />
+          )}
+        </>
+      )}
     </div>
+  );
+}
+
+function ModalAdicionarSubordinado({
+  gestor,
+  onFechar,
+  onCriar,
+}: {
+  gestor: Colaborador;
+  onFechar: () => void;
+  onCriar: (dados: { nome: string; areaId: string; cargoId: string; nivelId: string }) => void;
+}) {
+  const d = useDominio();
+  const toast = useToast();
+  const [nome, setNome] = useState("");
+  const [areaId, setAreaId] = useState(gestor.areaId ?? "");
+  const [cargoId, setCargoId] = useState("");
+  const [nivelId, setNivelId] = useState("");
+
+  const cargosDaArea = useMemo(
+    () => d.cargos.filter((c) => !areaId || c.areaId === areaId),
+    [d.cargos, areaId],
+  );
+
+  const salvar = () => {
+    if (!nome.trim()) {
+      toast("Informe o nome da pessoa.", "erro");
+      return;
+    }
+    onCriar({ nome: nome.trim(), areaId, cargoId, nivelId });
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo="Adicionar subordinado"
+      descricao={`Nova pessoa reportando-se a ${gestor.nome}.`}
+      rodape={
+        <>
+          <button className="btn-outline" onClick={onFechar}>
+            Cancelar
+          </button>
+          <button className="btn-primary" onClick={salvar}>
+            <UserPlus className="h-4 w-4" /> Adicionar
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <Campo label="Nome" obrigatorio>
+          <Input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="Nome completo"
+            autoFocus
+          />
+        </Campo>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Campo label="Área">
+            <Select
+              value={areaId}
+              onChange={(e) => {
+                setAreaId(e.target.value);
+                setCargoId("");
+              }}
+            >
+              <option value="">— selecione —</option>
+              {d.areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.nome}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+          <Campo label="Cargo">
+            <Select value={cargoId} onChange={(e) => setCargoId(e.target.value)}>
+              <option value="">— selecione —</option>
+              {cargosDaArea.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+        </div>
+        <Campo label="Nível">
+          <Select value={nivelId} onChange={(e) => setNivelId(e.target.value)}>
+            <option value="">— selecione —</option>
+            {d.niveis.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.codigo} — {n.nome}
+              </option>
+            ))}
+          </Select>
+        </Campo>
+      </div>
+    </Modal>
   );
 }
 

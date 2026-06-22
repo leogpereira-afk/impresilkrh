@@ -62,6 +62,25 @@ npm run preview  # pré-visualiza o build
 
 Nenhuma variável de ambiente é necessária.
 
+## Armazenamento de arquivos (uploads)
+
+Como o sistema é **estático e sem servidor**, todos os anexos (documentos do
+colaborador, advertências, fotos do organograma, arquivos do repositório
+institucional) são lidos no navegador e guardados como **data URL** dentro do
+`localStorage`, junto com os demais dados. Implicações:
+
+- **Limite:** ~2 MB por arquivo (1 MB para fotos do organograma) — o app avisa
+  ao ultrapassar. O `localStorage` tem cota total (~5–10 MB por navegador), então
+  os anexos devem ser usados com parcimônia.
+- **Onde fica:** somente **no navegador** em que o upload foi feito. Para
+  transferir/!fazer backup, use **Exportar dados (.json)** — os anexos vão junto.
+- **Abertura:** ao clicar em um documento, ele **abre em nova aba** (o próprio
+  arquivo, via data URL).
+- **Evolução para nuvem:** caso uma versão futura passe a ter backend, os uploads
+  poderiam migrar para **AWS S3** ou **Google Cloud Storage** (guardando apenas a
+  URL do objeto no registro), com política de backup do bucket. Hoje isso não é
+  necessário — não há servidor.
+
 ## Estrutura
 
 ```

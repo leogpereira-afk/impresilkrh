@@ -6,6 +6,12 @@ import {
   UserMinus,
   Plus,
   PlayCircle,
+  GraduationCap,
+  ScrollText,
+  MapPin,
+  Brain,
+  HeartHandshake,
+  ChevronRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -123,6 +129,10 @@ export default function Integracao() {
       </div>
 
       <div className="mt-6">
+        <EsteiraOnboarding />
+      </div>
+
+      <div className="mt-6">
         <Tabs
           abas={[
             {
@@ -170,6 +180,50 @@ export default function Integracao() {
         />
       )}
     </div>
+  );
+}
+
+// ---------- Esteira visual padrão de onboarding ----------
+const ETAPAS_ESTEIRA: { titulo: string; icon: React.ReactNode }[] = [
+  { titulo: "Treinamento inicial completo", icon: <GraduationCap className="h-4 w-4" /> },
+  { titulo: "Aceite do Código de Ética", icon: <ScrollText className="h-4 w-4" /> },
+  { titulo: "Tour das instalações", icon: <MapPin className="h-4 w-4" /> },
+  { titulo: "Perfil Comportamental", icon: <Brain className="h-4 w-4" /> },
+  { titulo: "Designação de Padrinho", icon: <HeartHandshake className="h-4 w-4" /> },
+];
+
+function EsteiraOnboarding() {
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <GraduationCap className="h-4 w-4 text-brand" />
+            Esteira padrão de onboarding
+          </div>
+        }
+        action={
+          <span className="hidden text-xs text-slate-400 sm:inline">
+            Etapas-chave da jornada de integração
+          </span>
+        }
+      />
+      <CardBody>
+        <ol className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          {ETAPAS_ESTEIRA.map((etapa, i) => (
+            <li key={etapa.titulo} className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/70 px-3 py-1.5 text-xs font-medium text-slate-700">
+                <span className="text-brand">{etapa.icon}</span>
+                {etapa.titulo}
+              </span>
+              {i < ETAPAS_ESTEIRA.length - 1 && (
+                <ChevronRight className="hidden h-4 w-4 shrink-0 text-slate-300 sm:block" />
+              )}
+            </li>
+          ))}
+        </ol>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -244,7 +298,9 @@ function CardChecklist({
 }) {
   const sessao = useSessao();
   const d = useDominio();
-  const { criar } = useColecao("tarefas");
+  const toast = useToast();
+  const { criar, atualizar: atualizarTarefa } = useColecao("tarefas");
+  const { atualizar: atualizarColab } = useColecao("colaboradores");
   const gere = podeGerir(sessao);
 
   const [novoItem, setNovoItem] = useState("");
@@ -253,6 +309,37 @@ function CardChecklist({
   const total = itens.length;
   const feitas = itens.filter((t) => t.concluida).length;
   const pct = total > 0 ? Math.round((feitas / total) * 100) : 0;
+
+  // Candidatos a padrinho: colaboradores ativos, exceto o próprio.
+  const candidatosPadrinho = useMemo(
+    () =>
+      d.ativos
+        .filter((c) => c.id !== colaboradorId)
+        .sort((a, b) => a.nome.localeCompare(b.nome)),
+    [d.ativos, colaboradorId],
+  );
+
+  const definirPadrinho = (valor: string) => {
+    const padrinhoId = valor || null;
+    atualizarColab(colaboradorId, { padrinhoId });
+    // Nice touch: ao designar um padrinho, conclui a tarefa correspondente.
+    if (padrinhoId) {
+      const tarefaPadrinho = itens.find((t) =>
+        t.titulo.toLowerCase().includes("padrinho"),
+      );
+      if (tarefaPadrinho && !tarefaPadrinho.concluida) {
+        atualizarTarefa(tarefaPadrinho.id, {
+          concluida: true,
+          concluidaEm: HOJE.toISOString(),
+        });
+      }
+    }
+    toast(
+      padrinhoId
+        ? `Padrinho de ${colab?.nome ?? "colaborador"}: ${d.nomeColab(padrinhoId)}.`
+        : "Padrinho removido.",
+    );
+  };
 
   const adicionarItem = () => {
     const titulo = novoItem.trim();
@@ -295,6 +382,46 @@ function CardChecklist({
       />
       <CardBody className="space-y-3">
         <Progress value={pct} cor={pct >= 100 ? "#16a34a" : undefined} />
+
+        {tipo === "Admissão" && (
+          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <HeartHandshake className="h-4 w-4 text-brand" />
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Padrinho (mentor)
+                </span>
+              </div>
+              {colab?.padrinhoId ? (
+                <div className="flex items-center gap-2">
+                  <Avatar nome={d.nomeColab(colab.padrinhoId)} size="sm" />
+                  <span className="text-sm font-medium text-slate-700">
+                    {d.nomeColab(colab.padrinhoId)}
+                  </span>
+                </div>
+              ) : (
+                <Badge variant="warning">Padrinho não designado</Badge>
+              )}
+            </div>
+            {gere && (
+              <div className="mt-2">
+                <Select
+                  value={colab?.padrinhoId ?? ""}
+                  onChange={(e) => definirPadrinho(e.target.value)}
+                  className="h-9 py-1.5 text-sm"
+                  aria-label="Designar padrinho"
+                >
+                  <option value="">— designar padrinho —</option>
+                  {candidatosPadrinho.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} · {d.nomeCargo(c)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
 
         <ul className="space-y-1.5">
           {itens.map((t) => (
