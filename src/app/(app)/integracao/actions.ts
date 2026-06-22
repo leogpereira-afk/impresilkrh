@@ -48,7 +48,7 @@ export async function alternarTarefa(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const t = await db.tarefa.findUnique({ where: { id } });
-  if (!t) return;
+  if (!t || !(await podeVerColaborador(sessao, t.colaboradorId))) return;
   await db.tarefa.update({
     where: { id },
     data: {
@@ -66,6 +66,7 @@ export async function adicionarTarefa(formData: FormData) {
   const tipo = String(formData.get("tipo") ?? "");
   const titulo = String(formData.get("titulo") ?? "").trim();
   if (!colaboradorId || !titulo) return { erro: "Informe a tarefa." };
+  if (!(await podeVerColaborador(sessao, colaboradorId))) return { erro: "Fora do escopo." };
   const max = await db.tarefa.aggregate({
     where: { colaboradorId, tipo },
     _max: { ordem: true },
@@ -88,6 +89,8 @@ export async function removerTarefa(formData: FormData): Promise<void> {
   if (!sessao || !podeAvaliar(sessao)) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const t = await db.tarefa.findUnique({ where: { id }, select: { colaboradorId: true } });
+  if (!t || !(await podeVerColaborador(sessao, t.colaboradorId))) return;
   await db.tarefa.delete({ where: { id } });
   revalidatePath("/integracao");
 }

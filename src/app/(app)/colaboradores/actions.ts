@@ -374,10 +374,12 @@ export async function removerMeta(formData: FormData): Promise<void> {
   const sessao = await lerSessao();
   if (!sessao || !podeGerirDesenvolvimento(sessao)) return;
   const id = String(formData.get("id") ?? "");
-  const colaboradorId = String(formData.get("colaboradorId") ?? "");
   if (!id) return;
+  const meta = await db.meta.findUnique({ where: { id }, select: { colaboradorId: true } });
+  const cid = meta?.colaboradorId;
+  if (!cid || !(await podeVerColaborador(sessao, cid))) return;
   await db.meta.delete({ where: { id } });
-  revalidatePath(`/colaboradores/${colaboradorId}`);
+  revalidatePath(`/colaboradores/${cid}`);
 }
 
 // ---- Desenvolvimento: PDI ----
@@ -412,10 +414,11 @@ export async function removerPDI(formData: FormData): Promise<void> {
   const sessao = await lerSessao();
   if (!sessao || !podeGerirDesenvolvimento(sessao)) return;
   const id = String(formData.get("id") ?? "");
-  const colaboradorId = String(formData.get("colaboradorId") ?? "");
   if (!id) return;
+  const pdi = await db.pDI.findUnique({ where: { id }, select: { colaboradorId: true } });
+  if (!pdi || !(await podeVerColaborador(sessao, pdi.colaboradorId))) return;
   await db.pDI.delete({ where: { id } });
-  revalidatePath(`/colaboradores/${colaboradorId}`);
+  revalidatePath(`/colaboradores/${pdi.colaboradorId}`);
 }
 
 // ---- Desenvolvimento: Feedback ----

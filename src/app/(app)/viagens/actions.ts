@@ -69,6 +69,8 @@ export async function removerViagem(formData: FormData): Promise<void> {
   if (!sessao || !podeAvaliar(sessao)) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const v = await db.viagem.findUnique({ where: { id }, select: { colaboradorId: true } });
+  if (!v || !(await podeVerColaborador(sessao, v.colaboradorId))) return;
   await db.viagem.delete({ where: { id } });
   revalidatePath("/viagens");
 }
