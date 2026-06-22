@@ -1,60 +1,48 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Users, UserCircle, LogIn, Eye, EyeOff } from "lucide-react";
+import { useNavigate, Navigate } from "react-router-dom";
+import { LogIn, Eye, EyeOff, User } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
 import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
-import type { Perfil } from "@/data/types";
-import { cn } from "@/lib/cn";
-import { Navigate } from "react-router-dom";
 
-const PERFIS: { id: Perfil; titulo: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "ADMIN_RH", titulo: "Administrador de RH", desc: "Acesso total e Painel de Controle.", icon: ShieldCheck },
-  { id: "GESTOR", titulo: "Gestor", desc: "Gerencia apenas a sua equipe.", icon: Users },
-  { id: "COLABORADOR", titulo: "Colaborador", desc: "Autoatendimento dos próprios dados.", icon: UserCircle },
-];
+const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 export default function Login() {
   const navigate = useNavigate();
   const sessao = useSessao();
-  const { colaboradores, colabById } = useDominio();
+  const { colaboradores } = useDominio();
   const { items: usuarios } = useColecao("usuarios");
-  const [perfil, setPerfil] = useState<Perfil>("ADMIN_RH");
+  const [nome, setNome] = useState("");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
   const [erro, setErro] = useState("");
 
-  const rhId = "larissa-andrade-souza";
-  const gestores = useMemo(
-    () => colaboradores.filter((c) => c.perfil === "GESTOR" && c.statusId !== "inativo"),
-    [colaboradores],
-  );
-  const colaboradoresAtivos = useMemo(
-    () => colaboradores.filter((c) => !c.ehDirecao && c.statusId !== "inativo"),
-    [colaboradores],
-  );
-
-  const [gestorId, setGestorId] = useState(gestores[0]?.id ?? "");
-  const [pessoaId, setPessoaId] = useState("adriano-nunes-araujo");
+  // Quem pode entrar: colaboradores ativos (inclui diretoria). O perfil de acesso
+  // vem do próprio cadastro de cada pessoa.
+  const pessoas = useMemo(() => colaboradores.filter((c) => c.statusId !== "inativo"), [colaboradores]);
 
   if (sessao) return <Navigate to="/painel" replace />;
 
-  const alvoId = perfil === "ADMIN_RH" ? rhId : perfil === "GESTOR" ? gestorId : pessoaId;
-
   const submeter = (e: React.FormEvent) => {
     e.preventDefault();
-    const id = alvoId && colabById.get(alvoId) ? alvoId : rhId;
-    // Senha individual do usuário (cadastrada no Painel de Controle), se houver.
-    // A senha padrão do sistema continua válida como chave mestra (evita travar acesso).
-    const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === id);
+    const alvo =
+      pessoas.find((c) => normalizar(c.nome) === normalizar(nome)) ??
+      pessoas.find((c) => normalizar(c.nome).startsWith(normalizar(nome)) && nome.trim().length >= 3);
+    if (!alvo) {
+      setErro("Nome não encontrado. Digite seu nome completo como está cadastrado.");
+      return;
+    }
+    // Senha individual (cadastrada no Painel de Controle), se houver. A senha
+    // padrão do sistema segue como chave mestra para não travar acesso.
+    const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === alvo.id);
     const senhaUsuario = usuario?.senha?.trim();
     const ok = senha === SENHA_DEMO || (!!senhaUsuario && senha === senhaUsuario);
     if (!ok) {
-      setErro(senhaUsuario ? "Senha incorreta para este usuário." : "Senha incorreta. Use a senha de demonstração.");
+      setErro("Senha incorreta.");
       return;
     }
-    entrar(perfil, id);
+    entrar(alvo.perfil ?? "COLABORADOR", alvo.id);
     navigate("/painel");
   };
 
@@ -84,59 +72,27 @@ export default function Login() {
             <Logo variant="color" className="h-14" />
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-brand-ink">Acessar o sistema</h2>
-          <p className="mt-1.5 text-sm text-slate-500">Selecione o perfil de demonstração e informe a senha.</p>
+          <p className="mt-1.5 text-sm text-slate-500">Informe seu nome e sua senha.</p>
 
           <form onSubmit={submeter} className="mt-7 space-y-5">
-            <div className="grid gap-2">
-              {PERFIS.map((p) => {
-                const Icon = p.icon;
-                const ativo = perfil === p.id;
-                return (
-                  <button
-                    type="button"
-                    key={p.id}
-                    onClick={() => {
-                      setPerfil(p.id);
-                      setErro("");
-                    }}
-                    className={cn(
-                      "flex items-center gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200 active:scale-[0.99]",
-                      ativo ? "border-brand bg-brand-50/60 ring-1 ring-brand shadow-sm" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/60",
-                    )}
-                  >
-                    <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl transition-colors", ativo ? "bg-brand text-white" : "bg-slate-100 text-slate-500")}>
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span className="flex-1">
-                      <span className="block text-sm font-semibold text-slate-800">{p.titulo}</span>
-                      <span className="block text-xs text-slate-500">{p.desc}</span>
-                    </span>
-                    <span className={cn("h-4 w-4 rounded-full border-2", ativo ? "border-brand bg-brand" : "border-slate-300")} />
-                  </button>
-                );
-              })}
-            </div>
-
-            {perfil === "GESTOR" && (
-              <label className="block">
-                <span className="label">Entrar como gestor</span>
-                <select className="input" value={gestorId} onChange={(e) => setGestorId(e.target.value)}>
-                  {gestores.map((g) => (
-                    <option key={g.id} value={g.id}>{g.nome}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {perfil === "COLABORADOR" && (
-              <label className="block">
-                <span className="label">Entrar como colaborador</span>
-                <select className="input" value={pessoaId} onChange={(e) => setPessoaId(e.target.value)}>
-                  {colaboradoresAtivos.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <label className="block">
+              <span className="label">Nome</span>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input pl-9"
+                  list="pessoas-login"
+                  value={nome}
+                  onChange={(e) => { setNome(e.target.value); setErro(""); }}
+                  placeholder="Digite seu nome"
+                  autoFocus
+                  autoComplete="off"
+                />
+                <datalist id="pessoas-login">
+                  {pessoas.map((c) => <option key={c.id} value={c.nome} />)}
+                </datalist>
+              </div>
+            </label>
 
             <label className="block">
               <span className="label">Senha</span>
@@ -145,12 +101,8 @@ export default function Login() {
                   type={verSenha ? "text" : "password"}
                   className="input pr-10"
                   value={senha}
-                  onChange={(e) => {
-                    setSenha(e.target.value);
-                    setErro("");
-                  }}
-                  placeholder="Senha de demonstração"
-                  autoFocus
+                  onChange={(e) => { setSenha(e.target.value); setErro(""); }}
+                  placeholder="Sua senha"
                 />
                 <button type="button" onClick={() => setVerSenha((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
                   {verSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -166,10 +118,10 @@ export default function Login() {
           </form>
 
           <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
-            <p className="font-medium text-slate-600">Ambiente de demonstração</p>
+            <p className="font-medium text-slate-600">Acesso</p>
             <p className="mt-1">
-              Senha: <code className="rounded bg-white px-1.5 py-0.5 font-mono text-brand">{SENHA_DEMO}</code>. Os dados ficam
-              somente neste navegador (localStorage); use Exportar/Importar para compartilhar.
+              Use seu nome e a senha cadastrada no Painel de Controle. Sem senha individual, use a padrão{" "}
+              <code className="rounded bg-white px-1.5 py-0.5 font-mono text-brand">{SENHA_DEMO}</code>.
             </p>
           </div>
         </div>
