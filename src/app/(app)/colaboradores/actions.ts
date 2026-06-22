@@ -313,6 +313,108 @@ export async function atualizarColaborador(formData: FormData) {
   redirect(`/colaboradores/${id}`);
 }
 
+// ---- Desenvolvimento: Metas ----
+function podeGerirDesenvolvimento(sessao: { perfil: string }) {
+  return sessao.perfil === "ADMIN_RH" || sessao.perfil === "GESTOR";
+}
+
+export async function salvarMeta(formData: FormData) {
+  const sessao = await lerSessao();
+  if (!sessao || !podeGerirDesenvolvimento(sessao)) return { erro: "Sem permissão." };
+  const colaboradorId = String(formData.get("colaboradorId") ?? "");
+  if (!colaboradorId || !(await podeVerColaborador(sessao, colaboradorId))) {
+    return { erro: "Colaborador fora do seu escopo." };
+  }
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  if (!titulo) return { erro: "Informe o título da meta." };
+  const id = String(formData.get("id") ?? "");
+  const dados = {
+    titulo,
+    descricao: String(formData.get("descricao") ?? "") || null,
+    indicador: String(formData.get("indicador") ?? "") || null,
+    valorAlvo: parseFloatOpcional(formData.get("valorAlvo")),
+    valorAtual: parseFloatOpcional(formData.get("valorAtual")),
+    unidade: String(formData.get("unidade") ?? "") || null,
+    prazo: parseDataOpcional(formData.get("prazo")),
+    status: String(formData.get("status") ?? "Em andamento"),
+  };
+  if (id) await db.meta.update({ where: { id }, data: dados });
+  else await db.meta.create({ data: { colaboradorId, ...dados } });
+  await registrarAcesso({ usuarioId: sessao.sub, acao: id ? "EDITAR_META" : "CRIAR_META", recurso: "Meta", colaboradorId });
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  return { ok: true };
+}
+
+export async function removerMeta(formData: FormData): Promise<void> {
+  const sessao = await lerSessao();
+  if (!sessao || !podeGerirDesenvolvimento(sessao)) return;
+  const id = String(formData.get("id") ?? "");
+  const colaboradorId = String(formData.get("colaboradorId") ?? "");
+  if (!id) return;
+  await db.meta.delete({ where: { id } });
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+}
+
+// ---- Desenvolvimento: PDI ----
+export async function salvarPDI(formData: FormData) {
+  const sessao = await lerSessao();
+  if (!sessao || !podeGerirDesenvolvimento(sessao)) return { erro: "Sem permissão." };
+  const colaboradorId = String(formData.get("colaboradorId") ?? "");
+  if (!colaboradorId || !(await podeVerColaborador(sessao, colaboradorId))) {
+    return { erro: "Colaborador fora do seu escopo." };
+  }
+  const competencia = String(formData.get("competencia") ?? "").trim();
+  const acao = String(formData.get("acao") ?? "").trim();
+  if (!competencia || !acao) return { erro: "Informe a competência e a ação." };
+  const id = String(formData.get("id") ?? "");
+  const progresso = Math.max(0, Math.min(100, parseInt(String(formData.get("progresso") ?? "0")) || 0));
+  const dados = {
+    competencia,
+    acao,
+    resultadoEsperado: String(formData.get("resultadoEsperado") ?? "") || null,
+    prazo: parseDataOpcional(formData.get("prazo")),
+    progresso,
+    status: progresso >= 100 ? "Concluída" : String(formData.get("status") ?? "Em andamento"),
+  };
+  if (id) await db.pDI.update({ where: { id }, data: dados });
+  else await db.pDI.create({ data: { colaboradorId, ...dados } });
+  await registrarAcesso({ usuarioId: sessao.sub, acao: id ? "EDITAR_PDI" : "CRIAR_PDI", recurso: "PDI", colaboradorId });
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  return { ok: true };
+}
+
+export async function removerPDI(formData: FormData): Promise<void> {
+  const sessao = await lerSessao();
+  if (!sessao || !podeGerirDesenvolvimento(sessao)) return;
+  const id = String(formData.get("id") ?? "");
+  const colaboradorId = String(formData.get("colaboradorId") ?? "");
+  if (!id) return;
+  await db.pDI.delete({ where: { id } });
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+}
+
+// ---- Desenvolvimento: Feedback ----
+export async function salvarFeedback(formData: FormData) {
+  const sessao = await lerSessao();
+  if (!sessao || !podeGerirDesenvolvimento(sessao)) return { erro: "Sem permissão." };
+  const colaboradorId = String(formData.get("colaboradorId") ?? "");
+  const conteudo = String(formData.get("conteudo") ?? "").trim();
+  if (!colaboradorId || !conteudo) return { erro: "Preencha o feedback." };
+  if (!(await podeVerColaborador(sessao, colaboradorId))) return { erro: "Colaborador fora do escopo." };
+  await db.feedback.create({
+    data: {
+      colaboradorId,
+      autorId: sessao.colaboradorId ?? null,
+      tipo: String(formData.get("tipo") ?? "Contínuo"),
+      conteudo,
+      contexto: String(formData.get("contexto") ?? "") || null,
+    },
+  });
+  await registrarAcesso({ usuarioId: sessao.sub, acao: "REGISTRAR_FEEDBACK", recurso: "Feedback", colaboradorId });
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  return { ok: true };
+}
+
 // Registra a visualização de dados sensíveis (LGPD) — chamado ao abrir o detalhe.
 export async function logVisualizacaoSensivel(colaboradorId: string) {
   const sessao = await lerSessao();

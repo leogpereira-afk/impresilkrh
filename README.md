@@ -14,9 +14,10 @@ desktop e dispositivos móveis. Interface 100% em **português do Brasil**.
 | Módulo | Descrição |
 | --- | --- |
 | **Painel (Dashboard)** | Indicadores de gestão: headcount, turnover, documentos a vencer, avaliações pendentes, férias, aniversariantes, risco de saída, distribuições por área/nível/enquadramento salarial e alertas. Visão personalizada por perfil. |
-| **Colaboradores e Documentos** | Lista com busca e filtros, ficha completa com abas (Dados, Documentos, Férias, Histórico), cadastro de novos colaboradores, organograma navegável e dados sensíveis mascarados conforme LGPD. |
+| **Colaboradores e Documentos** | Lista com busca e filtros, ficha completa com abas (Dados, Documentos, Férias, Desenvolvimento, Histórico), cadastro e **edição** de colaboradores, organograma navegável, **exportação para Excel** e dados sensíveis mascarados conforme LGPD. |
 | **Carreira e Cargos** | Régua de senioridade (N1–N5), tabela salarial por cargo/área, posição do colaborador na carreira e **simulador de progressão**. |
-| **Desempenho e Retenção** | Ciclos de avaliação, **matriz 9-Box** (desempenho × potencial), metas, PDI e feedbacks. |
+| **Desempenho e Retenção** | Ciclos de avaliação com **lançamento de notas e cálculo automático** (nota ponderada + elegibilidade a promoção), **matriz 9-Box** (desempenho × potencial), gestão de **metas, PDI e feedbacks** e exportação das avaliações. |
+| **Férias** | Painel de controle de saldos, programação, quem está de férias, próximos retornos e **alertas de conformidade com a CLT** (períodos a vencer/vencidos). |
 | **Documentos Institucionais** | Código de Ética, POPs, treinamentos e SST. |
 | **Registros de Acesso (LGPD)** | Trilha de auditoria de acessos a dados pessoais/sensíveis (somente RH). |
 | **Configurações** | Status do quadro, ciclos de avaliação e visão da estrutura organizacional (somente RH). |

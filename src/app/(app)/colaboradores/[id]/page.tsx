@@ -1,5 +1,5 @@
 import { exigirSessao } from "@/lib/auth";
-import { podeVerColaborador, podeVerDadosSensiveis, podeEditarColaboradores } from "@/lib/rbac";
+import { podeVerColaborador, podeVerDadosSensiveis, podeEditarColaboradores, podeAvaliar } from "@/lib/rbac";
 import { db } from "@/lib/db";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
@@ -21,12 +21,18 @@ import {
   registrarFerias,
   registrarMovimentacao,
   logVisualizacaoSensivel,
+  salvarMeta,
+  removerMeta,
+  salvarPDI,
+  removerPDI,
+  salvarFeedback,
 } from "../actions";
 import {
   FormDocumento,
   FormFerias,
   FormMovimentacao,
 } from "@/components/colaboradores/detail-forms";
+import { GestaoDesenvolvimento } from "@/components/colaboradores/desenvolvimento";
 import {
   ArrowLeft,
   User,
@@ -40,6 +46,7 @@ import {
   ShieldAlert,
   Briefcase,
   Pencil,
+  Target,
 } from "lucide-react";
 
 export default async function ColaboradorDetailPage({
@@ -62,6 +69,12 @@ export default async function ColaboradorDetailPage({
       documentos: { orderBy: { criadoEm: "desc" } },
       ferias: { orderBy: { dataInicio: "desc" } },
       movimentacoes: { orderBy: { data: "desc" } },
+      metas: { orderBy: { criadoEm: "desc" } },
+      pdis: { orderBy: { criadoEm: "desc" } },
+      feedbacksRecebidos: {
+        include: { autor: { select: { nome: true } } },
+        orderBy: { criadoEm: "desc" },
+      },
     },
   });
 
@@ -69,6 +82,7 @@ export default async function ColaboradorDetailPage({
 
   const verSensivel = podeVerDadosSensiveis(sessao, c.id);
   const podeEditar = podeEditarColaboradores(sessao);
+  const podeGerirDes = podeAvaliar(sessao);
   if (verSensivel) await logVisualizacaoSensivel(c.id);
 
   const hoje = new Date();
@@ -345,6 +359,21 @@ export default async function ColaboradorDetailPage({
     </div>
   );
 
+  const abaDesenvolvimento = (
+    <GestaoDesenvolvimento
+      colaboradorId={c.id}
+      podeGerir={podeGerirDes}
+      metas={c.metas}
+      pdis={c.pdis}
+      feedbacks={c.feedbacksRecebidos}
+      salvarMeta={salvarMeta}
+      removerMeta={removerMeta}
+      salvarPDI={salvarPDI}
+      removerPDI={removerPDI}
+      salvarFeedback={salvarFeedback}
+    />
+  );
+
   return (
     <>
       <Link href="/colaboradores" className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
@@ -395,6 +424,9 @@ export default async function ColaboradorDetailPage({
           { id: "dados", label: "Dados", icon: <User className="h-4 w-4" />, conteudo: abaDados },
           { id: "documentos", label: `Documentos (${c.documentos.length})`, icon: <FileText className="h-4 w-4" />, conteudo: abaDocumentos },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: abaFerias },
+          ...(podeGerirDes
+            ? [{ id: "desenvolvimento", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: abaDesenvolvimento }]
+            : []),
           { id: "historico", label: "Histórico", icon: <History className="h-4 w-4" />, conteudo: abaHistorico },
         ]}
       />

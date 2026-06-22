@@ -7,7 +7,7 @@ import { Avatar, EmptyState } from "@/components/ui/misc";
 import { maskCPF, formatDate, tempoDeCasa } from "@/lib/format";
 import { PERFIS } from "@/lib/constants";
 import Link from "next/link";
-import { Users, UserPlus, Search } from "lucide-react";
+import { Users, UserPlus, Search, FileSpreadsheet } from "lucide-react";
 
 export default async function ColaboradoresPage({
   searchParams,
@@ -45,6 +45,9 @@ export default async function ColaboradoresPage({
         title="Colaboradores"
         description={`${colaboradores.length} pessoa${colaboradores.length !== 1 ? "s" : ""} encontrada${colaboradores.length !== 1 ? "s" : ""}`}
       >
+        <a href="/colaboradores/export" className="btn-outline flex items-center gap-2">
+          <FileSpreadsheet className="h-4 w-4" /> Exportar Excel
+        </a>
         {isRH && (
           <Link href="/colaboradores/novo" className="btn-primary flex items-center gap-2">
             <UserPlus className="h-4 w-4" /> Novo colaborador

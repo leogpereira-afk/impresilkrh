@@ -12,7 +12,7 @@ import { DesempenhoPessoal } from "@/components/desempenho/desempenho-pessoal";
 import { FormAvaliacao } from "@/components/desempenho/form-avaliacao";
 import { salvarAvaliacao } from "./actions";
 import { formatDate } from "@/lib/format";
-import { Grid3x3, ClipboardCheck, Award, CalendarRange, Target } from "lucide-react";
+import { Grid3x3, ClipboardCheck, Award, CalendarRange, Target, FileSpreadsheet } from "lucide-react";
 
 function bucketDesempenho(nota: number | null | undefined, status?: string | null): string {
   if (nota != null) {
@@ -114,7 +114,13 @@ export default async function DesempenhoPage() {
       <PageHeader
         title="Desempenho e Retenção"
         description={ciclo ? `Ciclo atual: ${ciclo.nome}` : "Nenhum ciclo aberto"}
-      />
+      >
+        {ciclo && avaliados > 0 && (
+          <a href="/desempenho/export" className="btn-outline flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" /> Exportar avaliações
+          </a>
+        )}
+      </PageHeader>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Avaliados no ciclo" value={avaliados} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />

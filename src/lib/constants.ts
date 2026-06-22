@@ -76,6 +76,33 @@ export const TIPOS_MOVIMENTACAO = [
   "Retorno",
 ] as const;
 
+// Status de metas
+export const STATUS_META = [
+  "Não iniciada",
+  "Em andamento",
+  "Concluída",
+  "Atrasada",
+] as const;
+
+// Status de PDI
+export const STATUS_PDI = [
+  "Pendente",
+  "Em andamento",
+  "Concluída",
+  "Atrasada",
+] as const;
+
+// Tipos de feedback
+export const TIPOS_FEEDBACK = ["Positivo", "Desenvolvimento", "Contínuo"] as const;
+
+// Status de férias
+export const STATUS_FERIAS = [
+  "Em aberto",
+  "Agendada",
+  "Em andamento",
+  "Concluída",
+] as const;
+
 // Mapa de senioridade (Plano de Carreira)
 export const MAPA_SENIORIDADE: Record<string, string> = {
   N1: "Júnior",
