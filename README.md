@@ -83,25 +83,20 @@ npm run dev
 O app usa **PostgreSQL** — obrigatório em produção serverless (o disco do Netlify é
 efêmero, então SQLite em arquivo não funciona). Passo a passo:
 
-```bash
-# 1. Provisione o "Netlify DB" (Neon). Ele cria a variável NETLIFY_DATABASE_URL
-#    no site automaticamente — a aplicação já a utiliza em runtime.
-netlify db init          # ou ative a extensão "Neon/Netlify DB" pelo painel
+**O banco é criado e populado automaticamente no deploy** — você não roda nada localmente:
 
-# 2. Defina o segredo de sessão no painel (Site settings → Environment variables):
-#    AUTH_SECRET = um valor forte (openssl rand -base64 48)
-
-# 3. Crie as tabelas e popule os dados (uma vez), usando a connection string
-#    DIRETA do banco (no Netlify DB/Neon, a "unpooled"):
-DATABASE_URL="<connection-string-unpooled>" npm run db:push
-DATABASE_URL="<connection-string-unpooled>" npm run db:seed
-
-# 4. Faça o deploy (push para a branch conectada, ou `netlify deploy --prod`).
-```
+1. **Provisione o "Netlify DB"** (extensão Neon, gerenciada dentro do Netlify). Ela cria as
+   variáveis `NETLIFY_DATABASE_URL` / `NETLIFY_DATABASE_URL_UNPOOLED` no site.
+   - Painel: site → **Extensions** → **Neon** → *Add database*; ou CLI: `netlify db init`.
+2. Defina **`AUTH_SECRET`** em *Site settings → Environment variables* (valor forte).
+3. **Refaça o deploy.** Durante o build, `scripts/cloud-db-setup.mjs` cria as tabelas
+   (`prisma db push`) e popula os dados de demonstração na primeira vez (idempotente —
+   não duplica nas próximas). Se nenhum banco estiver configurado, o build apenas pula
+   essa etapa (não falha).
 
 O `netlify.toml` já configura o build e o plugin oficial do Next.js. O `prisma generate`
-roda no build e inclui o engine do runtime do Netlify (`rhel-openssl-3.0.x`). A aplicação
-usa `DATABASE_URL` e, na ausência dela, `NETLIFY_DATABASE_URL` (criada pelo Netlify DB).
+inclui o engine do runtime do Netlify (`rhel-openssl-3.0.x`). Em runtime, a aplicação usa
+`DATABASE_URL` ou, na ausência, `NETLIFY_DATABASE_URL`.
 
 > **Anexos de documentos:** o upload grava em disco local, que não persiste no Netlify.
 > O cadastro de documentos (metadados) funciona; para anexos em produção, configure um

@@ -56,6 +56,14 @@ function telefone(): string {
 const SENHA_PADRAO = "Impresilk@2026";
 
 async function main() {
+  // Idempotente: se já há dados, não repovoa (evita apagar dados em cada deploy).
+  // Use SEED_FORCE=1 para forçar o repovoamento.
+  const jaPopulado = (await db.user.count().catch(() => 0)) > 0;
+  if (jaPopulado && !process.env.SEED_FORCE) {
+    console.log("ℹ️  Banco já populado — seed ignorado (use SEED_FORCE=1 para repovoar).");
+    return;
+  }
+
   console.log("🌱  Limpando base...");
   // ordem de dependência
   await db.accessLog.deleteMany();
