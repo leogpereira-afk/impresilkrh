@@ -30,6 +30,7 @@ model User {
   criadoEm      DateTime  @default(now())
 
   acessosRegistrados AccessLog[] @relation("UsuarioDoAcesso")
+  notificacoes       Notificacao[]
 }
 
 // Registro LGPD — quem acessou dados pessoais/sensíveis (CPF, salário, família)
@@ -191,6 +192,7 @@ model Colaborador {
   feedbacksDados     Feedback[] @relation("FeedbackAutor")
   viagens       Viagem[]
   tarefas       Tarefa[]
+  aceites       Aceite[]
   consentimentos ConsentimentoLGPD[]
 
   @@index([areaId])
@@ -419,6 +421,46 @@ model Tarefa {
   concluidaEm   DateTime?
   ordem         Int      @default(0)
   criadoEm      DateTime @default(now())
+
+  @@index([colaboradorId])
+}
+
+// ===================== NOTIFICAÇÕES =====================
+// Alertas in-app por usuário (vencimentos, pendências, avaliações).
+// O canal de e-mail é opcional e ativado via provedor configurado em lib/email.ts.
+
+model Notificacao {
+  id         String   @id @default(cuid())
+  usuario    User     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId  String
+  chave      String // chave de deduplicação (ex.: doc-venc-<id>)
+  tipo       String // Documento, SST, Férias, Avaliação, Integração, Viagem
+  severidade String   @default("info") // info, warning, danger
+  titulo     String
+  mensagem   String?
+  link       String?
+  lida       Boolean  @default(false)
+  criadoEm   DateTime @default(now())
+
+  @@unique([usuarioId, chave])
+  @@index([usuarioId])
+}
+
+// ===================== ACEITES / ASSINATURAS =====================
+// Registro de aceite eletrônico de documentos (Código de Ética, PDI, políticas),
+// com data, IP e hash do conteúdo para integridade/trilha de auditoria.
+
+model Aceite {
+  id             String   @id @default(cuid())
+  colaborador    Colaborador @relation(fields: [colaboradorId], references: [id], onDelete: Cascade)
+  colaboradorId  String
+  tipo           String // Código de Ética, PDI, Política
+  referencia     String? // id do documento/PDI relacionado
+  versao         String?
+  hashConteudo   String?
+  nomeConfirmado String?
+  ip             String?
+  criadoEm       DateTime @default(now())
 
   @@index([colaboradorId])
 }

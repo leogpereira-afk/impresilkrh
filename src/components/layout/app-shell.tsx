@@ -23,6 +23,8 @@ import {
   ClipboardList,
   HardHat,
   BarChart3,
+  Bell,
+  FileSignature,
   Menu,
   X,
   LogOut,
@@ -52,6 +54,8 @@ const NAV: ItemNav[] = [
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Conhecimento" },
   { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "Conhecimento" },
   { href: "/meu-perfil", label: "Meu perfil", icon: UserCircle, perfis: TODOS, grupo: "Conta" },
+  { href: "/aceites", label: "Termos e Aceites", icon: FileSignature, perfis: TODOS, grupo: "Conta" },
+  { href: "/notificacoes", label: "Notificações", icon: Bell, perfis: TODOS, grupo: "Conta" },
   { href: "/relatorios", label: "Relatórios Gerenciais", icon: BarChart3, perfis: ["ADMIN_RH"], grupo: "Administração" },
   { href: "/configuracoes", label: "Configurações", icon: Settings, perfis: ["ADMIN_RH"], grupo: "Administração" },
   { href: "/lgpd", label: "Registros de Acesso (LGPD)", icon: ShieldCheck, perfis: ["ADMIN_RH"], grupo: "Administração" },
@@ -62,9 +66,11 @@ const GRUPOS = ["Visão geral", "Pessoas", "Conhecimento", "Conta", "Administra�
 export function AppShell({
   user,
   children,
+  naoLidas = 0,
 }: {
   user: { nome: string; perfil: string; email: string };
   children: React.ReactNode;
+  naoLidas?: number;
 }) {
   const pathname = usePathname();
   const [aberto, setAberto] = useState(false);
@@ -167,6 +173,18 @@ export function AppShell({
             </div>
             <div className="hidden lg:block" />
             <div className="flex items-center gap-3">
+              <Link
+                href="/notificacoes"
+                className="relative rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                title="Notificações"
+              >
+                <Bell className="h-5 w-5" />
+                {naoLidas > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {naoLidas > 9 ? "9+" : naoLidas}
+                  </span>
+                )}
+              </Link>
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-medium text-slate-800">{user.nome}</p>
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>

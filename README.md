@@ -22,6 +22,8 @@ desktop e dispositivos móveis. Interface 100% em **português do Brasil**.
 | **Viagens e Diárias** | Controle de deslocamentos da equipe de campo: cálculo automático de diárias, status (planejada/aprovada/em andamento/concluída) e gasto no mês. |
 | **Saúde e Segurança (SST)** | Conformidade de exames ocupacionais (ASO, periódicos) com alertas de vencimento e registro dos programas obrigatórios (PGR, PCMSO). |
 | **Relatórios Gerenciais** | Folha por área, custo médio, movimentação de pessoal (12 meses), turnover, enquadramento salarial e tempo de casa (somente RH). |
+| **Notificações** | Central de alertas in-app (vencimentos, pendências, avaliações) com sino no cabeçalho e **resumo por e-mail** (canal opcional). |
+| **Termos e Aceites** | **Assinatura eletrônica** do Código de Ética e ciência de PDI, com data, IP e hash de integridade; painel de conformidade para o RH. |
 | **Documentos Institucionais** | Código de Ética, POPs, treinamentos e SST. |
 | **Registros de Acesso (LGPD)** | Trilha de auditoria de acessos a dados pessoais/sensíveis (somente RH). |
 | **Configurações** | Status do quadro, ciclos de avaliação e visão da estrutura organizacional (somente RH). |
@@ -94,6 +96,15 @@ Todos os usuários de demonstração usam a senha: **`Impresilk@2026`**
 - Todo acesso a dados sensíveis é **registrado** em uma trilha de auditoria (`AccessLog`),
   consultável pelo RH no módulo *Registros de Acesso*.
 - A senha é armazenada com hash **bcrypt**; a sessão usa **JWT assinado** em cookie httpOnly.
+- Aceites eletrônicos registram **data, IP e hash de integridade** do conteúdo aceito.
+
+## Observações de implantação
+
+- **Upload de documentos:** os arquivos são gravados em `STORAGE_DIR` (sistema de arquivos local).
+  Para produção em nuvem, recomenda-se trocar `src/lib/storage.ts` por um provedor de objetos
+  (ex.: S3), mantendo a mesma interface.
+- **E-mail:** o envio de resumos é opcional. Configure `RESEND_API_KEY` e `EMAIL_FROM` para ativar;
+  sem essas variáveis, o sistema opera em modo simulado (registra no log) sem quebrar o fluxo.
 
 ## Dados de exemplo
 

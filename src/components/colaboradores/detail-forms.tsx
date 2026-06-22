@@ -89,8 +89,8 @@ export function FormDocumento({
               <input type="date" name="dataVencimento" className="input" />
             </div>
             <div>
-              <label className="label">Arquivo (nome)</label>
-              <input name="arquivoNome" className="input" placeholder="aso-admissional.pdf" />
+              <label className="label">Arquivo (PDF, imagem, até 10 MB)</label>
+              <input type="file" name="arquivo" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" className="input file:mr-3 file:rounded file:border-0 file:bg-brand/10 file:px-2 file:py-1 file:text-xs file:font-medium file:text-brand" />
             </div>
             <div>
               <label className="label">Observação</label>

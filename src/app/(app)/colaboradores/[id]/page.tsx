@@ -47,6 +47,7 @@ import {
   Briefcase,
   Pencil,
   Target,
+  Download,
 } from "lucide-react";
 
 export default async function ColaboradorDetailPage({
@@ -248,7 +249,18 @@ export default async function ColaboradorDetailPage({
                   <tr key={d.id} className="hover:bg-slate-50/60">
                     <td className="td">
                       <p className="font-medium text-slate-800">{d.nome}</p>
-                      {d.arquivoNome && <p className="text-xs text-slate-400">{d.arquivoNome}</p>}
+                      {d.arquivoPath ? (
+                        <a
+                          href={`/colaboradores/${c.id}/documento/${d.id}`}
+                          target="_blank"
+                          rel="noopener"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+                        >
+                          <Download className="h-3 w-3" /> {d.arquivoNome ?? "Baixar arquivo"}
+                        </a>
+                      ) : d.arquivoNome ? (
+                        <p className="text-xs text-slate-400">{d.arquivoNome}</p>
+                      ) : null}
                     </td>
                     <td className="td hidden sm:table-cell">
                       <Badge variant="neutral">{d.categoria}</Badge>

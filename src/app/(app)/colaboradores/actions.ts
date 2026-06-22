@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { lerSessao } from "@/lib/session";
 import { podeVerColaborador, podeEditarColaboradores } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
+import { salvarArquivo, removerArquivo } from "@/lib/storage";
 
 function parseDataOpcional(v: FormDataEntryValue | null): Date | null {
   if (!v || typeof v !== "string" || !v.trim()) return null;
@@ -30,12 +31,27 @@ export async function adicionarDocumento(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
   if (!colaboradorId || !nome) return { erro: "Informe o nome do documento." };
 
+  // Upload de arquivo (opcional)
+  let arquivoNome: string | null = String(formData.get("arquivoNome") ?? "") || null;
+  let arquivoPath: string | null = null;
+  let tamanhoBytes: number | null = null;
+  const arquivo = formData.get("arquivo");
+  if (arquivo instanceof File && arquivo.size > 0) {
+    if (arquivo.size > 10 * 1024 * 1024) return { erro: "Arquivo excede o limite de 10 MB." };
+    const salvo = await salvarArquivo(arquivo);
+    arquivoPath = salvo.caminho;
+    arquivoNome = salvo.nome;
+    tamanhoBytes = salvo.tamanho;
+  }
+
   await db.documento.create({
     data: {
       colaboradorId,
       categoria,
       nome,
-      arquivoNome: String(formData.get("arquivoNome") ?? "") || null,
+      arquivoNome,
+      arquivoPath,
+      tamanhoBytes,
       dataEmissao: parseDataOpcional(formData.get("dataEmissao")),
       dataVencimento: parseDataOpcional(formData.get("dataVencimento")),
       observacao: String(formData.get("observacao") ?? "") || null,
@@ -61,7 +77,9 @@ export async function removerDocumento(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   const colaboradorId = String(formData.get("colaboradorId") ?? "");
   if (!id) return;
+  const doc = await db.documento.findUnique({ where: { id }, select: { arquivoPath: true } });
   await db.documento.delete({ where: { id } });
+  if (doc?.arquivoPath) await removerArquivo(doc.arquivoPath);
   await registrarAcesso({
     usuarioId: sessao.sub,
     acao: "REMOVER_DOCUMENTO",
