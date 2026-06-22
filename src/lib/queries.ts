@@ -35,7 +35,7 @@ export interface DashboardData {
   porStatusSalarial: { nome: string; valor: number; cor: string }[];
   elegiveisPromocao: number;
   riscoAlto: number;
-  mediaSalarial: number;
+  mediaSalarial: number | null;
   alertas: {
     tipo: string;
     titulo: string;
@@ -169,11 +169,12 @@ export async function dashboardGeral(sessao: SessionPayload): Promise<DashboardD
     .map((s) => ({ nome: s, valor: statusMap.get(s) ?? 0, cor: corStatus[s] }));
 
   const riscoAlto = ativos.filter((c) => c.riscoSaida === "Alto").length;
+  // Média salarial é dado sensível: exposta apenas ao RH (LGPD).
   const salarios = ativos.map((c) => c.salario ?? 0).filter((s) => s > 0);
   const mediaSalarial =
-    salarios.length > 0
+    sessao.perfil === PERFIS.ADMIN_RH && salarios.length > 0
       ? salarios.reduce((a, b) => a + b, 0) / salarios.length
-      : 0;
+      : null;
 
   // Alertas
   const alertas: DashboardData["alertas"] = [];

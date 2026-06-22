@@ -249,7 +249,7 @@ export default async function ColaboradorDetailPage({
                   <tr key={d.id} className="hover:bg-slate-50/60">
                     <td className="td">
                       <p className="font-medium text-slate-800">{d.nome}</p>
-                      {d.arquivoPath ? (
+                      {d.arquivoPath && verSensivel ? (
                         <a
                           href={`/colaboradores/${c.id}/documento/${d.id}`}
                           target="_blank"

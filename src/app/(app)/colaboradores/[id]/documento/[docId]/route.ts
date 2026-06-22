@@ -1,5 +1,5 @@
 import { lerSessao } from "@/lib/session";
-import { podeVerColaborador } from "@/lib/rbac";
+import { podeVerDadosSensiveis } from "@/lib/rbac";
 import { db } from "@/lib/db";
 import { lerArquivo, tipoConteudo } from "@/lib/storage";
 import { registrarAcesso } from "@/lib/lgpd";
@@ -12,7 +12,9 @@ export async function GET(
 ) {
   const sessao = await lerSessao();
   if (!sessao) return new Response("Não autenticado", { status: 401 });
-  if (!(await podeVerColaborador(sessao, params.id))) {
+  // Documentos podem conter dados sensíveis (holerite, contrato, advertência),
+  // então só o RH e o próprio colaborador podem baixá-los (LGPD).
+  if (!podeVerDadosSensiveis(sessao, params.id)) {
     return new Response("Sem permissão", { status: 403 });
   }
 

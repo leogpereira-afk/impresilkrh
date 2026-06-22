@@ -218,9 +218,14 @@ export default async function DashboardPage() {
         <div>
           <p className="text-sm font-medium text-gold-200">Resumo executivo</p>
           <p className="mt-1 text-sm text-slate-300">
-            Média salarial da equipe:{" "}
-            <span className="font-semibold text-white">{formatBRL(d.mediaSalarial)}</span>{" "}
-            · {d.elegiveisPromocao} elegível(is) a promoção no ciclo atual
+            {d.mediaSalarial != null && (
+              <>
+                Média salarial da equipe:{" "}
+                <span className="font-semibold text-white">{formatBRL(d.mediaSalarial)}</span>
+                {" · "}
+              </>
+            )}
+            {d.elegiveisPromocao} elegível(is) a promoção no ciclo atual
           </p>
         </div>
         <Badge variant="gold">Ciclo 2026.1</Badge>
