@@ -34,7 +34,7 @@ export default function Login() {
   );
 
   const [gestorId, setGestorId] = useState(gestores[0]?.id ?? "");
-  const [pessoaId, setPessoaId] = useState("bruno-dias-do-nascimento");
+  const [pessoaId, setPessoaId] = useState("adriano-nunes-araujo");
 
   if (sessao) return <Navigate to="/painel" replace />;
 

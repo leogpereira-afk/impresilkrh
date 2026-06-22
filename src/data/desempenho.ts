@@ -89,7 +89,7 @@ ativos.forEach((c, i) => {
 });
 export const AVALIACOES: Avaliacao[] = avaliacoes;
 
-export const METAS: Meta[] = [
+const metasArea: Meta[] = [
   { id: "meta-a1", titulo: "Prazo de entrega das instalações", descricao: "Meta de área — Montagem e Instalação.", tipo: "Área", areaId: "montagem", indicador: "Prazo", valorAlvo: 95, valorAtual: 91, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
   { id: "meta-a2", titulo: "Redução de retrabalho em campo", descricao: "Meta de área — Montagem e Instalação.", tipo: "Área", areaId: "montagem", indicador: "Retrabalho", valorAlvo: 5, valorAtual: 7, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
   { id: "meta-a3", titulo: "Produtividade da produção", descricao: "Meta de área — Produção e Comunicação Visual.", tipo: "Área", areaId: "producao", indicador: "Produtividade", valorAlvo: 100, valorAtual: 96, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
@@ -97,24 +97,36 @@ export const METAS: Meta[] = [
   { id: "meta-a5", titulo: "Taxa de conversão de vendas", descricao: "Meta de área — Comercial e Atendimento.", tipo: "Área", areaId: "comercial", indicador: "Conversão", valorAlvo: 30, valorAtual: 26, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
   { id: "meta-a6", titulo: "Qualidade estrutural", descricao: "Meta de área — Serralheria e Metalurgia.", tipo: "Área", areaId: "serralheria", indicador: "Qualidade", valorAlvo: 95, valorAtual: 97, unidade: "%", prazo: "2026-06-30", status: "Concluída" },
   { id: "meta-a7", titulo: "Eficiência administrativa", descricao: "Meta de área — Administrativo e Gestão.", tipo: "Área", areaId: "adm", indicador: "Eficiência", valorAlvo: 90, valorAtual: 88, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
-  { id: "meta-i1", titulo: "Bater meta de vendas consultivas", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: "barbara-patricia-ferreira", indicador: "Meta", valorAlvo: 100, valorAtual: 92, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
-  { id: "meta-i2", titulo: "Reduzir retrabalho em projetos", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: "vinicius-silva-lins", indicador: "Retrabalho", valorAlvo: 5, valorAtual: 8, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
-  { id: "meta-i3", titulo: "Atingir produtividade padrão", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: "daniel-pereira-de-oliveira", indicador: "Produtividade", valorAlvo: 100, valorAtual: 85, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
-  { id: "meta-i4", titulo: "Liderar 100% das frentes no prazo", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: "adriano-nunes-araujo", indicador: "Prazo", valorAlvo: 95, valorAtual: 96, unidade: "%", prazo: "2026-06-30", status: "Concluída" },
 ];
+
+// Amostras individuais ligadas a colaboradores reais do quadro ativo.
+const porArea = (a: string, n = 0) => ativos.filter((c) => c.areaId === a)[n];
+const _com = porArea("comercial");
+const _prod = porArea("producao");
+const _prod2 = porArea("producao", 1);
+const _lider = ativos.find((c) => c.id === "adriano-nunes-araujo") ?? porArea("producao", 2);
+const _adm = porArea("adm");
+
+const metasIndividuais: Meta[] = [
+  _com && { id: "meta-i1", titulo: "Bater meta de vendas consultivas", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: _com.id, indicador: "Meta", valorAlvo: 100, valorAtual: 92, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
+  _prod && { id: "meta-i2", titulo: "Reduzir retrabalho em projetos", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: _prod.id, indicador: "Retrabalho", valorAlvo: 5, valorAtual: 8, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
+  _prod2 && { id: "meta-i3", titulo: "Atingir produtividade padrão", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: _prod2.id, indicador: "Produtividade", valorAlvo: 100, valorAtual: 85, unidade: "%", prazo: "2026-06-30", status: "Em andamento" },
+  _lider && { id: "meta-i4", titulo: "Liderar 100% das frentes no prazo", descricao: "Meta individual do ciclo 2026.1.", tipo: "Individual", colaboradorId: _lider.id, indicador: "Prazo", valorAlvo: 95, valorAtual: 96, unidade: "%", prazo: "2026-06-30", status: "Concluída" },
+].filter(Boolean) as Meta[];
+
+export const METAS: Meta[] = [...metasArea, ...metasIndividuais];
 
 export const PDIS: PDI[] = [
-  { id: "pdi-1", colaboradorId: "vinicius-silva-lins", competencia: "Autonomia técnica", acao: "Conduzir 3 projetos completos sem revisão crítica", resultadoEsperado: "Reduzir retrabalho para ≤ 5%", prazo: "2026-05-30", status: "Em andamento", progresso: 60 },
-  { id: "pdi-2", colaboradorId: "daniel-pereira-de-oliveira", competencia: "Produtividade", acao: "Treinamento em técnicas de pintura e acabamento", resultadoEsperado: "Atingir produtividade ≥ 100%", prazo: "2026-04-30", status: "Em andamento", progresso: 40 },
-  { id: "pdi-3", colaboradorId: "barbara-patricia-ferreira", competencia: "Vendas consultivas", acao: "Programa de negociação avançada", resultadoEsperado: "Passagem para nível Pleno (N3)", prazo: "2026-06-15", status: "Em andamento", progresso: 70 },
-  { id: "pdi-4", colaboradorId: "camila-cristina-r-sampaio", competencia: "Gestão e liderança", acao: "Capacitação em gestão administrativa estratégica", resultadoEsperado: "Consolidar atuação de coordenação", prazo: "2026-06-30", status: "Pendente", progresso: 10 },
-  { id: "pdi-5", colaboradorId: "adriano-nunes-araujo", competencia: "Gestão de equipes", acao: "Mentoria de liderança de campo", resultadoEsperado: "Preparação para N4", prazo: "2026-05-01", status: "Concluída", progresso: 100 },
-];
+  _prod && { id: "pdi-1", colaboradorId: _prod.id, competencia: "Autonomia técnica", acao: "Conduzir 3 projetos completos sem revisão crítica", resultadoEsperado: "Reduzir retrabalho para ≤ 5%", prazo: "2026-05-30", status: "Em andamento", progresso: 60 },
+  _prod2 && { id: "pdi-2", colaboradorId: _prod2.id, competencia: "Produtividade", acao: "Treinamento em técnicas de pintura e acabamento", resultadoEsperado: "Atingir produtividade ≥ 100%", prazo: "2026-04-30", status: "Em andamento", progresso: 40 },
+  _com && { id: "pdi-3", colaboradorId: _com.id, competencia: "Vendas consultivas", acao: "Programa de negociação avançada", resultadoEsperado: "Passagem para nível Pleno (N3)", prazo: "2026-06-15", status: "Em andamento", progresso: 70 },
+  _adm && { id: "pdi-4", colaboradorId: _adm.id, competencia: "Gestão e liderança", acao: "Capacitação em gestão administrativa estratégica", resultadoEsperado: "Consolidar atuação", prazo: "2026-06-30", status: "Pendente", progresso: 10 },
+  _lider && { id: "pdi-5", colaboradorId: _lider.id, competencia: "Gestão de equipes", acao: "Mentoria de liderança de campo", resultadoEsperado: "Preparação para o próximo nível", prazo: "2026-05-01", status: "Concluída", progresso: 100 },
+].filter(Boolean) as PDI[];
 
 export const FEEDBACKS: Feedback[] = [
-  { id: "fb-1", colaboradorId: "adriano-nunes-araujo", autorId: "saulo-rodrigues-ferreira", tipo: "Positivo", conteudo: "Excelente condução das frentes de montagem no último trimestre. Liderança reconhecida pela equipe.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-18" },
-  { id: "fb-2", colaboradorId: "bruno-dias-do-nascimento", autorId: "pedro-henrique-goncalves", tipo: "Positivo", conteudo: "Referência técnica na operação. Baixíssimo índice de retrabalho.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-20" },
-  { id: "fb-3", colaboradorId: "daniel-pereira-de-oliveira", autorId: "pedro-henrique-goncalves", tipo: "Desenvolvimento", conteudo: "Evoluir consistência de produtividade. Acompanhar plano de desenvolvimento.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-22" },
-  { id: "fb-4", colaboradorId: "vinicius-silva-lins", autorId: "pedro-henrique-goncalves", tipo: "Desenvolvimento", conteudo: "Alto potencial. Precisa ganhar autonomia para assumir projetos completos.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-24" },
-  { id: "fb-5", colaboradorId: "barbara-patricia-ferreira", autorId: "jessica-fernanda-s-sampaio", tipo: "Contínuo", conteudo: "Boa evolução em negociação. Manter ritmo para alcançar a meta do ciclo.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-26" },
-];
+  _lider && { id: "fb-1", colaboradorId: _lider.id, autorId: _lider.gestorId ?? null, tipo: "Positivo", conteudo: "Excelente condução das frentes no último trimestre. Liderança reconhecida pela equipe.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-18" },
+  _prod && { id: "fb-2", colaboradorId: _prod.id, autorId: _prod.gestorId ?? null, tipo: "Positivo", conteudo: "Referência técnica na operação. Baixíssimo índice de retrabalho.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-20" },
+  _prod2 && { id: "fb-3", colaboradorId: _prod2.id, autorId: _prod2.gestorId ?? null, tipo: "Desenvolvimento", conteudo: "Evoluir consistência de produtividade. Acompanhar plano de desenvolvimento.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-22" },
+  _com && { id: "fb-4", colaboradorId: _com.id, autorId: _com.gestorId ?? null, tipo: "Contínuo", conteudo: "Boa evolução em negociação. Manter ritmo para alcançar a meta do ciclo.", contexto: "Ciclo 2026.1", criadoEm: "2026-05-26" },
+].filter(Boolean) as Feedback[];

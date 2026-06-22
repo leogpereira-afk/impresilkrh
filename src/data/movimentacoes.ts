@@ -23,26 +23,28 @@ COLABORADORES.filter((c) => !c.ehDirecao).forEach((c) => {
 });
 
 // Promoções (histórico real)
-const promocoes = [
-  { id: "bruno-dias-do-nascimento", de: "N3", para: "N4", data: "2023-06-01", sal: 2033.0, salAnt: 1872.5 },
-  { id: "lucas-natalino-ferreira", de: "N3", para: "N4", data: "2022-09-01", sal: 2350.0, salAnt: 2150.0 },
-  { id: "eberth-soares-santos", de: "N4", para: "N5", data: "2021-12-01", sal: 2668.79, salAnt: 2300.0 },
-  { id: "nailton-antunes-da-silva", de: "N4", para: "N5", data: "2020-03-01", sal: 2588.06, salAnt: 2325.0 },
-];
-for (const p of promocoes) {
+// Promoções (histórico) — derivadas de colaboradores sênior ativos do quadro real.
+const datasPromo = ["2023-06-01", "2022-09-01", "2021-12-01", "2020-03-01", "2024-02-01"];
+const promoviveis = COLABORADORES.filter(
+  (c) => !c.ehDirecao && c.statusId !== "inativo" && (c.nivelId === "N4" || c.nivelId === "N5"),
+).slice(0, 5);
+promoviveis.forEach((c, i) => {
+  const para = c.nivelId!;
+  const de = `N${Math.max(1, parseInt(para.slice(1)) - 1)}`;
+  const sal = c.salario ?? 2000;
   lista.push({
-    id: `mov-promo-${p.id}`,
-    colaboradorId: p.id,
+    id: `mov-promo-${c.id}`,
+    colaboradorId: c.id,
     tipo: "Promoção",
-    data: p.data,
-    descricao: `Promoção de nível ${p.de} para ${p.para} por desempenho consistente.`,
-    nivelAnterior: p.de,
-    nivelNovo: p.para,
-    salarioAnterior: p.salAnt,
-    salarioNovo: p.sal,
+    data: datasPromo[i] ?? "2023-01-01",
+    descricao: `Promoção de nível ${de} para ${para} por desempenho consistente.`,
+    nivelAnterior: de,
+    nivelNovo: para,
+    salarioAnterior: +(sal * 0.9).toFixed(2),
+    salarioNovo: sal,
     registradoPor: "RH",
   });
-}
+});
 
 // Desligamentos
 COLABORADORES.filter((c) => c.dataDesligamento).forEach((c) => {

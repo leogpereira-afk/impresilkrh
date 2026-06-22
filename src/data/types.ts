@@ -83,6 +83,15 @@ export interface Colaborador {
   riscoSaida?: string; // Baixo, Médio, Alto
   potencial?: string; // Baixo, Médio, Alto
 
+  // Dados da Base de Dados RH (planilha)
+  empresa?: string; // Impresilk, Neon, Forte Mais
+  funcao?: string; // função original da planilha (quando não mapeada a um cargo)
+  sexo?: string; // Masculino, Feminino
+  perfilComportamental?: string; // Colérico, Sanguíneo, Fleumático, Melancólico
+  humor?: string; // Motivado, Estável, Desmotivado (engajamento/clima)
+  estiloAprendizagem?: string; // Visual, Auditivo, Cinestésico
+  adicionais?: number; // adicionais/benefícios (R$) — painel financeiro
+
   // Acesso / hierarquia institucional
   perfil?: Perfil; // perfil de login (quando aplicável)
   ehDirecao?: boolean; // fundadores/diretor/assessorias — não contam como headcount
