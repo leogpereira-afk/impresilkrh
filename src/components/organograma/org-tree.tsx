@@ -11,19 +11,27 @@ export interface NoOrg {
 
 export function OrgTree({ no, todos }: { no: NoOrg; todos: NoOrg[] }) {
   const filhos = todos.filter((n) => n.gestorId === no.id);
+  const ehDirecao = no.area === "Direção";
+
+  const base =
+    "group flex w-60 items-center gap-3 rounded-xl border px-3 py-2.5 shadow-sm transition hover:shadow-md";
+  const estilo = ehDirecao
+    ? "border-brand-ink bg-brand-ink text-white hover:border-gold"
+    : filhos.length > 0
+      ? "border-gold-300 bg-white hover:border-gold"
+      : "border-slate-200 bg-white hover:border-brand";
 
   return (
     <div className="flex flex-col items-start">
-      <Link
-        href={`/colaboradores/${no.id}`}
-        className="group flex w-60 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:border-brand hover:shadow-md"
-      >
-        <Avatar nome={no.nome} size="sm" />
+      <Link href={`/colaboradores/${no.id}`} className={`${base} ${estilo}`}>
+        <Avatar nome={no.nome} size="sm" className={ehDirecao ? "bg-white/20 text-white" : ""} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">
+          <p className={`truncate text-sm font-semibold ${ehDirecao ? "text-white" : "text-slate-800 group-hover:text-brand"}`}>
             {no.nome}
           </p>
-          <p className="truncate text-xs text-slate-500">{no.cargo ?? "—"}</p>
+          <p className={`truncate text-xs ${ehDirecao ? "text-gold-200" : "text-slate-500"}`}>
+            {no.cargo ?? "—"}
+          </p>
         </div>
       </Link>
 

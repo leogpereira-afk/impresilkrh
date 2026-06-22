@@ -25,6 +25,8 @@ import {
   BarChart3,
   Bell,
   FileSignature,
+  Megaphone,
+  BookOpen,
   Menu,
   X,
   LogOut,
@@ -51,8 +53,10 @@ const NAV: ItemNav[] = [
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: TODOS, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: TODOS, grupo: "Pessoas" },
   { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Conhecimento" },
-  { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "Conhecimento" },
+  { href: "/comunicacao", label: "Comunicação", icon: Megaphone, perfis: TODOS, grupo: "RH" },
+  { href: "/pops", label: "POPs e Procedimentos", icon: BookOpen, perfis: TODOS, grupo: "RH" },
+  { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "RH" },
+  { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "RH" },
   { href: "/meu-perfil", label: "Meu perfil", icon: UserCircle, perfis: TODOS, grupo: "Conta" },
   { href: "/aceites", label: "Termos e Aceites", icon: FileSignature, perfis: TODOS, grupo: "Conta" },
   { href: "/notificacoes", label: "Notificações", icon: Bell, perfis: TODOS, grupo: "Conta" },
@@ -61,7 +65,7 @@ const NAV: ItemNav[] = [
   { href: "/lgpd", label: "Registros de Acesso (LGPD)", icon: ShieldCheck, perfis: ["ADMIN_RH"], grupo: "Administração" },
 ];
 
-const GRUPOS = ["Visão geral", "Pessoas", "Conhecimento", "Conta", "Administração"];
+const GRUPOS = ["Visão geral", "Pessoas", "RH", "Conta", "Administração"];
 
 export function AppShell({
   user,

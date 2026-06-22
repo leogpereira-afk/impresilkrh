@@ -27,6 +27,9 @@ try {
   console.log("[cloud-db-setup] Populando dados de demonstração (seed idempotente)…");
   execSync("npx tsx prisma/seed.ts", { stdio: "inherit", env });
 
+  console.log("[cloud-db-setup] Aplicando extras (organograma + comunicação/POPs)…");
+  execSync("npx tsx prisma/extras.ts", { stdio: "inherit", env });
+
   console.log("[cloud-db-setup] Banco pronto. ✅");
 } catch (e) {
   console.error("[cloud-db-setup] Erro ao preparar o banco:", e?.message ?? e);

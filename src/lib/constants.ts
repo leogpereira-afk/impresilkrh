@@ -31,6 +31,7 @@ export const CATEGORIAS_DOCUMENTO = [
 export const CATEGORIAS_INSTITUCIONAL = [
   "Código de Ética",
   "POP",
+  "Comunicação",
   "Treinamento",
   "SST",
 ] as const;
