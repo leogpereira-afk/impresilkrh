@@ -1,143 +1,86 @@
-# RH Impresilk — Sistema de Gestão de Pessoas
+# Impresilk RH — Sistema de Gestão de Pessoas
 
-Aplicação web para centralizar a gestão de Recursos Humanos da **Impresilk Comunicação Visual**
-(empresa com 40+ anos de mercado, ~30 colaboradores, Montes Claros/MG). Substitui o controle
-disperso em planilhas por uma plataforma única, segura e em conformidade com a **LGPD**.
+Sistema de RH da **Impresilk Comunicação Visual** (Montes Claros/MG · 40+ anos).
+Versão **leve, rápida e sem banco de dados**: roda 100% no navegador como site
+estático. Todos os dados ficam embutidos no código e podem ser editados pelo
+**Painel de Controle**, sendo salvos no `localStorage` do navegador (com
+exportação/importação em JSON para backup e transferência).
 
-Identidade visual executiva e sóbria (azul-marinho institucional + dourado), responsiva para
-desktop e dispositivos móveis. Interface 100% em **português do Brasil**.
+> Sem servidor de banco, sem cold start, sem custo de hospedagem dinâmica.
+> Faz deploy em qualquer host estático (Netlify, Vercel, GitHub Pages…).
 
----
+## Tecnologias
+
+- **Vite 5** + **React 18** + **TypeScript**
+- **Tailwind CSS 3** (identidade visual: azul-marinho `#16334f` + dourado `#c2a14d`)
+- **React Router 6** (navegação SPA)
+- **Recharts** (gráficos) · **lucide-react** (ícones)
+
+## Como rodar localmente
+
+```bash
+npm install      # instala as dependências
+npm run dev      # ambiente de desenvolvimento (http://localhost:5173)
+npm run build    # gera a versão de produção em /dist
+npm run preview  # serve a versão de produção localmente
+```
+
+## Acesso (demonstração)
+
+Na tela de login, escolha um perfil. A senha de demonstração é exibida na
+própria tela:
+
+```
+Impresilk@2026
+```
+
+| Perfil               | Vê                                                            |
+|----------------------|--------------------------------------------------------------|
+| **RH (Administrador)** | Tudo: todos os colaboradores, salários, painel de controle |
+| **Gestor**           | Apenas a própria equipe (e a árvore abaixo dele)             |
+| **Colaborador**      | Apenas a própria ficha, carreira, comunicação e POPs         |
+
+Salários individuais são ocultos para quem não é RH nem o próprio colaborador
+(conforme LGPD). As **faixas salariais por cargo** (tabela de carreira) são
+visíveis a todos como transparência — sem expor o salário de cada pessoa.
 
 ## Módulos
 
-| Módulo | Descrição |
-| --- | --- |
-| **Painel (Dashboard)** | Indicadores de gestão: headcount, turnover, documentos a vencer, avaliações pendentes, férias, aniversariantes, risco de saída, distribuições por área/nível/enquadramento salarial e alertas. Visão personalizada por perfil. |
-| **Colaboradores e Documentos** | Lista com busca e filtros, ficha completa com abas (Dados, Documentos, Férias, Desenvolvimento, Histórico), cadastro e **edição** de colaboradores, organograma navegável, **exportação para Excel** e dados sensíveis mascarados conforme LGPD. |
-| **Carreira e Cargos** | Régua de senioridade (N1–N5), tabela salarial por cargo/área, posição do colaborador na carreira e **simulador de progressão**. |
-| **Desempenho e Retenção** | Ciclos de avaliação com **lançamento de notas e cálculo automático** (nota ponderada + elegibilidade a promoção), **matriz 9-Box** (desempenho × potencial), gestão de **metas, PDI e feedbacks** e exportação das avaliações. |
-| **Férias** | Painel de controle de saldos, programação, quem está de férias, próximos retornos e **alertas de conformidade com a CLT** (períodos a vencer/vencidos). |
-| **Integração e Desligamento** | Checklists de **onboarding e offboarding** com modelos padrão, acompanhamento de progresso e tarefas personalizáveis por colaborador. |
-| **Viagens e Diárias** | Controle de deslocamentos da equipe de campo: cálculo automático de diárias, status (planejada/aprovada/em andamento/concluída) e gasto no mês. |
-| **Saúde e Segurança (SST)** | Conformidade de exames ocupacionais (ASO, periódicos) com alertas de vencimento e registro dos programas obrigatórios (PGR, PCMSO). |
-| **Relatórios Gerenciais** | Folha por área, custo médio, movimentação de pessoal (12 meses), turnover, enquadramento salarial e tempo de casa (somente RH). |
-| **Notificações** | Central de alertas in-app (vencimentos, pendências, avaliações) com sino no cabeçalho e **resumo por e-mail** (canal opcional). |
-| **Termos e Aceites** | **Assinatura eletrônica** do Código de Ética e ciência de PDI, com data, IP e hash de integridade; painel de conformidade para o RH. |
-| **Documentos Institucionais** | Código de Ética, POPs, treinamentos e SST. |
-| **Registros de Acesso (LGPD)** | Trilha de auditoria de acessos a dados pessoais/sensíveis (somente RH). |
-| **Configurações** | Status do quadro, ciclos de avaliação e visão da estrutura organizacional (somente RH). |
+- **Painel (Dashboard)** — headcount, gráficos por área/nível, enquadramento salarial.
+- **Colaboradores** — lista com busca e filtros + ficha individual.
+- **Organograma** — estrutura hierárquica (Fundadores → Diretor → Assessorias →
+  Gerências → Equipes), com painel para redefinir quem se reporta a quem.
+- **Carreira e Salários** — régua N1–N5, tabela de faixas por cargo e simulador de progressão.
+- **Desempenho e Retenção** — matriz 9-box (potencial × risco de saída).
+- **Comunicação** — princípios, canais, SLAs e os guias/planos completos.
+- **POPs e Procedimentos** — procedimentos operacionais padrão (passo a passo).
+- **Documentos** — Código de Ética, POPs, Comunicação e SST.
+- **Painel de Controle** (só RH) — editar conteúdo, colaboradores, faixas e
+  fazer backup/restauração dos dados.
 
-## Perfis de acesso (RBAC)
+## Onde ficam os dados
 
-- **Administrador de RH** — acesso completo a todos os módulos e dados.
-- **Gestor** — acesso restrito à sua equipe (hierarquia recursiva).
-- **Colaborador** — autoatendimento: seus próprios dados, documentos, carreira e desempenho.
+- A base inicial está em [`src/data/seed.ts`](src/data/seed.ts) (áreas, cargos,
+  faixas, colaboradores, documentos).
+- Edições feitas no **Painel de Controle** são salvas no `localStorage` do
+  navegador (chave `impresilk_rh_v2`) e **sobrescrevem** a base inicial naquele
+  navegador.
+- Use **Exportar dados (.json)** para backup ou para levar os dados a outro
+  navegador/computador, e **Importar dados** para restaurar. **Restaurar padrão**
+  volta à base do `seed.ts`.
 
----
+## Deploy no Netlify
 
-## Stack técnica
+O repositório já inclui `netlify.toml` e `public/_redirects` com a configuração
+de SPA (todas as rotas caem no `index.html`).
 
-- **Next.js 14** (App Router, Server Components e Server Actions)
-- **TypeScript** (strict)
-- **Prisma ORM** + **PostgreSQL** (compatível com Neon / Netlify DB / Supabase)
-- **Tailwind CSS** com paleta de marca customizada
-- **jose** (JWT HS256, cookie httpOnly) + **bcryptjs** para autenticação
-- **Edge Middleware** para proteção de rotas
-- **Recharts** (gráficos) e **lucide-react** (ícones)
+**Opção A — conectar o repositório (recomendado):**
+1. No Netlify: *Add new site → Import an existing project* e selecione este repositório.
+2. Build command: `npm run build` · Publish directory: `dist` (já definidos no `netlify.toml`).
+3. *Deploy*.
 
-## Como executar
+**Opção B — upload manual:** rode `npm run build` e arraste a pasta `dist/`
+para o Netlify (*Deploys → Drag and drop*).
 
-> Requisito: um banco **PostgreSQL** acessível. Para desenvolvimento, use um Postgres
-> local ou um banco gratuito do [Neon](https://neon.tech).
-
-```bash
-# 1. Instalar dependências
-npm install
-
-# 2. Configurar variáveis de ambiente
-cp .env.example .env
-# edite o .env e aponte DATABASE_URL (e DIRECT_URL) para o seu Postgres
-# (opcional) gere um AUTH_SECRET forte: openssl rand -base64 48
-
-# 3. Criar as tabelas e popular com dados de demonstração
-npm run setup
-
-# 4. Iniciar em desenvolvimento
-npm run dev
-# acesse http://localhost:3000
-```
-
-### Scripts úteis
-
-| Script | Ação |
-| --- | --- |
-| `npm run dev` | Servidor de desenvolvimento |
-| `npm run build` | Build de produção (`prisma generate` + `next build`) |
-| `npm run db:push` | Sincroniza o schema com o banco |
-| `npm run db:seed` | Popula o banco com dados de exemplo |
-| `npm run db:reset` | Recria o banco do zero e popula novamente |
-
-## Deploy no Netlify (com banco PostgreSQL)
-
-O app usa **PostgreSQL** — obrigatório em produção serverless (o disco do Netlify é
-efêmero, então SQLite em arquivo não funciona). Passo a passo:
-
-**O banco é criado e populado automaticamente no deploy** — você não roda nada localmente:
-
-1. **Provisione o "Netlify DB"** (extensão Neon, gerenciada dentro do Netlify). Ela cria as
-   variáveis `NETLIFY_DATABASE_URL` / `NETLIFY_DATABASE_URL_UNPOOLED` no site.
-   - Painel: site → **Extensions** → **Neon** → *Add database*; ou CLI: `netlify db init`.
-2. Defina **`AUTH_SECRET`** em *Site settings → Environment variables* (valor forte).
-3. **Refaça o deploy.** Durante o build, `scripts/cloud-db-setup.mjs` cria as tabelas
-   (`prisma db push`) e popula os dados de demonstração na primeira vez (idempotente —
-   não duplica nas próximas). Se nenhum banco estiver configurado, o build apenas pula
-   essa etapa (não falha).
-
-O `netlify.toml` já configura o build e o plugin oficial do Next.js. O `prisma generate`
-inclui o engine do runtime do Netlify (`rhel-openssl-3.0.x`). Em runtime, a aplicação usa
-`DATABASE_URL` ou, na ausência, `NETLIFY_DATABASE_URL`.
-
-> **Anexos de documentos:** o upload grava em disco local, que não persiste no Netlify.
-> O cadastro de documentos (metadados) funciona; para anexos em produção, configure um
-> armazenamento de objetos (Netlify Blobs/S3) trocando `src/lib/storage.ts`.
-
-## Credenciais de demonstração
-
-Todos os usuários de demonstração usam a senha: **`Impresilk@2026`**
-
-| Perfil | E-mail |
-| --- | --- |
-| Administrador de RH | `rh@impresilk.com.br` |
-| Gestor — Operações | `pedro.goncalves@impresilk.com.br` |
-| Gestor — Montagem | `saulo.ferreira@impresilk.com.br` |
-| Colaborador | `bruno.nascimento@impresilk.com.br` |
-
-> A tela de login possui atalhos que preenchem automaticamente as credenciais de cada perfil
-> para facilitar a avaliação do sistema.
-
----
-
-## Conformidade com a LGPD
-
-- Dados sensíveis (CPF, salário, endereço, dados familiares) são **mascarados** para perfis sem
-  autorização.
-- Todo acesso a dados sensíveis é **registrado** em uma trilha de auditoria (`AccessLog`),
-  consultável pelo RH no módulo *Registros de Acesso*.
-- A senha é armazenada com hash **bcrypt**; a sessão usa **JWT assinado** em cookie httpOnly.
-- Aceites eletrônicos registram **data, IP e hash de integridade** do conteúdo aceito.
-
-## Observações de implantação
-
-- **Upload de documentos:** os arquivos são gravados em `STORAGE_DIR` (sistema de arquivos local).
-  Para produção em nuvem, recomenda-se trocar `src/lib/storage.ts` por um provedor de objetos
-  (ex.: S3), mantendo a mesma interface.
-- **E-mail:** o envio de resumos é opcional. Configure `RESEND_API_KEY` e `EMAIL_FROM` para ativar;
-  sem essas variáveis, o sistema opera em modo simulado (registra no log) sem quebrar o fluxo.
-
-## Dados de exemplo
-
-A base de demonstração inclui os colaboradores reais do plano de carreira da Impresilk, com a
-estrutura de cargos, níveis e faixas salariais extraídos dos documentos da empresa. Dados
-auxiliares (CPF, telefone, endereço) são fictícios e gerados de forma determinística apenas
-para fins de demonstração.
+> Como não há banco de dados, não é preciso configurar variáveis de ambiente
+> nem connection strings.

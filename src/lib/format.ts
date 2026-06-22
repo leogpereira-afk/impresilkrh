@@ -1,93 +1,26 @@
-// Helpers de formatação (pt-BR)
-
-export function formatBRL(valor: number | null | undefined): string {
-  if (valor === null || valor === undefined) return "—";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(valor);
+export function formatBRL(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
-
-export function formatNumber(valor: number | null | undefined, casas = 0): string {
-  if (valor === null || valor === undefined) return "—";
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: casas,
-    maximumFractionDigits: casas,
-  }).format(valor);
-}
-
-export function formatPercent(valor: number | null | undefined, casas = 1): string {
-  if (valor === null || valor === undefined) return "—";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "percent",
-    minimumFractionDigits: casas,
-    maximumFractionDigits: casas,
-  }).format(valor);
-}
-
-export function formatDate(data: Date | string | null | undefined): string {
-  if (!data) return "—";
-  const d = typeof data === "string" ? new Date(data) : data;
-  if (isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(d);
-}
-
-export function formatDateLong(data: Date | string | null | undefined): string {
-  if (!data) return "—";
-  const d = typeof data === "string" ? new Date(data) : data;
-  if (isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(d);
-}
-
-export function formatCPF(cpf: string | null | undefined): string {
-  if (!cpf) return "—";
-  const d = cpf.replace(/\D/g, "");
-  if (d.length !== 11) return cpf;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
-
-// Mascara o CPF para exibição quando o acesso não é privilegiado (LGPD)
-export function maskCPF(cpf: string | null | undefined): string {
-  if (!cpf) return "—";
-  const d = cpf.replace(/\D/g, "");
-  if (d.length !== 11) return "•••";
-  return `•••.${d.slice(3, 6)}.•••-••`;
-}
-
 export function iniciais(nome: string): string {
-  const partes = nome.trim().split(/\s+/);
-  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
-  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+  const p = nome.trim().split(/\s+/).filter(Boolean);
+  if (p.length === 0) return "?";
+  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
+  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+}
+export function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0] ?? nome;
 }
 
-export function tempoDeCasa(dataAdmissao: Date | string | null | undefined): string {
-  if (!dataAdmissao) return "—";
-  const d = typeof dataAdmissao === "string" ? new Date(dataAdmissao) : dataAdmissao;
-  if (isNaN(d.getTime())) return "—";
-  const agora = new Date();
-  let meses =
-    (agora.getFullYear() - d.getFullYear()) * 12 + (agora.getMonth() - d.getMonth());
-  if (agora.getDate() < d.getDate()) meses -= 1;
-  if (meses < 0) meses = 0;
-  const anos = Math.floor(meses / 12);
-  const m = meses % 12;
-  if (anos === 0) return `${m} ${m === 1 ? "mês" : "meses"}`;
-  if (m === 0) return `${anos} ${anos === 1 ? "ano" : "anos"}`;
-  return `${anos}a ${m}m`;
+// Enquadramento salarial frente à faixa do cargo (N1..N5).
+export function enquadrar(salario: number | null, faixas: Record<string, number>): string {
+  if (salario == null || !faixas?.N1) return "—";
+  const n1 = faixas.N1, n5 = faixas.N5 ?? faixas.N1;
+  if (salario < n1 * 0.9) return "Crítico";
+  if (salario < n1) return "Abaixo";
+  if (salario > n5) return "Acima";
+  return "Dentro";
 }
-
-export function mesesDeCasa(dataAdmissao: Date | string | null | undefined): number {
-  if (!dataAdmissao) return 0;
-  const d = typeof dataAdmissao === "string" ? new Date(dataAdmissao) : dataAdmissao;
-  if (isNaN(d.getTime())) return 0;
-  const agora = new Date();
-  let meses =
-    (agora.getFullYear() - d.getFullYear()) * 12 + (agora.getMonth() - d.getMonth());
-  if (agora.getDate() < d.getDate()) meses -= 1;
-  return Math.max(0, meses);
-}
-
-export const MESES_PT = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-];
+export const COR_ENQUADRAMENTO: Record<string, string> = {
+  "Crítico": "#dc2626", "Abaixo": "#d97706", "Dentro": "#16a34a", "Acima": "#2563eb", "—": "#94a3b8",
+};
