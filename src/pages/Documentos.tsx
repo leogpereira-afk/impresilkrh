@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  FileText, ShieldCheck, FolderOpen, Upload, ExternalLink, Plus, Trash2, Search,
+  FileText, ShieldCheck, FolderOpen, Upload, ExternalLink, Download, Plus, Trash2, Search,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -167,6 +167,16 @@ function formatarBytes(bytes?: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Dispara o download de um arquivo (data URL) criando um <a> temporário.
+function baixar(dataUrl: string, nome: string) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 function Repositorio() {
   const sessao = useSessao();
   const toast = useToast();
@@ -229,6 +239,14 @@ function Repositorio() {
         `<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`,
       );
     }
+  };
+
+  const baixarArquivo = (arq: ArquivoRepositorio) => {
+    if (!arq.arquivoDataUrl) {
+      toast("Este documento não possui arquivo anexado.", "info");
+      return;
+    }
+    baixar(arq.arquivoDataUrl, arq.arquivoNome ?? arq.nome);
   };
 
   const confirmarExclusao = () => {
@@ -326,6 +344,7 @@ function Repositorio() {
                     arq={arq}
                     podeGerir={podeGerir}
                     onAbrir={() => abrir(arq.arquivoDataUrl)}
+                    onBaixar={() => baixarArquivo(arq)}
                     onExcluir={() => setExcluir(arq)}
                   />
                 ))}
@@ -363,11 +382,13 @@ function ArquivoCard({
   arq,
   podeGerir,
   onAbrir,
+  onBaixar,
   onExcluir,
 }: {
   arq: ArquivoRepositorio;
   podeGerir: boolean;
   onAbrir: () => void;
+  onBaixar: () => void;
   onExcluir: () => void;
 }) {
   const temArquivo = !!arq.arquivoDataUrl;
@@ -395,11 +416,16 @@ function ArquivoCard({
               </span>
             )}
           </div>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             {temArquivo ? (
-              <button className="btn-outline" onClick={onAbrir}>
-                <ExternalLink className="h-4 w-4" /> Abrir arquivo
-              </button>
+              <>
+                <button className="btn-outline" onClick={onAbrir}>
+                  <ExternalLink className="h-4 w-4" /> Abrir arquivo
+                </button>
+                <button className="btn-outline" onClick={onBaixar}>
+                  <Download className="h-4 w-4" /> Baixar
+                </button>
+              </>
             ) : (
               <span className="text-xs italic text-slate-400">Sem arquivo anexado</span>
             )}

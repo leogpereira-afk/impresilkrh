@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
-  ClipboardList, Palette, Database, Award,
+  ClipboardList, Palette, Database, Award, UserCog, ShieldCheck,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -16,7 +16,8 @@ import { useDominio } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { formatBRL } from "@/lib/format";
 import { slug } from "@/data/_gen";
-import type { Area, Cargo, CicloAvaliacao, ModeloChecklist, Nivel, StatusColaborador } from "@/data/types";
+import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
+import type { Area, Cargo, CicloAvaliacao, ModeloChecklist, Nivel, Perfil, StatusColaborador, Usuario } from "@/data/types";
 
 export default function PainelControle() {
   return (
@@ -28,6 +29,7 @@ export default function PainelControle() {
           { id: "cargos", label: "Cargos & Faixas", icon: <Briefcase className="h-4 w-4" />, conteudo: <CargosSecao /> },
           { id: "conteudo", label: "Conteúdo (RH)", icon: <ClipboardList className="h-4 w-4" />, conteudo: <ConteudoSecao /> },
           { id: "aval", label: "Avaliação & Checklists", icon: <Award className="h-4 w-4" />, conteudo: <AvaliacaoSecao /> },
+          { id: "usuarios", label: "Usuários e Permissões", icon: <UserCog className="h-4 w-4" />, conteudo: <UsuariosSecao /> },
           { id: "marca", label: "Marca & Backup", icon: <Palette className="h-4 w-4" />, conteudo: <MarcaSecao /> },
         ]}
       />
@@ -336,6 +338,221 @@ function MarcaSecao() {
         </CardBody>
       </Card>
     </div>
+  );
+}
+
+// ---------------- Usuários e Permissões ----------------
+const PERFIS_OPCOES: Perfil[] = ["ADMIN_RH", "GESTOR", "COLABORADOR"];
+
+const PERFIL_VARIANTE: Record<Perfil, "gold" | "info" | "neutral"> = {
+  ADMIN_RH: "gold",
+  GESTOR: "info",
+  COLABORADOR: "neutral",
+};
+
+function UsuariosSecao() {
+  const toast = useToast();
+  const d = useDominio();
+  const { items, criar, atualizar, remover } = useColecao("usuarios");
+  const [edit, setEdit] = useState<Usuario | null>(null);
+  const [novo, setNovo] = useState(false);
+  const [del, setDel] = useState<Usuario | null>(null);
+
+  const usuarios = [...(items as Usuario[])].sort((a, b) => a.nome.localeCompare(b.nome));
+  const totalModulos = MODULOS.length;
+  const acessoTotal = (u: Usuario) => u.permissoes?.includes("*");
+  const qtdLiberados = (u: Usuario) =>
+    acessoTotal(u) ? totalModulos : MODULOS.filter((m) => u.permissoes?.includes(m.chave)).length;
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader
+        title="Usuários e permissões"
+        subtitle="Cadastre acessos e defina o que cada pessoa pode ver no sistema"
+        icon={<UserCog className="h-[18px] w-[18px]" />}
+        action={<button className="btn-outline" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo usuário</button>}
+      />
+
+      <div className="border-y border-slate-100 bg-gold-50/40 px-5 py-2.5">
+        <p className="flex items-start gap-2 text-xs text-slate-600">
+          <ShieldCheck className="mt-px h-4 w-4 shrink-0 text-gold-600" />
+          As permissões definem exatamente quais módulos ficam visíveis para cada usuário. Use <strong>Acesso total</strong> para liberar tudo (recomendado para o nível Administrador de RH).
+        </p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="border-b border-slate-100 bg-slate-50/50">
+            <tr>
+              <th className="th">Usuário</th>
+              <th className="th">Perfil</th>
+              <th className="th">Vinculado a</th>
+              <th className="th">Módulos liberados</th>
+              <th className="th text-center">Ativo</th>
+              <th className="th" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {usuarios.length === 0 && (
+              <tr><td colSpan={6} className="td text-center text-sm text-slate-400">Nenhum usuário cadastrado ainda.</td></tr>
+            )}
+            {usuarios.map((u) => (
+              <tr key={u.id} className="hover:bg-slate-50/50">
+                <td className="td">
+                  <p className="font-medium text-slate-700">{u.nome}</p>
+                  <p className="text-xs text-slate-400">{u.email}</p>
+                </td>
+                <td className="td"><Badge variant={PERFIL_VARIANTE[u.perfil] ?? "neutral"}>{PERFIL_LABEL[u.perfil] ?? u.perfil}</Badge></td>
+                <td className="td text-slate-500">{u.colaboradorId ? d.nomeColab(u.colaboradorId) : "—"}</td>
+                <td className="td">
+                  {acessoTotal(u)
+                    ? <Badge variant="success">Tudo</Badge>
+                    : <span className="text-sm tabular-nums text-slate-600">{qtdLiberados(u)} de {totalModulos}</span>}
+                </td>
+                <td className="td">
+                  <div className="flex justify-center">
+                    <Toggle checked={u.ativo} onChange={(v) => { atualizar(u.id, { ativo: v }); toast(v ? "Usuário ativado." : "Usuário desativado."); }} />
+                  </div>
+                </td>
+                <td className="td text-right">
+                  <button className="btn-ghost p-1.5" onClick={() => setEdit(u)}><Pencil className="h-4 w-4" /></button>
+                  <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(u)}><Trash2 className="h-4 w-4" /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(novo || edit) && (
+        <UsuarioEditor
+          usuario={edit}
+          colaboradores={d.colaboradores}
+          onFechar={() => { setNovo(false); setEdit(null); }}
+          onSalvar={(dados) => {
+            if (edit) atualizar(edit.id, dados);
+            else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...dados });
+            toast("Usuário salvo."); setNovo(false); setEdit(null);
+          }}
+        />
+      )}
+      <ConfirmDialog
+        aberto={!!del}
+        onFechar={() => setDel(null)}
+        onConfirmar={() => { if (del) { remover(del.id); toast("Usuário excluído."); } }}
+        titulo="Excluir usuário?"
+        mensagem={`O acesso de "${del?.nome}" será removido.`}
+      />
+    </Card>
+  );
+}
+
+function UsuarioEditor({
+  usuario,
+  colaboradores,
+  onFechar,
+  onSalvar,
+}: {
+  usuario: Usuario | null;
+  colaboradores: { id: string; nome: string }[];
+  onFechar: () => void;
+  onSalvar: (dados: Pick<Usuario, "nome" | "email" | "perfil" | "colaboradorId" | "permissoes" | "ativo">) => void;
+}) {
+  const toast = useToast();
+  const [nome, setNome] = useState(usuario?.nome ?? "");
+  const [email, setEmail] = useState(usuario?.email ?? "");
+  const [perfil, setPerfil] = useState<Perfil>(usuario?.perfil ?? "COLABORADOR");
+  const [colaboradorId, setColaboradorId] = useState<string>(usuario?.colaboradorId ?? "");
+  const [ativo, setAtivo] = useState<boolean>(usuario?.ativo ?? true);
+  const [permissoes, setPermissoes] = useState<string[]>(usuario?.permissoes ?? []);
+
+  const acessoTotal = permissoes.includes("*");
+  const colabsOrdenados = [...colaboradores].sort((a, b) => a.nome.localeCompare(b.nome));
+
+  const setAcessoTotal = (v: boolean) => setPermissoes(v ? ["*"] : []);
+  const togglePerm = (chave: string) =>
+    setPermissoes((p) => {
+      const base = p.filter((c) => c !== "*");
+      return base.includes(chave) ? base.filter((c) => c !== chave) : [...base, chave];
+    });
+
+  const trocarPerfil = (p: Perfil) => {
+    setPerfil(p);
+    // Sugere acesso total ao Administrador de RH (nível máximo).
+    if (p === "ADMIN_RH" && permissoes.length === 0) setPermissoes(["*"]);
+  };
+
+  const salvar = () => {
+    if (!nome.trim()) return toast("Informe o nome do usuário.", "erro");
+    if (!email.trim()) return toast("Informe o e-mail do usuário.", "erro");
+    onSalvar({
+      nome: nome.trim(),
+      email: email.trim(),
+      perfil,
+      colaboradorId: colaboradorId || null,
+      permissoes,
+      ativo,
+    });
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={usuario ? "Editar usuário" : "Novo usuário"}
+      descricao="Defina os dados de acesso e os módulos visíveis."
+      largura="max-w-2xl"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Salvar</button></>}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Campo label="Nome" obrigatorio><Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo" /></Campo>
+          <Campo label="E-mail" obrigatorio><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@impresilk.com.br" /></Campo>
+          <Campo label="Perfil de acesso">
+            <Select value={perfil} onChange={(e) => trocarPerfil(e.target.value as Perfil)}>
+              {PERFIS_OPCOES.map((p) => <option key={p} value={p}>{PERFIL_LABEL[p] ?? p}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Vincular a colaborador" hint="Opcional — relaciona o login a uma pessoa do quadro.">
+            <Select value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
+              <option value="">Sem vínculo</option>
+              {colabsOrdenados.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </Select>
+          </Campo>
+        </div>
+
+        <div className="rounded-lg border border-slate-100 px-3 py-2.5">
+          <Toggle checked={ativo} onChange={setAtivo} label="Usuário ativo (pode acessar o sistema)" />
+        </div>
+
+        <div className="rounded-lg border border-slate-100 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Permissões por módulo</p>
+              <p className="text-xs text-slate-400">Marque os módulos que este usuário pode ver.</p>
+            </div>
+            <label className="flex shrink-0 items-center gap-2 rounded-lg bg-gold-50 px-3 py-1.5 ring-1 ring-inset ring-gold-200">
+              <ShieldCheck className="h-4 w-4 text-gold-600" />
+              <Toggle checked={acessoTotal} onChange={setAcessoTotal} label="Acesso total (*)" />
+            </label>
+          </div>
+
+          <div className={acessoTotal ? "pointer-events-none opacity-40" : ""}>
+            <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+              {MODULOS.map((m) => (
+                <Toggle
+                  key={m.chave}
+                  checked={acessoTotal || permissoes.includes(m.chave)}
+                  onChange={() => togglePerm(m.chave)}
+                  label={m.label}
+                />
+              ))}
+            </div>
+          </div>
+          {acessoTotal && <p className="mt-3 text-xs text-gold-700">Acesso total ativo: este usuário vê todos os módulos do sistema.</p>}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

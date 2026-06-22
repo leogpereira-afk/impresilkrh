@@ -20,7 +20,7 @@ import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import {
   COR_POTENCIAL_DESEMPENHO, COR_RISCO, STATUS_DESEMPENHO, TIPOS_FEEDBACK,
-  STATUS_META, STATUS_PDI,
+  STATUS_META, STATUS_PDI, faixaMotivacao,
 } from "@/lib/constants";
 import type { Avaliacao, CicloAvaliacao, Colaborador, Feedback, Meta, PDI } from "@/data/types";
 
@@ -103,6 +103,24 @@ const ROTULOS_9BOX: Record<string, string> = {
   "Médio-Baixo": "Eficaz",
   "Baixo-Baixo": "Risco / Atenção",
 };
+
+// Dica de gestão por quadrante (chave `desempenho-potencial`).
+const DICAS_9BOX: Record<string, string> = {
+  "Alto-Alto": "Reter e acelerar: desafios, visibilidade e plano de sucessão.",
+  "Médio-Alto": "Desenvolver rápido: mentoria e metas mais ousadas para destravar.",
+  "Baixo-Alto": "Investigar a causa: ajuste de função, contexto ou engajamento.",
+  "Alto-Médio": "Reconhecer e expandir escopo; mapear próximo passo de carreira.",
+  "Médio-Médio": "Manter e estimular: metas claras e feedback contínuo.",
+  "Baixo-Médio": "Plano de desenvolvimento com acompanhamento próximo.",
+  "Alto-Baixo": "Valorizar a expertise: reter como referência técnica.",
+  "Médio-Baixo": "Consolidar entregas e dar consistência ao desempenho.",
+  "Baixo-Baixo": "Plano de ação ou realocação; defina prazo de melhoria.",
+};
+
+// Motivação baixa = faixa abaixo de "Neutro" (score < 40), quando informada.
+function motivacaoBaixa(score?: number | null): boolean {
+  return typeof score === "number" && score < 40;
+}
 
 const num = (v: string): number | null => {
   if (v.trim() === "") return null;
@@ -274,7 +292,7 @@ export default function Desempenho() {
         >
           <StatCard label="Avaliados" value={comNota.length} hint={`de ${escopo.length} no escopo`} icon={<Users className="h-5 w-5" />} accent="brand" />
         </button>
-        <StatCard label="Nota média" value={notaMedia != null ? notaMedia.toFixed(1) : "—"} hint="Média das notas finais" icon={<Gauge className="h-5 w-5" />} accent="gold" />
+        <StatCard label="Nota média" value={notaMedia != null ? notaMedia.toFixed(1) : "—"} hint={comNota.length ? `Média de ${comNota.length} avaliado(s)` : "Sem notas lançadas"} icon={<Gauge className="h-5 w-5" />} accent="gold" />
         <button
           type="button"
           className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
@@ -327,10 +345,26 @@ function NoveBox({
     return m;
   }, [escopo, avalPorColab]);
 
+  // Retenção: risco de saída alto OU motivação baixa. Estratégicos = também alto potencial/desempenho.
+  const retencao = useMemo(() => {
+    const emRisco = escopo.filter(
+      (c) => c.riscoSaida === "Alto" || motivacaoBaixa(c.motivacao),
+    );
+    const criticos = emRisco.filter(
+      (c) => c.riscoSaida === "Alto" && motivacaoBaixa(c.motivacao),
+    );
+    const estrategicos = emRisco.filter((c) => {
+      const des = bucketDesempenho(avalPorColab.get(c.id)?.notaFinal);
+      return bucketPotencial(c.potencial) === "Alto" || des === "Alto";
+    });
+    return { emRisco, criticos, estrategicos };
+  }, [escopo, avalPorColab]);
+
   // Linhas de cima (potencial Alto) para baixo.
   const linhasPotencial: Bucket[] = ["Alto", "Médio", "Baixo"];
 
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader
         title="Matriz 9-Box"
@@ -358,30 +392,33 @@ function NoveBox({
                   const colabs = matriz[pot][des];
                   const idxDes = NIVEIS.indexOf(des);
                   const idxPot = NIVEIS.indexOf(pot);
-                  const rotulo = ROTULOS_9BOX[`${des}-${pot}`] ?? "—";
+                  const chave = `${des}-${pot}`;
+                  const rotulo = ROTULOS_9BOX[chave] ?? "—";
+                  const dica = DICAS_9BOX[chave] ?? "";
                   const temPessoas = colabs.length > 0;
                   return (
                     <button
                       key={`${pot}-${des}`}
                       type="button"
                       disabled={!temPessoas}
+                      title={dica}
                       onClick={
                         temPessoas
                           ? () =>
                               drill.abrir(
                                 `9-Box · ${pot} potencial × ${des} desempenho`,
                                 colabs,
-                                `${rotulo} · ${colabs.length} colaborador(es)`,
+                                `${rotulo} · ${colabs.length} colaborador(es) · ${dica}`,
                               )
                           : undefined
                       }
-                      className={`flex min-h-[150px] flex-col rounded-xl border p-3 text-left transition ${corCelula(idxDes, idxPot)} ${
+                      className={`flex min-h-[176px] flex-col rounded-xl border p-3 text-left transition ${corCelula(idxDes, idxPot)} ${
                         temPessoas
                           ? "cursor-pointer hover:shadow-md hover:ring-2 hover:ring-brand/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                           : "cursor-default"
                       }`}
                     >
-                      <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="mb-1.5 flex items-start justify-between gap-2">
                         <div>
                           <p className="text-sm font-semibold text-slate-700">{rotulo}</p>
                           <p className="text-[11px] text-slate-500">
@@ -393,6 +430,12 @@ function NoveBox({
                           {temPessoas && <span className="font-medium text-brand">ver</span>}
                         </span>
                       </div>
+                      {dica && (
+                        <p className="mb-2 rounded-md bg-white/60 px-2 py-1 text-[11px] leading-snug text-slate-600 ring-1 ring-inset ring-white/70">
+                          <span className="font-semibold text-slate-700">Ação: </span>
+                          {dica}
+                        </p>
+                      )}
                       <div className="flex flex-1 flex-col gap-1.5">
                         {colabs.length === 0 ? (
                           <span className="text-xs text-slate-400">—</span>
@@ -442,6 +485,196 @@ function NoveBox({
         </div>
       </CardBody>
     </Card>
+
+    {/* Como ler o 9-Box (legenda dinâmica) */}
+    <Card>
+      <CardHeader
+        title="Como ler o 9-Box"
+        subtitle="Guia rápido de leitura e ação por quadrante"
+        icon={<Grid3x3 className="h-[18px] w-[18px]" />}
+      />
+      <CardBody>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <GuiaItem
+            cor="bg-green-100 border-green-200"
+            titulo="Talentos a reter"
+            texto="Estrela, Alto potencial e Forte desempenho. Acelere, dê visibilidade e prepare sucessão."
+            qtd={
+              matriz.Alto.Alto.length +
+              matriz.Alto.Médio.length +
+              matriz.Médio.Alto.length
+            }
+          />
+          <GuiaItem
+            cor="bg-amber-50 border-amber-200"
+            titulo="Manter e desenvolver"
+            texto="Mantenedores e especialistas. Metas claras, feedback contínuo e desafios graduais."
+            qtd={
+              matriz.Médio.Médio.length +
+              matriz.Baixo.Alto.length +
+              matriz.Baixo.Médio.length +
+              matriz.Alto.Baixo.length +
+              matriz.Médio.Baixo.length
+            }
+          />
+          <GuiaItem
+            cor="bg-red-50 border-red-200"
+            titulo="Risco — plano de ação"
+            texto="Baixo desempenho e baixo potencial. Defina plano com prazo ou avalie realocação."
+            qtd={matriz.Baixo.Baixo.length}
+          />
+        </div>
+        <p className="mt-3 text-xs text-slate-400">
+          A dica de ação aparece em cada célula. Sem avaliação no ciclo, o desempenho é considerado
+          “Médio”. Clique numa célula para ver os nomes.
+        </p>
+      </CardBody>
+    </Card>
+
+    {/* Atenção à retenção: cruza risco de saída alto com motivação baixa */}
+    <Card>
+      <CardHeader
+        title="Atenção à retenção"
+        subtitle="Risco de saída alto cruzado com motivação baixa"
+        icon={<AlertTriangle className="h-[18px] w-[18px]" />}
+        action={
+          retencao.emRisco.length > 0 ? (
+            <button
+              type="button"
+              className="btn-outline px-2.5 py-1.5 text-xs"
+              onClick={() =>
+                drill.abrir(
+                  "Atenção à retenção",
+                  retencao.emRisco,
+                  `${retencao.emRisco.length} em risco · ${retencao.criticos.length} crítico(s) (risco alto + motivação baixa)`,
+                )
+              }
+            >
+              Ver todos
+            </button>
+          ) : undefined
+        }
+      />
+      <CardBody>
+        {retencao.emRisco.length === 0 ? (
+          <EmptyState
+            title="Nenhum colaborador em risco de retenção"
+            icon={<AlertTriangle className="h-8 w-8" />}
+          />
+        ) : (
+          <div className="space-y-3">
+            {retencao.criticos.length > 0 && (
+              <button
+                type="button"
+                className="w-full rounded-xl border border-red-200 bg-red-50/70 p-3 text-left transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                onClick={() =>
+                  drill.abrir(
+                    "Retenção crítica",
+                    retencao.criticos,
+                    `${retencao.criticos.length} colaborador(es) · risco de saída alto + motivação baixa`,
+                  )
+                }
+              >
+                <p className="text-sm font-semibold text-red-700">
+                  Prioridade máxima · {retencao.criticos.length} colaborador(es)
+                </p>
+                <p className="mt-0.5 text-xs text-red-600">
+                  Risco de saída alto e motivação baixa ao mesmo tempo. Conversa de retenção
+                  imediata: escute, ajuste carga/perspectiva e registre um plano.
+                </p>
+              </button>
+            )}
+
+            {retencao.estrategicos.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                  Estratégicos em risco ({retencao.estrategicos.length})
+                </p>
+                <p className="mt-0.5 mb-2 text-xs text-amber-700/90">
+                  Alto potencial ou alto desempenho com sinal de saída. Recomendação: visibilidade,
+                  desafio e plano de carreira.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {retencao.estrategicos.map((c) => (
+                    <RetencaoLinha key={c.id} c={c} d={d} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              {retencao.emRisco
+                .filter((c) => !retencao.estrategicos.includes(c))
+                .map((c) => (
+                  <RetencaoLinha key={c.id} c={c} d={d} />
+                ))}
+            </div>
+          </div>
+        )}
+      </CardBody>
+    </Card>
+    </div>
+  );
+}
+
+// Linha compacta de um colaborador em risco de retenção (risco + motivação).
+function RetencaoLinha({
+  c,
+  d,
+}: {
+  c: Colaborador;
+  d: ReturnType<typeof useDominio>;
+}) {
+  const motiv = typeof c.motivacao === "number" ? faixaMotivacao(c.motivacao) : null;
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2 ring-1 ring-inset ring-slate-200/70">
+      <div className="flex min-w-0 items-center gap-2">
+        <Avatar nome={c.nome} size="sm" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-700">{c.nome}</p>
+          <p className="truncate text-xs text-slate-400">{d.nomeCargo(c)}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {c.riscoSaida === "Alto" && (
+          <Badge variant="danger">Saída alta</Badge>
+        )}
+        {motiv && motivacaoBaixa(c.motivacao) && (
+          <span
+            className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+            style={{ backgroundColor: motiv.cor }}
+            title={`Motivação ${c.motivacao}/100`}
+          >
+            {motiv.label}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GuiaItem({
+  cor,
+  titulo,
+  texto,
+  qtd,
+}: {
+  cor: string;
+  titulo: string;
+  texto: string;
+  qtd: number;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 p-3">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <span className={`h-3 w-3 rounded border ${cor}`} aria-hidden />
+          {titulo}
+        </span>
+        <Badge variant="neutral">{qtd}</Badge>
+      </div>
+      <p className="text-xs leading-snug text-slate-500">{texto}</p>
+    </div>
   );
 }
 

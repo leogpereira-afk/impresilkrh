@@ -1,16 +1,20 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight, ChevronDown } from "lucide-react";
+import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight, ChevronDown, Trophy, Medal, CheckCircle2, Plus, Circle, Trash2, Route } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select } from "@/components/ui/form";
-import { EmptyState, Avatar } from "@/components/ui/misc";
+import { Select, Campo, Input, Textarea, Toggle } from "@/components/ui/form";
+import { EmptyState, Avatar, Progress } from "@/components/ui/misc";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
+import { useColecao } from "@/lib/store";
 import { useDominio, indiceNivel } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeVerDadosSensiveis, ehRH } from "@/lib/rbac";
 import { formatBRL, formatPercent, tempoDeCasa } from "@/lib/format";
+import type { EtapaEvolucao } from "@/data/types";
 
 const CORES_NIVEL = ["#7ea4c6", "#4f7ea8", "#16334f", "#a9883a", "#c2a14d"];
 
@@ -54,9 +58,35 @@ export default function Carreira() {
       .filter((g) => g.cargos.length > 0);
   }, [d.areas, d.cargos]);
 
+  // ===== Trilha de evolução de cargo (gamificação, v3 item 11) =====
+  // Reaproveita o `colabId` do simulador: o colaborador selecionado conduz a trilha.
+  const ehRHFlag = ehRH(sessao);
+  const toast = useToast();
+  const { items: evolucao, criar: criarEtapa, atualizar: atualizarEtapa, remover: removerEtapa } = useColecao("evolucao");
+
+  // Etapas do colaborador selecionado, ordenadas por `ordem`.
+  const etapasColab = useMemo(
+    () => evolucao.filter((e) => e.colaboradorId === colabId).sort((a, b) => a.ordem - b.ordem),
+    [evolucao, colabId],
+  );
+  const totalEtapas = etapasColab.length;
+  const concluidas = etapasColab.filter((e) => e.concluida).length;
+  const pctEvolucao = totalEtapas > 0 ? (concluidas / totalEtapas) * 100 : 0;
+  const trilhaCompleta = totalEtapas > 0 && concluidas === totalEtapas;
+  // cargoAlvo de referência: o da última etapa que o definir (ou o nível seguinte do simulador).
+  const cargoAlvoTrilha =
+    [...etapasColab].reverse().find((e) => e.cargoAlvo)?.cargoAlvo ?? (cargo ? `N${nivelAlvo}` : undefined);
+  // Cor da barra conforme a %: vermelho < 40, amarelo < 80, verde >= 80.
+  const corBarra = pctEvolucao >= 80 ? "#16a34a" : pctEvolucao >= 40 ? "#d4a017" : "#dc2626";
+
+  // Estado da UI de gestão da trilha (modal de criação + confirmação de exclusão).
+  const [modalEtapaAberto, setModalEtapaAberto] = useState(false);
+  const [formEtapa, setFormEtapa] = useState({ titulo: "", descricao: "", cargoAlvo: "" });
+  const [etapaExcluir, setEtapaExcluir] = useState<EtapaEvolucao | null>(null);
+
   // LGPD: a área de Carreira e Salários é restrita ao RH / Gestor Principal.
   // (Todos os hooks acima já executaram antes deste retorno antecipado.)
-  if (!ehRH(sessao)) {
+  if (!ehRHFlag) {
     return (
       <EmptyState
         title="Acesso restrito"
@@ -84,6 +114,55 @@ export default function Carreira() {
       else proximo.add(cargoId);
       return proximo;
     });
+  };
+
+  // ===== Ações da trilha de evolução =====
+  const alternarEtapa = (etapa: EtapaEvolucao) => {
+    atualizarEtapa(etapa.id, { concluida: !etapa.concluida });
+  };
+
+  const salvarNovaEtapa = () => {
+    if (!colabId || !formEtapa.titulo.trim()) {
+      toast("Informe um título para a etapa.", "erro");
+      return;
+    }
+    const proximaOrdem = etapasColab.length ? Math.max(...etapasColab.map((e) => e.ordem)) + 1 : 0;
+    criarEtapa({
+      colaboradorId: colabId,
+      titulo: formEtapa.titulo.trim(),
+      descricao: formEtapa.descricao.trim() || undefined,
+      cargoAlvo: formEtapa.cargoAlvo.trim() || (cargo ? `N${nivelAlvo}` : undefined),
+      concluida: false,
+      ordem: proximaOrdem,
+    });
+    setFormEtapa({ titulo: "", descricao: "", cargoAlvo: "" });
+    setModalEtapaAberto(false);
+    toast("Etapa adicionada à trilha.");
+  };
+
+  // Cria uma trilha padrão (etapas iniciais) para colaboradores ainda sem trilha.
+  const criarTrilhaPadrao = () => {
+    if (!colabId) return;
+    const alvo = cargo ? `N${nivelAlvo}` : undefined;
+    const PADRAO = [
+      "Domínio técnico consolidado no nível atual",
+      "Bater as metas por 2 ciclos consecutivos",
+      "Reduzir retrabalho ao alvo do cargo",
+      "Conduzir um projeto/frente sem supervisão",
+      "Apoiar e orientar um colega (mentoria)",
+      "Avaliação de desempenho no limiar do próximo nível",
+    ];
+    PADRAO.forEach((titulo, i) => {
+      criarEtapa({ colaboradorId: colabId, titulo, cargoAlvo: alvo, concluida: false, ordem: i });
+    });
+    toast("Trilha padrão criada.");
+  };
+
+  const confirmarExclusaoEtapa = () => {
+    if (etapaExcluir) {
+      removerEtapa(etapaExcluir.id);
+      toast("Etapa removida da trilha.", "info");
+    }
   };
 
   return (
@@ -166,6 +245,115 @@ export default function Carreira() {
         </CardBody>
       </Card>
 
+      {/* Trilha de evolução de cargo: gamificação (v3 item 11) */}
+      <Card className="mb-6">
+        <CardHeader
+          title="Trilha de evolução de cargo"
+          subtitle={`Etapas de evolução de ${colab ? colab.nome : "colaborador"}; a % evolui conforme você marca`}
+          icon={<Route className="h-[18px] w-[18px]" />}
+          action={
+            ehRHFlag && colabId ? (
+              <button
+                type="button"
+                className="btn-outline inline-flex items-center gap-1.5 text-sm"
+                onClick={() => { setFormEtapa({ titulo: "", descricao: "", cargoAlvo: cargo ? `N${nivelAlvo}` : "" }); setModalEtapaAberto(true); }}
+              >
+                <Plus className="h-4 w-4" /> Adicionar etapa
+              </button>
+            ) : undefined
+          }
+        />
+        <CardBody>
+          {!colab ? (
+            <p className="text-sm text-slate-400">Selecione um colaborador no simulador acima para ver a trilha de evolução.</p>
+          ) : totalEtapas === 0 ? (
+            <EmptyState
+              title="Sem trilha de evolução"
+              description={`${colab.nome} ainda não possui uma trilha. Crie a trilha padrão com etapas iniciais para começar a gamificação.`}
+              icon={<Route className="h-8 w-8" />}
+            />
+          ) : (
+            <div className="space-y-5">
+              {/* Barra de progresso + destaque de promoção */}
+              <div>
+                <div className="mb-1.5 flex items-end justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-semibold tabular-nums" style={{ color: corBarra }}>{Math.round(pctEvolucao)}%</span>
+                    <span className="text-xs text-slate-400">{concluidas} de {totalEtapas} etapa(s) concluída(s)</span>
+                  </div>
+                  {cargoAlvoTrilha && (
+                    <Badge variant={trilhaCompleta ? "gold" : "info"}>Alvo: {cargoAlvoTrilha}</Badge>
+                  )}
+                </div>
+                <Progress value={pctEvolucao} cor={corBarra} className="h-2.5" />
+              </div>
+
+              {trilhaCompleta && (
+                <div className="flex items-center gap-3 rounded-xl border border-gold-200 bg-gold-50/60 px-4 py-3">
+                  <Trophy className="h-7 w-7 shrink-0 text-gold-700" />
+                  <div>
+                    <p className="text-sm font-semibold text-gold-700">Pronto para promoção{cargoAlvoTrilha ? ` a ${cargoAlvoTrilha}` : ""}</p>
+                    <p className="text-xs text-gold-700/80">Todas as etapas da trilha foram concluídas. Encaminhe ao comitê de carreira.</p>
+                  </div>
+                  <Medal className="ml-auto hidden h-6 w-6 shrink-0 text-gold-700 sm:block" />
+                </div>
+              )}
+
+              {/* Lista de etapas */}
+              <ul className="space-y-2">
+                {etapasColab.map((etapa) => (
+                  <li
+                    key={etapa.id}
+                    className={`flex items-start gap-3 rounded-xl border px-4 py-3 transition-colors ${etapa.concluida ? "border-green-200 bg-green-50/50" : "border-slate-200 bg-white"}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => alternarEtapa(etapa)}
+                      className="mt-0.5 shrink-0 transition-colors"
+                      title={etapa.concluida ? "Marcar como pendente" : "Marcar como concluída"}
+                      aria-pressed={etapa.concluida}
+                    >
+                      {etapa.concluida ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-slate-300 hover:text-brand" />
+                      )}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-medium ${etapa.concluida ? "text-slate-500 line-through" : "text-slate-700"}`}>{etapa.titulo}</p>
+                      {etapa.descricao && <p className="mt-0.5 text-xs text-slate-400">{etapa.descricao}</p>}
+                      {etapa.cargoAlvo && <span className="mt-1 inline-block text-[11px] font-medium uppercase tracking-wide text-slate-400">Alvo: {etapa.cargoAlvo}</span>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Toggle checked={etapa.concluida} onChange={() => alternarEtapa(etapa)} />
+                      {ehRHFlag && (
+                        <button
+                          type="button"
+                          onClick={() => setEtapaExcluir(etapa)}
+                          className="text-slate-300 transition-colors hover:text-red-600"
+                          title="Excluir etapa"
+                          aria-label="Excluir etapa"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {ehRHFlag && colab && totalEtapas === 0 && (
+            <div className="mt-4 flex justify-center">
+              <button type="button" className="btn-primary inline-flex items-center gap-1.5" onClick={criarTrilhaPadrao}>
+                <Plus className="h-4 w-4" /> Criar trilha padrão
+              </button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
       {/* Tabela salarial */}
       <Card className="overflow-hidden">
         <CardHeader title="Tabela salarial por cargo" subtitle="Valores em R$ por nível (N1 → N5) — Plano de Carreira" icon={<GitBranch className="h-[18px] w-[18px]" />} />
@@ -198,6 +386,53 @@ export default function Carreira() {
       </Card>
 
       <DrillModal {...drill.props} />
+
+      {/* Modal: adicionar etapa à trilha de evolução */}
+      <Modal
+        aberto={modalEtapaAberto}
+        onFechar={() => setModalEtapaAberto(false)}
+        titulo="Adicionar etapa à trilha"
+        descricao={colab ? `Nova etapa de evolução para ${colab.nome}` : undefined}
+        rodape={
+          <>
+            <button className="btn-outline" onClick={() => setModalEtapaAberto(false)}>Cancelar</button>
+            <button className="btn-primary" onClick={salvarNovaEtapa}>Adicionar</button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Campo label="Título" obrigatorio>
+            <Input
+              value={formEtapa.titulo}
+              onChange={(e) => setFormEtapa((f) => ({ ...f, titulo: e.target.value }))}
+              placeholder="Ex.: Conduzir um projeto sem supervisão"
+              autoFocus
+            />
+          </Campo>
+          <Campo label="Descrição" hint="Opcional. Detalhe o que comprova a etapa.">
+            <Textarea
+              value={formEtapa.descricao}
+              onChange={(e) => setFormEtapa((f) => ({ ...f, descricao: e.target.value }))}
+              placeholder="Critério de conclusão, evidências esperadas..."
+            />
+          </Campo>
+          <Campo label="Cargo/nível alvo" hint="Opcional. Para onde esta trilha leva (ex.: N3).">
+            <Input
+              value={formEtapa.cargoAlvo}
+              onChange={(e) => setFormEtapa((f) => ({ ...f, cargoAlvo: e.target.value }))}
+              placeholder={cargo ? `N${nivelAlvo}` : "Ex.: N3"}
+            />
+          </Campo>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        aberto={etapaExcluir != null}
+        onFechar={() => setEtapaExcluir(null)}
+        onConfirmar={confirmarExclusaoEtapa}
+        titulo="Excluir etapa"
+        mensagem={etapaExcluir ? `Remover a etapa "${etapaExcluir.titulo}" da trilha de evolução? Esta ação não pode ser desfeita.` : ""}
+      />
     </div>
   );
 }

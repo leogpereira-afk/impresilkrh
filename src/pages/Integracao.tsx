@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   CheckCircle2,
+  Circle,
   UserPlus,
   UserMinus,
   Plus,
@@ -12,6 +13,9 @@ import {
   Brain,
   HeartHandshake,
   ChevronRight,
+  FolderCheck,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -33,6 +37,23 @@ import { HOJE } from "@/data/_gen";
 import type { Tarefa } from "@/data/types";
 
 type TipoChecklist = "Admissão" | "Desligamento";
+
+// Prefixo que identifica uma tarefa de "Documentação de RH" dentro do onboarding.
+// Modeladas como tarefas tipo "Admissão" cujo título começa com "Doc: ".
+const PREFIXO_DOC = "Doc: ";
+const ehDoc = (t: Tarefa) => t.titulo.startsWith(PREFIXO_DOC);
+const rotuloDoc = (t: Tarefa) => t.titulo.slice(PREFIXO_DOC.length);
+
+// Documentação admissional padrão de RH (item 15 v3).
+const DOCS_RH_PADRAO = [
+  "Contrato assinado",
+  "RG/CPF/CTPS",
+  "Comprovante de residência",
+  "Dados bancários",
+  "ASO admissional",
+  "Foto 3x4",
+  "Termo do Código de Ética",
+];
 
 const variantePorcentagem = (
   pct: number,
@@ -356,6 +377,10 @@ function PainelChecklist({
   escopoIds: Set<string>;
   onAlternar: (t: Tarefa, valor: boolean) => void;
 }) {
+  const d = useDominio();
+  const [focoId, setFocoId] = useState<string | null>(null);
+  const refs = useRef(new Map<string, HTMLDivElement | null>());
+
   const grupos = useMemo(() => {
     const mapa = new Map<string, Tarefa[]>();
     for (const t of tarefas) {
@@ -365,12 +390,54 @@ function PainelChecklist({
       mapa.set(t.colaboradorId, arr);
     }
     return [...mapa.entries()]
-      .map(([colaboradorId, itens]) => ({
-        colaboradorId,
-        itens: [...itens].sort((a, b) => a.ordem - b.ordem),
-      }))
-      .filter((g) => escopoIds.has(g.colaboradorId));
-  }, [tarefas, tipo, escopoIds]);
+      .map(([colaboradorId, itens]) => {
+        const ordenadas = [...itens].sort((a, b) => a.ordem - b.ordem);
+        // Jornada = tarefas comuns; Docs = tarefas "Doc: " (apenas no onboarding).
+        const jornada = ordenadas.filter((t) => !ehDoc(t));
+        const docs = ordenadas.filter((t) => ehDoc(t));
+        const total = ordenadas.length;
+        const feitas = ordenadas.filter((t) => t.concluida).length;
+        return {
+          colaboradorId,
+          jornada,
+          docs,
+          abertas: total - feitas,
+        };
+      })
+      .filter((g) => escopoIds.has(g.colaboradorId))
+      .sort((a, b) => {
+        // Mais pendências primeiro; depois por nome.
+        if (b.abertas !== a.abertas) return b.abertas - a.abertas;
+        const na = d.nomeColab(a.colaboradorId);
+        const nb = d.nomeColab(b.colaboradorId);
+        return na.localeCompare(nb);
+      });
+  }, [tarefas, tipo, escopoIds, d]);
+
+  // Resumo agregado de pendências (item 3 — "tudo em aberto").
+  const pendencias = useMemo(() => {
+    let tarefasAbertas = 0;
+    let docsAbertos = 0;
+    for (const g of grupos) {
+      tarefasAbertas += g.jornada.filter((t) => !t.concluida).length;
+      docsAbertos += g.docs.filter((t) => !t.concluida).length;
+    }
+    const colabsComPendencia = grupos.filter((g) => g.abertas > 0).length;
+    return { tarefasAbertas, docsAbertos, colabsComPendencia };
+  }, [grupos]);
+
+  const focar = (id: string) => {
+    setFocoId(id);
+    const el = refs.current.get(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  // Limpa o destaque após alguns segundos.
+  useEffect(() => {
+    if (!focoId) return;
+    const t = setTimeout(() => setFocoId(null), 2600);
+    return () => clearTimeout(t);
+  }, [focoId]);
 
   if (grupos.length === 0) {
     return (
@@ -387,17 +454,126 @@ function PainelChecklist({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {grupos.map((g) => (
-        <CardChecklist
-          key={`${tipo}-${g.colaboradorId}`}
-          colaboradorId={g.colaboradorId}
-          tipo={tipo}
-          itens={g.itens}
-          onAlternar={onAlternar}
+    <div className="space-y-4">
+      {tipo === "Admissão" && (
+        <PainelPendencias
+          pendencias={pendencias}
+          grupos={grupos.map((g) => ({
+            colaboradorId: g.colaboradorId,
+            nome: d.nomeColab(g.colaboradorId),
+            abertas: g.abertas,
+          }))}
+          onFocar={focar}
         />
-      ))}
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {grupos.map((g) => (
+          <div
+            key={`${tipo}-${g.colaboradorId}`}
+            ref={(el) => {
+              refs.current.set(g.colaboradorId, el);
+            }}
+            className={
+              focoId === g.colaboradorId
+                ? "rounded-2xl ring-2 ring-brand ring-offset-2 transition"
+                : "transition"
+            }
+          >
+            <CardChecklist
+              colaboradorId={g.colaboradorId}
+              tipo={tipo}
+              jornada={g.jornada}
+              docs={g.docs}
+              onAlternar={onAlternar}
+            />
+          </div>
+        ))}
+      </div>
     </div>
+  );
+}
+
+// ---------- Painel "tudo em aberto" (resumo de pendências) ----------
+function PainelPendencias({
+  pendencias,
+  grupos,
+  onFocar,
+}: {
+  pendencias: { tarefasAbertas: number; docsAbertos: number; colabsComPendencia: number };
+  grupos: { colaboradorId: string; nome: string; abertas: number }[];
+  onFocar: (id: string) => void;
+}) {
+  const totalAberto = pendencias.tarefasAbertas + pendencias.docsAbertos;
+  const comPendencia = grupos.filter((g) => g.abertas > 0);
+
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <AlertCircle className="h-4 w-4 text-amber-500" />
+            Tudo em aberto
+          </div>
+        }
+        action={
+          <Badge variant={totalAberto > 0 ? "warning" : "success"}>
+            {totalAberto === 0
+              ? "Nada pendente"
+              : `${totalAberto} ${totalAberto === 1 ? "pendência" : "pendências"}`}
+          </Badge>
+        }
+      />
+      <CardBody className="space-y-3">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+            <p className="text-lg font-semibold text-slate-800">
+              {pendencias.tarefasAbertas}
+            </p>
+            <p className="text-xs text-slate-500">Etapas em aberto</p>
+          </div>
+          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+            <p className="text-lg font-semibold text-slate-800">
+              {pendencias.docsAbertos}
+            </p>
+            <p className="text-xs text-slate-500">Documentos pendentes</p>
+          </div>
+          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+            <p className="text-lg font-semibold text-slate-800">
+              {pendencias.colabsComPendencia}
+            </p>
+            <p className="text-xs text-slate-500">Colaboradores</p>
+          </div>
+        </div>
+
+        {comPendencia.length > 0 ? (
+          <div>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+              Pendências por colaborador (clique para focar)
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {comPendencia.map((g) => (
+                <button
+                  key={g.colaboradorId}
+                  type="button"
+                  onClick={() => onFocar(g.colaboradorId)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
+                >
+                  {g.nome}
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                    {g.abertas}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">
+            Todos os onboardings estão com etapas e documentos em dia.
+          </p>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 
@@ -405,12 +581,14 @@ function PainelChecklist({
 function CardChecklist({
   colaboradorId,
   tipo,
-  itens,
+  jornada,
+  docs,
   onAlternar,
 }: {
   colaboradorId: string;
   tipo: TipoChecklist;
-  itens: Tarefa[];
+  jornada: Tarefa[];
+  docs: Tarefa[];
   onAlternar: (t: Tarefa, valor: boolean) => void;
 }) {
   const sessao = useSessao();
@@ -423,9 +601,41 @@ function CardChecklist({
   const [novoItem, setNovoItem] = useState("");
 
   const colab = d.colabById.get(colaboradorId);
+  // Progresso considera a jornada + documentos como etapas da integração.
+  const itens = useMemo(() => [...jornada, ...docs], [jornada, docs]);
   const total = itens.length;
   const feitas = itens.filter((t) => t.concluida).length;
   const pct = total > 0 ? Math.round((feitas / total) * 100) : 0;
+
+  // Etapas da jornada concluídas (para a linha do tempo e o rótulo).
+  const etapasFeitas = jornada.filter((t) => t.concluida).length;
+  const etapasTotal = jornada.length;
+  const docsAbertos = docs.filter((t) => !t.concluida).length;
+
+  // Semeia os documentos de RH padrão na 1ª vez (apenas onboarding).
+  const semeouDocs = useRef(false);
+  useEffect(() => {
+    if (tipo !== "Admissão") return;
+    if (semeouDocs.current) return;
+    if (docs.length > 0) {
+      semeouDocs.current = true;
+      return;
+    }
+    semeouDocs.current = true;
+    const baseOrdem =
+      jornada.reduce((max, t) => Math.max(max, t.ordem), -1) + 1;
+    DOCS_RH_PADRAO.forEach((nome, i) => {
+      criar({
+        colaboradorId,
+        tipo: "Admissão",
+        titulo: `${PREFIXO_DOC}${nome}`,
+        responsavel: "RH",
+        concluida: false,
+        concluidaEm: null,
+        ordem: baseOrdem + i,
+      });
+    });
+  }, [tipo, docs.length, jornada, colaboradorId, criar]);
 
   // Candidatos a padrinho: colaboradores ativos, exceto o próprio.
   const candidatosPadrinho = useMemo(
@@ -498,7 +708,48 @@ function CardChecklist({
         }
       />
       <CardBody className="space-y-3">
-        <Progress value={pct} cor={pct >= 100 ? "#16a34a" : undefined} />
+        {/* Progresso da jornada — barra de % + rótulo de etapas */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              {tipo === "Admissão" ? "Jornada do onboarding" : "Progresso do offboarding"}
+            </span>
+            <span className="text-xs font-semibold text-slate-600">
+              {etapasFeitas} de {etapasTotal} etapas · {pct}%
+            </span>
+          </div>
+          <Progress value={pct} cor={pct >= 100 ? "#16a34a" : undefined} />
+          {docs.length > 0 && (
+            <p className="text-[11px] text-slate-400">
+              Inclui {docs.length} documentos de RH
+              {docsAbertos > 0 ? ` · ${docsAbertos} em aberto` : " · todos entregues"}.
+            </p>
+          )}
+        </div>
+
+        {/* Linha do tempo / stepper das etapas da jornada */}
+        {tipo === "Admissão" && jornada.length > 0 && (
+          <ol className="flex flex-col gap-1.5">
+            {jornada.map((t) => (
+              <li key={t.id} className="flex items-center gap-2">
+                {t.concluida ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                ) : (
+                  <Circle className="h-4 w-4 shrink-0 text-amber-500" />
+                )}
+                <span
+                  className={
+                    t.concluida
+                      ? "text-xs text-slate-400 line-through"
+                      : "rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+                  }
+                >
+                  {t.titulo}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
 
         {tipo === "Admissão" && (
           <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
@@ -540,8 +791,13 @@ function CardChecklist({
           </div>
         )}
 
+        {tipo === "Admissão" && (
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Etapas da jornada
+          </p>
+        )}
         <ul className="space-y-1.5">
-          {itens.map((t) => (
+          {jornada.map((t) => (
             <li
               key={t.id}
               className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
@@ -572,6 +828,56 @@ function CardChecklist({
             </li>
           ))}
         </ul>
+
+        {/* Sub-seção: Documentação de RH (item 15 v3) */}
+        {tipo === "Admissão" && docs.length > 0 && (
+          <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FolderCheck className="h-4 w-4 text-brand" />
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Documentação de RH
+                </span>
+              </div>
+              <Badge variant={docsAbertos === 0 ? "success" : "warning"}>
+                {docs.length - docsAbertos}/{docs.length}
+                {docsAbertos > 0 ? ` · ${docsAbertos} em aberto` : " · completo"}
+              </Badge>
+            </div>
+            <ul className="space-y-1.5">
+              {docs.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-slate-100 bg-white px-3 py-1.5"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span
+                      className={
+                        t.concluida
+                          ? "truncate text-sm text-slate-400 line-through"
+                          : "truncate text-sm font-medium text-slate-700"
+                      }
+                    >
+                      {rotuloDoc(t)}
+                    </span>
+                    {!t.concluida && (
+                      <Badge variant="warning" className="shrink-0">
+                        Em aberto
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="shrink-0">
+                    <Toggle
+                      checked={t.concluida}
+                      onChange={(v) => onAlternar(t, v)}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {gere && (
           <div className="flex items-center gap-2 pt-1">

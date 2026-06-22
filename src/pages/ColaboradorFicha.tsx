@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
-  IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity,
+  IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -63,6 +63,9 @@ export default function ColaboradorFicha() {
 
 function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/types").Colaborador; sens: boolean; verGestao: boolean; podeEditar: boolean }) {
   const d = useDominio();
+  const toast = useToast();
+  const { atualizar } = useColecao("colaboradores");
+  const fotoRef = useRef<HTMLInputElement>(null);
   const [editar, setEditar] = useState(false);
   const [desligar, setDesligar] = useState(false);
   const cargo = c.cargoId ? d.cargoById.get(c.cargoId) : undefined;
@@ -73,6 +76,23 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
   const diaAniv = c.dataNascimento ? new Date(c.dataNascimento).getDate() : null;
   const aniversarioEmpresa = !!c.dataAdmissao && new Date(c.dataAdmissao).getMonth() === mesAtual;
   const anosCasa = c.dataAdmissao ? HOJE.getFullYear() - new Date(c.dataAdmissao).getFullYear() : 0;
+
+  const onFoto = (f: File) => {
+    if (!f.type.startsWith("image/")) {
+      toast("Selecione um arquivo de imagem.", "erro");
+      return;
+    }
+    if (f.size > 1024 * 1024) {
+      toast("Imagem acima de 1 MB. Escolha uma menor.", "erro");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      atualizar(c.id, { fotoDataUrl: String(reader.result) });
+      toast("Foto atualizada.");
+    };
+    reader.readAsDataURL(f);
+  };
 
   return (
     <div>
@@ -97,7 +117,33 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
 
       <Card className="mb-6">
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <Avatar nome={c.nome} size="lg" />
+          <div className="relative shrink-0">
+            {c.fotoDataUrl ? (
+              <img src={c.fotoDataUrl} alt={c.nome} className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
+            ) : (
+              <Avatar nome={c.nome} size="lg" />
+            )}
+            {podeEditar && (
+              <>
+                <input
+                  ref={fotoRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { if (e.target.files?.[0]) onFoto(e.target.files[0]); e.target.value = ""; }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fotoRef.current?.click()}
+                  title="Enviar foto"
+                  aria-label="Enviar foto do colaborador"
+                  className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:text-brand"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold text-brand-ink">{c.nome}</h1>
@@ -215,6 +261,7 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
             <Field label="Vale-transporte" value={c.valeTransporte ? "Sim" : "Não"} />
             <Field label="Enquadramento" value={<Badge variant={enqVar(d.enquadrarColab(c))}>{d.enquadrarColab(c)}</Badge>} />
             <Field label="Risco de saída" value={c.riscoSaida} />
+            <Field label="Categoria CNH" value={c.cnh ? c.cnh : "Não informado"} />
           </dl>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             <div className="rounded-lg border border-brand-100 bg-brand-50/40 px-4 py-3">
