@@ -49,10 +49,31 @@ export async function dashboardGeral(sessao: SessionPayload): Promise<DashboardD
   const filtroId = ids ? { id: { in: ids } } : {};
   const filtroColabId = ids ? { colaboradorId: { in: ids } } : {};
 
-  const colaboradores = await db.colaborador.findMany({
-    where: filtroId,
-    include: { status: true, area: true, cargo: true, nivel: true },
-  });
+  const hoje = new Date();
+  const janela = new Date();
+  janela.setDate(janela.getDate() + JANELA_ALERTA_DIAS);
+
+  // Consultas independentes em paralelo (reduz a latência por carregamento)
+  const [colaboradores, docsComVenc, cicloAberto, feriasEmAberto, feriasProximas] =
+    await Promise.all([
+      db.colaborador.findMany({
+        where: filtroId,
+        include: { status: true, area: true, cargo: true, nivel: true },
+      }),
+      db.documento.findMany({
+        where: { ...filtroColabId, dataVencimento: { not: null } },
+        include: { colaborador: { select: { nome: true } } },
+      }),
+      db.cicloAvaliacao.findFirst({
+        where: { status: "Aberto" },
+        orderBy: { dataInicio: "desc" },
+      }),
+      db.ferias.count({ where: { ...filtroColabId, status: "Em aberto" } }),
+      db.ferias.findMany({
+        where: { ...filtroColabId, status: { in: ["Agendada", "Em andamento"] } },
+        include: { colaborador: { select: { nome: true } } },
+      }),
+    ]);
 
   const ativos = colaboradores.filter(
     (c) => c.status?.contaComoAtivo && !c.dataDesligamento,
@@ -70,14 +91,6 @@ export async function dashboardGeral(sessao: SessionPayload): Promise<DashboardD
       ? +((desligamentosPeriodo / ((ativos.length + desligamentosPeriodo) || 1)) * 100).toFixed(1)
       : 0;
 
-  // Documentos a vencer / vencidos
-  const hoje = new Date();
-  const janela = new Date();
-  janela.setDate(janela.getDate() + JANELA_ALERTA_DIAS);
-  const docsComVenc = await db.documento.findMany({
-    where: { ...filtroColabId, dataVencimento: { not: null } },
-    include: { colaborador: { select: { nome: true } } },
-  });
   const documentosVencidos = docsComVenc.filter(
     (d) => d.dataVencimento! < hoje,
   ).length;
@@ -85,24 +98,28 @@ export async function dashboardGeral(sessao: SessionPayload): Promise<DashboardD
     (d) => d.dataVencimento! >= hoje && d.dataVencimento! <= janela,
   ).length;
 
-  // Avaliações pendentes (autoavaliação não realizada no ciclo aberto)
-  const cicloAberto = await db.cicloAvaliacao.findFirst({
-    where: { status: "Aberto" },
-    orderBy: { dataInicio: "desc" },
-  });
+  // Avaliações pendentes + elegíveis a promoção (dependem do ciclo) — em paralelo
   let avaliacoesPendentes = 0;
+  let elegiveisPromocao = 0;
   if (cicloAberto) {
-    const comAuto = await db.avaliacao.findMany({
-      where: { cicloId: cicloAberto.id, tipo: "AUTO", ...filtroColabId },
-      select: { colaboradorId: true },
-    });
+    const [comAuto, eleg] = await Promise.all([
+      db.avaliacao.findMany({
+        where: { cicloId: cicloAberto.id, tipo: "AUTO", ...filtroColabId },
+        select: { colaboradorId: true },
+      }),
+      db.avaliacao.count({
+        where: {
+          cicloId: cicloAberto.id,
+          tipo: "GESTOR",
+          elegivelPromocao: true,
+          ...filtroColabId,
+        },
+      }),
+    ]);
     const setAuto = new Set(comAuto.map((a) => a.colaboradorId));
     avaliacoesPendentes = ativos.filter((c) => !setAuto.has(c.id)).length;
+    elegiveisPromocao = eleg;
   }
-
-  const feriasEmAberto = await db.ferias.count({
-    where: { ...filtroColabId, status: "Em aberto" },
-  });
 
   // Aniversariantes do mês
   const mesAtual = hoje.getMonth();
@@ -151,17 +168,6 @@ export async function dashboardGeral(sessao: SessionPayload): Promise<DashboardD
     .filter((s) => statusMap.has(s))
     .map((s) => ({ nome: s, valor: statusMap.get(s) ?? 0, cor: corStatus[s] }));
 
-  const elegiveisPromocao = cicloAberto
-    ? await db.avaliacao.count({
-        where: {
-          cicloId: cicloAberto.id,
-          tipo: "GESTOR",
-          elegivelPromocao: true,
-          ...filtroColabId,
-        },
-      })
-    : 0;
-
   const riscoAlto = ativos.filter((c) => c.riscoSaida === "Alto").length;
   const salarios = ativos.map((c) => c.salario ?? 0).filter((s) => s > 0);
   const mediaSalarial =
@@ -188,11 +194,7 @@ export async function dashboardGeral(sessao: SessionPayload): Promise<DashboardD
       });
     }
   }
-  // Retornos de férias próximos
-  const feriasProximas = await db.ferias.findMany({
-    where: { ...filtroColabId, status: { in: ["Agendada", "Em andamento"] } },
-    include: { colaborador: { select: { nome: true } } },
-  });
+  // Retornos de férias próximos (já buscados em paralelo acima)
   for (const f of feriasProximas) {
     if (f.dataRetorno && f.dataRetorno >= hoje && f.dataRetorno <= janela) {
       alertas.push({
