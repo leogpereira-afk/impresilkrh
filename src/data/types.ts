@@ -444,3 +444,18 @@ export interface Usuario {
   ativo: boolean;
   criadoEm: string;
 }
+
+// ===================== Folha real / pagamentos (v3.1) =====================
+// Cada linha é um pagamento efetivo (extrato de "Contas a Pagar").
+// competencia = mês de referência (YYYY-MM). Regra: pagamento até o dia 15
+// fecha o mês anterior (salário/saldo); do dia 16 em diante é o mês corrente
+// (adiantamento). dataPagamento = vencimento real.
+export interface Pagamento {
+  id: string;
+  colaboradorId: string;
+  competencia: string; // "2026-01"
+  tipo: string; // Salário, Adiantamento, Horas Extras, Comissão, Férias, Vale Transporte, Plano de Saúde, Incentivo de Produtividade, Incentivo de Viagens, Freelancer (Empreita), Rescisão, Limpeza/Faxina, Prestação de Serviços, Outros
+  valor: number;
+  dataPagamento: string; // ISO (vencimento)
+  descricao?: string;
+}

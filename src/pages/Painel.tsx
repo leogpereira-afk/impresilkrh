@@ -18,6 +18,7 @@ import { useDominio, contaHeadcount } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
 import { formatBRL, formatPercent, formatDate, MESES_PT } from "@/lib/format";
+import { somaPorTipo, serieMensal, corDoTipo, totalDe } from "@/lib/folha";
 import { ARQUETIPOS, COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
@@ -34,9 +35,6 @@ const ddmm = (iso?: string | null) => {
   return `${dia}/${mes}`;
 };
 
-// Abreviação de mês (3 letras) a partir de MESES_PT. Ex.: "Janeiro" -> "Jan".
-const mesAbrev = (idx: number) => MESES_PT[((idx % 12) + 12) % 12].slice(0, 3);
-
 export default function Painel() {
   const sessao = useSessao();
   const d = useDominio();
@@ -46,6 +44,7 @@ export default function Painel() {
   const { items: avaliacoes } = useColecao("avaliacoes");
   const { items: advertencias } = useColecao("advertencias");
   const { items: treinamentos } = useColecao("treinamentos");
+  const { items: pagamentos } = useColecao("pagamentos");
 
   // ---------- Filtro por mês e ano (v3) ----------
   // mes === 0 => "Ano inteiro". Padrão = mês/ano de HOJE.
@@ -124,30 +123,55 @@ export default function Painel() {
   const idsComAdvertencia = new Set(advertenciasEscopo.map((a) => a.colaboradorId));
   const colabsComAdvertencia = escopo.filter((c) => idsComAdvertencia.has(c.id));
 
-  // ---------- Folha de pagamento (somente Administrador de RH) ----------
-  const folhaDe = (c: { salario?: number | null; adicionais?: number }) => (c.salario ?? 0) + (c.adicionais ?? 0);
-  // Folha do mês corrente = soma sobre os colaboradores ativos (headcount).
-  const folhaTotal = ativos.reduce((acc, c) => acc + folhaDe(c), 0);
-  // Estimativa da folha do mês anterior:
-  //  - exclui admitidos nos últimos 30 dias (ainda não estavam na folha)
-  //  - soma de volta os desligados nos últimos 30 dias (ainda estavam na folha)
-  const admitidosUlt30 = ativos.filter((c) => dias(c.dataAdmissao) >= -30);
-  const desligadosUlt30 = escopo.filter((c) => c.dataDesligamento && dias(c.dataDesligamento) >= -30);
-  const folhaMesAnterior =
-    folhaTotal - admitidosUlt30.reduce((acc, c) => acc + folhaDe(c), 0) + desligadosUlt30.reduce((acc, c) => acc + folhaDe(c), 0);
+  // ---------- Folha de pagamento real (extrato de Contas a Pagar) ----------
+  // Competência = mês de referência do filtro. "Ano inteiro" soma o ano todo.
+  // Regra: pagto até o dia 15 fecha o mês anterior; do dia 16 conta no mês corrente.
+  const compFiltro = filtroMes === 0 ? null : `${filtroAno}-${String(filtroMes).padStart(2, "0")}`;
+  const pagsEscopo = pagamentos.filter((p) => ids.has(p.colaboradorId));
+  const pagsPeriodo = compFiltro
+    ? pagsEscopo.filter((p) => p.competencia === compFiltro)
+    : pagsEscopo.filter((p) => p.competencia.startsWith(`${filtroAno}-`));
+  const folhaTotal = totalDe(pagsPeriodo);
+
+  // Competência anterior (para a tendência) — apenas no modo "mês".
+  const compAnterior = (() => {
+    if (filtroMes === 0) return null;
+    let m = filtroMes - 1, y = filtroAno;
+    if (m === 0) { m = 12; y -= 1; }
+    return `${y}-${String(m).padStart(2, "0")}`;
+  })();
+  const folhaMesAnterior = compAnterior ? totalDe(pagsEscopo.filter((p) => p.competencia === compAnterior)) : 0;
   const folhaVariacao = folhaTotal - folhaMesAnterior;
   const folhaVariacaoPct = folhaMesAnterior !== 0 ? folhaVariacao / folhaMesAnterior : 0;
   const folhaSubiu = folhaVariacao >= 0;
-  // Abertura por setor (setor = área; exceto "direcao")
+  const temAnterior = folhaMesAnterior > 0;
+  // Ciclo "em andamento": competência sem uma das pontas (adiantamento OU saldo de salário).
+  const tiposNoPeriodo = new Set(pagsPeriodo.map((p) => p.tipo));
+  const cicloIncompleto = !!compFiltro && pagsPeriodo.length > 0 && (!tiposNoPeriodo.has("Salário") || !tiposNoPeriodo.has("Adiantamento"));
+
+  // Composição da folha por TIPO (salário, adiantamento, horas extras, benefícios…).
+  const folhaPorTipo = somaPorTipo(pagsPeriodo);
+  const folhaTipoBarras = folhaPorTipo.map((t) => ({ nome: t.tipo, valor: t.valor, cor: corDoTipo(t.tipo) }));
+
+  // Folha por setor (área) a partir dos pagamentos reais.
+  const areaDeColab = new Map(escopoBruto.map((c) => [c.id, c.areaId]));
+  const nomeDeColab = new Map(escopoBruto.map((c) => [c.id, c.nome]));
+  const folhaAreaMap = new Map<string, number>();
+  const pessoasAreaMap = new Map<string, Set<string>>();
+  for (const p of pagsPeriodo) {
+    const aid = areaDeColab.get(p.colaboradorId);
+    if (!aid) continue;
+    folhaAreaMap.set(aid, (folhaAreaMap.get(aid) ?? 0) + p.valor);
+    if (!pessoasAreaMap.has(aid)) pessoasAreaMap.set(aid, new Set());
+    pessoasAreaMap.get(aid)!.add(p.colaboradorId);
+  }
   const folhaPorArea = d.areas
     .filter((a) => a.id !== "direcao")
-    .map((a) => {
-      const pessoas = ativos.filter((c) => c.areaId === a.id);
-      return { id: a.id, nome: a.nome.split(" ")[0], nomeCompleto: a.nome, pessoas: pessoas.length, folha: pessoas.reduce((acc, c) => acc + folhaDe(c), 0) };
-    })
+    .map((a) => ({ id: a.id, nome: a.nome.split(" ")[0], nomeCompleto: a.nome, folha: folhaAreaMap.get(a.id) ?? 0, pessoas: pessoasAreaMap.get(a.id)?.size ?? 0 }))
     .filter((x) => x.folha > 0)
     .sort((a, b) => b.folha - a.folha);
   const folhaBarras = folhaPorArea.map((x) => ({ nome: x.nome, valor: x.folha }));
+  const totalPessoasFolha = new Set(pagsPeriodo.map((p) => p.colaboradorId)).size;
   const abrirFolhaArea = (id: string, nomeCompleto: string) =>
     drill.abrir(`Folha · ${nomeCompleto}`, ativos.filter((c) => c.areaId === id), "Composição da folha");
   const abrirFolhaPorRotulo = (nome: string) => {
@@ -155,24 +179,15 @@ export default function Painel() {
     if (area) abrirFolhaArea(area.id, area.nomeCompleto);
   };
 
-  // ---------- Folha comparativa mês a mês (últimos 6 meses até o mês selecionado) ----------
-  // Estima a folha de cada mês somando (salario+adicionais) dos colaboradores que já
-  // estavam ATIVOS naquele mês: admitidos até o fim do mês e não desligados antes do início.
-  const baseFolhaMes = filtroMes === 0 ? HOJE.getMonth() + 1 : filtroMes;
-  const folhaComparativa = Array.from({ length: 6 }, (_, k) => {
-    const offset = 5 - k; // mais antigo -> mais recente
-    const ref = new Date(filtroAno, baseFolhaMes - 1 - offset, 1);
-    const inicioMes = new Date(ref.getFullYear(), ref.getMonth(), 1).getTime();
-    const fimMes = new Date(ref.getFullYear(), ref.getMonth() + 1, 1).getTime() - 1;
-    const valor = escopo.reduce((acc, c) => {
-      const adm = c.dataAdmissao ? new Date(c.dataAdmissao).getTime() : NaN;
-      if (isNaN(adm) || adm > fimMes) return acc; // ainda não admitido no fim do mês
-      const desl = c.dataDesligamento ? new Date(c.dataDesligamento).getTime() : null;
-      if (desl !== null && desl < inicioMes) return acc; // já desligado antes do início do mês
-      return acc + folhaDe(c);
-    }, 0);
-    return { nome: mesAbrev(ref.getMonth()), valor };
-  });
+  // Pagamentos por colaborador no período (tabela para feedback — link para a ficha).
+  const porColabMap = new Map<string, number>();
+  for (const p of pagsPeriodo) porColabMap.set(p.colaboradorId, (porColabMap.get(p.colaboradorId) ?? 0) + p.valor);
+  const folhaPorColaborador = [...porColabMap.entries()]
+    .map(([id, valor]) => ({ id, nome: nomeDeColab.get(id) ?? id, valor }))
+    .sort((a, b) => b.valor - a.valor);
+
+  // ---------- Folha comparativa mês a mês (valores reais) ----------
+  const folhaComparativa = serieMensal(pagsEscopo).map((s) => ({ nome: s.nome, valor: s.valor }));
 
   // ---------- Treinamento (v3) ----------
   // Considera apenas treinamentos de colaboradores ATIVOS (no escopo de headcount).
@@ -302,40 +317,66 @@ export default function Painel() {
 
       {sessao?.perfil === "ADMIN_RH" && (
         <div className="mb-6">
+          {pagsPeriodo.length === 0 ? (
+            <Card>
+              <CardHeader title={`Folha de pagamento · ${rotuloPeriodo}`} icon={<Wallet className="h-[18px] w-[18px]" />} />
+              <CardBody>
+                <EmptyState title="Sem pagamentos nesta competência" description="Escolha outro mês/ano no filtro acima para ver a folha real." />
+              </CardBody>
+            </Card>
+          ) : (
+          <>
           <div className="grid gap-4 lg:grid-cols-3">
             <StatCard
-              label="Folha de pagamento do mês"
+              label={`Folha paga · ${rotuloPeriodo}`}
               value={formatBRL(folhaTotal)}
               icon={<Wallet className="h-5 w-5" />}
               accent="gold"
-              hint={`${ativos.length} colaborador(es) · salário + adicionais`}
-              trend={{ value: `${folhaSubiu ? "+" : "−"}${formatBRL(Math.abs(folhaVariacao))} (${formatPercent(Math.abs(folhaVariacaoPct))}) vs. mês anterior`, positivo: folhaSubiu }}
+              hint={`${totalPessoasFolha} colaborador(es)${cicloIncompleto ? " · ciclo em andamento" : ""}`}
+              trend={temAnterior ? { value: `${folhaSubiu ? "+" : "−"}${formatBRL(Math.abs(folhaVariacao))} (${formatPercent(Math.abs(folhaVariacaoPct))}) vs. mês anterior`, positivo: folhaSubiu } : undefined}
             />
             <Card className="lg:col-span-2">
-              <CardHeader title="Folha por setor" subtitle="Clique no gráfico ou na linha para ver a composição" icon={<Wallet className="h-[18px] w-[18px]" />} />
+              <CardHeader title="Composição da folha" subtitle="Tudo que foi pago: salário, adiantamento, extras e benefícios" icon={<Wallet className="h-[18px] w-[18px]" />} />
               <CardBody>
-                {folhaPorArea.length === 0 ? (
-                  <EmptyState title="Sem dados de folha" />
-                ) : (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <BarrasVerticais data={folhaBarras} moeda cor="#c2a14d" onItemClick={abrirFolhaPorRotulo} />
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="border-b border-slate-100">
-                          <tr>
-                            <th className="th">Setor</th>
-                            <th className="th text-right">Pessoas</th>
-                            <th className="th text-right">Folha</th>
-                            <th className="th text-right">% total</th>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <BarrasColoridas data={folhaTipoBarras} altura={240} />
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="border-b border-slate-100">
+                        <tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">%</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {folhaPorTipo.map((t) => (
+                          <tr key={t.tipo}>
+                            <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
+                            <td className="td text-right text-slate-700">{formatBRL(t.valor)}</td>
+                            <td className="td text-right text-slate-500">{formatPercent(folhaTotal ? t.valor / folhaTotal : 0)}</td>
                           </tr>
-                        </thead>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t border-slate-200">
+                        <tr><td className="td font-semibold text-brand-ink">Total</td><td className="td text-right font-semibold text-brand-ink">{formatBRL(folhaTotal)}</td><td className="td text-right font-semibold text-brand-ink">100%</td></tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="Folha por setor" subtitle="Clique no gráfico ou na linha para ver quem compõe" icon={<Wallet className="h-[18px] w-[18px]" />} />
+              <CardBody>
+                {folhaPorArea.length === 0 ? <EmptyState title="Sem dados de folha" /> : (
+                  <>
+                    <BarrasVerticais data={folhaBarras} moeda cor="#c2a14d" altura={200} onItemClick={abrirFolhaPorRotulo} />
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="border-b border-slate-100"><tr><th className="th">Setor</th><th className="th text-right">Pessoas</th><th className="th text-right">Folha</th><th className="th text-right">%</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
                           {folhaPorArea.map((x) => (
-                            <tr
-                              key={x.id}
-                              className="cursor-pointer hover:bg-slate-50/60"
-                              onClick={() => abrirFolhaArea(x.id, x.nomeCompleto)}
-                            >
+                            <tr key={x.id} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirFolhaArea(x.id, x.nomeCompleto)}>
                               <td className="td font-medium text-slate-700">{x.nomeCompleto}</td>
                               <td className="td text-right text-slate-500">{x.pessoas}</td>
                               <td className="td text-right text-slate-700">{formatBRL(x.folha)}</td>
@@ -343,33 +384,44 @@ export default function Painel() {
                             </tr>
                           ))}
                         </tbody>
-                        <tfoot className="border-t border-slate-200">
-                          <tr>
-                            <td className="td font-semibold text-brand-ink">Total</td>
-                            <td className="td text-right font-semibold text-brand-ink">{ativos.length}</td>
-                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(folhaTotal)}</td>
-                            <td className="td text-right font-semibold text-brand-ink">100%</td>
-                          </tr>
-                        </tfoot>
                       </table>
                     </div>
-                  </div>
+                  </>
                 )}
               </CardBody>
             </Card>
-          </div>
-          <div className="mt-4">
             <Card>
-              <CardHeader
-                title="Folha comparativa mês a mês"
-                subtitle={`Últimos 6 meses até ${mesAbrev(baseFolhaMes - 1)}/${filtroAno} · estimativa por ativos no mês`}
-                icon={<Wallet className="h-[18px] w-[18px]" />}
-              />
+              <CardHeader title="Folha comparativa mês a mês" subtitle="Valores reais por competência (Dez/2025 e mês corrente podem estar parciais)" icon={<Wallet className="h-[18px] w-[18px]" />} />
               <CardBody>
                 <BarrasVerticais data={folhaComparativa} moeda cor="#16334f" altura={240} />
               </CardBody>
             </Card>
           </div>
+
+          <div className="mt-4">
+            <Card>
+              <CardHeader title={`Pagamentos por colaborador · ${rotuloPeriodo}`} subtitle="Total recebido por pessoa (salário + extras + benefícios). Abra a ficha para o detalhe e dar feedback." icon={<Users className="h-[18px] w-[18px]" />} />
+              <CardBody>
+                <div className="max-h-[420px] overflow-y-auto rounded-lg border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 border-b border-slate-100 bg-white"><tr><th className="th">Colaborador</th><th className="th text-right">Total recebido</th><th className="th text-right">% da folha</th><th className="th" /></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {folhaPorColaborador.map((c) => (
+                        <tr key={c.id} className="hover:bg-slate-50/60">
+                          <td className="td font-medium text-slate-700">{c.nome}</td>
+                          <td className="td text-right text-slate-700">{formatBRL(c.valor)}</td>
+                          <td className="td text-right text-slate-500">{formatPercent(folhaTotal ? c.valor / folhaTotal : 0)}</td>
+                          <td className="td text-right"><Link to={`/colaboradores/${c.id}`} className="text-brand hover:underline">Ver ficha</Link></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+          </div>
+          </>
+          )}
         </div>
       )}
 

@@ -20,6 +20,8 @@ import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
 import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa } from "@/lib/format";
+import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
+import { BarrasVerticais } from "@/components/charts/charts";
 import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
@@ -376,46 +378,101 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
 }
 
 function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sens: boolean }) {
+  const { items: pagamentos } = useColecao("pagamentos");
+  const meus = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id), [pagamentos, c.id]);
+  // Competências disponíveis, da mais recente para a mais antiga.
+  const comps = useMemo(() => competenciasDisponiveis(meus).slice().reverse(), [meus]);
+  const [comp, setComp] = useState<string>("");
+  const compSel = comp || comps[0] || "";
+
   if (!sens) {
     return <EmptyState title="Informação restrita" description="Os dados financeiros do colaborador são visíveis apenas para o RH e para o próprio colaborador (LGPD)." icon={<Lock className="h-8 w-8" />} />;
   }
-  const salario = c.salario ?? 0;
-  const adicionais = c.adicionais ?? 0;
-  const total = salario + adicionais;
-  const linhas = [
-    { rubrica: "Salário base", valor: salario, tipo: "Provento" },
-    ...(adicionais > 0 ? [{ rubrica: "Adicionais e benefícios", valor: adicionais, tipo: "Provento" }] : []),
-    { rubrica: "Vale-transporte", valor: c.valeTransporte ? 0 : 0, tipo: "Benefício", nota: c.valeTransporte ? "Optante" : "Não optante" } as { rubrica: string; valor: number; tipo: string; nota?: string },
-  ];
+
+  const salarioRef = c.salario ?? 0;
+  if (meus.length === 0) {
+    return (
+      <div className="space-y-4">
+        <EmptyState title="Sem pagamentos registrados" description="Ainda não há extrato de folha real para este colaborador. O salário de referência do cadastro é exibido abaixo." icon={<Wallet className="h-8 w-8" />} />
+        <Card className="max-w-xs"><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário de referência (cadastro)</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(salarioRef)}</p></CardBody></Card>
+      </div>
+    );
+  }
+
+  const doMes = meus.filter((p) => p.competencia === compSel).slice().sort((a, b) => a.dataPagamento.localeCompare(b.dataPagamento));
+  const porTipo = somaPorTipo(doMes);
+  const totalMes = totalDe(doMes);
+  const serie = serieMensal(meus); // total recebido por competência
+  const mediaMensal = comps.length ? totalDe(meus) / comps.length : 0;
+  const tiposMes = new Set(doMes.map((p) => p.tipo));
+  const parcial = !tiposMes.has("Salário") || !tiposMes.has("Adiantamento");
+
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader title="Extrato de recebimentos (mês)" subtitle="Consolidação do que o colaborador recebe no mês" icon={<Wallet className="h-[18px] w-[18px]" />} />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-400">Remuneração real · extrato de folha</p>
+          <p className="text-sm text-slate-500">Salário + adiantamento + extras + benefícios efetivamente pagos. Use para dar feedback.</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-slate-500">Competência</span>
+          <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-44">
+            {comps.map((k) => <option key={k} value={k}>{competenciaLabelLongo(k)}</option>)}
+          </Select>
+        </label>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title={`O que recebeu em ${competenciaLabelLongo(compSel)}`} subtitle={parcial ? "Competência em andamento (uma das parcelas ainda não foi paga)" : "Composição do pagamento da competência"} icon={<Wallet className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            <table className="w-full">
+              <thead className="border-b border-slate-100"><tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">% do mês</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {porTipo.map((t) => (
+                  <tr key={t.tipo}>
+                    <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
+                    <td className="td text-right tabular-nums">{formatBRL(t.valor)}</td>
+                    <td className="td text-right text-slate-500">{totalMes ? `${Math.round((t.valor / totalMes) * 100)}%` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total recebido no mês</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalMes)}</td><td className="td" /></tr></tfoot>
+            </table>
+          </CardBody>
+        </Card>
+        <div className="space-y-4">
+          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total em {competenciaLabelLongo(compSel)}</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(totalMes)}</p></CardBody></Card>
+          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Média mensal recebida</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p><p className="mt-1 text-xs text-slate-400">{comps.length} competência(s)</p></CardBody></Card>
+          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário de referência (cadastro)</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(salarioRef)}</p></CardBody></Card>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader title="Lançamentos da competência" subtitle="Cada pagamento com a data efetiva (vencimento)" icon={<History className="h-[18px] w-[18px]" />} />
         <CardBody>
-          <table className="w-full">
-            <thead className="border-b border-slate-100">
-              <tr><th className="th">Rubrica</th><th className="th">Tipo</th><th className="th text-right">Valor</th></tr>
-            </thead>
+          <table className="w-full text-sm">
+            <thead className="border-b border-slate-100"><tr><th className="th">Data</th><th className="th">Tipo</th><th className="th">Descrição</th><th className="th text-right">Valor</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {linhas.map((l, i) => (
-                <tr key={i}>
-                  <td className="td font-medium text-slate-700">{l.rubrica}{l.nota ? <span className="ml-1 text-xs text-slate-400">({l.nota})</span> : null}</td>
-                  <td className="td"><Badge variant={l.tipo === "Provento" ? "success" : "neutral"}>{l.tipo}</Badge></td>
-                  <td className="td text-right tabular-nums">{formatBRL(l.valor)}</td>
+              {doMes.map((p) => (
+                <tr key={p.id}>
+                  <td className="td whitespace-nowrap text-slate-600">{formatDate(p.dataPagamento)}</td>
+                  <td className="td"><span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: corDoTipo(p.tipo) }} />{p.tipo}</td>
+                  <td className="td text-slate-500">{p.descricao ?? "—"}</td>
+                  <td className="td text-right tabular-nums">{formatBRL(p.valor)}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink" colSpan={2}>Total bruto no mês</td><td className="td text-right text-base font-semibold text-brand-ink tabular-nums">{formatBRL(total)}</td></tr>
-            </tfoot>
           </table>
         </CardBody>
       </Card>
-      <div className="space-y-4">
-        <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário base</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(salario)}</p></CardBody></Card>
-        <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Adicionais</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(adicionais)}</p></CardBody></Card>
-        <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total no mês</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(total)}</p></CardBody></Card>
-      </div>
+
+      <Card>
+        <CardHeader title="Histórico mês a mês" subtitle="Total recebido por competência (para acompanhar a evolução e dar feedback)" icon={<Wallet className="h-[18px] w-[18px]" />} />
+        <CardBody>
+          <BarrasVerticais data={serie.map((s) => ({ nome: s.nome, valor: s.valor }))} moeda cor="#16334f" altura={220} />
+        </CardBody>
+      </Card>
     </div>
   );
 }
