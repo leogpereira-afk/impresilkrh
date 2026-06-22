@@ -89,3 +89,57 @@ body {
     @apply inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600;
   }
 }
+
+/* Organograma top-down (conectores via CSS) */
+.org-tree,
+.org-tree ul {
+  display: flex;
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.org-tree li {
+  position: relative;
+  padding: 22px 10px 0;
+}
+/* linha vertical para cima a partir de cada nó */
+.org-tree li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 22px;
+  background: #cbd5e1;
+}
+/* linhas horizontais conectando irmãos */
+.org-tree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 1px;
+  background: #cbd5e1;
+}
+.org-tree li:only-child::before,
+.org-tree li:only-child::after,
+.org-tree > li::before,
+.org-tree > li::after {
+  display: none;
+}
+.org-tree li:first-child::after {
+  left: 50%;
+}
+.org-tree li:last-child::after {
+  width: 50%;
+  left: 0;
+}
+.org-tree li:last-child::before {
+  display: block;
+}
+/* nó sem irmãos não desenha a barra horizontal */
+.org-node {
+  display: inline-block;
+}

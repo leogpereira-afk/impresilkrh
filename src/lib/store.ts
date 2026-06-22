@@ -25,6 +25,14 @@ const cache = new Map<string, unknown[]>();
 let configCache: Config | null = null;
 const listeners = new Map<string, Set<() => void>>();
 
+// Defaults memoizados (uma cópia). As mutações são sempre imutáveis (novos arrays),
+// então é seguro entregar a referência sem clonar a cada leitura.
+let defaultsMemo: ReturnType<typeof defaultsColecoes> | null = null;
+function defaults() {
+  if (!defaultsMemo) defaultsMemo = defaultsColecoes();
+  return defaultsMemo;
+}
+
 function subscribers(nome: string): Set<() => void> {
   let s = listeners.get(nome);
   if (!s) {
@@ -55,7 +63,7 @@ function ler<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
       }
     }
   }
-  if (!val) val = defaultsColecoes()[nome] as unknown[];
+  if (!val) val = defaults()[nome] as unknown[];
   cache.set(nome, val);
   return val as ColecaoMap[K][];
 }
@@ -77,7 +85,7 @@ export function obter<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
 
 export function criarEm<K extends NomeColecao>(
   nome: K,
-  item: Partial<ColecaoMap[K]> & Record<string, unknown>,
+  item: Partial<ColecaoMap[K]>,
 ): ColecaoMap[K] {
   const novo = { id: uid(nome), ...item } as unknown as ColecaoMap[K];
   gravar(nome, [novo, ...ler(nome)]);
@@ -116,7 +124,7 @@ export function useColecao<K extends NomeColecao>(nome: K) {
   const getSnapshot = useCallback(() => ler(nome), [nome]);
   const items = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  const criar = useCallback((item: Partial<ColecaoMap[K]> & Record<string, unknown>) => criarEm(nome, item), [nome]);
+  const criar = useCallback((item: Partial<ColecaoMap[K]>) => criarEm(nome, item), [nome]);
   const atualizar = useCallback((id: string, patch: Partial<ColecaoMap[K]>) => atualizarEm(nome, id, patch), [nome]);
   const remover = useCallback((id: string) => removerEm(nome, id), [nome]);
   const definir = useCallback((itens: ColecaoMap[K][]) => definirColecao(nome, itens), [nome]);
