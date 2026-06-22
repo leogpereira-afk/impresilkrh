@@ -29,15 +29,22 @@ export function BarrasVerticais({
   cor = "#16334f",
   altura = 260,
   moeda = false,
+  onItemClick,
 }: {
   data: { nome: string; valor: number }[];
   cor?: string;
   altura?: number;
   moeda?: boolean;
+  onItemClick?: (nome: string) => void;
 }) {
   return (
     <ResponsiveContainer width="100%" height={altura}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: moeda ? 8 : -16, bottom: 0 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 8, left: moeda ? 8 : -16, bottom: 0 }}
+        onClick={onItemClick ? (e: { activeLabel?: string | number }) => e?.activeLabel != null && onItemClick(String(e.activeLabel)) : undefined}
+        style={onItemClick ? { cursor: "pointer" } : undefined}
+      >
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
         <XAxis
           dataKey="nome"
@@ -97,13 +104,20 @@ export function BarrasDuplas({
 export function BarrasColoridas({
   data,
   altura = 260,
+  onItemClick,
 }: {
   data: { nome: string; valor: number; cor: string }[];
   altura?: number;
+  onItemClick?: (nome: string) => void;
 }) {
   return (
     <ResponsiveContainer width="100%" height={altura}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+        onClick={onItemClick ? (e: { activeLabel?: string | number }) => e?.activeLabel != null && onItemClick(String(e.activeLabel)) : undefined}
+        style={onItemClick ? { cursor: "pointer" } : undefined}
+      >
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
         <XAxis dataKey="nome" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
         <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} allowDecimals={false} />
@@ -121,14 +135,27 @@ export function BarrasColoridas({
 export function Rosca({
   data,
   altura = 260,
+  onItemClick,
 }: {
   data: { nome: string; valor: number; cor: string }[];
   altura?: number;
+  onItemClick?: (nome: string) => void;
 }) {
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <PieChart>
-        <Pie data={data} dataKey="valor" nameKey="nome" cx="50%" cy="50%" innerRadius={58} outerRadius={88} paddingAngle={2}>
+        <Pie
+          data={data}
+          dataKey="valor"
+          nameKey="nome"
+          cx="50%"
+          cy="50%"
+          innerRadius={58}
+          outerRadius={88}
+          paddingAngle={2}
+          onClick={onItemClick ? (d: { nome?: string }) => d?.nome && onItemClick(d.nome) : undefined}
+          style={onItemClick ? { cursor: "pointer" } : undefined}
+        >
           {data.map((d, i) => (
             <Cell key={i} fill={d.cor} />
           ))}

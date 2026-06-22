@@ -161,3 +161,35 @@ export const MODELO_OFFBOARDING: { titulo: string; responsavel: string }[] = [
 
 // Categorias de documentos relacionados à saúde ocupacional (SST)
 export const CATEGORIAS_SST = ["ASO", "Exame Periódico"] as const;
+
+// Humor / engajamento (clima) — Base de Dados RH
+export const HUMORES = ["Motivado", "Estável", "Desmotivado"] as const;
+export const COR_HUMOR: Record<string, string> = {
+  Motivado: "#16a34a",
+  Estável: "#2563eb",
+  Desmotivado: "#dc2626",
+};
+
+// Perfil comportamental (4 temperamentos)
+export const PERFIS_COMPORTAMENTAIS = ["Colérico", "Sanguíneo", "Fleumático", "Melancólico"] as const;
+export const COR_PERFIL_COMPORTAMENTAL: Record<string, string> = {
+  Colérico: "#dc2626",
+  Sanguíneo: "#f59e0b",
+  Fleumático: "#16a34a",
+  Melancólico: "#2563eb",
+};
+export const DESC_PERFIL_COMPORTAMENTAL: Record<string, string> = {
+  Colérico: "Dominante, orientado a resultado e ação.",
+  Sanguíneo: "Comunicativo, influente e entusiasmado.",
+  Fleumático: "Estável, cooperativo e paciente.",
+  Melancólico: "Analítico, detalhista e cauteloso.",
+};
+
+// Estilo de aprendizagem (VAK)
+export const ESTILOS_APRENDIZAGEM = ["Visual", "Auditivo", "Cinestésico"] as const;
+
+// Categorias de advertência (Módulo C)
+export const TIPOS_ADVERTENCIA = ["Verbal", "Escrita", "Suspensão"] as const;
+
+// Empresas do grupo
+export const EMPRESAS = ["Impresilk", "Neon", "Forte Mais"] as const;

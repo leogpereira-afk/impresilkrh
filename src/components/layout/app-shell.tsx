@@ -29,7 +29,7 @@ const NAV: ItemNav[] = [
   { href: "/painel", label: "Painel", icon: LayoutDashboard, perfis: TODOS, grupo: "Visão geral" },
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
-  { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: TODOS, grupo: "Pessoas" },
+  { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: TODOS, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Integração / Desligamento", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },

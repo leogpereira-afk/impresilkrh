@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree, Cake,
-  AlertTriangle, CalendarClock, Award, Target,
+  AlertTriangle, CalendarClock, Award, Target, Laugh, Brain, PartyPopper,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -10,12 +10,14 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { EmptyState, Progress } from "@/components/ui/misc";
 import { BarrasColoridas, BarrasVerticais, Rosca } from "@/components/charts/charts";
+import { useDrill, DrillModal } from "@/components/ui/drilldown";
+import { HumorIndicador, PerfilComportamentalBadge } from "@/components/ui/indicadores";
 import { useColecao } from "@/lib/store";
 import { useDominio, contaHeadcount } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
 import { formatBRL, formatDate, MESES_PT } from "@/lib/format";
-import { COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS } from "@/lib/constants";
+import { COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
 const dias = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / 86400000) : NaN);
@@ -24,6 +26,7 @@ const mesesAtras = (d?: string | null) => (d ? (HOJE.getTime() - new Date(d).get
 export default function Painel() {
   const sessao = useSessao();
   const d = useDominio();
+  const drill = useDrill();
   const { items: documentos } = useColecao("documentos");
   const { items: ferias } = useColecao("ferias");
   const { items: avaliacoes } = useColecao("avaliacoes");
@@ -77,6 +80,53 @@ export default function Painel() {
   });
   const enquadData = Object.entries(enquadCont).filter(([, v]) => v > 0).map(([nome, valor]) => ({ nome, valor, cor: COR_POSICAO_FAIXA[nome] }));
 
+  // Clima / engajamento — distribuição de humor entre os ativos
+  const humorCont: Record<string, number> = { Motivado: 0, Estável: 0, Desmotivado: 0, "Não informado": 0 };
+  ativos.forEach((c) => {
+    const h = c.humor && HUMORES.includes(c.humor as (typeof HUMORES)[number]) ? c.humor : "Não informado";
+    humorCont[h] = (humorCont[h] ?? 0) + 1;
+  });
+  const humorData = Object.entries(humorCont)
+    .filter(([, v]) => v > 0)
+    .map(([nome, valor]) => ({ nome, valor, cor: COR_HUMOR[nome] ?? "#94a3b8" }));
+  const pctMotivado = ativos.length ? Math.round(((humorCont.Motivado ?? 0) / ativos.length) * 100) : 0;
+
+  // Perfil comportamental — distribuição dos 4 temperamentos entre os ativos
+  const perfilCont: Record<string, number> = {};
+  PERFIS_COMPORTAMENTAIS.forEach((p) => (perfilCont[p] = 0));
+  ativos.forEach((c) => {
+    const p = c.perfilComportamental && PERFIS_COMPORTAMENTAIS.includes(c.perfilComportamental as (typeof PERFIS_COMPORTAMENTAIS)[number]) ? c.perfilComportamental : "Não informado";
+    perfilCont[p] = (perfilCont[p] ?? 0) + 1;
+  });
+  const perfilData = Object.entries(perfilCont)
+    .filter(([, v]) => v > 0)
+    .map(([nome, valor]) => ({ nome, valor, cor: COR_PERFIL_COMPORTAMENTAL[nome] ?? "#94a3b8" }));
+
+  // Aniversário de empresa (tempo de casa) — admitidos no mês corrente
+  const anosDeCasa = (d?: string | null) => (d ? HOJE.getFullYear() - new Date(d).getFullYear() : 0);
+  const aniversariosEmpresa = ativos
+    .filter((c) => c.dataAdmissao && new Date(c.dataAdmissao).getMonth() === HOJE.getMonth())
+    .sort((a, b) => new Date(a.dataAdmissao!).getDate() - new Date(b.dataAdmissao!).getDate());
+
+  // Mapeia o rótulo clicado de volta para os colaboradores ativos correspondentes
+  const colabsPorArea = (nome: string) => {
+    const area = d.areas.find((a) => a.id !== "direcao" && a.nome.split(" ")[0] === nome);
+    return area ? ativos.filter((c) => c.areaId === area.id) : [];
+  };
+  const colabsPorNivel = (codigo: string) => {
+    const nivel = d.niveis.find((n) => n.codigo === codigo);
+    return nivel ? ativos.filter((c) => c.nivelId === nivel.id) : [];
+  };
+  const colabsPorEnquadramento = (nome: string) => ativos.filter((c) => d.enquadrarColab(c) === nome);
+  const colabsPorRisco = (rotulo: string) => {
+    const chave = rotulo.replace("Risco ", "").replace(/^./, (s) => s.toUpperCase()); // "Risco alto" -> "Alto"
+    return ativos.filter((c) => (c.riscoSaida ?? "Baixo") === chave);
+  };
+  const colabsPorHumor = (nome: string) =>
+    ativos.filter((c) => (c.humor && HUMORES.includes(c.humor as (typeof HUMORES)[number]) ? c.humor : "Não informado") === nome);
+  const colabsPorPerfil = (nome: string) =>
+    ativos.filter((c) => (c.perfilComportamental && PERFIS_COMPORTAMENTAIS.includes(c.perfilComportamental as (typeof PERFIS_COMPORTAMENTAIS)[number]) ? c.perfilComportamental : "Não informado") === nome);
+
   return (
     <div>
       <PageHeader
@@ -85,28 +135,62 @@ export default function Painel() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Headcount ativo" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Colaboradores que contam no quadro" />
+        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Headcount ativo", ativos, "Colaboradores que contam no quadro")}>
+          <StatCard label="Headcount ativo" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Colaboradores que contam no quadro" />
+        </button>
         <StatCard label="Admissões 12m" value={admissoes12m} icon={<TrendingUp className="h-5 w-5" />} accent="green" />
         <StatCard label="Desligamentos 12m" value={desligamentos12m} icon={<TrendingDown className="h-5 w-5" />} accent="red" />
         <StatCard label="Turnover 12m" value={`${(turnover * 100).toFixed(1)}%`} icon={<TrendingDown className="h-5 w-5" />} accent="amber" />
-        <StatCard label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"} />
+        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Documentos a vencer", escopo.filter((c) => docsAlerta.some((doc) => doc.colaboradorId === c.id)), `${docsAlerta.length} documento(s) · ${docsVencidos.length} vencido(s)`)}>
+          <StatCard label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"} />
+        </button>
         <StatCard label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />
-        <StatCard label="De férias agora" value={feriasAtivas.length} icon={<Palmtree className="h-5 w-5" />} accent="green" />
-        <StatCard label="Risco de saída alto" value={risco.Alto ?? 0} icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
+        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}>
+          <StatCard label="De férias agora" value={feriasAtivas.length} icon={<Palmtree className="h-5 w-5" />} accent="green" />
+        </button>
+        <button type="button" className="text-left transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Risco de saída alto", colabsPorRisco("Risco alto"), "Atenção à retenção de talentos")}>
+          <StatCard label="Risco de saída alto" value={risco.Alto ?? 0} icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
+        </button>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader title="Colaboradores por área" icon={<Users className="h-[18px] w-[18px]" />} />
-          <CardBody><BarrasVerticais data={porArea} /></CardBody>
+          <CardHeader title="Colaboradores por área" subtitle="Clique para ver os nomes" icon={<Users className="h-[18px] w-[18px]" />} />
+          <CardBody><BarrasVerticais data={porArea} onItemClick={(nome) => drill.abrir(`Área · ${nome}`, colabsPorArea(nome))} /></CardBody>
         </Card>
         <Card>
           <CardHeader title="Distribuição por nível" subtitle="Régua de senioridade N1–N5" />
-          <CardBody><BarrasVerticais data={porNivel} cor="#c2a14d" /></CardBody>
+          <CardBody><BarrasVerticais data={porNivel} cor="#c2a14d" onItemClick={(nome) => drill.abrir(`Nível ${nome}`, colabsPorNivel(nome))} /></CardBody>
         </Card>
         <Card>
           <CardHeader title="Enquadramento salarial" subtitle="Posição frente à faixa do cargo" />
-          <CardBody>{enquadData.length ? <Rosca data={enquadData} /> : <EmptyState title="Sem dados" />}</CardBody>
+          <CardBody>{enquadData.length ? <Rosca data={enquadData} onItemClick={(nome) => drill.abrir(`Enquadramento · ${nome}`, colabsPorEnquadramento(nome))} /> : <EmptyState title="Sem dados" />}</CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader title="Clima / Engajamento" subtitle="Humor declarado da equipe" icon={<Laugh className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            {humorData.length ? (
+              <>
+                <Rosca data={humorData} onItemClick={(nome) => drill.abrir(`Clima · ${nome}`, colabsPorHumor(nome))} />
+                <p className="mt-1 text-center text-xs text-slate-500"><span className="font-semibold text-green-600">{pctMotivado}%</span> motivados</p>
+              </>
+            ) : (
+              <EmptyState title="Sem dados de clima" />
+            )}
+          </CardBody>
+        </Card>
+        <Card className="lg:col-span-2">
+          <CardHeader title="Perfil comportamental" subtitle="Distribuição dos 4 temperamentos" icon={<Brain className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            {perfilData.length ? (
+              <BarrasColoridas data={perfilData} onItemClick={(nome) => drill.abrir(`Perfil · ${nome}`, colabsPorPerfil(nome))} />
+            ) : (
+              <EmptyState title="Sem dados de perfil" />
+            )}
+          </CardBody>
         </Card>
       </div>
 
@@ -152,11 +236,35 @@ export default function Painel() {
                 <p className="text-sm text-slate-400">Nenhum aniversariante este mês.</p>
               ) : (
                 aniversariantes.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-700">{c.nome}</span>
-                    <span className="text-slate-400">{new Date(c.dataNascimento!).getDate()}/{HOJE.getMonth() + 1}</span>
+                  <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
+                    <Link to={`/colaboradores/${c.id}`} className="truncate font-medium text-slate-700 hover:text-brand hover:underline">{c.nome}</Link>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {c.humor && <HumorIndicador humor={c.humor} tamanho="sm" comTexto={false} />}
+                      <span className="text-slate-400">{new Date(c.dataNascimento!).getDate()}/{HOJE.getMonth() + 1}</span>
+                    </span>
                   </div>
                 ))
+              )}
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader title="Aniversário de empresa" subtitle={`Tempo de casa · ${MESES_PT[HOJE.getMonth()]}`} icon={<PartyPopper className="h-[18px] w-[18px]" />} />
+            <CardBody className="space-y-2">
+              {aniversariosEmpresa.length === 0 ? (
+                <p className="text-sm text-slate-400">Nenhum aniversário de empresa este mês.</p>
+              ) : (
+                aniversariosEmpresa.map((c) => {
+                  const anos = anosDeCasa(c.dataAdmissao);
+                  return (
+                    <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
+                      <Link to={`/colaboradores/${c.id}`} className="truncate font-medium text-slate-700 hover:text-brand hover:underline">{c.nome}</Link>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {c.perfilComportamental && <PerfilComportamentalBadge perfil={c.perfilComportamental} />}
+                        <span className="text-slate-400">{anos > 0 ? `${anos} ano(s)` : "1º ano"}</span>
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </CardBody>
           </Card>
@@ -184,6 +292,7 @@ export default function Painel() {
           <CardBody>
             <BarrasColoridas
               altura={200}
+              onItemClick={(nome) => drill.abrir(nome, colabsPorRisco(nome), "Atenção à retenção de talentos")}
               data={[
                 { nome: "Risco alto", valor: risco.Alto ?? 0, cor: COR_RISCO.Alto },
                 { nome: "Risco médio", valor: risco.Médio ?? 0, cor: COR_RISCO.Médio },
@@ -208,6 +317,8 @@ export default function Painel() {
           </CardBody>
         </Card>
       </div>
+
+      <DrillModal {...drill.props} />
     </div>
   );
 }

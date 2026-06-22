@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
-  IdCard, Briefcase, Palmtree, Target, History, Lock,
+  IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
+import { HumorIndicador, PerfilComportamentalBadge } from "@/components/ui/indicadores";
+import { DESC_PERFIL_COMPORTAMENTAL } from "@/lib/constants";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
@@ -54,12 +56,32 @@ function FichaConteudo({ c, sens, podeEditar }: { c: import("@/data/types").Cola
   const cargo = c.cargoId ? d.cargoById.get(c.cargoId) : undefined;
   const enq = d.enquadrarColab(c);
   const corEnq = COR_POSICAO_FAIXA[enq];
+  const mesAtual = HOJE.getMonth();
+  const aniversario = !!c.dataNascimento && new Date(c.dataNascimento).getMonth() === mesAtual;
+  const diaAniv = c.dataNascimento ? new Date(c.dataNascimento).getDate() : null;
+  const aniversarioEmpresa = !!c.dataAdmissao && new Date(c.dataAdmissao).getMonth() === mesAtual;
+  const anosCasa = c.dataAdmissao ? HOJE.getFullYear() - new Date(c.dataAdmissao).getFullYear() : 0;
 
   return (
     <div>
       <Link to="/colaboradores" className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand">
         <ArrowLeft className="h-4 w-4" /> Voltar para colaboradores
       </Link>
+
+      {(aniversario || (aniversarioEmpresa && anosCasa > 0)) && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {aniversario && (
+            <div className="flex items-center gap-2 rounded-lg border border-gold-200 bg-gold-50/70 px-3 py-2 text-sm font-medium text-gold-700">
+              <Cake className="h-4 w-4" /> Aniversário este mês{diaAniv ? ` · dia ${diaAniv}` : ""} 🎉
+            </div>
+          )}
+          {aniversarioEmpresa && anosCasa > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-2 text-sm font-medium text-brand">
+              <PartyPopper className="h-4 w-4" /> {anosCasa} {anosCasa === 1 ? "ano" : "anos"} de casa este mês
+            </div>
+          )}
+        </div>
+      )}
 
       <Card className="mb-6">
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -93,6 +115,7 @@ function FichaConteudo({ c, sens, podeEditar }: { c: import("@/data/types").Cola
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} sens={sens} cargo={cargo} /> },
           { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} /> },
+          { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro c={c} sens={sens} /> },
           { id: "desenv", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: <AbaDesenvolvimento colaboradorId={c.id} /> },
           { id: "hist", label: "Histórico", icon: <History className="h-4 w-4" />, conteudo: <AbaHistorico colaboradorId={c.id} /> },
         ]}
@@ -163,6 +186,71 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
           )}
         </CardBody>
       </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader title="Perfil comportamental & clima" subtitle="Mapeamento de perfil, engajamento e estilo de aprendizagem" icon={<Brain className="h-[18px] w-[18px]" />} />
+        <CardBody>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Perfil comportamental</p>
+              <div className="mt-1.5"><PerfilComportamentalBadge perfil={c.perfilComportamental} /></div>
+              {c.perfilComportamental && <p className="mt-1.5 text-xs text-slate-500">{DESC_PERFIL_COMPORTAMENTAL[c.perfilComportamental]}</p>}
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Humor / engajamento</p>
+              <div className="mt-1.5"><HumorIndicador humor={c.humor} tamanho="lg" /></div>
+            </div>
+            <Field label="Estilo de aprendizagem" value={c.estiloAprendizagem} />
+            <Field label="Empresa" value={c.empresa} />
+            <Field label="Sexo" value={c.sexo} />
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sens: boolean }) {
+  if (!sens) {
+    return <EmptyState title="Informação restrita" description="Os dados financeiros do colaborador são visíveis apenas para o RH e para o próprio colaborador (LGPD)." icon={<Lock className="h-8 w-8" />} />;
+  }
+  const salario = c.salario ?? 0;
+  const adicionais = c.adicionais ?? 0;
+  const total = salario + adicionais;
+  const linhas = [
+    { rubrica: "Salário base", valor: salario, tipo: "Provento" },
+    ...(adicionais > 0 ? [{ rubrica: "Adicionais e benefícios", valor: adicionais, tipo: "Provento" }] : []),
+    { rubrica: "Vale-transporte", valor: c.valeTransporte ? 0 : 0, tipo: "Benefício", nota: c.valeTransporte ? "Optante" : "Não optante" } as { rubrica: string; valor: number; tipo: string; nota?: string },
+  ];
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Card className="lg:col-span-2">
+        <CardHeader title="Extrato de recebimentos (mês)" subtitle="Consolidação do que o colaborador recebe no mês" icon={<Wallet className="h-[18px] w-[18px]" />} />
+        <CardBody>
+          <table className="w-full">
+            <thead className="border-b border-slate-100">
+              <tr><th className="th">Rubrica</th><th className="th">Tipo</th><th className="th text-right">Valor</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {linhas.map((l, i) => (
+                <tr key={i}>
+                  <td className="td font-medium text-slate-700">{l.rubrica}{l.nota ? <span className="ml-1 text-xs text-slate-400">({l.nota})</span> : null}</td>
+                  <td className="td"><Badge variant={l.tipo === "Provento" ? "success" : "neutral"}>{l.tipo}</Badge></td>
+                  <td className="td text-right tabular-nums">{formatBRL(l.valor)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink" colSpan={2}>Total bruto no mês</td><td className="td text-right text-base font-semibold text-brand-ink tabular-nums">{formatBRL(total)}</td></tr>
+            </tfoot>
+          </table>
+        </CardBody>
+      </Card>
+      <div className="space-y-4">
+        <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário base</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(salario)}</p></CardBody></Card>
+        <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Adicionais</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(adicionais)}</p></CardBody></Card>
+        <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total no mês</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(total)}</p></CardBody></Card>
+      </div>
     </div>
   );
 }

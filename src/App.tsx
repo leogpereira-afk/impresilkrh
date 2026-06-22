@@ -65,7 +65,7 @@ export default function App() {
             <Route path="/colaboradores" element={<Restrito perfis={GESTAO}><Colaboradores /></Restrito>} />
             <Route path="/colaboradores/:id" element={<ColaboradorFicha />} />
             <Route path="/organograma" element={<Organograma />} />
-            <Route path="/carreira" element={<Carreira />} />
+            <Route path="/carreira" element={<Restrito perfis={RH}><Carreira /></Restrito>} />
             <Route path="/desempenho" element={<Desempenho />} />
             <Route path="/ferias" element={<Restrito perfis={GESTAO}><Ferias /></Restrito>} />
             <Route path="/integracao" element={<Restrito perfis={GESTAO}><Integracao /></Restrito>} />

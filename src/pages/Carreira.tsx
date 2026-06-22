@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { GitBranch, TrendingUp, ArrowRight, Calculator } from "lucide-react";
+import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/form";
+import { EmptyState } from "@/components/ui/misc";
+import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useDominio, indiceNivel } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis, podeVerDadosSensiveis } from "@/lib/rbac";
+import { colaboradoresVisiveis, podeVerDadosSensiveis, ehRH } from "@/lib/rbac";
 import { formatBRL, formatPercent } from "@/lib/format";
 
 const CORES_NIVEL = ["#7ea4c6", "#4f7ea8", "#16334f", "#a9883a", "#c2a14d"];
@@ -14,8 +16,21 @@ const CORES_NIVEL = ["#7ea4c6", "#4f7ea8", "#16334f", "#a9883a", "#c2a14d"];
 export default function Carreira() {
   const sessao = useSessao();
   const d = useDominio();
+  const drill = useDrill();
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !c.ehDirecao && c.cargoId), [sessao, d.colaboradores]);
   const [colabId, setColabId] = useState(() => (sessao?.perfil === "COLABORADOR" ? sessao.colaboradorId : escopo[0]?.id ?? ""));
+
+  // Ativos por nível (todos os cargos) — para os badges e o drill da régua.
+  const ativosPorNivel = useMemo(() => {
+    const m = new Map<string, import("@/data/types").Colaborador[]>();
+    for (const c of d.ativos) {
+      if (!c.nivelId) continue;
+      const arr = m.get(c.nivelId) ?? [];
+      arr.push(c);
+      m.set(c.nivelId, arr);
+    }
+    return m;
+  }, [d.ativos]);
 
   const colab = d.colabById.get(colabId);
   const cargo = colab?.cargoId ? d.cargoById.get(colab.cargoId) : undefined;
@@ -36,21 +51,58 @@ export default function Carreira() {
       .filter((g) => g.cargos.length > 0);
   }, [d.areas, d.cargos]);
 
+  // LGPD: a área de Carreira e Salários é restrita ao RH / Gestor Principal.
+  // (Todos os hooks acima já executaram antes deste retorno antecipado.)
+  if (!ehRH(sessao)) {
+    return (
+      <EmptyState
+        title="Acesso restrito"
+        description="A área de Carreira e Salários é restrita ao RH / Gestor Principal."
+        icon={<Lock className="h-8 w-8" />}
+      />
+    );
+  }
+
+  // Abre o drill com os ativos de um cargo+nível específico.
+  const abrirCargoNivel = (cargo: import("@/data/types").Cargo, nivelId: string) => {
+    const lista = d.ativos.filter((c) => c.cargoId === cargo.id && c.nivelId === nivelId);
+    drill.abrir(`${cargo.nome} · ${nivelId}`, lista, `${d.nomeNivel(nivelId)} — ${lista.length} colaborador(es) ativo(s)`);
+  };
+  // Abre o drill com todos os ativos de um cargo (todos os níveis).
+  const abrirCargo = (cargo: import("@/data/types").Cargo) => {
+    const lista = d.ativos.filter((c) => c.cargoId === cargo.id);
+    drill.abrir(cargo.nome, lista, `${lista.length} colaborador(es) ativo(s) no cargo`);
+  };
+
   return (
     <div>
       <PageHeader title="Carreira e Salários" description="Régua de senioridade, tabela salarial por cargo e simulador de progressão." />
 
-      {/* Régua de senioridade */}
+      {/* Régua de senioridade — clicável: abre os ativos do nível (todos os cargos) */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {d.niveis.map((n, i) => (
-          <Card key={n.id} className="p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white" style={{ background: CORES_NIVEL[i] }}>{n.codigo}</span>
-              <Badge variant={n.senioridade === "Sênior" ? "gold" : n.senioridade === "Pleno" ? "info" : "neutral"}>{n.senioridade}</Badge>
-            </div>
-            <p className="mt-2 text-xs leading-snug text-slate-500">{n.descricao}</p>
-          </Card>
-        ))}
+        {d.niveis.map((n, i) => {
+          const ativosNivel = ativosPorNivel.get(n.id) ?? [];
+          return (
+            <Card key={n.id} className="p-0">
+              <button
+                type="button"
+                onClick={() => drill.abrir(`Nível ${n.codigo} · ${n.senioridade}`, ativosNivel, `${ativosNivel.length} colaborador(es) ativo(s) neste nível`)}
+                className="group flex w-full flex-col p-4 text-left transition-colors hover:bg-slate-50/70"
+                title={`Ver colaboradores no nível ${n.codigo}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white" style={{ background: CORES_NIVEL[i] }}>{n.codigo}</span>
+                  <Badge variant={n.senioridade === "Sênior" ? "gold" : n.senioridade === "Pleno" ? "info" : "neutral"}>{n.senioridade}</Badge>
+                  <span className="ml-auto flex items-center gap-1 text-slate-300 transition-colors group-hover:text-brand">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-600 group-hover:bg-brand-50 group-hover:text-brand">{ativosNivel.length}</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-snug text-slate-500">{n.descricao}</p>
+              </button>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Simulador */}
@@ -115,17 +167,31 @@ export default function Carreira() {
             </thead>
             <tbody>
               {cargosPorArea.map((g) => (
-                <FragmentArea key={g.area.id} nome={g.area.nome} cargos={g.cargos} colabCargoId={cargo?.id} />
+                <FragmentArea key={g.area.id} nome={g.area.nome} cargos={g.cargos} colabCargoId={cargo?.id} onCargo={abrirCargo} onCargoNivel={abrirCargoNivel} />
               ))}
             </tbody>
           </table>
         </div>
       </Card>
+
+      <DrillModal {...drill.props} />
     </div>
   );
 }
 
-function FragmentArea({ nome, cargos, colabCargoId }: { nome: string; cargos: import("@/data/types").Cargo[]; colabCargoId?: string }) {
+function FragmentArea({
+  nome,
+  cargos,
+  colabCargoId,
+  onCargo,
+  onCargoNivel,
+}: {
+  nome: string;
+  cargos: import("@/data/types").Cargo[];
+  colabCargoId?: string;
+  onCargo: (cargo: import("@/data/types").Cargo) => void;
+  onCargoNivel: (cargo: import("@/data/types").Cargo, nivelId: string) => void;
+}) {
   return (
     <>
       <tr className="bg-brand-50/40">
@@ -133,9 +199,28 @@ function FragmentArea({ nome, cargos, colabCargoId }: { nome: string; cargos: im
       </tr>
       {cargos.map((c) => (
         <tr key={c.id} className={`border-b border-slate-50 ${c.id === colabCargoId ? "bg-gold-50/40" : "hover:bg-slate-50/50"}`}>
-          <td className="td font-medium text-slate-700">{c.nome}</td>
+          <td className="td font-medium text-slate-700">
+            <button
+              type="button"
+              onClick={() => onCargo(c)}
+              className="group inline-flex items-center gap-1 text-left font-medium text-slate-700 hover:text-brand"
+              title={`Ver colaboradores no cargo ${c.nome}`}
+            >
+              {c.nome}
+              <ChevronRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-brand" />
+            </button>
+          </td>
           {c.faixas.map((v, i) => (
-            <td key={i} className="td text-right tabular-nums text-slate-600">{formatBRL(v)}</td>
+            <td key={i} className="td p-0 text-right">
+              <button
+                type="button"
+                onClick={() => onCargoNivel(c, `N${i + 1}`)}
+                className="w-full px-4 py-3 text-right tabular-nums text-slate-600 transition-colors hover:bg-brand-50/50 hover:text-brand"
+                title={`Ver colaboradores · ${c.nome} · N${i + 1}`}
+              >
+                {formatBRL(v)}
+              </button>
+            </td>
           ))}
         </tr>
       ))}
