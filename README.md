@@ -84,23 +84,24 @@ O app usa **PostgreSQL** — obrigatório em produção serverless (o disco do N
 efêmero, então SQLite em arquivo não funciona). Passo a passo:
 
 ```bash
-# 1. Provisione um Postgres. No Netlify, o mais simples é o "Netlify DB" (Neon):
-netlify db init          # cria um Neon Postgres e injeta a variável no site
-# (alternativa: crie um projeto grátis em neon.tech e copie a connection string)
+# 1. Provisione o "Netlify DB" (Neon). Ele cria a variável NETLIFY_DATABASE_URL
+#    no site automaticamente — a aplicação já a utiliza em runtime.
+netlify db init          # ou ative a extensão "Neon/Netlify DB" pelo painel
 
-# 2. No painel do Netlify → Site settings → Environment variables, defina:
-#    DATABASE_URL  = connection string do Postgres (use a versão "pooled", com sslmode=require)
-#    AUTH_SECRET   = um valor forte (openssl rand -base64 48)
+# 2. Defina o segredo de sessão no painel (Site settings → Environment variables):
+#    AUTH_SECRET = um valor forte (openssl rand -base64 48)
 
-# 3. Crie as tabelas e popule os dados, apontando para o banco de produção:
-DATABASE_URL="<sua-connection-string>" npm run db:push
-DATABASE_URL="<sua-connection-string>" npm run db:seed
+# 3. Crie as tabelas e popule os dados (uma vez), usando a connection string
+#    DIRETA do banco (no Netlify DB/Neon, a "unpooled"):
+DATABASE_URL="<connection-string-unpooled>" npm run db:push
+DATABASE_URL="<connection-string-unpooled>" npm run db:seed
 
-# 4. Faça o deploy (push para a branch conectada ao Netlify, ou `netlify deploy --prod`).
+# 4. Faça o deploy (push para a branch conectada, ou `netlify deploy --prod`).
 ```
 
 O `netlify.toml` já configura o build e o plugin oficial do Next.js. O `prisma generate`
-roda no build e inclui o engine do runtime do Netlify (`rhel-openssl-3.0.x`).
+roda no build e inclui o engine do runtime do Netlify (`rhel-openssl-3.0.x`). A aplicação
+usa `DATABASE_URL` e, na ausência dela, `NETLIFY_DATABASE_URL` (criada pelo Netlify DB).
 
 > **Anexos de documentos:** o upload grava em disco local, que não persiste no Netlify.
 > O cadastro de documentos (metadados) funciona; para anexos em produção, configure um
