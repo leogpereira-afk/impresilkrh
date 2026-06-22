@@ -13,7 +13,14 @@ interface ItemNotificacao {
 }
 
 export async function contarNaoLidas(usuarioId: string): Promise<number> {
-  return db.notificacao.count({ where: { usuarioId, lida: false } });
+  // Defensivo: nunca deixa a contagem (usada no layout de todas as páginas)
+  // derrubar a navegação caso o banco esteja indisponível/desatualizado.
+  try {
+    return await db.notificacao.count({ where: { usuarioId, lida: false } });
+  } catch (e) {
+    console.error("Falha ao contar notificações:", e);
+    return 0;
+  }
 }
 
 export async function listarNotificacoes(usuarioId: string) {
