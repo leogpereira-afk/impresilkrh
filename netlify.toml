@@ -1,13 +1,44 @@
-# Publicação estática no Netlify — sem variáveis de ambiente, sem banco.
+# ============================================================================
+# Configuração do Netlify — site estático (Vite) + 1 função de sincronização.
+# ============================================================================
+
 [build]
+  # App é um build Vite (SPA). O resultado vai para "dist".
   command = "npm run build"
   publish = "dist"
+  # Pasta das funções serverless (Netlify Functions v2). A função de sync mora
+  # em netlify/functions/sync.mts e é empacotada automaticamente pelo Netlify.
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# SPA: todas as rotas caem no index.html (navegação client-side via React Router).
+# (Opcional) Sincronização de fundo de hora em hora. Deixe comentado se quiser
+# economizar créditos — o app já sincroniza sozinho quando alguém está online.
+# [functions."sync"]
+#   schedule = "@hourly"
+
+# SPA: todas as rotas de navegação caem no index.html (React Router no cliente).
+# Importante: este redirect NÃO afeta /.netlify/functions/* (tratado antes).
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Cabeçalhos de segurança aplicados a todas as respostas do site.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Impede que o app seja embutido em <iframe> de outros domínios (anti-clickjacking).
+    X-Frame-Options = "DENY"
+    # Impede o navegador de "adivinhar" o tipo de um arquivo (anti-MIME-sniffing).
+    X-Content-Type-Options = "nosniff"
+    # Não vaza a URL completa como referer para outros sites.
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# O Service Worker precisa ser sempre revalidado para que novas versões cheguem
+# rápido (o controle de cache real é feito dentro do próprio sw.js por versão).
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

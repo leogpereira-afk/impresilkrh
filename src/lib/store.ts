@@ -97,6 +97,33 @@ function uid(prefixo = "id"): string {
   return `${prefixo}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
 }
 
+const agora = () => new Date().toISOString();
+
+// ---- Gancho de sincronização (desacoplado) ----
+// O módulo de sync (src/lib/sync.ts) se registra aqui para ser avisado de cada
+// mutação do usuário. O store NÃO depende do sync: se ninguém registrar, tudo
+// funciona 100% local, como antes. `aplicarSemSync` roda um bloco sem disparar
+// o gancho — usado pelo próprio sync ao aplicar dados vindos do servidor, para
+// não criar um eco (servidor → local → fila → servidor).
+type MutacaoCb = (colecao: NomeColecao, tipo: "upsert" | "delete", id: string) => void;
+let mutacaoCb: MutacaoCb | null = null;
+let suprimirSync = false;
+export function registrarMutacao(fn: MutacaoCb): void {
+  mutacaoCb = fn;
+}
+export function aplicarSemSync<T>(fn: () => T): T {
+  const antes = suprimirSync;
+  suprimirSync = true;
+  try {
+    return fn();
+  } finally {
+    suprimirSync = antes;
+  }
+}
+function notificar(nome: NomeColecao, tipo: "upsert" | "delete", id: string) {
+  if (!suprimirSync && mutacaoCb) mutacaoCb(nome, tipo, id);
+}
+
 // ---- API imperativa por coleção ----
 export function obter<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
   return ler(nome);
@@ -106,8 +133,9 @@ export function criarEm<K extends NomeColecao>(
   nome: K,
   item: Partial<ColecaoMap[K]>,
 ): ColecaoMap[K] {
-  const novo = { id: uid(nome), ...item } as unknown as ColecaoMap[K];
+  const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
   gravar(nome, [novo, ...ler(nome)]);
+  notificar(nome, "upsert", (novo as { id: string }).id);
   return novo;
 }
 
@@ -116,14 +144,17 @@ export function atualizarEm<K extends NomeColecao>(
   id: string,
   patch: Partial<ColecaoMap[K]>,
 ): void {
+  const carimbo = agora();
   gravar(
     nome,
-    ler(nome).map((it) => ((it as { id: string }).id === id ? { ...it, ...patch } : it)),
+    ler(nome).map((it) => ((it as { id: string }).id === id ? { ...it, ...patch, atualizadoEm: carimbo } : it)),
   );
+  notificar(nome, "upsert", id);
 }
 
 export function removerEm<K extends NomeColecao>(nome: K, id: string): void {
   gravar(nome, ler(nome).filter((it) => (it as { id: string }).id !== id));
+  notificar(nome, "delete", id);
 }
 
 export function definirColecao<K extends NomeColecao>(nome: K, itens: ColecaoMap[K][]): void {
