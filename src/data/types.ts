@@ -502,3 +502,17 @@ export interface EventoCalendario {
   hora?: string | null; // "HH:MM" (reuniões)
   descricao?: string | null;
 }
+
+// ===================== NRs / Certificações de segurança (v6) =====================
+// Treinamentos de Normas Regulamentadoras por colaborador, com validade. Saber
+// quem está apto a cada NR (ex.: NR-35 para trabalho em altura) e o vencimento.
+export interface CertificacaoNR {
+  id: string;
+  colaboradorId: string;
+  nr: string; // código da NR, ex.: "NR-35"
+  dataTreinamento: string; // "YYYY-MM-DD"
+  dataValidade?: string | null; // "YYYY-MM-DD" (vazio = sem validade fixa)
+  cargaHoraria?: number; // horas do treinamento
+  instituicao?: string;
+  observacao?: string;
+}
