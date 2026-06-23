@@ -60,7 +60,7 @@ export default function MeuPerfil() {
               {tempoDeCasa(c.dataAdmissao)} de casa · Admissão em {formatDate(c.dataAdmissao)}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <DotBadge label={`Enquadramento: ${enq}`} cor={corEnq} />
             <Link to="/aceites" className="btn-outline">
               <FileSignature className="h-4 w-4" /> Termos e aceites

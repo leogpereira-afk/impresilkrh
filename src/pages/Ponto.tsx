@@ -149,13 +149,13 @@ function AbaAdvertencias({
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-end">
-        {podeEditar && (
+      {podeEditar && (
+        <div className="mb-6 flex items-center justify-end">
           <button className="btn-primary" onClick={() => setNovo(true)}>
             <Plus className="h-4 w-4" /> Registrar advertência
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Total de advertências" value={lista.length} icon={<ShieldAlert className="h-5 w-5" />} accent="brand" hint="No seu escopo" />

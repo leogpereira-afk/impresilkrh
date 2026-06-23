@@ -421,7 +421,7 @@ function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sen
         </div>
         <label className="flex items-center gap-2 text-sm">
           <span className="text-slate-500">Competência</span>
-          <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-44">
+          <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-full sm:w-44">
             {comps.map((k) => <option key={k} value={k}>{competenciaLabelLongo(k)}</option>)}
           </Select>
         </label>

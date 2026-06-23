@@ -557,7 +557,7 @@ function PainelPendencias({
         }
       />
       <CardBody className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
             <p className="text-lg font-semibold text-slate-800">
               {pendencias.tarefasAbertas}

@@ -287,7 +287,7 @@ export default function Relatorios() {
         description="Visão executiva da Impresilk — folha, movimentação e enquadramento. Clique nas barras, fatias e cartões para ver os nomes."
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <button
           type="button"
           className="text-left w-full"

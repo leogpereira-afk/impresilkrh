@@ -73,7 +73,7 @@ export default function LGPD() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="border-b border-slate-100 bg-slate-50/50">
                   <tr>
                     <th className="th">Data / hora</th>
                     <th className="th">Usuário</th>
@@ -115,7 +115,7 @@ export default function LGPD() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="border-b border-slate-100 bg-slate-50/50">
                   <tr>
                     <th className="th">Colaborador</th>
                     <th className="th">Finalidade</th>

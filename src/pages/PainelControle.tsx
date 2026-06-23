@@ -76,7 +76,8 @@ function ConfidencialSecao() {
           <div key={card.id} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white">
             <p className="text-sm font-semibold">{card.titulo}</p>
             <p className="mt-0.5 text-xs text-slate-400">{compLabelLongo(compSel)}</p>
-            <table className="mt-3 w-full text-sm">
+            <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
               <tbody className="divide-y divide-slate-700/70">
                 {card.itens.length === 0 ? (
                   <tr><td className="py-2 text-slate-400">Sem lançamentos neste mês.</td></tr>
@@ -89,6 +90,7 @@ function ConfidencialSecao() {
               </tbody>
               <tfoot><tr className="border-t border-slate-600"><td className="pt-2 font-semibold">Total</td><td className="pt-2 text-right text-base font-semibold text-gold-300 tabular-nums">{formatBRL(card.total)}</td></tr></tfoot>
             </table>
+            </div>
           </div>
         ))}
       </div>
@@ -279,13 +281,13 @@ function CargosSecao() {
               toast("Cargo salvo."); setNovo(false); setEdit(null);
             }}>Salvar</button></>}>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Campo label="Nome do cargo"><Input value={form.nome ?? ""} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} /></Campo>
               <Campo label="Área"><Select value={form.areaId} onChange={(e) => setForm((f) => ({ ...f, areaId: e.target.value }))}>{d.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}</Select></Campo>
             </div>
             <div>
               <span className="label">Faixa salarial (R$)</span>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 {[0, 1, 2, 3, 4].map((i) => (
                   <div key={i}>
                     <span className="mb-1 block text-center text-[10px] text-slate-400">N{i + 1}</span>

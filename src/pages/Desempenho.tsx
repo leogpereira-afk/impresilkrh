@@ -810,7 +810,7 @@ function AbaAvaliacoes({
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-3 gap-3">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {STATUS_DESEMPENHO.map((s) => (
           <div key={s} className="card flex items-center justify-between px-4 py-3">
             <span className="text-xs font-medium text-slate-500">{s}</span>
