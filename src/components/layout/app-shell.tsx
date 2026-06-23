@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
-  ShieldCheck, Plane, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
+  ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -41,9 +41,7 @@ const NAV: ItemNav[] = [
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Onboarding e Offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
-  // Para o RH, Viagens e Diárias vive dentro de "Custos de Colaboradores" (aba).
-  // O item solto fica só para o GESTOR, que não acessa a página de Custos.
-  { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: ["GESTOR"], grupo: "Pessoas" },
+  // Viagens e Diárias vive dentro de "Custos de Colaboradores" (aba) — só RH.
   // Cargos & Custos — estrutura e dinheiro
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
   { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },

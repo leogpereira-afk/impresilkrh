@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import { Plane, Wallet, CalendarClock, MapPin, Plus, Trophy, Upload } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { DotBadge } from "@/components/ui/badge";
@@ -475,17 +474,6 @@ export function ViagensPainel() {
           },
         }}
       />
-    </div>
-  );
-}
-
-// Página standalone (rota /viagens) — usada pelos gestores. Para o RH, o mesmo
-// conteúdo (ViagensPainel) aparece como aba dentro de "Custos de Colaboradores".
-export default function Viagens() {
-  return (
-    <div>
-      <PageHeader title="Viagens e Diárias" />
-      <ViagensPainel />
     </div>
   );
 }

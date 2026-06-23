@@ -18,7 +18,6 @@ const Carreira = lazy(() => import("@/pages/Carreira"));
 const Desempenho = lazy(() => import("@/pages/Desempenho"));
 const Ferias = lazy(() => import("@/pages/Ferias"));
 const Integracao = lazy(() => import("@/pages/Integracao"));
-const Viagens = lazy(() => import("@/pages/Viagens"));
 const Comunicacao = lazy(() => import("@/pages/Comunicacao"));
 const Pops = lazy(() => import("@/pages/Pops"));
 const Documentos = lazy(() => import("@/pages/Documentos"));
@@ -80,7 +79,6 @@ export default function App() {
             <Route path="/ponto" element={<Restrito perfis={GESTAO}><Ponto /></Restrito>} />
             <Route path="/ferias" element={<Restrito perfis={GESTAO}><Ferias /></Restrito>} />
             <Route path="/integracao" element={<Restrito perfis={GESTAO}><Integracao /></Restrito>} />
-            <Route path="/viagens" element={<Restrito perfis={GESTAO}><Viagens /></Restrito>} />
             <Route path="/comunicacao" element={<Comunicacao />} />
           <Route path="/mensagens" element={<Restrito perfis={GESTAO}><Mensagens /></Restrito>} />
             <Route path="/pops" element={<Pops />} />
