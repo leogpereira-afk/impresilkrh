@@ -25,6 +25,7 @@ export default function Colaboradores() {
   const [busca, setBusca] = useState("");
   const [fArea, setFArea] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [mostrarInativos, setMostrarInativos] = useState(false); // padrão: só ativos
   const [novo, setNovo] = useState(false);
 
   // Áreas/setores navegáveis (sem a Direção).
@@ -41,17 +42,22 @@ export default function Colaboradores() {
 
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
 
+  // Inativo = desligado (data de desligamento) ou status "inativo".
+  const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
+
   // Lista filtrada (busca + filtros + chips). Compartilhada pelas duas visões.
+  // Por padrão mostra só os ativos; "Incluir inativos" libera os desligados.
   const lista = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return escopo
       .filter((c) => !c.ehDirecao)
+      .filter((c) => mostrarInativos || !ehInativo(c))
       .filter((c) => (fArea ? c.areaId === fArea : true))
       .filter((c) => (chips.size ? !!c.areaId && chips.has(c.areaId) : true))
       .filter((c) => (fStatus ? c.statusId === fStatus : true))
       .filter((c) => (termo ? c.nome.toLowerCase().includes(termo) || d.nomeCargo(c).toLowerCase().includes(termo) : true))
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [escopo, fArea, fStatus, busca, chips, d]);
+  }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, d]);
 
   // Agrupamento por setor (área) → subárea, sobre a lista já filtrada.
   const grupos = useMemo(() => {
@@ -150,6 +156,15 @@ export default function Colaboradores() {
             <option value="">Todos os status</option>
             {d.status.filter((s) => s.id !== "direcao" && s.id !== "externo").map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
           </Select>
+          <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 text-sm text-slate-600" title="Por padrão a lista mostra só os colaboradores ativos">
+            <input
+              type="checkbox"
+              checked={mostrarInativos}
+              onChange={(e) => setMostrarInativos(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+            />
+            Incluir inativos
+          </label>
           {/* Alternador de visão */}
           <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
             <button
