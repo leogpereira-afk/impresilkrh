@@ -9,7 +9,8 @@ import { cn } from "@/lib/cn";
 import { Logo } from "@/components/brand/logo";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { PERFIL_LABEL } from "@/lib/constants";
-import { useSessao, sair } from "@/lib/session";
+import { useSessao } from "@/lib/session";
+import { logoutAuth } from "@/lib/auth";
 import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
 import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
@@ -141,7 +142,7 @@ export function AppShell() {
         </div>
         <button
           onClick={() => {
-            sair();
+            logoutAuth();
             navigate("/login");
           }}
           className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
@@ -197,7 +198,7 @@ export function AppShell() {
               {sessao.perfil === "ADMIN_RH" && <SyncButton />}
               <Avatar nome={user.nome} size="sm" />
               <button
-                onClick={() => { sair(); navigate("/login"); }}
+                onClick={() => { logoutAuth(); navigate("/login"); }}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-[0.97]"
                 title="Sair do sistema"
               >

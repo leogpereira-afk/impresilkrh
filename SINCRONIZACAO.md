@@ -78,10 +78,10 @@ site** e fica **visível nas ferramentas de desenvolvedor (DevTools)**.
 - **NÃO é segurança forte.** Quem conseguir abrir o site consegue ler a chave e,
   com ela, chamar a função diretamente.
 - Como o sistema guarda dados sensíveis (CPF, salários, retiradas), o ideal para
-  proteção real é um **login de verdade** (usuário e senha por pessoa, com
-  **token JWT** emitido pelo servidor e verificado a cada requisição). Posso
-  evoluir para esse modelo quando quiser — é a forma correta de proteger dados
-  pessoais (inclusive para a LGPD).
+  proteção real é o **login de verdade** (usuário e senha por pessoa, com **token
+  JWT** emitido pelo servidor e verificado a cada requisição). **Isso já está
+  pronto** — veja **`LOGIN.md`**. Ao ligá-lo e remover o `SYNC_TOKEN`, esta
+  exposição da chave deixa de existir.
 
 Enquanto isso, mantenha o **endereço do site restrito à equipe**, os computadores
 **protegidos por senha do sistema operacional** e troque o `SYNC_TOKEN` (e

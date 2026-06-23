@@ -9,6 +9,7 @@
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
 import { obter, definirColecao, aplicarSemSync, registrarMutacao, obterConfig } from "@/lib/store";
+import { MODO_JWT, tokenAtual } from "@/lib/auth";
 
 const temWindow = typeof window !== "undefined";
 const NS = "impresilk.sync";
@@ -18,12 +19,19 @@ const ENDPOINT_PADRAO = "/.netlify/functions/sync";
 const MAX_TENTATIVAS = 25; // descarta a ação após N falhas permanentes
 const LOTE_PUSH = 100; // registros por chamada no envio em massa
 
-// Token embutido no build (vite "define" a partir da env SYNC_TOKEN do Netlify).
-// É isto que torna a sincronização AUTOMÁTICA: não há senha para digitar — todo
-// computador que abre o app já vem com o token e sincroniza sozinho. Quando o
-// site ainda não foi configurado, o valor é "" e a sincronização fica desligada.
+// Dois modos de acesso à nuvem:
+//  • LOGIN REAL (MODO_JWT): cada chamada vai com o crachá do usuário logado
+//    (Authorization: Bearer <jwt>). Mais seguro — sem chave exposta no app.
+//  • AUTOMÁTICO (sem login): usa o token embutido no build (SYNC_TOKEN), enviado
+//    no header x-token. Conveniente, porém o token fica visível no app.
 declare const __SYNC_TOKEN__: string;
 const TOKEN_BUILD = typeof __SYNC_TOKEN__ === "string" ? __SYNC_TOKEN__ : "";
+
+// Cabeçalho de autorização conforme o modo.
+function cabecalhoAuth(): Record<string, string> {
+  if (MODO_JWT) { const t = tokenAtual(); return t ? { authorization: `Bearer ${t}` } : {}; }
+  return TOKEN_BUILD ? { "x-token": TOKEN_BUILD } : {};
+}
 
 type Tipo = "upsert" | "delete";
 interface Acao { tipo: Tipo; colecao: string; id: string; falhas?: number; conflito?: boolean; servidor?: Envelope | null }
@@ -41,13 +49,17 @@ function lerCfg(): CfgSync {
   try { return { ...base, ...JSON.parse(localStorage.getItem(K_CFG) || "{}") }; } catch { return base; }
 }
 function gravarCfg(patch: Partial<CfgSync>) { if (temWindow) localStorage.setItem(K_CFG, JSON.stringify({ ...lerCfg(), ...patch })); }
-function tokenEfetivo(): string { return TOKEN_BUILD; }
-export function configSync(): CfgSync & { token: string; configurado: boolean } {
-  const c = lerCfg();
-  return { ...c, token: TOKEN_BUILD, configurado: !!TOKEN_BUILD };
+// A nuvem está disponível? No login real, sempre (a função /sync existe). No
+// modo automático, só quando há token embutido.
+export function syncConfigurado(): boolean { return MODO_JWT || !!TOKEN_BUILD; }
+export function configSync(): CfgSync & { configurado: boolean; modoJwt: boolean } {
+  return { ...lerCfg(), configurado: syncConfigurado(), modoJwt: MODO_JWT };
 }
-export function syncConfigurado(): boolean { return !!TOKEN_BUILD; }
-export function syncHabilitado(): boolean { return !!TOKEN_BUILD && !lerCfg().desligado; }
+// Habilitado para sincronizar agora? No login real, precisa de crachá válido.
+export function syncHabilitado(): boolean {
+  if (lerCfg().desligado) return false;
+  return MODO_JWT ? !!tokenAtual() : !!TOKEN_BUILD;
+}
 export function ligarSync(): void { gravarCfg({ desligado: false }); recalcStatus(); if (syncHabilitado()) { void trySync(); void pull(); } }
 export function desligarSync(): void { gravarCfg({ desligado: true }); recalcStatus(); }
 
@@ -94,7 +106,7 @@ async function chamar(action: string, payload: Record<string, unknown> = {}): Pr
   const { endpoint } = lerCfg();
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-token": tokenEfetivo() },
+    headers: { "content-type": "application/json", ...cabecalhoAuth() },
     body: JSON.stringify({ action, ...payload }),
   });
   if (!res.ok) throw new ErroHttp(res.status, await res.text().catch(() => res.statusText));
@@ -231,12 +243,12 @@ export function sobrescreverServidor(colecao: string, id: string) {
 }
 
 // --------------------------- ativação / setup -------------------------------
-// Testa a conexão com o endpoint atual usando o token embutido (ping).
+// Testa a conexão com o endpoint atual (ping) usando o modo de auth vigente.
 export async function testarConexao(): Promise<boolean> {
-  if (!TOKEN_BUILD) return false;
+  if (!syncConfigurado()) return false;
   try {
     const { endpoint } = lerCfg();
-    const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", "x-token": tokenEfetivo() }, body: JSON.stringify({ action: "ping" }) });
+    const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...cabecalhoAuth() }, body: JSON.stringify({ action: "ping" }) });
     return res.ok;
   } catch { return false; }
 }
@@ -259,6 +271,7 @@ if (temWindow) {
   ciclo(); // ao abrir
   window.addEventListener("online", () => { recalcStatus(); ciclo(); });
   window.addEventListener("offline", () => recalcStatus());
+  window.addEventListener("impresilk:autenticado", () => { recalcStatus(); ciclo(); }); // logou → já sincroniza
   window.addEventListener("focus", () => { if (ativo()) void pull(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ciclo(); });
   // Poll leve só com a aba visível (≈ a cada 20s) — sensação de tempo real sem gastar créditos à toa.

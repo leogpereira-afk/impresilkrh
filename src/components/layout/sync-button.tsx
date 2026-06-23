@@ -11,6 +11,7 @@ import {
   conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
   enviarTudo, aceitarServidor, sobrescreverServidor, type StatusSync,
 } from "@/lib/sync";
+import { MODO_JWT } from "@/lib/auth";
 
 // Aparência do indicador conforme o estado da nuvem.
 const VISUAL: Record<StatusSync, { rotulo: string; cor: string; Icone: typeof Cloud; girar?: boolean }> = {
@@ -187,10 +188,17 @@ export function SyncButton() {
                   <button onClick={salvarEndpoint} className="btn-outline px-3 text-sm">Salvar</button>
                 </div>
               )}
-              <p className="flex items-start gap-2 text-[11px] leading-relaxed text-amber-700">
-                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                A chave fica embutida no app (visível no DevTools): barra acesso casual/bots, mas não é segurança forte. Para dados sensíveis, login real com JWT — detalhes em SINCRONIZACAO.md.
-              </p>
+              {MODO_JWT ? (
+                <p className="flex items-start gap-2 text-[11px] leading-relaxed text-green-700">
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Login real ativo: os dados na nuvem só são lidos/gravados com o seu crachá de acesso (JWT). As senhas são definidas no Painel de Controle › Usuários.
+                </p>
+              ) : (
+                <p className="flex items-start gap-2 text-[11px] leading-relaxed text-amber-700">
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  A chave fica embutida no app (visível no DevTools): barra acesso casual/bots, mas não é segurança forte. Para dados sensíveis, login real com JWT — detalhes em SINCRONIZACAO.md.
+                </p>
+              )}
             </div>
           </details>
         </div>

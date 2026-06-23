@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
-import { LogIn, Eye, EyeOff, User } from "lucide-react";
+import { LogIn, Eye, EyeOff, User, Loader2 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
+import type { Perfil } from "@/data/types";
 import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
 import { MASTER_COLAB_ID } from "@/lib/rbac";
 import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
+import { MODO_JWT, loginServidor, ErroAuth } from "@/lib/auth";
 
 const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -18,6 +20,7 @@ export default function Login() {
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
   const [erro, setErro] = useState("");
+  const [entrando, setEntrando] = useState(false);
 
   // Quem pode entrar: colaboradores ativos (inclui diretoria). O perfil de acesso
   // vem do próprio cadastro de cada pessoa.
@@ -25,51 +28,59 @@ export default function Login() {
 
   if (sessao) return <Navigate to="/painel" replace />;
 
-  const submeter = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Resolve nome+senha pela base local (login antigo). Usado quando NÃO há login
+  // por servidor, ou como degradação segura quando o servidor está fora do ar.
+  const resolverLocal = (): { perfil: Perfil; colaboradorId: string } | { erro: string } => {
     const n = normalizar(nome);
     const exatos = pessoas.filter((c) => normalizar(c.nome) === n);
     let alvo = exatos.length === 1 ? exatos[0] : undefined;
     if (exatos.length > 1) {
-      // Homônimos: prefere quem tem cadastro de usuário; senão pede o nome completo.
       alvo = exatos.find((c) => usuarios.some((u) => u.ativo && u.colaboradorId === c.id));
-      if (!alvo) {
-        setErro("Há mais de um colaborador com esse nome. Use o nome completo.");
-        return;
-      }
+      if (!alvo) return { erro: "Há mais de um colaborador com esse nome. Use o nome completo." };
     } else if (exatos.length === 0 && n.length >= 3) {
       const prefixo = pessoas.filter((c) => normalizar(c.nome).startsWith(n));
       if (prefixo.length === 1) alvo = prefixo[0];
       else if (prefixo.length > 1) {
-        // Vários começam igual: prefere quem tem cadastro de usuário (ex.: o master,
-        // que entra digitando só "Leonardo"). Senão, pede o nome completo.
         const comUsuario = prefixo.filter((c) => usuarios.some((u) => u.ativo && u.colaboradorId === c.id));
         if (comUsuario.length === 1) alvo = comUsuario[0];
-        else {
-          setErro("Nome incompleto encontrou mais de uma pessoa. Digite o nome completo.");
-          return;
-        }
+        else return { erro: "Nome incompleto encontrou mais de uma pessoa. Digite o nome completo." };
       }
     }
-    if (!alvo) {
-      setErro("Nome não encontrado. Digite seu nome completo como está cadastrado.");
-      return;
-    }
-    // Senha individual (cadastrada no Painel de Controle), se houver. A senha
-    // padrão do sistema segue como chave mestra para não travar acesso.
-    const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === alvo.id);
+    if (!alvo) return { erro: "Nome não encontrado. Digite seu nome completo como está cadastrado." };
+    const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === alvo!.id);
     const senhaUsuario = usuario?.senha?.trim();
     const ok = senha === SENHA_DEMO || (!!senhaUsuario && senha === senhaUsuario);
-    if (!ok) {
-      setErro("Senha incorreta.");
+    if (!ok) return { erro: "Senha incorreta." };
+    const perfil = alvo.id === MASTER_COLAB_ID ? "ADMIN_RH" : (usuario?.perfil ?? alvo.perfil ?? "COLABORADOR");
+    return { perfil, colaboradorId: alvo.id };
+  };
+  const entrarLocal = (): boolean => {
+    const r = resolverLocal();
+    if ("erro" in r) { setErro(r.erro); return false; }
+    entrar(r.perfil, r.colaboradorId);
+    navigate("/painel");
+    return true;
+  };
+
+  const submeter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErro("");
+    // Login real (servidor confere a senha e emite o crachá). Se o servidor
+    // estiver indisponível/sem internet, cai no login local para não travar.
+    if (MODO_JWT) {
+      setEntrando(true);
+      try {
+        await loginServidor(nome, senha);
+        navigate("/painel");
+      } catch (err) {
+        if (err instanceof ErroAuth && err.tipo === "credencial") setErro(err.message || "Senha incorreta.");
+        else if (!entrarLocal()) setErro("Sem conexão para entrar agora. Tente novamente com internet.");
+      } finally {
+        setEntrando(false);
+      }
       return;
     }
-    // O diretor master (Leonardo) entra SEMPRE como ADMIN_RH com acesso total,
-    // independente de edições no cadastro de usuário. Os demais herdam o perfil
-    // do cadastro de Usuário (quando existe); senão, do colaborador.
-    const perfil = alvo.id === MASTER_COLAB_ID ? "ADMIN_RH" : (usuario?.perfil ?? alvo.perfil ?? "COLABORADOR");
-    entrar(perfil, alvo.id);
-    navigate("/painel");
+    entrarLocal();
   };
 
   return (
@@ -134,8 +145,9 @@ export default function Login() {
 
             {erro && <p className="text-sm text-red-600">{erro}</p>}
 
-            <button type="submit" className="btn-primary w-full">
-              <LogIn className="h-4 w-4" /> Entrar
+            <button type="submit" className="btn-primary w-full" disabled={entrando}>
+              {entrando ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+              {entrando ? "Entrando…" : "Entrar"}
             </button>
           </form>
 

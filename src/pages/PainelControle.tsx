@@ -14,6 +14,7 @@ import { DadosControls } from "@/components/layout/dados-controls";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
+import { MODO_JWT, definirSenhaUsuario, removerSenhaUsuario } from "@/lib/auth";
 import { ehMaster } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { formatBRL } from "@/lib/format";
@@ -426,6 +427,36 @@ function UsuariosSecao() {
   const qtdLiberados = (u: Usuario) =>
     acessoTotal(u) ? totalModulos : MODULOS.filter((m) => u.permissoes?.includes(m.chave)).length;
 
+  // No login real (MODO_JWT), a senha precisa ir para o SERVIDOR (hash). Aqui
+  // provisionamos a senha de um usuário usando o nome do colaborador como login
+  // (o servidor normaliza). Sem colaborador vinculado ou sem senha, ignora.
+  const provisionarNoServidor = async (u: { colaboradorId?: string | null; perfil: Perfil; senha?: string }) => {
+    if (!MODO_JWT || !u.senha || !u.colaboradorId) return;
+    const nomeColab = d.nomeColab(u.colaboradorId);
+    if (!nomeColab) return;
+    try {
+      await definirSenhaUsuario({ usuario: nomeColab, colaboradorId: u.colaboradorId, perfil: u.perfil, nome: nomeColab, senha: u.senha });
+      toast(`Senha de ${nomeColab} ativada no servidor.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Falha ao ativar senha no servidor.", "erro");
+    }
+  };
+
+  // Migração: empurra para o servidor todas as senhas já cadastradas (ativos com
+  // colaborador vinculado). Use uma vez ao ligar o login real.
+  const [migrando, setMigrando] = useState(false);
+  const migrarSenhas = async () => {
+    const alvos = usuarios.filter((u) => u.ativo && u.colaboradorId && u.senha?.trim());
+    if (alvos.length === 0) { toast("Nenhum usuário com senha cadastrada para migrar.", "erro"); return; }
+    setMigrando(true);
+    let ok = 0;
+    for (const u of alvos) {
+      try { await definirSenhaUsuario({ usuario: d.nomeColab(u.colaboradorId!), colaboradorId: u.colaboradorId!, perfil: u.perfil, nome: d.nomeColab(u.colaboradorId!), senha: u.senha!.trim() }); ok++; } catch { /* segue */ }
+    }
+    setMigrando(false);
+    toast(`Senhas enviadas ao servidor: ${ok}/${alvos.length}.`, ok === alvos.length ? "sucesso" : "erro");
+  };
+
   return (
     <Card className="overflow-hidden">
       <CardHeader
@@ -441,6 +472,18 @@ function UsuariosSecao() {
           As permissões definem exatamente quais módulos ficam visíveis para cada usuário. Use <strong>Acesso total</strong> para liberar tudo (recomendado para o nível Administrador de RH).
         </p>
       </div>
+
+      {MODO_JWT && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-green-50/50 px-5 py-2.5">
+          <p className="flex items-start gap-2 text-xs text-slate-600">
+            <ShieldCheck className="mt-px h-4 w-4 shrink-0 text-green-600" />
+            <span><strong>Login real ativo.</strong> A senha de cada usuário é guardada com segurança no servidor. Ao salvar um usuário com senha, ela já é ativada lá. Para enviar de uma vez as senhas já cadastradas, use “Migrar senhas”.</span>
+          </p>
+          <button className="btn-outline shrink-0" onClick={migrarSenhas} disabled={migrando}>
+            {migrando ? "Enviando…" : "Migrar senhas"}
+          </button>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -494,6 +537,7 @@ function UsuariosSecao() {
           onSalvar={(dados) => {
             if (edit) atualizar(edit.id, dados);
             else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...dados });
+            void provisionarNoServidor(dados); // login real: ativa a senha no servidor
             toast("Usuário salvo."); setNovo(false); setEdit(null);
           }}
         />
@@ -501,7 +545,12 @@ function UsuariosSecao() {
       <ConfirmDialog
         aberto={!!del}
         onFechar={() => setDel(null)}
-        onConfirmar={() => { if (del) { remover(del.id); toast("Usuário excluído."); } }}
+        onConfirmar={() => {
+          if (del) {
+            if (MODO_JWT && del.colaboradorId) removerSenhaUsuario(d.nomeColab(del.colaboradorId)).catch(() => {});
+            remover(del.id); toast("Usuário excluído.");
+          }
+        }}
         titulo="Excluir usuário?"
         mensagem={`O acesso de "${del?.nome}" será removido.`}
       />

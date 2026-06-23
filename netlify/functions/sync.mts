@@ -9,6 +9,7 @@
 // consumo previsível e o contrato simples de versionar.
 // ============================================================================
 import { getStore } from "@netlify/blobs";
+import { verificarJwt } from "../lib/cripto.mts";
 
 const PAGINA = 150; // registros por resposta no list
 
@@ -31,10 +32,19 @@ function loja(nome: string) {
 export default async (req: Request) => {
   if (req.method !== "POST") return json({ erro: "Use POST." }, 405);
 
-  // Aceita SYNC_TOKEN (nome preferido, descritivo) ou TOKEN (alternativo).
-  const token = process.env.SYNC_TOKEN || process.env.TOKEN;
-  if (!token) return json({ erro: "SYNC_TOKEN não configurado no Netlify." }, 500);
-  if (req.headers.get("x-token") !== token) return json({ erro: "Token inválido." }, 401);
+  // Autorização: aceita o crachá do login real (JWT, preferido) e/ou o token
+  // embutido (SYNC_TOKEN, modo automático/transição). Basta um válido.
+  const secret = process.env.JWT_SECRET;
+  const syncToken = process.env.SYNC_TOKEN || process.env.TOKEN;
+  if (!secret && !syncToken) return json({ erro: "Sincronização não configurada (defina JWT_SECRET ou SYNC_TOKEN)." }, 500);
+
+  let autorizado = false;
+  if (secret) {
+    const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
+    if (m && (await verificarJwt(m[1], secret))) autorizado = true; // crachá válido
+  }
+  if (!autorizado && syncToken && req.headers.get("x-token") === syncToken) autorizado = true; // token embutido
+  if (!autorizado) return json({ erro: "Não autorizado." }, 401);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ erro: "JSON inválido." }, 400); }
