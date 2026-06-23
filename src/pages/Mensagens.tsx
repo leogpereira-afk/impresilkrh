@@ -42,28 +42,12 @@ export default function Mensagens() {
       <PageHeader
         title="Disparador de Mensagens em Massa"
         description="Gerencie contatos e modelos e organize a fila de envios da comunicação interna."
-      >
-        <Badge variant="gold">
-          <Send className="h-3.5 w-3.5" /> Módulo G
-        </Badge>
-      </PageHeader>
+      />
 
-      <Card className="mb-6 border-blue-200/70 bg-blue-50/40">
-        <div className="flex items-start gap-3 p-4">
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-            <Info className="h-[18px] w-[18px]" />
-          </span>
-          <div className="text-sm text-slate-600">
-            <p className="font-medium text-slate-800">Aplicação sem servidor (demonstração)</p>
-            <p className="mt-1 leading-relaxed">
-              Este é um app estático, sem backend. A página <strong>gerencia contatos e
-              modelos</strong> e <strong>agenda os envios numa fila local</strong> (no seu
-              navegador). O <strong>envio real</strong> por WhatsApp ou SMS exigiria a integração
-              com um serviço externo de mensageria — aqui o disparo é apenas simulado.
-            </p>
-          </div>
-        </div>
-      </Card>
+      <p className="mb-6 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2 text-xs text-slate-500">
+        <Info className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+        Os envios ficam numa fila local. O disparo real por WhatsApp/SMS depende de integração com um serviço de mensageria.
+      </p>
 
       <Tabs
         abas={[
