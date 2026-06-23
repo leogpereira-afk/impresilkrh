@@ -14,6 +14,7 @@ import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
 import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
+import { SyncButton } from "./sync-button";
 
 interface ItemNav {
   href: string;
@@ -193,6 +194,7 @@ export function AppShell() {
                 <p className="text-sm font-medium text-slate-800">{user.nome}</p>
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
               </div>
+              {sessao.perfil === "ADMIN_RH" && <SyncButton />}
               <Avatar nome={user.nome} size="sm" />
               <button
                 onClick={() => { sair(); navigate("/login"); }}
