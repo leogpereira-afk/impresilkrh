@@ -11,12 +11,13 @@ import {
   UserCircle2,
   ShieldCheck,
   FileSpreadsheet,
+  Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState, Progress } from "@/components/ui/misc";
-import { Select, Campo } from "@/components/ui/form";
+import { Select, Campo, Input } from "@/components/ui/form";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais } from "@/components/charts/charts";
@@ -25,7 +26,7 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
-import { somaPorTipo, corDoTipo } from "@/lib/folha";
+import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO } from "@/lib/folha";
 import {
   classeMap,
   competenciasPlano,
@@ -82,6 +83,12 @@ export default function Custos() {
   const [rateioPorPessoa, setRateioPorPessoa] = useState<boolean>(false);
 
   const [editorAberto, setEditorAberto] = useState<boolean>(false);
+
+  // Lançamento manual (preencher itens faltantes na folha real, ex.: comissão).
+  const [addLanc, setAddLanc] = useState<boolean>(false);
+  const [lancTipo, setLancTipo] = useState<string>("Comissão");
+  const [lancValor, setLancValor] = useState<string>("");
+  const [lancDesc, setLancDesc] = useState<string>("");
 
   // Competência efetiva (cai para a última quando a selecionada some / inicial vazia).
   const compAtiva = comp && competencias.includes(comp) ? comp : ultimaComp;
@@ -162,6 +169,18 @@ export default function Custos() {
   const custoTotalColab = comEncargos ? custoReal : custoPago;
   const colabSel = d.colabById.get(colabId);
 
+  // ---------- Seção 1b: histórico do colaborador (mês a mês) + acumulado ----------
+  const historicoColab = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of pagamentos as Pagamento[]) {
+      if (p.colaboradorId !== colabId) continue;
+      m.set(p.competencia, (m.get(p.competencia) ?? 0) + p.valor);
+    }
+    return [...m.keys()].sort().map((c) => ({ competencia: c, nome: compLabel(c), valor: m.get(c) ?? 0 }));
+  }, [pagamentos, colabId]);
+  const acumuladoColab = useMemo(() => historicoColab.reduce((s, x) => s + x.valor, 0), [historicoColab]);
+  const mediaColab = historicoColab.length ? acumuladoColab / historicoColab.length : 0;
+
   // ---------- Seção 2: custos coletivos (rateio) ----------
   const totais = useMemo(
     () => totaisDoMes(planoContas, mapaClasse, compAtiva, nColab),
@@ -193,6 +212,23 @@ export default function Custos() {
     const existente = classificacaoCustos.find((c: ClassificacaoConta) => c.codigo === conta.codigo);
     if (existente) classifColecao.atualizar(existente.id, { classe, nome: conta.nome });
     else classifColecao.criar({ codigo: conta.codigo, nome: conta.nome, classe });
+  };
+
+  // Lança um pagamento manual para o colaborador no mês (preenche o que faltou na folha).
+  const salvarLancamento = () => {
+    const valor = Number(String(lancValor).replace(",", "."));
+    if (!lancTipo) return toast("Escolha o tipo de pagamento.", "erro");
+    if (!valor || valor <= 0) return toast("Informe um valor maior que zero.", "erro");
+    pagamentosColecao.criar({
+      colaboradorId: colabId,
+      competencia: compAtiva,
+      tipo: lancTipo,
+      valor: Math.round(valor * 100) / 100,
+      dataPagamento: `${compAtiva}-15`,
+      descricao: lancDesc.trim() || "Lançamento manual",
+    });
+    toast("Lançamento adicionado.");
+    setAddLanc(false);
   };
 
   // ---------- Guard (após os hooks) ----------
@@ -349,6 +385,9 @@ export default function Custos() {
                     valor={comEncargos}
                     onChange={setComEncargos}
                   />
+                  <button type="button" onClick={() => { setLancTipo("Comissão"); setLancValor(""); setLancDesc(""); setAddLanc(true); }} className="btn-outline ml-auto h-9 py-0 text-sm" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
+                    <Plus className="h-4 w-4" /> Lançamento
+                  </button>
                 </div>
 
                 {pagsDoColab.length === 0 ? (
@@ -436,6 +475,54 @@ export default function Custos() {
                   </div>
                   <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
                 </div>
+              </CardBody>
+            </Card>
+          </section>
+
+          {/* ===================== SEÇÃO 1b — histórico do colaborador ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Histórico de {colabSel?.nome ?? "colaborador"} mês a mês</h2>
+            </div>
+            <Card>
+              <CardHeader
+                title="Quanto recebeu por mês"
+                subtitle="Total efetivamente pago em cada competência e o acumulado do período."
+                icon={<TrendingUp className="h-5 w-5" />}
+              />
+              <CardBody>
+                {historicoColab.length === 0 ? (
+                  <EmptyState title="Sem pagamentos para este colaborador" icon={<Coins className="h-8 w-8" />} />
+                ) : (
+                  <div className="grid gap-5 lg:grid-cols-3">
+                    <div className="lg:col-span-2">
+                      <BarrasVerticais data={historicoColab.map((h) => ({ nome: h.nome, valor: h.valor }))} moeda altura={260} />
+                    </div>
+                    <div className="space-y-3">
+                      <StatCard label="Acumulado no período" value={formatBRL(acumuladoColab)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={`${historicoColab.length} mes(es)`} />
+                      <StatCard label="Média por mês" value={formatBRL(mediaColab)} accent="blue" icon={<Coins className="h-4 w-4" />} />
+                      <div className="overflow-hidden rounded-xl border border-slate-200/70">
+                        <table className="w-full text-sm">
+                          <tbody className="divide-y divide-slate-100">
+                            {historicoColab.map((h) => (
+                              <tr key={h.competencia}>
+                                <td className="px-3 py-2 text-slate-600">{compLabelLongo(h.competencia)}</td>
+                                <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(h.valor)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-slate-50/60">
+                            <tr>
+                              <td className="px-3 py-2 font-semibold text-brand-ink">Acumulado</td>
+                              <td className="px-3 py-2 text-right font-semibold text-brand-ink">{formatBRL(acumuladoColab)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardBody>
             </Card>
           </section>
@@ -658,6 +745,35 @@ export default function Custos() {
             })}
           </div>
         )}
+      </Modal>
+
+      {/* Lançamento manual de pagamento (preenche itens faltantes, ex.: comissão) */}
+      <Modal
+        aberto={addLanc}
+        onFechar={() => setAddLanc(false)}
+        titulo="Adicionar lançamento"
+        descricao={`${d.colabById.get(colabId)?.nome ?? "Colaborador"} · ${compLabelLongo(compAtiva)}. Use para incluir um pagamento que faltou na folha.`}
+        largura="max-w-md"
+        rodape={
+          <>
+            <button className="btn-outline" onClick={() => setAddLanc(false)}>Cancelar</button>
+            <button className="btn-primary" onClick={salvarLancamento}>Adicionar</button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Campo label="Tipo de pagamento">
+            <Select value={lancTipo} onChange={(e) => setLancTipo(e.target.value)}>
+              {TIPOS_PAGAMENTO.map((t) => <option key={t.tipo} value={t.tipo}>{t.tipo}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Valor (R$)">
+            <Input type="number" inputMode="decimal" step="0.01" value={lancValor} onChange={(e) => setLancValor(e.target.value)} placeholder="0,00" />
+          </Campo>
+          <Campo label="Descrição (opcional)">
+            <Input value={lancDesc} onChange={(e) => setLancDesc(e.target.value)} placeholder="Ex.: Comissão produção" />
+          </Campo>
+        </div>
       </Modal>
     </div>
   );
