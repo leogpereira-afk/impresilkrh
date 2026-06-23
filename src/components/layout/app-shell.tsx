@@ -39,7 +39,7 @@ const NAV: ItemNav[] = [
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/integracao", label: "Integração / Desligamento", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/integracao", label: "Onboarding e Offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: GESTAO, grupo: "Pessoas" },
   // Cargos & Custos — estrutura e dinheiro

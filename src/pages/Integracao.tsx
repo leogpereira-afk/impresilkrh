@@ -16,6 +16,9 @@ import {
   FolderCheck,
   AlertCircle,
   FileText,
+  Trophy,
+  Sparkles,
+  Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -63,6 +66,16 @@ const variantePorcentagem = (
   if (pct > 0) return "warning";
   return "neutral";
 };
+
+// Gamificação da jornada de onboarding: "nível" conforme o progresso (%).
+const NIVEIS_JORNADA = [
+  { min: 100, rotulo: "Pronto!", classe: "border-green-200 bg-green-50 text-green-700" },
+  { min: 67, rotulo: "Quase lá", classe: "border-brand-200 bg-brand-50 text-brand" },
+  { min: 34, rotulo: "Ambientando", classe: "border-blue-200 bg-blue-50 text-blue-700" },
+  { min: 1, rotulo: "Recém-chegado", classe: "border-amber-200 bg-amber-50 text-amber-700" },
+  { min: 0, rotulo: "A iniciar", classe: "border-slate-200 bg-slate-50 text-slate-500" },
+];
+const nivelJornada = (pct: number) => NIVEIS_JORNADA.find((n) => pct >= n.min)!;
 
 export default function Integracao() {
   const sessao = useSessao();
@@ -202,12 +215,12 @@ export default function Integracao() {
   return (
     <div>
       <PageHeader
-        title="Integração e Desligamento"
-        description="Checklists de onboarding (admissão) e offboarding (desligamento) por colaborador."
+        title="Onboarding e Offboarding"
+        description="A jornada de cada colaborador — da documentação à integração com a equipe — e o desligamento, passo a passo."
       >
         {gere && (
           <button className="btn-primary" onClick={() => setIniciar(true)}>
-            <PlayCircle className="h-4 w-4" /> Iniciar checklist
+            <PlayCircle className="h-4 w-4" /> Iniciar jornada
           </button>
         )}
       </PageHeader>
@@ -350,9 +363,11 @@ export default function Integracao() {
 
 // ---------- Esteira visual padrão de onboarding ----------
 const ETAPAS_ESTEIRA: { titulo: string; icon: React.ReactNode }[] = [
+  { titulo: "Documentação de RH completa", icon: <FolderCheck className="h-4 w-4" /> },
   { titulo: "Treinamento inicial completo", icon: <GraduationCap className="h-4 w-4" /> },
   { titulo: "Aceite do Código de Ética", icon: <ScrollText className="h-4 w-4" /> },
   { titulo: "Tour das instalações", icon: <MapPin className="h-4 w-4" /> },
+  { titulo: "Apresentação à equipe", icon: <Users className="h-4 w-4" /> },
   { titulo: "Perfil Comportamental", icon: <Brain className="h-4 w-4" /> },
   { titulo: "Designação de Padrinho", icon: <HeartHandshake className="h-4 w-4" /> },
 ];
@@ -374,13 +389,16 @@ function EsteiraOnboarding() {
         }
       />
       <CardBody>
-        <ol className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <ol className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-stretch">
           {ETAPAS_ESTEIRA.map((etapa, i) => (
-            <li key={etapa.titulo} className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/70 px-3 py-1.5 text-xs font-medium text-slate-700">
-                <span className="text-brand">{etapa.icon}</span>
-                {etapa.titulo}
-              </span>
+            <li key={etapa.titulo} className="flex items-center gap-2 sm:flex-1">
+              <div className="flex flex-1 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition hover:border-brand/30 hover:shadow-sm">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand">{etapa.icon}</span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Etapa {i + 1}</p>
+                  <p className="truncate text-xs font-medium text-slate-700">{etapa.titulo}</p>
+                </div>
+              </div>
               {i < ETAPAS_ESTEIRA.length - 1 && (
                 <ChevronRight className="hidden h-4 w-4 shrink-0 text-slate-300 sm:block" />
               )}
@@ -639,6 +657,12 @@ function CardChecklist({
   const etapasTotal = jornada.length;
   const docsAbertos = docs.filter((t) => !t.concluida).length;
 
+  // Gamificação: nível atual e próximo passo sugerido (etapa ou documento).
+  const nivel = nivelJornada(pct);
+  const proximaEtapa = jornada.find((t) => !t.concluida);
+  const proximoDoc = docs.find((t) => !t.concluida);
+  const proximoPasso = proximaEtapa?.titulo ?? (proximoDoc ? `Entregar documento — ${rotuloDoc(proximoDoc)}` : null);
+
   // A documentação de RH padrão é semeada no nível da página (Integracao),
   // independentemente de qual aba está ativa — ver o efeito de seed lá.
 
@@ -716,8 +740,13 @@ function CardChecklist({
         {/* Progresso da jornada — barra de % + rótulo de etapas */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            <span className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
               {tipo === "Admissão" ? "Jornada do onboarding" : "Progresso do offboarding"}
+              {tipo === "Admissão" && (
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${nivel.classe}`}>
+                  <Sparkles className="h-3 w-3" /> {nivel.rotulo}
+                </span>
+              )}
             </span>
             <span className="text-xs font-semibold text-slate-600">
               {etapasFeitas} de {etapasTotal} etapas · {pct}%
@@ -731,6 +760,18 @@ function CardChecklist({
             </p>
           )}
         </div>
+
+        {/* Gamificação: celebração ao concluir ou próximo passo sugerido */}
+        {tipo === "Admissão" && (pct >= 100 ? (
+          <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+            <Trophy className="h-4 w-4 shrink-0" /> Jornada concluída — boas-vindas oficiais! 🎉
+          </div>
+        ) : proximoPasso ? (
+          <div className="flex items-start gap-2 rounded-lg border border-brand-100 bg-brand-50/50 px-3 py-2 text-sm text-slate-700">
+            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+            <span><span className="font-semibold text-brand-ink">Próximo passo:</span> {proximoPasso}</span>
+          </div>
+        ) : null)}
 
         {/* Linha do tempo / stepper das etapas da jornada */}
         {tipo === "Admissão" && jornada.length > 0 && (
