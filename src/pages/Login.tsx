@@ -41,8 +41,14 @@ export default function Login() {
       const prefixo = pessoas.filter((c) => normalizar(c.nome).startsWith(n));
       if (prefixo.length === 1) alvo = prefixo[0];
       else if (prefixo.length > 1) {
-        setErro("Nome incompleto encontrou mais de uma pessoa. Digite o nome completo.");
-        return;
+        // Vários começam igual: prefere quem tem cadastro de usuário (ex.: o master,
+        // que entra digitando só "Leonardo"). Senão, pede o nome completo.
+        const comUsuario = prefixo.filter((c) => usuarios.some((u) => u.ativo && u.colaboradorId === c.id));
+        if (comUsuario.length === 1) alvo = comUsuario[0];
+        else {
+          setErro("Nome incompleto encontrou mais de uma pessoa. Digite o nome completo.");
+          return;
+        }
       }
     }
     if (!alvo) {
@@ -101,16 +107,12 @@ export default function Login() {
                 <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   className="input pl-9"
-                  list="pessoas-login"
                   value={nome}
                   onChange={(e) => { setNome(e.target.value); setErro(""); }}
                   placeholder="Digite seu nome"
                   autoFocus
                   autoComplete="off"
                 />
-                <datalist id="pessoas-login">
-                  {pessoas.map((c) => <option key={c.id} value={c.nome} />)}
-                </datalist>
               </div>
             </label>
 
