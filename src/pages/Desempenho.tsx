@@ -41,6 +41,9 @@ function bucketPotencial(potencial?: string | null): Bucket {
   return potencial === "Alto" ? "Alto" : potencial === "Baixo" ? "Baixo" : "Médio";
 }
 
+// Cor da nota/média (verde ≥80, âmbar ≥60, vermelho abaixo).
+const corNota = (n: number) => (n >= 80 ? "#16a34a" : n >= 60 ? "#d97706" : "#dc2626");
+
 function statusDesempenhoDe(notaFinal: number): string {
   if (notaFinal >= 80) return "Apto";
   if (notaFinal >= 60) return "Em desenvolvimento";
@@ -190,6 +193,28 @@ export default function Desempenho() {
   const elegiveis = elegiveisColabs.length;
   const riscoAlto = riscoAltoColabs.length;
 
+  // Média de desempenho por setor (área): soma das notas ÷ avaliados.
+  // Ordenado do menor para o maior — o topo é onde concentrar a atenção.
+  const mediaPorSetor = useMemo(() => {
+    const m = new Map<string, { areaId: string; soma: number; avaliados: number; total: number }>();
+    for (const c of escopo) {
+      const areaId = c.areaId ?? "sem-area";
+      const g = m.get(areaId) ?? { areaId, soma: 0, avaliados: 0, total: 0 };
+      g.total += 1;
+      const nota = avalGestorPorColab.get(c.id)?.notaFinal;
+      if (nota != null) { g.soma += nota; g.avaliados += 1; }
+      m.set(areaId, g);
+    }
+    return [...m.values()]
+      .map((g) => ({ ...g, media: g.avaliados ? g.soma / g.avaliados : null }))
+      .sort((a, b) => {
+        if (a.media == null) return b.media == null ? 0 : 1; // setores sem nota ao fim
+        if (b.media == null) return -1;
+        return a.media - b.media; // menor média primeiro = onde atuar
+      });
+  }, [escopo, avalGestorPorColab]);
+  const focoAreaId = mediaPorSetor.find((s) => s.media != null)?.areaId;
+
   // Metas / PDIs / Feedbacks restritos ao escopo (individuais por colaborador; metas de área sempre visíveis).
   const metasVisiveis = useMemo(
     () => metas.filter((m) => !m.colaboradorId || idsEscopo.has(m.colaboradorId)),
@@ -307,6 +332,52 @@ export default function Desempenho() {
         >
           <StatCard label="Risco de saída alto" value={riscoAlto} hint="Atenção à retenção" icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
         </button>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader
+            title="Média de desempenho por setor"
+            subtitle="Soma das notas ÷ avaliados, do menor para o maior — comece a atuar pelo topo da lista."
+            icon={<Gauge className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {comNota.length === 0 ? (
+              <EmptyState title="Sem notas lançadas" description="Lance avaliações na aba “Avaliações” para ver a média por setor." icon={<Gauge className="h-8 w-8" />} />
+            ) : (
+              <div className="space-y-3">
+                {mediaPorSetor.map((s) => {
+                  const nome = s.areaId === "sem-area" ? "Sem setor" : d.nomeArea(s.areaId);
+                  const foco = s.media != null && s.areaId === focoAreaId;
+                  const cor = s.media == null ? "#94a3b8" : corNota(s.media);
+                  const colabs = escopo.filter((c) => (c.areaId ?? "sem-area") === s.areaId);
+                  return (
+                    <button
+                      key={s.areaId}
+                      type="button"
+                      onClick={() => drill.abrir(`Setor: ${nome}`, colabs, s.media != null ? `Média ${s.media.toFixed(1)} · ${s.avaliados}/${s.total} avaliados` : `${s.total} colaborador(es) · sem notas`)}
+                      className="block w-full rounded-lg p-2 text-left transition hover:bg-slate-50"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                          {nome}
+                          {foco && <Badge variant="warning">Atue aqui</Badge>}
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: cor }}>
+                          {s.media != null ? s.media.toFixed(1) : "—"}
+                          <span className="ml-1 text-xs font-normal text-slate-400">{s.avaliados}/{s.total} aval.</span>
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${s.media ?? 0}%`, backgroundColor: cor }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardBody>
+        </Card>
       </div>
 
       <div className="mt-6">

@@ -338,6 +338,16 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
         />
         <CardBody>
           <PerfilComportamentalGuia perfil={c.perfilComportamental} />
+          {c.perfilComportamental && (
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <Link
+                to={`/comportamental?perfil=${encodeURIComponent(c.perfilComportamental)}`}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
+              >
+                <Brain className="h-4 w-4" /> Como lidar com este perfil — abrir no Guia Comportamental
+              </Link>
+            </div>
+          )}
         </CardBody>
       </Card>
 

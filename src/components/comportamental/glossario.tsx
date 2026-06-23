@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown, Brain, Laugh, Smile, Meh, Frown, Eye, Ear, Hand,
   ThumbsUp, AlertTriangle, Lightbulb, HeartPulse, GraduationCap, DoorOpen, Gauge,
@@ -29,7 +29,7 @@ function Acordeao({
 }) {
   const aberto = abertos.has(id);
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white">
+    <div id={`ac-${id}`} className="scroll-mt-20 overflow-hidden rounded-xl border border-slate-200/70 bg-white">
       <button
         type="button"
         onClick={() => onToggle(id)}
@@ -175,14 +175,23 @@ const RISCO = [
   },
 ];
 
-export function GlossarioComportamental() {
-  const [abertos, setAbertos] = useState<Set<string>>(new Set());
+export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | null }) {
+  const alvo = focoPerfil ? `arq-${focoPerfil}` : null;
+  const [abertos, setAbertos] = useState<Set<string>>(() => (alvo ? new Set([alvo]) : new Set()));
   const toggle = (id: string) =>
     setAbertos((s) => {
       const n = new Set(s);
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
+
+  // Veio da ficha de um colaborador com ?perfil=… : abre e rola até o arquétipo.
+  useEffect(() => {
+    if (!alvo) return;
+    setAbertos((s) => new Set(s).add(alvo));
+    const el = document.getElementById(`ac-${alvo}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [alvo]);
 
   return (
     <div className="space-y-8">
