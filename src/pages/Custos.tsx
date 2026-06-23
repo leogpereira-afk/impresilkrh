@@ -12,8 +12,11 @@ import {
   ShieldCheck,
   FileSpreadsheet,
   Plus,
+  Plane,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tabs } from "@/components/ui/tabs";
+import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState, Progress } from "@/components/ui/misc";
@@ -254,24 +257,35 @@ export default function Custos() {
       <PageHeader
         title="Custos de Colaboradores"
         description="Quanto custa cada colaborador e a equipe — folha real, rateio e encargos, mês a mês."
-      >
-        <Select
-          value={compAtiva}
-          onChange={(e) => setComp(e.target.value)}
-          className="h-10 w-auto py-0"
-          disabled={semPlano}
-        >
-          {semPlano && <option value="">Sem competências</option>}
-          {competencias.map((c) => (
-            <option key={c} value={c}>
-              {compLabelLongo(c)}
-            </option>
-          ))}
-        </Select>
-        <button className="btn-outline" onClick={() => setEditorAberto(true)} disabled={semPlano}>
-          <Settings2 className="h-4 w-4" /> Classificar contas
-        </button>
-      </PageHeader>
+      />
+
+      <Tabs
+        inicial="custos"
+        abas={[
+          {
+            id: "custos",
+            label: "Custos de Colaboradores",
+            icon: <Coins className="h-4 w-4" />,
+            conteudo: (
+              <>
+                <div className="mb-6 flex flex-wrap items-center gap-2">
+                  <Select
+                    value={compAtiva}
+                    onChange={(e) => setComp(e.target.value)}
+                    className="h-10 w-auto py-0"
+                    disabled={semPlano}
+                  >
+                    {semPlano && <option value="">Sem competências</option>}
+                    {competencias.map((c) => (
+                      <option key={c} value={c}>
+                        {compLabelLongo(c)}
+                      </option>
+                    ))}
+                  </Select>
+                  <button className="btn-outline" onClick={() => setEditorAberto(true)} disabled={semPlano}>
+                    <Settings2 className="h-4 w-4" /> Classificar contas
+                  </button>
+                </div>
 
       {/* ---------- Uploads ---------- */}
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
@@ -782,6 +796,17 @@ export default function Custos() {
           </Campo>
         </div>
       </Modal>
+              </>
+            ),
+          },
+          {
+            id: "viagens",
+            label: "Viagens e Diárias",
+            icon: <Plane className="h-4 w-4" />,
+            conteudo: <ViagensPainel />,
+          },
+        ]}
+      />
     </div>
   );
 }

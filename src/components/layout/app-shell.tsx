@@ -41,7 +41,9 @@ const NAV: ItemNav[] = [
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Onboarding e Offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: GESTAO, grupo: "Pessoas" },
+  // Para o RH, Viagens e Diárias vive dentro de "Custos de Colaboradores" (aba).
+  // O item solto fica só para o GESTOR, que não acessa a página de Custos.
+  { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: ["GESTOR"], grupo: "Pessoas" },
   // Cargos & Custos — estrutura e dinheiro
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
   { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },

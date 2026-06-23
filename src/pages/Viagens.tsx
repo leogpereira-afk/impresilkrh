@@ -46,7 +46,7 @@ const FORM_VAZIO: FormViagem = {
   status: STATUS_VIAGEM[0],
 };
 
-export default function Viagens() {
+export function ViagensPainel() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
@@ -221,13 +221,14 @@ export default function Viagens() {
 
   return (
     <div>
-      <PageHeader title="Viagens e Diárias" description="Deslocamentos e custos de diárias da equipe de campo.">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">Deslocamentos e custos de diárias da equipe de campo.</p>
         {podeEditar && (
           <button className="btn-primary" onClick={() => setNovo(true)}>
             <Plus className="h-4 w-4" /> Nova viagem
           </button>
         )}
-      </PageHeader>
+      </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Viagens no mês" value={doMes.length} icon={<Plane className="h-5 w-5" />} accent="brand" hint="Iniciadas neste mês" />
@@ -474,6 +475,17 @@ export default function Viagens() {
           },
         }}
       />
+    </div>
+  );
+}
+
+// Página standalone (rota /viagens) — usada pelos gestores. Para o RH, o mesmo
+// conteúdo (ViagensPainel) aparece como aba dentro de "Custos de Colaboradores".
+export default function Viagens() {
+  return (
+    <div>
+      <PageHeader title="Viagens e Diárias" />
+      <ViagensPainel />
     </div>
   );
 }
