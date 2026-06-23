@@ -23,7 +23,7 @@ import {
   COR_POTENCIAL_DESEMPENHO, COR_RISCO, STATUS_DESEMPENHO, TIPOS_FEEDBACK,
   STATUS_META, STATUS_PDI, faixaMotivacao,
 } from "@/lib/constants";
-import type { Avaliacao, CicloAvaliacao, Colaborador, Feedback, Meta, PDI, Pesquisa, PerguntaPesquisa, TipoPesquisa, StatusPesquisa, TipoPergunta } from "@/data/types";
+import type { Avaliacao, CicloAvaliacao, Colaborador, Feedback, Meta, PDI, Pesquisa, PerguntaPesquisa, TipoPesquisa, StatusPesquisa, TipoPergunta, RespostaPesquisa } from "@/data/types";
 
 // ===================== Helpers de classificação (puros) =====================
 type Bucket = "Baixo" | "Médio" | "Alto";
@@ -1510,9 +1510,18 @@ function AbaPesquisas() {
   const sessao = useSessao();
   const toast = useToast();
   const { items, criar, atualizar, remover } = useColecao("pesquisas");
+  const { items: respostas, criar: criarResposta } = useColecao("respostasPesquisa");
   const gere = podeGerir(sessao);
   const [editar, setEditar] = useState<Pesquisa | null>(null);
   const [novo, setNovo] = useState(false);
+  const [responder, setResponder] = useState<Pesquisa | null>(null);
+  const [resultados, setResultados] = useState<Pesquisa | null>(null);
+  const nRespostas = (pid: string) => respostas.filter((r) => r.pesquisaId === pid).length;
+  const enviarResposta = (p: Pesquisa, vals: { perguntaId: string; valor: string | number }[]) => {
+    criarResposta({ pesquisaId: p.id, colaboradorId: p.anonima ? null : (sessao?.colaboradorId ?? null), respostas: vals, criadoEm: new Date().toISOString().slice(0, 10) });
+    toast("Resposta registrada. Obrigado!");
+    setResponder(null);
+  };
 
   const pesquisas = items as Pesquisa[];
   const surveys = pesquisas.filter((p) => p.tipo === "Pesquisa");
@@ -1559,7 +1568,7 @@ function AbaPesquisas() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {surveys.map((p) => (
-                <CardPesquisa key={p.id} p={p} gere={gere} onEdit={() => { setNovo(false); setEditar(p); }} onCiclo={() => ciclarStatus(p)} onDel={() => excluir(p)} />
+                <CardPesquisa key={p.id} p={p} gere={gere} nResp={nRespostas(p.id)} onResponder={() => setResponder(p)} onResultados={() => setResultados(p)} onEdit={() => { setNovo(false); setEditar(p); }} onCiclo={() => ciclarStatus(p)} onDel={() => excluir(p)} />
               ))}
             </div>
           )}
@@ -1594,11 +1603,13 @@ function AbaPesquisas() {
           onSalvar={salvar}
         />
       )}
+      {responder && <ResponderPesquisaModal pesquisa={responder} onFechar={() => setResponder(null)} onEnviar={(vals) => enviarResposta(responder, vals)} />}
+      {resultados && <ResultadosPesquisaModal pesquisa={resultados} respostas={respostas.filter((r) => r.pesquisaId === resultados.id)} onFechar={() => setResultados(null)} />}
     </div>
   );
 }
 
-function CardPesquisa({ p, gere, onEdit, onCiclo, onDel }: { p: Pesquisa; gere: boolean; onEdit: () => void; onCiclo: () => void; onDel: () => void }) {
+function CardPesquisa({ p, gere, nResp = 0, onResponder, onResultados, onEdit, onCiclo, onDel }: { p: Pesquisa; gere: boolean; nResp?: number; onResponder?: () => void; onResultados?: () => void; onEdit: () => void; onCiclo: () => void; onDel: () => void }) {
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-2">
@@ -1621,6 +1632,16 @@ function CardPesquisa({ p, gere, onEdit, onCiclo, onDel }: { p: Pesquisa; gere: 
             </li>
           ))}
         </ul>
+      )}
+      {p.tipo === "Pesquisa" && (onResponder || onResultados) && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {p.status === "Ativa" && onResponder && (
+            <button className="btn-primary h-8 px-3 text-xs" onClick={onResponder}><ClipboardCheck className="h-3.5 w-3.5" /> Responder</button>
+          )}
+          {onResultados && (
+            <button className="btn-outline h-8 px-3 text-xs" onClick={onResultados}>Resultados ({nResp})</button>
+          )}
+        </div>
       )}
       {gere && (
         <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
@@ -1730,6 +1751,137 @@ function PesquisaEditor({ pesquisa, tipoInicial, onFechar, onSalvar }: {
           </div>
         )}
       </div>
+    </Modal>
+  );
+}
+
+// ---------- Responder uma pesquisa ----------
+function ResponderPesquisaModal({ pesquisa, onFechar, onEnviar }: {
+  pesquisa: Pesquisa;
+  onFechar: () => void;
+  onEnviar: (vals: { perguntaId: string; valor: string | number }[]) => void;
+}) {
+  const toast = useToast();
+  const [vals, setVals] = useState<Record<string, string | number>>({});
+  const set = (id: string, v: string | number) => setVals((s) => ({ ...s, [id]: v }));
+
+  const enviar = () => {
+    const faltando = pesquisa.perguntas.filter((q) => vals[q.id] === undefined || vals[q.id] === "");
+    if (faltando.length) { toast("Responda todas as perguntas.", "erro"); return; }
+    onEnviar(pesquisa.perguntas.map((q) => ({ perguntaId: q.id, valor: vals[q.id] })));
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={pesquisa.titulo}
+      descricao={pesquisa.anonima ? "Suas respostas são anônimas." : "Responda com sinceridade."}
+      largura="max-w-xl"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={enviar}>Enviar respostas</button></>}
+    >
+      <div className="space-y-5">
+        {pesquisa.perguntas.map((q, i) => (
+          <div key={q.id}>
+            <p className="mb-2 text-sm font-medium text-slate-700">{i + 1}. {q.texto}</p>
+            {q.tipo === "Escala" && (
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button key={n} type="button" onClick={() => set(q.id, n)}
+                    className={`h-9 w-9 rounded-lg border text-sm font-semibold transition ${vals[q.id] === n ? "border-brand bg-brand text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
+            {q.tipo === "SimNao" && (
+              <div className="flex gap-2">
+                {["Sim", "Não"].map((op) => (
+                  <button key={op} type="button" onClick={() => set(q.id, op)}
+                    className={`rounded-lg border px-4 py-1.5 text-sm font-medium transition ${vals[q.id] === op ? "border-brand bg-brand text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    {op}
+                  </button>
+                ))}
+              </div>
+            )}
+            {q.tipo === "Multipla" && (
+              <Select value={String(vals[q.id] ?? "")} onChange={(e) => set(q.id, e.target.value)}>
+                <option value="">Selecione…</option>
+                {(q.opcoes ?? []).map((op) => <option key={op} value={op}>{op}</option>)}
+              </Select>
+            )}
+            {q.tipo === "Texto" && (
+              <Textarea rows={2} value={String(vals[q.id] ?? "")} onChange={(e) => set(q.id, e.target.value)} placeholder="Sua resposta…" />
+            )}
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Resultados de uma pesquisa ----------
+function ResultadosPesquisaModal({ pesquisa, respostas, onFechar }: {
+  pesquisa: Pesquisa;
+  respostas: RespostaPesquisa[];
+  onFechar: () => void;
+}) {
+  const valoresDe = (qid: string) => respostas.map((r) => r.respostas.find((x) => x.perguntaId === qid)?.valor).filter((v) => v !== undefined) as (string | number)[];
+
+  return (
+    <Modal aberto onFechar={onFechar} titulo={`Resultados — ${pesquisa.titulo}`} descricao={`${respostas.length} resposta(s) recebida(s).`} largura="max-w-xl">
+      {respostas.length === 0 ? (
+        <EmptyState title="Sem respostas ainda" description="Quando a equipe responder, os resultados aparecem aqui." icon={<ClipboardList className="h-8 w-8" />} />
+      ) : (
+        <div className="space-y-5">
+          {pesquisa.perguntas.map((q, i) => {
+            const vals = valoresDe(q.id);
+            return (
+              <div key={q.id} className="rounded-lg border border-slate-100 p-3">
+                <p className="mb-2 text-sm font-medium text-slate-700">{i + 1}. {q.texto}</p>
+                {q.tipo === "Escala" && (() => {
+                  const nums = vals.map(Number).filter((n) => !isNaN(n));
+                  const media = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
+                  return (
+                    <div>
+                      <p className="text-sm text-slate-600">Média: <span className="font-semibold text-brand-ink">{media.toFixed(1)}</span> · {nums.length} resposta(s)</p>
+                      <div className="mt-2 flex gap-1">
+                        {[1, 2, 3, 4, 5].map((n) => {
+                          const c = nums.filter((x) => x === n).length;
+                          const pct = nums.length ? (c / nums.length) * 100 : 0;
+                          return (
+                            <div key={n} className="flex-1 text-center">
+                              <div className="flex h-16 items-end justify-center"><div className="w-5 rounded-t bg-brand" style={{ height: `${Math.max(4, pct)}%` }} /></div>
+                              <p className="mt-1 text-[10px] text-slate-400">{n}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {q.tipo === "SimNao" && (() => {
+                  const sim = vals.filter((v) => v === "Sim").length;
+                  const nao = vals.filter((v) => v === "Não").length;
+                  return <p className="text-sm text-slate-600">Sim: <span className="font-semibold text-green-700">{sim}</span> · Não: <span className="font-semibold text-red-600">{nao}</span></p>;
+                })()}
+                {q.tipo === "Multipla" && (
+                  <ul className="space-y-1 text-sm text-slate-600">
+                    {(q.opcoes ?? []).map((op) => <li key={op}>{op}: <span className="font-semibold">{vals.filter((v) => v === op).length}</span></li>)}
+                  </ul>
+                )}
+                {q.tipo === "Texto" && (
+                  <ul className="space-y-1.5">
+                    {vals.length === 0 ? <li className="text-xs text-slate-400">Sem respostas.</li> : vals.map((v, k) => (
+                      <li key={k} className="rounded border border-slate-100 bg-slate-50/60 px-2.5 py-1.5 text-sm text-slate-600">“{String(v)}”</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Modal>
   );
 }

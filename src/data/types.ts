@@ -540,3 +540,10 @@ export interface Pesquisa {
   perguntas: PerguntaPesquisa[];
   criadoEm: string;
 }
+export interface RespostaPesquisa {
+  id: string;
+  pesquisaId: string;
+  colaboradorId?: string | null; // null quando a pesquisa é anônima
+  respostas: { perguntaId: string; valor: string | number }[];
+  criadoEm: string;
+}

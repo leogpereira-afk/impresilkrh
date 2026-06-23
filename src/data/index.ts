@@ -7,7 +7,7 @@ import type {
   Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Aceite, Config,
   Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
   Treinamento, EtapaEvolucao, Usuario, Pagamento, ContaPlano, ClassificacaoConta, EventoCalendario,
-  CertificacaoNR, Pesquisa,
+  CertificacaoNR, Pesquisa, RespostaPesquisa,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -86,6 +86,7 @@ export interface ColecaoMap {
   eventos: EventoCalendario;
   certificacoesNr: CertificacaoNR;
   pesquisas: Pesquisa;
+  respostasPesquisa: RespostaPesquisa;
 }
 
 export type NomeColecao = keyof ColecaoMap;
@@ -131,6 +132,7 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     eventos: EVENTOS_CALENDARIO,
     certificacoesNr: CERTIFICACOES_NR,
     pesquisas: PESQUISAS,
+    respostasPesquisa: [],
   });
 }
 
