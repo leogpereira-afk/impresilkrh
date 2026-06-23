@@ -8,7 +8,7 @@ import {
 import { Card, CardBody, CardHeader, SecaoColapsavel } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { HumorIndicador, PerfilComportamentalBadge, MotivacaoRosto, PerfilComportamentalGuia } from "@/components/ui/indicadores";
-import { DESC_PERFIL_COMPORTAMENTAL } from "@/lib/constants";
+import { DESC_PERFIL_COMPORTAMENTAL, COR_PERFIL_COMPORTAMENTAL, ARQUETIPOS } from "@/lib/constants";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
@@ -40,7 +40,7 @@ function idadeAnos(nascimento?: string | null): number | null {
   return anos < 0 ? 0 : anos;
 }
 
-// Selo do estilo de aprendizagem com ícone (Visual/Auditivo/Cinestésico).
+// Selo compacto do estilo de aprendizagem (ícone + nome). Visual/Auditivo/Cinestésico.
 const ICONE_ESTILO: Record<string, typeof Eye> = { Visual: Eye, Auditivo: Ear, Cinestésico: Hand, Cinestesico: Hand };
 function EstiloAprendizagemBadge({ estilo }: { estilo?: string | null }) {
   if (!estilo) return <span className="text-xs text-slate-400">—</span>;
@@ -48,6 +48,18 @@ function EstiloAprendizagemBadge({ estilo }: { estilo?: string | null }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700" title={`Estilo de aprendizagem: ${estilo}`}>
       <Icon className="h-4 w-4 text-brand" /> {estilo}
+    </span>
+  );
+}
+
+// Selo compacto do arquétipo (ícone + nome, na cor do perfil) — mesmo padrão.
+function ArquetipoMini({ perfil }: { perfil?: string | null }) {
+  if (!perfil) return <span className="text-xs text-slate-400">—</span>;
+  const cor = COR_PERFIL_COMPORTAMENTAL[perfil] ?? "#64748b";
+  const nome = ARQUETIPOS[perfil]?.arquetipo ?? perfil;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm font-medium" style={{ color: cor }} title={`Arquétipo: ${nome}`}>
+      <Brain className="h-4 w-4" /> {nome}
     </span>
   );
 }
@@ -136,7 +148,8 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
       )}
 
       <Card className="mb-6">
-        <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <CardBody className="flex flex-wrap items-center gap-4">
+          <div className="flex w-full min-w-0 items-center gap-4 sm:w-auto sm:min-w-[20rem] sm:flex-1">
           <div className="relative shrink-0">
             {c.fotoDataUrl ? (
               <img src={c.fotoDataUrl} alt={c.nome} className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
@@ -164,7 +177,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
               </>
             )}
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold text-brand-ink">{c.nome}</h1>
               <DotBadge label={d.nomeStatus(c.statusId)} cor={d.corStatus(c.statusId)} />
@@ -177,6 +190,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
               {c.dataInicioCargo && <> · {tempoDeCasa(c.dataInicioCargo)} no cargo atual</>}
             </p>
           </div>
+          </div>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">
             {verGestao && c.motivacao != null && (
               <div className="flex flex-col items-center rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
@@ -185,13 +199,13 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
               </div>
             )}
             {verGestao && c.perfilComportamental && (
-              <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
+              <div className="flex flex-col items-center rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Arquétipo</span>
-                <PerfilComportamentalBadge perfil={c.perfilComportamental} />
+                <ArquetipoMini perfil={c.perfilComportamental} />
               </div>
             )}
             {c.estiloAprendizagem && (
-              <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
+              <div className="flex flex-col items-center rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Aprendizagem</span>
                 <EstiloAprendizagemBadge estilo={c.estiloAprendizagem} />
               </div>
