@@ -13,6 +13,8 @@ import {
   PieChart,
   Clock,
   Lock,
+  HeartPulse,
+  DoorOpen,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -38,7 +40,7 @@ const aposOuIgual = (s: string | null | undefined, ref: Date) => {
   const d = parseData(s);
   return !!d && d.getTime() >= ref.getTime();
 };
-import { COR_POSICAO_FAIXA } from "@/lib/constants";
+import { COR_POSICAO_FAIXA, COR_HUMOR, COR_RISCO } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
 
@@ -55,6 +57,38 @@ function Delta({ v }: { v: number | null }) {
     <span className="inline-flex items-center justify-end gap-1 text-sm font-medium tabular-nums" style={{ color: cor }}>
       <Icon className="h-3.5 w-3.5" />{v > 0 ? "+" : ""}{v.toFixed(1)}
     </span>
+  );
+}
+
+// Linha de "distribuição por setor" com barra empilhada (clima / risco).
+function LinhaSetorDistrib({
+  nome, foco, total, segs, onClick,
+}: {
+  nome: string;
+  foco: boolean;
+  total: number;
+  segs: { label: string; valor: number; cor: string }[];
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} className="block w-full rounded-lg p-2 text-left transition hover:bg-slate-50">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          {nome}
+          {foco && <Badge variant="warning">Atue aqui</Badge>}
+        </span>
+        <span className="flex items-center gap-2.5 text-xs tabular-nums text-slate-500">
+          {segs.filter((s) => s.valor > 0).map((s) => (
+            <span key={s.label} className="inline-flex items-center gap-1" title={s.label}>
+              <span className="h-2 w-2 rounded-full" style={{ background: s.cor }} />{s.valor}
+            </span>
+          ))}
+        </span>
+      </div>
+      <div className="mt-1.5 flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+        {segs.map((s, i) => (s.valor > 0 ? <div key={i} style={{ width: `${(s.valor / (total || 1)) * 100}%`, background: s.cor }} /> : null))}
+      </div>
+    </button>
   );
 }
 
@@ -281,6 +315,47 @@ export default function Relatorios() {
       drill.abrir(`Desempenho — ${nome}`, lista, media != null ? `Média ${media.toFixed(1)} · ${lista.length} colaborador(es)` : `${lista.length} colaborador(es) · sem notas`);
     },
     [baseDesemp, drill],
+  );
+
+  // -- Clima (humor) por setor: setores com mais gente desmotivada no topo --
+  const climaPorSetor = useMemo(() => {
+    const linhas = d.areas
+      .filter((a) => a.id !== "direcao")
+      .map((a) => {
+        const colabs = ativos.filter((c) => c.areaId === a.id);
+        const mot = colabs.filter((c) => c.humor === "Motivado").length;
+        const est = colabs.filter((c) => c.humor === "Estável").length;
+        const desm = colabs.filter((c) => c.humor === "Desmotivado").length;
+        return { id: a.id, nome: a.nome, total: colabs.length, mot, est, desm, pctDesm: colabs.length ? desm / colabs.length : 0 };
+      })
+      .filter((x) => x.total > 0)
+      .sort((a, b) => b.pctDesm - a.pctDesm || b.desm - a.desm); // pior clima primeiro
+    return { linhas, focoId: linhas.find((l) => l.desm > 0)?.id };
+  }, [d.areas, ativos]);
+
+  // -- Risco de saída por setor: setores com mais gente em risco alto no topo --
+  const riscoPorSetor = useMemo(() => {
+    const linhas = d.areas
+      .filter((a) => a.id !== "direcao")
+      .map((a) => {
+        const colabs = ativos.filter((c) => c.areaId === a.id);
+        const baixo = colabs.filter((c) => c.riscoSaida === "Baixo").length;
+        const medio = colabs.filter((c) => c.riscoSaida === "Médio").length;
+        const alto = colabs.filter((c) => c.riscoSaida === "Alto").length;
+        return { id: a.id, nome: a.nome, total: colabs.length, baixo, medio, alto, score: alto * 2 + medio };
+      })
+      .filter((x) => x.total > 0)
+      .sort((a, b) => b.score - a.score || b.alto - a.alto); // mais risco primeiro
+    return { linhas, focoId: linhas.find((l) => l.alto > 0)?.id };
+  }, [d.areas, ativos]);
+
+  const drillSetorPred = useCallback(
+    (areaId: string, nome: string, label: string, pred: (c: Colaborador) => boolean) => {
+      const foco = ativos.filter((c) => c.areaId === areaId && pred(c));
+      const lista = foco.length ? foco : ativos.filter((c) => c.areaId === areaId);
+      drill.abrir(`${nome} — ${label}`, lista, `${lista.length} colaborador(es)`);
+    },
+    [ativos, drill],
   );
 
   // -- Drill-down: mapeia o item clicado de volta para os colaboradores --
@@ -617,6 +692,68 @@ export default function Relatorios() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Clima por setor"
+            subtitle="Motivados, estáveis e desmotivados — setor com mais desmotivados no topo."
+            icon={<HeartPulse className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {climaPorSetor.linhas.length === 0 ? (
+              <EmptyState title="Sem dados de clima" />
+            ) : (
+              <div className="space-y-2">
+                {climaPorSetor.linhas.map((l) => (
+                  <LinhaSetorDistrib
+                    key={l.id}
+                    nome={l.nome}
+                    foco={l.desm > 0 && l.id === climaPorSetor.focoId}
+                    total={l.mot + l.est + l.desm}
+                    segs={[
+                      { label: "Motivados", valor: l.mot, cor: COR_HUMOR.Motivado },
+                      { label: "Estáveis", valor: l.est, cor: COR_HUMOR.Estável },
+                      { label: "Desmotivados", valor: l.desm, cor: COR_HUMOR.Desmotivado },
+                    ]}
+                    onClick={() => drillSetorPred(l.id, l.nome, "desmotivados", (c) => c.humor === "Desmotivado")}
+                  />
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Risco de saída por setor"
+            subtitle="Baixo, médio e alto risco — setor com mais risco alto no topo."
+            icon={<DoorOpen className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {riscoPorSetor.linhas.length === 0 ? (
+              <EmptyState title="Sem dados de risco" />
+            ) : (
+              <div className="space-y-2">
+                {riscoPorSetor.linhas.map((l) => (
+                  <LinhaSetorDistrib
+                    key={l.id}
+                    nome={l.nome}
+                    foco={l.alto > 0 && l.id === riscoPorSetor.focoId}
+                    total={l.baixo + l.medio + l.alto}
+                    segs={[
+                      { label: "Baixo", valor: l.baixo, cor: COR_RISCO.Baixo },
+                      { label: "Médio", valor: l.medio, cor: COR_RISCO.Médio },
+                      { label: "Alto", valor: l.alto, cor: COR_RISCO.Alto },
+                    ]}
+                    onClick={() => drillSetorPred(l.id, l.nome, "risco alto", (c) => c.riscoSaida === "Alto")}
+                  />
+                ))}
               </div>
             )}
           </CardBody>
