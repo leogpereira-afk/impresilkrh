@@ -177,7 +177,11 @@ const RISCO = [
 
 export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | null }) {
   const alvo = focoPerfil ? `arq-${focoPerfil}` : null;
-  const [abertos, setAbertos] = useState<Set<string>>(() => (alvo ? new Set([alvo]) : new Set()));
+  // Por padrão já abre os 4 arquétipos (conteúdo principal do guia). Se veio de
+  // um deep-link (?perfil=…), abre só aquele.
+  const [abertos, setAbertos] = useState<Set<string>>(() =>
+    new Set(alvo ? [alvo] : PERFIS_COMPORTAMENTAIS.map((p) => `arq-${p}`)),
+  );
   const toggle = (id: string) =>
     setAbertos((s) => {
       const n = new Set(s);
@@ -207,7 +211,7 @@ export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | 
         </p>
       </div>
 
-      <Secao titulo="Os 4 perfis comportamentais" descricao="Temperamentos (base DISC). Ninguém é 100% um só — há um predominante." Icon={Brain}>
+      <Secao titulo="Os 4 arquétipos comportamentais" descricao="Perfis / temperamentos (base DISC). Ninguém é 100% um só — há um predominante." Icon={Brain}>
         {PERFIS_COMPORTAMENTAIS.map((p) => {
           const a = ARQUETIPOS[p];
           return (
