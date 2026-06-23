@@ -147,6 +147,40 @@ export default function Relatorios() {
     return { admit, deslig, saldo: admit.length - deslig.length, turnover };
   }, [colaboradores, ativos, filtroMes, filtroAno]);
 
+  // -- Folha real (pagamentos enviados) por competência, somando SÓ os ativos.
+  //    Reflete o que foi alimentado no módulo de Custos e respeita o período. --
+  const { items: pagamentos } = useColecao("pagamentos");
+  const idsAtivos = useMemo(() => new Set(ativos.map((c) => c.id)), [ativos]);
+  const folhaReal = useMemo(() => {
+    const porComp = new Map<string, number>();
+    for (const p of pagamentos) {
+      if (!idsAtivos.has(p.colaboradorId)) continue; // só ativos
+      porComp.set(p.competencia, (porComp.get(p.competencia) ?? 0) + p.valor);
+    }
+    const compDe = (mes: number) => `${filtroAno}-${String(mes).padStart(2, "0")}`;
+    let totalPeriodo = 0;
+    if (filtroMes === 0) {
+      for (const [comp, v] of porComp) if (comp.startsWith(`${filtroAno}-`)) totalPeriodo += v;
+    } else {
+      totalPeriodo = porComp.get(compDe(filtroMes)) ?? 0;
+    }
+    const serie = MESES_PT.map((nome, i) => ({ nome: nome.slice(0, 3), valor: porComp.get(compDe(i + 1)) ?? 0 }));
+    const mesesComDados = serie.filter((s) => s.valor > 0).length;
+    return { porComp, totalPeriodo, serie, temDados: porComp.size > 0, mesesAno: mesesComDados };
+  }, [pagamentos, idsAtivos, filtroMes, filtroAno]);
+
+  const drillFolhaReal = useCallback(
+    (nomeMes: string) => {
+      const i = MESES_PT.findIndex((m) => m.slice(0, 3) === nomeMes);
+      if (i < 0) return;
+      const comp = `${filtroAno}-${String(i + 1).padStart(2, "0")}`;
+      const ids = new Set(pagamentos.filter((p) => p.competencia === comp && idsAtivos.has(p.colaboradorId)).map((p) => p.colaboradorId));
+      const lista = ativos.filter((c) => ids.has(c.id));
+      drill.abrir(`Folha real — ${nomeMes}/${filtroAno}`, lista, `${formatBRL(folhaReal.porComp.get(comp) ?? 0)} · ${lista.length} colaborador(es) pagos`);
+    },
+    [pagamentos, idsAtivos, ativos, filtroAno, folhaReal, drill],
+  );
+
   // -- Indicadores de cabeçalho --
   const indicadores = useMemo(() => {
     const comSalario = ativos.filter(
@@ -595,6 +629,40 @@ export default function Relatorios() {
             hint={`${periodo.deslig.length} deslig. · ${periodo.admit.length} adm. no período`}
           />
         </button>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader
+            title="Folha real (pagamentos)"
+            subtitle={`Soma dos pagamentos enviados, só dos ativos · ${rotuloPeriodo}. Clique numa barra para ver quem foi pago.`}
+            icon={<Wallet className="h-[18px] w-[18px]" />}
+            action={
+              folhaReal.temDados ? (
+                <div className="text-right">
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Folha real · {rotuloPeriodo}</p>
+                  <p className="text-xl font-semibold text-brand-ink">{formatBRL(folhaReal.totalPeriodo)}</p>
+                </div>
+              ) : undefined
+            }
+          />
+          <CardBody>
+            {folhaReal.temDados ? (
+              <BarrasVerticais
+                data={folhaReal.serie}
+                moeda
+                cor="#16334f"
+                onItemClick={drillFolhaReal}
+              />
+            ) : (
+              <EmptyState
+                title="Sem pagamentos enviados"
+                description="Suba a folha no módulo Custos de Colaboradores (espaço “Pagamentos”) para ver a folha real mês a mês."
+                icon={<Wallet className="h-8 w-8" />}
+              />
+            )}
+          </CardBody>
+        </Card>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
