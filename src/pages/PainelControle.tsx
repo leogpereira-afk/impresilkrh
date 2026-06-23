@@ -356,7 +356,7 @@ function AvaliacaoSecao() {
                   const itens = e.target.value.split("\n").filter((l) => l.trim()).map((l) => {
                     const [titulo, responsavel] = l.split("|").map((x) => x.trim());
                     return { titulo, responsavel: responsavel ?? "RH" };
-                  });
+                  }).filter((it) => it.titulo); // descarta linhas sem título (ex.: "| RH")
                   atualizarModelo(m.id, { itens });
                   toast(`Modelo ${m.tipo} atualizado.`);
                 }}

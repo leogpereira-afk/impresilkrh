@@ -604,8 +604,12 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   const marcarEnviada = (a: Agendamento) => {
     const alvo = a.grupoAlvo;
     const destinatarios = !alvo || alvo === TODOS ? contatos : contatos.filter((c) => (c.grupo?.trim() || "") === alvo);
+    if (destinatarios.length === 0) {
+      toast("Nenhum contato neste grupo — envio não realizado.", "erro");
+      return;
+    }
     atualizar(a.id, { status: "Enviada" });
-    if (a.mensagem?.includes("{{nome}}") && destinatarios[0]) {
+    if (/\{\{\s*nome\s*\}\}/i.test(a.mensagem ?? "") && destinatarios[0]) {
       const exemplo = aplicarPlaceholders(a.mensagem, destinatarios[0].nome);
       toast(`Envio simulado para ${destinatarios.length} contato(s). Ex.: "${exemplo.slice(0, 70)}${exemplo.length > 70 ? "…" : ""}"`, "info");
     } else {
@@ -672,7 +676,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
                         <Badge variant="neutral">{a.grupoAlvo || TODOS}</Badge>
                       </td>
                       <td className="td hidden md:table-cell text-slate-500">{n} contato(s)</td>
-                      <td className="td text-slate-500" title={formatDateLong(a.quando)}>{formatDate(a.quando)}</td>
+                      <td className="td whitespace-nowrap text-slate-500" title={formatDateLong(a.quando)}>{formatDate(a.quando)} · {new Date(a.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
                       <td className="td">
                         <Badge variant={varianteStatus[a.status] ?? "neutral"}>{a.status}</Badge>
                       </td>

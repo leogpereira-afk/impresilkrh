@@ -11,11 +11,11 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { formatDate } from "@/lib/format";
+import { formatDate, parseData } from "@/lib/format";
 import { CATEGORIAS_SST, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
-const dias = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / 86400000) : NaN);
+const dias = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
 
 type Situacao = "Vencido" | "A vencer" | "Válido";
 

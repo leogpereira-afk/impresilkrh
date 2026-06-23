@@ -53,6 +53,9 @@ export function ColaboradorForm({
       refMin: cargo?.faixas[0] ?? form.refMin ?? null,
       refMax: cargo?.faixas[4] ?? form.refMax ?? null,
       enquadramento,
+      // Reativar (status ativo) limpa a data de desligamento para o colaborador
+      // voltar a contar no quadro e o botão "Desligar" reaparecer.
+      dataDesligamento: form.statusId === "ativo" ? null : (form.dataDesligamento ?? null),
     };
 
     if (editar) {
@@ -151,7 +154,18 @@ export function ColaboradorForm({
         </div>
 
         <Campo label="Endereço (rua)"><Input value={form.enderecoRua ?? ""} onChange={(e) => set({ enderecoRua: e.target.value })} /></Campo>
+        <Campo label="Número"><Input value={form.enderecoNumero ?? ""} onChange={(e) => set({ enderecoNumero: e.target.value })} placeholder="nº" /></Campo>
         <Campo label="Bairro"><Input value={form.enderecoBairro ?? ""} onChange={(e) => set({ enderecoBairro: e.target.value })} /></Campo>
+        <Campo label="CEP"><Input value={form.enderecoCep ?? ""} onChange={(e) => set({ enderecoCep: e.target.value })} /></Campo>
+        <Campo label="Cidade"><Input value={form.cidade ?? ""} onChange={(e) => set({ cidade: e.target.value })} /></Campo>
+        <Campo label="Cônjuge"><Input value={form.conjugeNome ?? ""} onChange={(e) => set({ conjugeNome: e.target.value })} /></Campo>
+        <Campo label="Matrícula eSocial"><Input value={form.matriculaEsocial ?? ""} onChange={(e) => set({ matriculaEsocial: e.target.value })} /></Campo>
+        <Campo label="Vale-transporte">
+          <label className="flex h-[42px] items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={form.valeTransporte ?? false} onChange={(e) => set({ valeTransporte: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />
+            Optante pelo vale-transporte
+          </label>
+        </Campo>
       </div>
 
       <div className="mt-4 border-t border-slate-100 pt-4">

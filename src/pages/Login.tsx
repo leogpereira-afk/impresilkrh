@@ -26,9 +26,24 @@ export default function Login() {
 
   const submeter = (e: React.FormEvent) => {
     e.preventDefault();
-    const alvo =
-      pessoas.find((c) => normalizar(c.nome) === normalizar(nome)) ??
-      pessoas.find((c) => normalizar(c.nome).startsWith(normalizar(nome)) && nome.trim().length >= 3);
+    const n = normalizar(nome);
+    const exatos = pessoas.filter((c) => normalizar(c.nome) === n);
+    let alvo = exatos.length === 1 ? exatos[0] : undefined;
+    if (exatos.length > 1) {
+      // Homônimos: prefere quem tem cadastro de usuário; senão pede o nome completo.
+      alvo = exatos.find((c) => usuarios.some((u) => u.ativo && u.colaboradorId === c.id));
+      if (!alvo) {
+        setErro("Há mais de um colaborador com esse nome. Use o nome completo.");
+        return;
+      }
+    } else if (exatos.length === 0 && n.length >= 3) {
+      const prefixo = pessoas.filter((c) => normalizar(c.nome).startsWith(n));
+      if (prefixo.length === 1) alvo = prefixo[0];
+      else if (prefixo.length > 1) {
+        setErro("Nome incompleto encontrou mais de uma pessoa. Digite o nome completo.");
+        return;
+      }
+    }
     if (!alvo) {
       setErro("Nome não encontrado. Digite seu nome completo como está cadastrado.");
       return;

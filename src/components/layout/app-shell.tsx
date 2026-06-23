@@ -34,7 +34,7 @@ const NAV: ItemNav[] = [
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },

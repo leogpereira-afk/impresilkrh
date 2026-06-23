@@ -8,7 +8,14 @@ import { MESES_PT } from "@/lib/format";
 export function classeMap(cls: ClassificacaoConta[]): Map<string, ClasseCusto> {
   return new Map(cls.map((c) => [c.codigo, c.classe]));
 }
-export const classeDe = (codigo: string, m: Map<string, ClasseCusto>): ClasseCusto => m.get(codigo) ?? "ignorar";
+// Prefixos de contas societárias confidenciais (só o gestor master vê/edita).
+const PREFIXOS_CONFIDENCIAIS = ["2.14.1", "2.14.2"];
+export const ehContaConfidencial = (codigo: string): boolean =>
+  PREFIXOS_CONFIDENCIAIS.some((p) => codigo === p || codigo.startsWith(p + "."));
+// Confidencial por prefixo SEMPRE prevalece (mesmo sem classificação salva), para
+// que um upload novo nunca exponha 2.14.* no rateio nem no editor de não-master.
+export const classeDe = (codigo: string, m: Map<string, ClasseCusto>): ClasseCusto =>
+  ehContaConfidencial(codigo) ? "confidencial" : (m.get(codigo) ?? "ignorar");
 
 export function competenciasPlano(plano: ContaPlano[]): string[] {
   return [...new Set(plano.map((p) => p.competencia))].sort();
@@ -155,6 +162,7 @@ export function parsePagamentos(linhas: Linha[], colaboradores: { id: string; no
   };
   const registros: import("@/data/types").Pagamento[] = [];
   const naoCasados = new Set<string>();
+  const lote = Date.now().toString(36); // evita colisão de id entre uploads
   let seq = 0;
   for (const l of linhas) {
     const a = l[0] == null ? "" : String(l[0]);
@@ -168,7 +176,7 @@ export function parsePagamentos(linhas: Linha[], colaboradores: { id: string; no
     const tipo = tipoDePlano(String(l[10] ?? ""), String(l[6] ?? "")); // K, G
     let desc = String(l[6] ?? "").replace(/\s+/g, " ").trim();
     if (/^pagamento colabora/i.test(desc) || desc.toLowerCase() === tipo.toLowerCase()) desc = "";
-    registros.push({ id: `pg_up_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo, valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: desc || undefined });
+    registros.push({ id: `pg_up_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo, valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: desc || undefined });
   }
   return { registros, naoCasados: [...naoCasados] };
 }

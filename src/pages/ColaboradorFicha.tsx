@@ -27,7 +27,7 @@ import { BarrasVerticais } from "@/components/charts/charts";
 import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
-const diasAte = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / 86400000) : NaN);
+const diasAte = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
 
 // Idade em anos a partir de uma data de nascimento (ISO). Retorna null se ausente/inválida.
 function idadeAnos(nascimento?: string | null): number | null {
@@ -80,7 +80,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
   const aniversario = !!nascDt && nascDt.getMonth() === mesAtual;
   const diaAniv = nascDt ? nascDt.getDate() : null;
   const aniversarioEmpresa = !!admDt && admDt.getMonth() === mesAtual;
-  const anosCasa = c.dataAdmissao ? HOJE.getFullYear() - new Date(c.dataAdmissao).getFullYear() : 0;
+  const anosCasa = admDt ? HOJE.getFullYear() - admDt.getFullYear() : 0;
 
   const onFoto = async (f: File) => {
     if (!f.type.startsWith("image/")) {
@@ -164,7 +164,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
               {c.dataInicioCargo && <> · {tempoDeCasa(c.dataInicioCargo)} no cargo atual</>}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">
             {verGestao && c.motivacao != null && (
               <div className="flex flex-col items-center rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Motivação</span>
@@ -215,7 +215,7 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
             <Field label="Nascimento" value={formatDate(c.dataNascimento)} />
             <Field label="E-mail" value={c.email} />
             <Field label="Telefone" value={c.telefone} />
-            <Field label="Endereço" value={c.enderecoRua ? `${c.enderecoRua}, ${c.enderecoNumero ?? ""}` : "—"} className="col-span-2" />
+            <Field label="Endereço" value={c.enderecoRua ? (c.enderecoNumero ? `${c.enderecoRua}, ${c.enderecoNumero}` : c.enderecoRua) : "—"} className="col-span-2" />
             <Field label="Bairro" value={c.enderecoBairro} />
             <Field label="Cidade" value={c.cidade} />
             <Field label="CEP" value={c.enderecoCep} />
@@ -431,19 +431,21 @@ function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sen
         <Card className="lg:col-span-2">
           <CardHeader title={`O que recebeu em ${competenciaLabelLongo(compSel)}`} subtitle={parcial ? "Competência em andamento (uma das parcelas ainda não foi paga)" : "Composição do pagamento da competência"} icon={<Wallet className="h-[18px] w-[18px]" />} />
           <CardBody>
-            <table className="w-full">
-              <thead className="border-b border-slate-100"><tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">% do mês</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {porTipo.map((t) => (
-                  <tr key={t.tipo}>
-                    <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
-                    <td className="td text-right tabular-nums">{formatBRL(t.valor)}</td>
-                    <td className="td text-right text-slate-500">{totalMes ? `${Math.round((t.valor / totalMes) * 100)}%` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total recebido no mês</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalMes)}</td><td className="td" /></tr></tfoot>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-slate-100"><tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">% do mês</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {porTipo.map((t) => (
+                    <tr key={t.tipo}>
+                      <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
+                      <td className="td text-right tabular-nums">{formatBRL(t.valor)}</td>
+                      <td className="td text-right text-slate-500">{totalMes ? `${Math.round((t.valor / totalMes) * 100)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total recebido no mês</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalMes)}</td><td className="td" /></tr></tfoot>
+              </table>
+            </div>
           </CardBody>
         </Card>
         <div className="space-y-4">
@@ -456,19 +458,21 @@ function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sen
       <Card>
         <CardHeader title="Lançamentos da competência" subtitle="Cada pagamento com a data efetiva (vencimento)" icon={<History className="h-[18px] w-[18px]" />} />
         <CardBody>
-          <table className="w-full text-sm">
-            <thead className="border-b border-slate-100"><tr><th className="th">Data</th><th className="th">Tipo</th><th className="th">Descrição</th><th className="th text-right">Valor</th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {doMes.map((p) => (
-                <tr key={p.id}>
-                  <td className="td whitespace-nowrap text-slate-600">{formatDate(p.dataPagamento)}</td>
-                  <td className="td"><span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: corDoTipo(p.tipo) }} />{p.tipo}</td>
-                  <td className="td text-slate-500">{p.descricao ?? "—"}</td>
-                  <td className="td text-right tabular-nums">{formatBRL(p.valor)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-slate-100"><tr><th className="th">Data</th><th className="th">Tipo</th><th className="th">Descrição</th><th className="th text-right">Valor</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {doMes.map((p) => (
+                  <tr key={p.id}>
+                    <td className="td whitespace-nowrap text-slate-600">{formatDate(p.dataPagamento)}</td>
+                    <td className="td"><span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: corDoTipo(p.tipo) }} />{p.tipo}</td>
+                    <td className="td text-slate-500">{p.descricao ?? "—"}</td>
+                    <td className="td text-right tabular-nums">{formatBRL(p.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardBody>
       </Card>
 
@@ -493,14 +497,21 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   const [novo, setNovo] = useState(false);
 
   // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior).
-  const adicionar = async (meta: Partial<import("@/data/types").Documento>, dataUrl: string | null) => {
+  // Retorna true se o anexo foi gravado (ou não havia anexo); false se o arquivo não coube.
+  const adicionar = async (meta: Partial<import("@/data/types").Documento>, dataUrl: string | null): Promise<boolean> => {
     const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
-    if (dataUrl) {
-      const ok = await putBlob(`doc:${rec.id}`, dataUrl);
-      if (ok) atualizar(rec.id, { arquivoEmBlob: true });
-      else if (dataUrl.length < 1_200_000) atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback só p/ arquivos pequenos
-      else toast("Não foi possível guardar o arquivo (armazenamento indisponível). O registro foi salvo sem anexo.", "erro");
+    if (!dataUrl) return true;
+    const ok = await putBlob(`doc:${rec.id}`, dataUrl);
+    if (ok) {
+      atualizar(rec.id, { arquivoEmBlob: true });
+      return true;
     }
+    if (dataUrl.length < 1_200_000) {
+      atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback só p/ arquivos pequenos
+      return true;
+    }
+    toast("Não foi possível guardar o arquivo (armazenamento indisponível). O registro foi salvo sem anexo.", "erro");
+    return false;
   };
 
   const abrir = async (doc: import("@/data/types").Documento) => {
@@ -563,7 +574,7 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   );
 }
 
-function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aberto: boolean; onFechar: () => void; colaboradorId: string; onCriar: (x: Record<string, unknown>, dataUrl: string | null) => void }) {
+function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aberto: boolean; onFechar: () => void; colaboradorId: string; onCriar: (x: Record<string, unknown>, dataUrl: string | null) => Promise<boolean> }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [nome, setNome] = useState("");
@@ -571,35 +582,45 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
   const [emissao, setEmissao] = useState("");
   const [vencimento, setVencimento] = useState("");
   const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string; tamanho: number } | null>(null);
+  const [lendo, setLendo] = useState(false);
 
   const onFile = (f: File) => {
     if (f.size > 10 * 1024 * 1024) {
       toast("Arquivo acima de 10 MB. Escolha um arquivo menor.", "erro");
       return;
     }
+    setLendo(true);
     const reader = new FileReader();
-    reader.onload = () => setArquivo({ nome: f.name, dataUrl: String(reader.result), tamanho: f.size });
+    reader.onload = () => { setArquivo({ nome: f.name, dataUrl: String(reader.result), tamanho: f.size }); setLendo(false); };
+    reader.onerror = () => { setLendo(false); toast("Não foi possível ler o arquivo. Tente novamente.", "erro"); };
     reader.readAsDataURL(f);
   };
 
-  const salvar = () => {
+  const [salvando, setSalvando] = useState(false);
+  const salvar = async () => {
     if (!nome.trim()) return toast("Informe o nome do documento.", "erro");
-    onCriar(
-      {
-        colaboradorId, categoria, nome,
-        arquivoNome: arquivo?.nome ?? null, tamanhoBytes: arquivo?.tamanho ?? null,
-        dataEmissao: emissao || null, dataVencimento: vencimento || null, enviadoPor: "RH", criadoEm: new Date().toISOString(),
-      },
-      arquivo?.dataUrl ?? null,
-    );
-    toast("Documento anexado.");
-    onFechar();
+    if (lendo) return toast("Aguarde o anexo terminar de carregar.", "info");
+    setSalvando(true);
+    try {
+      const ok = await onCriar(
+        {
+          colaboradorId, categoria, nome,
+          arquivoNome: arquivo?.nome ?? null, tamanhoBytes: arquivo?.tamanho ?? null,
+          dataEmissao: emissao || null, dataVencimento: vencimento || null, enviadoPor: "RH", criadoEm: new Date().toISOString(),
+        },
+        arquivo?.dataUrl ?? null,
+      );
+      if (ok) toast("Documento anexado."); // se falhou, o erro já foi sinalizado
+      onFechar();
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
     <Modal aberto={aberto} onFechar={onFechar} titulo="Anexar documento"
       descricao="O arquivo é guardado no navegador (até 10 MB) e abre em nova aba."
-      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Anexar</button></>}>
+      rodape={<><button className="btn-outline" onClick={onFechar} disabled={salvando}>Cancelar</button><button className="btn-primary" onClick={salvar} disabled={salvando || lendo}>{salvando ? "Anexando…" : "Anexar"}</button></>}>
       <div className="space-y-3">
         <Campo label="Nome do documento" obrigatorio><Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Contrato de Trabalho (CLT)" /></Campo>
         <Campo label="Categoria">
@@ -613,7 +634,7 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
         </div>
         <div>
           <input ref={fileRef} type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) onFile(e.target.files[0]); e.target.value = ""; }} />
-          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> {arquivo ? arquivo.nome : "Selecionar arquivo (≤ 10 MB)"}</button>
+          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()} disabled={lendo}><Upload className="h-4 w-4" /> {lendo ? "Lendo arquivo…" : arquivo ? arquivo.nome : "Selecionar arquivo (≤ 10 MB)"}</button>
         </div>
       </div>
     </Modal>

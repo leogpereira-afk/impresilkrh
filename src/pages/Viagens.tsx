@@ -72,7 +72,13 @@ export default function Viagens() {
     () =>
       viagens
         .filter((v) => idsEscopo.has(v.colaboradorId))
-        .sort((a, b) => new Date(b.dataInicio).getTime() - new Date(a.dataInicio).getTime()),
+        // Datas ausentes/inválidas (viagens importadas) vão para o fim, sem embaralhar.
+        .sort((a, b) => {
+          const ta = new Date(a.dataInicio).getTime(), tb = new Date(b.dataInicio).getTime();
+          if (isNaN(tb)) return isNaN(ta) ? 0 : -1;
+          if (isNaN(ta)) return 1;
+          return tb - ta;
+        }),
     [viagens, idsEscopo],
   );
 

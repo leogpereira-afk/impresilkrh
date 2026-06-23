@@ -239,14 +239,23 @@ function Repositorio() {
     arq.arquivoEmBlob ? await getBlob(`doc:${arq.id}`) : (arq.arquivoDataUrl ?? null);
 
   // Adiciona ao repositório: metadados no localStorage, conteúdo no IndexedDB.
-  const adicionar = async (meta: Partial<ArquivoRepositorio>, dataUrl: string | null) => {
+  // Retorna true se gravou (ou não havia anexo); false se o arquivo não coube.
+  const adicionar = async (meta: Partial<ArquivoRepositorio>, dataUrl: string | null): Promise<boolean> => {
     const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
-    if (dataUrl) {
-      const ok = await putBlob(`doc:${rec.id}`, dataUrl);
-      if (ok) atualizar(rec.id, { arquivoEmBlob: true });
-      else if (dataUrl.length < 1_200_000) atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback só p/ arquivos pequenos
-      else toast("Não foi possível guardar o arquivo (armazenamento indisponível). O registro foi salvo sem anexo.", "erro");
+    if (!dataUrl) return true;
+    const ok = await putBlob(`doc:${rec.id}`, dataUrl);
+    if (ok) {
+      atualizar(rec.id, { arquivoEmBlob: true });
+      return true;
     }
+    if (dataUrl.length < 1_200_000) {
+      atualizar(rec.id, { arquivoDataUrl: dataUrl }); // fallback só p/ arquivos pequenos
+      return true;
+    }
+    // Arquivo grande e sem armazenamento: remove o registro órfão (sem anexo) e avisa.
+    remover(rec.id);
+    toast("Não foi possível guardar o arquivo (armazenamento indisponível). Tente um arquivo menor.", "erro");
+    return false;
   };
 
   const abrir = async (arq: ArquivoRepositorio) => {
@@ -260,6 +269,8 @@ function Repositorio() {
       w.document.write(
         `<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`,
       );
+    } else {
+      toast("Permita pop-ups para abrir o arquivo em nova aba.", "info");
     }
   };
 
@@ -476,7 +487,7 @@ function NovoArquivoModal({
 }: {
   aberto: boolean;
   onFechar: () => void;
-  onCriar: (item: Partial<ArquivoRepositorio>, dataUrl: string | null) => void;
+  onCriar: (item: Partial<ArquivoRepositorio>, dataUrl: string | null) => Promise<boolean>;
 }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -486,33 +497,48 @@ function NovoArquivoModal({
   const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string; tamanho: number } | null>(
     null,
   );
+  const [lendo, setLendo] = useState(false);
+  const [salvando, setSalvando] = useState(false);
 
   const onFile = (f: File) => {
     if (f.size > 10 * 1024 * 1024) {
       toast("Arquivo acima de 10 MB. Escolha um arquivo menor.", "erro");
       return;
     }
+    setLendo(true);
     const reader = new FileReader();
-    reader.onload = () =>
+    reader.onload = () => {
       setArquivo({ nome: f.name, dataUrl: String(reader.result), tamanho: f.size });
+      setLendo(false);
+    };
+    reader.onerror = () => {
+      setLendo(false);
+      toast("Não foi possível ler o arquivo. Tente novamente.", "erro");
+    };
     reader.readAsDataURL(f);
   };
 
-  const salvar = () => {
+  const salvar = async () => {
     if (!nome.trim()) return toast("Informe o nome do documento.", "erro");
-    onCriar(
-      {
-        nome: nome.trim(),
-        categoria,
-        descricao: descricao.trim() || undefined,
-        arquivoNome: arquivo?.nome ?? null,
-        tamanhoBytes: arquivo?.tamanho ?? null,
-        criadoEm: new Date().toISOString(),
-      },
-      arquivo?.dataUrl ?? null,
-    );
-    toast("Documento adicionado ao repositório.");
-    onFechar();
+    if (lendo) return toast("Aguarde o anexo terminar de carregar.", "info");
+    setSalvando(true);
+    try {
+      const ok = await onCriar(
+        {
+          nome: nome.trim(),
+          categoria,
+          descricao: descricao.trim() || undefined,
+          arquivoNome: arquivo?.nome ?? null,
+          tamanhoBytes: arquivo?.tamanho ?? null,
+          criadoEm: new Date().toISOString(),
+        },
+        arquivo?.dataUrl ?? null,
+      );
+      if (ok) toast("Documento adicionado ao repositório."); // erro já sinalizado se falhou
+      onFechar();
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
@@ -523,11 +549,11 @@ function NovoArquivoModal({
       descricao="O arquivo é guardado no navegador (até 10 MB) e abre em nova aba."
       rodape={
         <>
-          <button className="btn-outline" onClick={onFechar}>
+          <button className="btn-outline" onClick={onFechar} disabled={salvando}>
             Cancelar
           </button>
-          <button className="btn-primary" onClick={salvar}>
-            Adicionar
+          <button className="btn-primary" onClick={salvar} disabled={salvando || lendo}>
+            {salvando ? "Adicionando…" : "Adicionar"}
           </button>
         </>
       }
@@ -563,9 +589,9 @@ function NovoArquivoModal({
             className="hidden"
             onChange={(e) => { if (e.target.files?.[0]) onFile(e.target.files[0]); e.target.value = ""; }}
           />
-          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()}>
+          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()} disabled={lendo}>
             <Upload className="h-4 w-4" />{" "}
-            {arquivo ? arquivo.nome : "Selecionar arquivo (≤ 10 MB)"}
+            {lendo ? "Lendo arquivo…" : arquivo ? arquivo.nome : "Selecionar arquivo (≤ 10 MB)"}
           </button>
         </div>
       </div>

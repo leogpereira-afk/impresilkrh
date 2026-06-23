@@ -22,8 +22,8 @@ import { somaPorTipo, serieMensal, corDoTipo, totalDe } from "@/lib/folha";
 import { ARQUETIPOS, COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
-const dias = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / 86400000) : NaN);
-const mesesAtras = (d?: string | null) => (d ? (HOJE.getTime() - new Date(d).getTime()) / (86400000 * 30.44) : Infinity);
+const dias = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
+const mesesAtras = (d?: string | null) => { const dt = parseData(d); return dt ? (HOJE.getTime() - dt.getTime()) / (86400000 * 30.44) : Infinity; };
 
 // dd/MM (dois dígitos) a partir de uma data ISO. Ex.: 02/06.
 const ddmm = (iso?: string | null) => {
@@ -64,16 +64,18 @@ export default function Painel() {
   // Anos disponíveis para o seletor (admissões/desligamentos do escopo + ano corrente).
   const anosSet = new Set<number>([HOJE.getFullYear()]);
   escopoBruto.forEach((c) => {
-    if (c.dataAdmissao) anosSet.add(new Date(c.dataAdmissao).getFullYear());
-    if (c.dataDesligamento) anosSet.add(new Date(c.dataDesligamento).getFullYear());
+    const adm = parseData(c.dataAdmissao);
+    if (adm) anosSet.add(adm.getFullYear());
+    const des = parseData(c.dataDesligamento);
+    if (des) anosSet.add(des.getFullYear());
   });
   const anosDisponiveis = [...anosSet].filter((a) => !isNaN(a)).sort((a, b) => b - a);
 
-  // Período selecionado: testa se uma data ISO cai no mês/ano do filtro (ou no ano inteiro).
+  // Período selecionado: testa se uma data cai no mês/ano do filtro (ou no ano inteiro).
+  // parseData trata "YYYY-MM-DD" como data local (evita admissão dia 1 cair no mês anterior).
   const noPeriodo = (iso?: string | null) => {
-    if (!iso) return false;
-    const dt = new Date(iso);
-    if (isNaN(dt.getTime())) return false;
+    const dt = parseData(iso);
+    if (!dt) return false;
     if (dt.getFullYear() !== filtroAno) return false;
     return filtroMes === 0 ? true : dt.getMonth() + 1 === filtroMes;
   };
@@ -84,6 +86,9 @@ export default function Painel() {
   const inativos = escopoBruto.filter((c) => c.statusId === "inativo");
 
   const ids = new Set(escopo.map((c) => c.id));
+  // Para o histórico mês a mês, inclui TODOS (até ex-colaboradores), senão os
+  // pagamentos passados de quem saiu somem e os meses antigos ficam subestimados.
+  const idsBruto = new Set(escopoBruto.map((c) => c.id));
   const ativos = escopo.filter((c) => contaHeadcount(c, d.statusById));
 
   // ---------- Métricas de PERÍODO (respeitam o filtro de mês/ano) ----------
@@ -155,6 +160,10 @@ export default function Painel() {
   // Ciclo "em andamento": competência sem uma das pontas (adiantamento OU saldo de salário).
   const tiposNoPeriodo = new Set(pagsPeriodo.map((p) => p.tipo));
   const cicloIncompleto = !!compFiltro && pagsPeriodo.length > 0 && (!tiposNoPeriodo.has("Salário") || !tiposNoPeriodo.has("Adiantamento"));
+  // Mês anterior parcial (só uma ponta do ciclo) distorce a variação % — então
+  // só mostramos a tendência quando ambas as competências estão fechadas.
+  const tiposAnterior = new Set(pagsEscopo.filter((p) => p.competencia === compAnterior).map((p) => p.tipo));
+  const anteriorIncompleto = !tiposAnterior.has("Salário") || !tiposAnterior.has("Adiantamento");
 
   // Composição da folha por TIPO (salário, adiantamento, horas extras, benefícios…).
   const folhaPorTipo = somaPorTipo(pagsPeriodo);
@@ -194,7 +203,7 @@ export default function Painel() {
     .sort((a, b) => b.valor - a.valor);
 
   // ---------- Folha comparativa mês a mês (valores reais) ----------
-  const folhaComparativa = serieMensal(pagsEscopo).map((s) => ({ nome: s.nome, valor: s.valor }));
+  const folhaComparativa = serieMensal(pagamentos.filter((p) => idsBruto.has(p.colaboradorId))).map((s) => ({ nome: s.nome, valor: s.valor }));
 
   // ---------- Treinamento (v3) ----------
   // Considera apenas treinamentos de colaboradores ATIVOS (no escopo de headcount).
@@ -251,10 +260,11 @@ export default function Painel() {
     });
 
   // Aniversário de empresa (tempo de casa) — admitidos no mês de referência
-  const anosDeCasa = (d?: string | null) => (d ? HOJE.getFullYear() - new Date(d).getFullYear() : 0);
+  const anosDeCasa = (d?: string | null) => { const dt = parseData(d); return dt ? HOJE.getFullYear() - dt.getFullYear() : 0; };
+  const diaDoMes = (d?: string | null) => parseData(d)?.getDate() ?? 0;
   const aniversariosEmpresa = ativos
     .filter((c) => c.dataAdmissao && mesDe(c.dataAdmissao) === mesAniversario)
-    .sort((a, b) => new Date(a.dataAdmissao!).getDate() - new Date(b.dataAdmissao!).getDate());
+    .sort((a, b) => diaDoMes(a.dataAdmissao) - diaDoMes(b.dataAdmissao));
 
   // Mapeia o rótulo clicado de volta para os colaboradores ativos correspondentes
   const colabsPorArea = (nome: string) => {
@@ -340,7 +350,7 @@ export default function Painel() {
               icon={<Wallet className="h-5 w-5" />}
               accent="gold"
               hint={`${totalPessoasFolha} colaborador(es)${cicloIncompleto ? " · ciclo em andamento" : ""}`}
-              trend={temAnterior ? { value: `${folhaSubiu ? "+" : "−"}${formatBRL(Math.abs(folhaVariacao))} (${formatPercent(Math.abs(folhaVariacaoPct))}) vs. mês anterior`, positivo: folhaSubiu } : undefined}
+              trend={temAnterior && !anteriorIncompleto && !cicloIncompleto ? { value: `${folhaSubiu ? "+" : "−"}${formatBRL(Math.abs(folhaVariacao))} (${formatPercent(Math.abs(folhaVariacaoPct))}) vs. mês anterior`, positivo: folhaSubiu } : undefined}
             />
             <Card className="lg:col-span-2">
               <CardHeader title="Composição da folha" subtitle="Tudo que foi pago: salário, adiantamento, extras e benefícios" icon={<Wallet className="h-[18px] w-[18px]" />} />

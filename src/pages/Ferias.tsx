@@ -14,13 +14,13 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate } from "@/lib/format";
+import { formatDate, parseData } from "@/lib/format";
 import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Ferias as TFerias, Colaborador } from "@/data/types";
 
 const MS_DIA = 86400000;
-const diasAte = (d?: string | null) => (d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / MS_DIA) : NaN);
+const diasAte = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / MS_DIA) : NaN; };
 const addDiasISO = (base: string, dias: number) => {
   const d = new Date(base);
   d.setDate(d.getDate() + dias);

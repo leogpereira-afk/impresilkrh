@@ -25,7 +25,14 @@ import {
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
-import { formatBRL, formatPercent, mesesDeCasa, MESES_PT } from "@/lib/format";
+import { formatBRL, formatPercent, mesesDeCasa, parseData, MESES_PT } from "@/lib/format";
+
+// Datas "YYYY-MM-DD" devem ser lidas como locais (parseData) para não escorregar
+// de mês por fuso. Retorna true se a data existe e é >= ref.
+const aposOuIgual = (s: string | null | undefined, ref: Date) => {
+  const d = parseData(s);
+  return !!d && d.getTime() >= ref.getTime();
+};
 import { COR_POSICAO_FAIXA } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
@@ -62,10 +69,10 @@ export default function Relatorios() {
     limite12m.setMonth(limite12m.getMonth() - 12);
 
     const desligamentos12m = colaboradores.filter(
-      (c) => c.dataDesligamento && new Date(c.dataDesligamento) >= limite12m,
+      (c) => aposOuIgual(c.dataDesligamento, limite12m),
     ).length;
     const admissoes12m = colaboradores.filter(
-      (c) => c.dataAdmissao && new Date(c.dataAdmissao) >= limite12m,
+      (c) => aposOuIgual(c.dataAdmissao, limite12m),
     ).length;
 
     // Headcount médio aproximado: (atual + (atual + desligados)) / 2
@@ -134,14 +141,14 @@ export default function Relatorios() {
     }
     const idx = new Map(meses.map((m, i) => [`${m.ano}-${m.mes}`, i]));
     for (const c of colaboradores) {
-      if (c.dataAdmissao) {
-        const dt = new Date(c.dataAdmissao);
-        const i = idx.get(`${dt.getFullYear()}-${dt.getMonth()}`);
+      const dtA = parseData(c.dataAdmissao);
+      if (dtA) {
+        const i = idx.get(`${dtA.getFullYear()}-${dtA.getMonth()}`);
         if (i !== undefined) meses[i].a += 1;
       }
-      if (c.dataDesligamento) {
-        const dt = new Date(c.dataDesligamento);
-        const i = idx.get(`${dt.getFullYear()}-${dt.getMonth()}`);
+      const dtD = parseData(c.dataDesligamento);
+      if (dtD) {
+        const i = idx.get(`${dtD.getFullYear()}-${dtD.getMonth()}`);
         if (i !== undefined) meses[i].b += 1;
       }
     }
@@ -214,9 +221,9 @@ export default function Relatorios() {
     (nomeMes: string) => {
       const ref = movimentacao.porNome.get(nomeMes);
       if (!ref) return;
-      const noMes = (dt?: Date | string | null) => {
-        if (!dt) return false;
-        const data = new Date(dt);
+      const noMes = (dt?: string | null) => {
+        const data = parseData(dt); // "YYYY-MM-DD" como data local (evita off-by-one no dia 1)
+        if (!data) return false;
         return data.getFullYear() === ref.ano && data.getMonth() === ref.mes;
       };
       const lista = colaboradores.filter(
@@ -348,10 +355,7 @@ export default function Relatorios() {
             limite12m.setMonth(limite12m.getMonth() - 12);
             drill.abrir(
               "Desligamentos — 12 meses",
-              colaboradores.filter(
-                (c) =>
-                  c.dataDesligamento && new Date(c.dataDesligamento) >= limite12m,
-              ),
+              colaboradores.filter((c) => aposOuIgual(c.dataDesligamento, limite12m)),
               `${indicadores.desligamentos12m} desligamento(s) nos últimos 12 meses`,
             );
           }}

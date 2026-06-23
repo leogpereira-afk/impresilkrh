@@ -11,13 +11,15 @@ import { useColecao } from "@/lib/store";
 import { getBlob } from "@/lib/blobstore";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { formatBRL, formatCPF, formatDate, tempoDeCasa } from "@/lib/format";
+import { formatBRL, formatCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
 import { COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
 
-const diasAte = (d?: string | null) =>
-  d ? Math.round((new Date(d).getTime() - HOJE.getTime()) / 86400000) : NaN;
+const diasAte = (d?: string | null) => {
+  const dt = parseData(d);
+  return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN;
+};
 
 function enqVar(e: string): "danger" | "warning" | "success" | "info" {
   return e === "Crítico" ? "danger" : e === "Abaixo" ? "warning" : e === "Acima" ? "info" : "success";
@@ -100,7 +102,7 @@ function AbaDados({ c }: { c: Colaborador }) {
               className="col-span-2"
             />
             <Field label="Bairro" value={c.enderecoBairro ?? "—"} />
-            <Field label="Filhos" value={c.qtdFilhos ?? 0} />
+            <Field label="Filhos" value={c.filhos?.length ?? c.qtdFilhos ?? 0} />
             <Field label="Cônjuge" value={c.conjugeNome ?? "—"} className="col-span-2" />
           </dl>
           <p className="mt-4 text-xs text-slate-400">

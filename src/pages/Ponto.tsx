@@ -317,14 +317,17 @@ function NovaAdvertenciaModal({
   const [motivo, setMotivo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string } | null>(null);
+  const [lendo, setLendo] = useState(false);
 
   const onFile = (f: File) => {
     if (f.size > 2 * 1024 * 1024) {
       toast("Arquivo acima de 2 MB. Escolha um arquivo menor.", "erro");
       return;
     }
+    setLendo(true);
     const reader = new FileReader();
-    reader.onload = () => setArquivo({ nome: f.name, dataUrl: String(reader.result) });
+    reader.onload = () => { setArquivo({ nome: f.name, dataUrl: String(reader.result) }); setLendo(false); };
+    reader.onerror = () => { setLendo(false); toast("Não foi possível ler o arquivo. Tente novamente.", "erro"); };
     reader.readAsDataURL(f);
   };
 
@@ -332,6 +335,7 @@ function NovaAdvertenciaModal({
     if (!colaboradorId) return toast("Selecione o colaborador.", "erro");
     if (!data) return toast("Informe a data da advertência.", "erro");
     if (!motivo.trim()) return toast("Informe o motivo da advertência.", "erro");
+    if (lendo) return toast("Aguarde o anexo terminar de carregar.", "info");
     onCriar({
       colaboradorId,
       tipo,
@@ -355,7 +359,7 @@ function NovaAdvertenciaModal({
       rodape={
         <>
           <button className="btn-outline" onClick={onFechar}>Cancelar</button>
-          <button className="btn-primary" onClick={salvar}>
+          <button className="btn-primary" onClick={salvar} disabled={lendo}>
             <Plus className="h-4 w-4" /> Registrar
           </button>
         </>
@@ -393,8 +397,8 @@ function NovaAdvertenciaModal({
             className="hidden"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
           />
-          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()}>
-            <Upload className="h-4 w-4" /> {arquivo ? arquivo.nome : "Anexar documento (≤ 2 MB)"}
+          <button className="btn-outline w-full" onClick={() => fileRef.current?.click()} disabled={lendo}>
+            <Upload className="h-4 w-4" /> {lendo ? "Lendo arquivo…" : arquivo ? arquivo.nome : "Anexar documento (≤ 2 MB)"}
           </button>
         </div>
       </div>

@@ -38,6 +38,7 @@ import {
   CLASSE_LABEL,
   parsePlanoContas,
   parsePagamentos,
+  ehContaConfidencial,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
 import type {
@@ -200,15 +201,19 @@ export default function Custos() {
   );
 
   // ---------- Editor de classificação ----------
+  // Contas societárias confidenciais (2.14.*) NUNCA aparecem no editor de
+  // classificação — independentemente de já estarem classificadas — para que
+  // ninguém (nem gestor) consiga jogá-las no rateio público.
   const folhasEditor = useMemo(
     () =>
       folhasDoMes(planoContas, compAtiva)
-        .filter((p: ContaPlano) => mapaClasse.get(p.codigo) !== "confidencial")
+        .filter((p: ContaPlano) => !ehContaConfidencial(p.codigo))
         .sort((a: ContaPlano, b: ContaPlano) => b.valor - a.valor),
-    [planoContas, compAtiva, mapaClasse],
+    [planoContas, compAtiva],
   );
 
   const definirClasse = (conta: ContaPlano, classe: ClasseCusto) => {
+    if (ehContaConfidencial(conta.codigo)) return; // não reclassificar confidenciais
     const existente = classificacaoCustos.find((c: ClassificacaoConta) => c.codigo === conta.codigo);
     if (existente) classifColecao.atualizar(existente.id, { classe, nome: conta.nome });
     else classifColecao.criar({ codigo: conta.codigo, nome: conta.nome, classe });
@@ -368,7 +373,7 @@ export default function Custos() {
               />
               <CardBody>
                 {/* Controles */}
-                <div className="mb-5 flex flex-wrap items-center gap-2">
+                <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   <SegToggle
                     opcoes={[
                       { v: true, label: "Salário + Adiantamento" },
@@ -385,7 +390,7 @@ export default function Custos() {
                     valor={comEncargos}
                     onChange={setComEncargos}
                   />
-                  <button type="button" onClick={() => { setLancTipo("Comissão"); setLancValor(""); setLancDesc(""); setAddLanc(true); }} className="btn-outline ml-auto h-9 py-0 text-sm" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
+                  <button type="button" onClick={() => { setLancTipo("Comissão"); setLancValor(""); setLancDesc(""); setAddLanc(true); }} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
                     <Plus className="h-4 w-4" /> Lançamento
                   </button>
                 </div>
@@ -399,7 +404,7 @@ export default function Custos() {
                 ) : (
                   <div className="grid gap-6 lg:grid-cols-2">
                     {/* Tabela por tipo */}
-                    <div>
+                    <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="border-b border-slate-100 bg-slate-50/50">
                           <tr>
@@ -608,6 +613,7 @@ export default function Custos() {
                         <EmptyState title="Nenhuma conta de rateio" description="Classifique contas como “Rateio para todos” no editor." />
                       </div>
                     ) : (
+                      <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="border-b border-slate-100 bg-slate-50/50">
                           <tr>
@@ -638,6 +644,7 @@ export default function Custos() {
                           </tr>
                         </tbody>
                       </table>
+                      </div>
                     )}
                   </CardBody>
                 </Card>

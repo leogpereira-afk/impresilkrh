@@ -28,7 +28,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { BarrasColoridas } from "@/components/charts/charts";
-import { useColecao, obter } from "@/lib/store";
+import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
@@ -167,6 +167,37 @@ export default function Integracao() {
       concluidaEm: valor ? HOJE.toISOString() : null,
     });
   };
+
+  // Semeia a documentação de RH padrão para todo onboarding que ainda não a tem.
+  // Feito no nível da página (não dentro do card) para não depender de qual aba
+  // está ativa nem de o card estar montado — o seed deixa de ser efeito de render.
+  // Idempotente: só cria quando o colaborador tem checklist de Admissão e ainda
+  // não possui nenhuma tarefa "Doc: ".
+  useEffect(() => {
+    const porColab = new Map<string, { temDoc: boolean; maxOrdem: number }>();
+    for (const t of tarefas) {
+      if (t.tipo !== "Admissão" || !idsEscopo.has(t.colaboradorId)) continue;
+      const g = porColab.get(t.colaboradorId) ?? { temDoc: false, maxOrdem: -1 };
+      if (t.titulo.startsWith(PREFIXO_DOC)) g.temDoc = true;
+      else g.maxOrdem = Math.max(g.maxOrdem, t.ordem);
+      porColab.set(t.colaboradorId, g);
+    }
+    for (const [colaboradorId, g] of porColab) {
+      if (g.temDoc) continue; // já semeado
+      const baseOrdem = g.maxOrdem + 1;
+      DOCS_RH_PADRAO.forEach((nome, i) => {
+        criar({
+          colaboradorId,
+          tipo: "Admissão",
+          titulo: `${PREFIXO_DOC}${nome}`,
+          responsavel: "RH",
+          concluida: false,
+          concluidaEm: null,
+          ordem: baseOrdem + i,
+        });
+      });
+    }
+  }, [tarefas, idsEscopo, criar]);
 
   return (
     <div>
@@ -613,28 +644,8 @@ function CardChecklist({
   const etapasTotal = jornada.length;
   const docsAbertos = docs.filter((t) => !t.concluida).length;
 
-  // Semeia os documentos de RH padrão na 1ª vez (apenas onboarding).
-  // Idempotente: lê o estado VIVO do store (não as props, que podem estar
-  // defasadas em remontagens/reordenações) e só cria o que ainda falta.
-  useEffect(() => {
-    if (tipo !== "Admissão") return;
-    const atuais = obter("tarefas").filter(
-      (t) => t.colaboradorId === colaboradorId && t.titulo.startsWith(PREFIXO_DOC),
-    );
-    if (atuais.length > 0) return; // já semeado
-    const baseOrdem = jornada.reduce((max, t) => Math.max(max, t.ordem), -1) + 1;
-    DOCS_RH_PADRAO.forEach((nome, i) => {
-      criar({
-        colaboradorId,
-        tipo: "Admissão",
-        titulo: `${PREFIXO_DOC}${nome}`,
-        responsavel: "RH",
-        concluida: false,
-        concluidaEm: null,
-        ordem: baseOrdem + i,
-      });
-    });
-  }, [tipo, colaboradorId, jornada, criar]);
+  // A documentação de RH padrão é semeada no nível da página (Integracao),
+  // independentemente de qual aba está ativa — ver o efeito de seed lá.
 
   // Candidatos a padrinho: colaboradores ativos, exceto o próprio.
   const candidatosPadrinho = useMemo(

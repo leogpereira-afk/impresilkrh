@@ -304,7 +304,7 @@ export default function Treinamento() {
                             min={0}
                             max={100}
                             step={5}
-                            value={t.progresso}
+                            value={t.progresso ?? 0}
                             onChange={(e) => {
                               const progresso = Number(e.target.value);
                               const patch: Partial<Treinamento> = { progresso };
@@ -314,12 +314,12 @@ export default function Treinamento() {
                             }}
                             className="h-1.5 w-24 cursor-pointer p-0"
                           />
-                          <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-600">{t.progresso}%</span>
+                          <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-600">{t.progresso ?? 0}%</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <Progress value={t.progresso} cor={COR_PROGRESSO(t.progresso)} className="w-24" />
-                          <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-600">{t.progresso}%</span>
+                          <Progress value={t.progresso ?? 0} cor={COR_PROGRESSO(t.progresso ?? 0)} className="w-24" />
+                          <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-600">{t.progresso ?? 0}%</span>
                         </div>
                       )}
                     </td>
