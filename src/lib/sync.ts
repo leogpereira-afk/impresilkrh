@@ -244,13 +244,23 @@ export function definirEndpoint(endpoint: string) { gravarCfg({ endpoint: endpoi
 export async function sincronizarAgora(): Promise<void> { await trySync(); await pull(); }
 
 // --------------------------- gatilhos ---------------------------------------
-// Hook chamado pelo store em cada mutação do usuário (só enfileira se ligado).
+// Tempo real, na prática:
+//  • ENVIO é imediato — cada alteração do usuário chama enfileirar()→trySync() na
+//    hora (hook abaixo), então o que você edita sobe assim que é salvo.
+//  • RECEBIMENTO é "na hora de olhar" — puxa ao abrir, ao voltar a ficar online,
+//    e principalmente ao FOCAR a janela / a aba ficar visível. Assim, quando você
+//    olha a tela, ela já está atualizada, sem ficar consultando o servidor à toa.
+//  • Um poll leve roda só ENQUANTO a aba está visível (economiza créditos do
+//    Netlify; nada de chamadas com a aba em segundo plano).
 registrarMutacao((colecao, tipo, id) => { if (syncHabilitado()) enfileirar(colecao, tipo, id); });
 if (temWindow) {
-  // Ao abrir o app: já puxa o que mudou em outros computadores e envia pendências.
-  if (syncHabilitado() && navigator.onLine) { void trySync(); void pull(); }
-  window.addEventListener("online", () => { recalcStatus(); void trySync(); void pull(); });
+  const ativo = () => syncHabilitado() && navigator.onLine;
+  const ciclo = () => { if (ativo()) { void trySync(); void pull(); } };
+  ciclo(); // ao abrir
+  window.addEventListener("online", () => { recalcStatus(); ciclo(); });
   window.addEventListener("offline", () => recalcStatus());
-  // Tentativa periódica leve: envia pendências e puxa updates de outras máquinas.
-  setInterval(() => { if (syncHabilitado() && navigator.onLine) { void trySync(); void pull(); } }, 60_000);
+  window.addEventListener("focus", () => { if (ativo()) void pull(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ciclo(); });
+  // Poll leve só com a aba visível (≈ a cada 20s) — sensação de tempo real sem gastar créditos à toa.
+  setInterval(() => { if (ativo() && document.visibilityState === "visible") ciclo(); }, 20_000);
 }
