@@ -4,8 +4,10 @@ import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
+  Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useTema } from "@/lib/tema";
 import { Logo } from "@/components/brand/logo";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { PERFIL_LABEL } from "@/lib/constants";
@@ -66,6 +68,7 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const sessao = useSessao();
+  const { tema, alternar: alternarTema } = useTema();
   const { colabById } = useDominio();
   const { items: usuarios } = useColecao("usuarios");
   const toast = useToast();
@@ -155,7 +158,7 @@ export function AppShell() {
   );
 
   return (
-    <div className="flex min-h-screen bg-[#f5f5f7]">
+    <div className="flex min-h-screen bg-[var(--bg)]">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200/70 bg-white/80 backdrop-blur-xl lg:flex">
         <div className="flex h-20 items-center justify-center border-b border-slate-100 px-5">
           <Logo variant="color" className="h-12" />
@@ -195,6 +198,14 @@ export function AppShell() {
                 <p className="text-sm font-medium text-slate-800">{user.nome}</p>
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
               </div>
+              <button
+                onClick={alternarTema}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
+                title={tema === "escuro" ? "Mudar para tema claro" : "Mudar para tema escuro"}
+                aria-label={tema === "escuro" ? "Tema claro" : "Tema escuro"}
+              >
+                {tema === "escuro" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+              </button>
               {sessao.perfil === "ADMIN_RH" && <SyncButton />}
               <Avatar nome={user.nome} size="sm" />
               <button

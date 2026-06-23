@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
+import { aplicarTema, temaInicial } from "@/lib/tema";
+// Aplica o tema salvo (ou o do sistema) antes de renderizar, evitando "flash".
+aplicarTema(temaInicial());
 // Sincronização offline-first: registra o gancho de mutações do store e os
 // ouvintes de online/offline. É opt-in — sem token configurado, nada é enviado.
 import "@/lib/sync";

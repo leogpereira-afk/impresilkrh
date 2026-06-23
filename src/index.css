@@ -169,3 +169,111 @@ textarea {
 .org-node {
   display: inline-block;
 }
+
+/* ============================================================
+   TEMA ESCURO
+   O app usa utilitárias fixas (bg-white, text-slate-*, etc.).
+   Em vez de editar dezenas de telas, remapeamos essas classes
+   sob `html.dark`. A maior especificidade (.dark .x) vence a
+   utilitária (.x) sem !important.
+   ============================================================ */
+html.dark {
+  --bg: #0b1220; /* fundo da página */
+  --surface: #151e2e; /* cartões/superfícies */
+  color-scheme: dark;
+}
+html.dark body {
+  background-color: var(--bg);
+  color: #e8eef6;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #33405a;
+  background-clip: content-box;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #44557a;
+  background-clip: content-box;
+}
+
+/* ---- Superfícies ---- */
+.dark .bg-white { background-color: var(--surface); }
+.dark .bg-white\/80 { background-color: rgba(21, 30, 46, 0.8); }
+.dark .bg-white\/70 { background-color: rgba(21, 30, 46, 0.65); }
+.dark .bg-white\/60 { background-color: rgba(21, 30, 46, 0.6); }
+.dark .bg-slate-50,
+.dark .bg-slate-50\/40,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.dark .bg-slate-50\/70 { background-color: rgba(255, 255, 255, 0.035); }
+.dark .bg-slate-100,
+.dark .bg-slate-100\/70,
+.dark .bg-slate-100\/80 { background-color: rgba(255, 255, 255, 0.06); }
+.dark .bg-slate-200 { background-color: rgba(255, 255, 255, 0.1); }
+.dark .bg-slate-300 { background-color: rgba(255, 255, 255, 0.15); }
+
+/* ---- Texto ---- */
+.dark .text-slate-900 { color: #f3f6fb; }
+.dark .text-slate-800 { color: #e8eef6; }
+.dark .text-slate-700 { color: #d6dfeb; }
+.dark .text-slate-600 { color: #bcc7d6; }
+.dark .text-slate-500 { color: #98a4b6; }
+.dark .text-slate-400 { color: #7b8799; }
+.dark .text-slate-300 { color: #5b6675; }
+.dark .text-brand { color: #8fb4d6; }
+.dark .text-brand-ink { color: #bcd5ea; }
+
+/* ---- Bordas ---- */
+.dark .border-slate-50 { border-color: rgba(255, 255, 255, 0.04); }
+.dark .border-slate-100 { border-color: rgba(255, 255, 255, 0.08); }
+.dark .border-slate-200,
+.dark .border-slate-200\/60,
+.dark .border-slate-200\/70,
+.dark .border-slate-200\/80 { border-color: rgba(255, 255, 255, 0.11); }
+.dark .border-slate-300,
+.dark .border-slate-300\/80 { border-color: rgba(255, 255, 255, 0.15); }
+
+/* ---- Classes semânticas (cores "assadas" via @apply) ---- */
+.dark .card { background-color: var(--surface); border-color: rgba(255, 255, 255, 0.08); }
+.dark .glass { background-color: rgba(21, 30, 46, 0.72); }
+.dark .input { background-color: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.13); color: #e8eef6; }
+.dark .input::placeholder { color: #7b8799; }
+.dark .btn-outline { background-color: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.13); color: #d6dfeb; }
+.dark .btn-outline:hover { background-color: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.2); }
+.dark .btn-ghost { color: #bcc7d6; }
+.dark .btn-ghost:hover { background-color: rgba(255, 255, 255, 0.08); }
+.dark .th { color: #98a4b6; }
+.dark .td { color: #d6dfeb; }
+.dark .chip { background-color: rgba(255, 255, 255, 0.07); color: #bcc7d6; }
+.dark .label { color: #98a4b6; }
+
+/* ---- Hovers comuns nas telas ---- */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-slate-100\/80:hover { background-color: rgba(255, 255, 255, 0.08); }
+.dark .hover\:text-slate-900:hover { color: #f3f6fb; }
+.dark .hover\:text-slate-700:hover { color: #d6dfeb; }
+.dark .hover\:text-slate-600:hover { color: #bcc7d6; }
+
+/* ---- Acentos (badges, ícones de StatCard) ---- */
+.dark .bg-brand\/10 { background-color: rgba(143, 180, 214, 0.16); }
+.dark .bg-green-50, .dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.16); }
+.dark .text-green-600, .dark .text-green-700, .dark .text-green-800 { color: #86efac; }
+.dark .ring-green-200 { --tw-ring-color: rgba(34, 197, 94, 0.32); }
+.dark .bg-amber-50, .dark .bg-amber-100, .dark .bg-gold-50, .dark .bg-gold-100 { background-color: rgba(217, 178, 90, 0.16); }
+.dark .text-amber-600, .dark .text-amber-700, .dark .text-amber-800 { color: #fcd34d; }
+.dark .text-gold-600, .dark .text-gold-700 { color: #e2c67e; }
+.dark .ring-amber-200 { --tw-ring-color: rgba(245, 158, 11, 0.32); }
+.dark .ring-gold-200 { --tw-ring-color: rgba(217, 178, 90, 0.32); }
+.dark .bg-red-50, .dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.16); }
+.dark .text-red-600, .dark .text-red-700, .dark .text-red-800 { color: #fca5a5; }
+.dark .ring-red-200 { --tw-ring-color: rgba(239, 68, 68, 0.32); }
+.dark .hover\:bg-red-50:hover { background-color: rgba(239, 68, 68, 0.16); }
+.dark .hover\:text-red-600:hover { color: #fca5a5; }
+.dark .hover\:border-red-200:hover { border-color: rgba(239, 68, 68, 0.4); }
+.dark .bg-blue-50, .dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.16); }
+.dark .text-blue-600, .dark .text-blue-700, .dark .text-blue-800 { color: #93c5fd; }
+.dark .ring-blue-200 { --tw-ring-color: rgba(59, 130, 246, 0.32); }
+
+/* ---- Conectores do organograma ---- */
+.dark .org-tree li::before,
+.dark .org-tree li::after { background: rgba(255, 255, 255, 0.14); }
