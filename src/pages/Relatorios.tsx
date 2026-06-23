@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Users,
   Wallet,
@@ -111,6 +111,42 @@ export default function Relatorios() {
   const ativos = d.ativos;
   const colaboradores = d.colaboradores;
 
+  // -- Filtro de período (mês/ano), igual ao Painel. Controla a movimentação
+  //    (admissões/desligamentos) e o turnover. mês 0 = "Ano inteiro".
+  //    Padrão = ano inteiro do ano corrente (visão executiva anual). --
+  const [filtroMes, setFiltroMes] = useState<number>(0);
+  const [filtroAno, setFiltroAno] = useState<number>(HOJE.getFullYear());
+  const anosDisponiveis = useMemo(() => {
+    const s = new Set<number>([HOJE.getFullYear()]);
+    for (const c of colaboradores) {
+      const a = parseData(c.dataAdmissao); if (a) s.add(a.getFullYear());
+      const dd = parseData(c.dataDesligamento); if (dd) s.add(dd.getFullYear());
+    }
+    return [...s].sort((a, b) => b - a);
+  }, [colaboradores]);
+  const noPeriodo = (iso?: string | null) => {
+    const dt = parseData(iso);
+    if (!dt || dt.getFullYear() !== filtroAno) return false;
+    return filtroMes === 0 ? true : dt.getMonth() + 1 === filtroMes;
+  };
+  const rotuloPeriodo = filtroMes === 0 ? `${filtroAno}` : `${MESES_PT[filtroMes - 1]}/${filtroAno}`;
+
+  // Movimentação e turnover do período selecionado.
+  const periodo = useMemo(() => {
+    const dentro = (iso?: string | null) => {
+      const dt = parseData(iso);
+      if (!dt || dt.getFullYear() !== filtroAno) return false;
+      return filtroMes === 0 ? true : dt.getMonth() + 1 === filtroMes;
+    };
+    const admit = colaboradores.filter((c) => dentro(c.dataAdmissao));
+    const deslig = colaboradores.filter((c) => dentro(c.dataDesligamento));
+    // Headcount médio aproximado no período (atual ± movimentação do período).
+    const inicio = ativos.length + deslig.length - admit.length;
+    const hcMedio = (ativos.length + Math.max(0, inicio)) / 2;
+    const turnover = hcMedio > 0 ? deslig.length / hcMedio : 0;
+    return { admit, deslig, saldo: admit.length - deslig.length, turnover };
+  }, [colaboradores, ativos, filtroMes, filtroAno]);
+
   // -- Indicadores de cabeçalho --
   const indicadores = useMemo(() => {
     const comSalario = ativos.filter(
@@ -174,7 +210,8 @@ export default function Relatorios() {
     [porArea],
   );
 
-  // -- Movimentação 12 meses (admissões vs desligamentos) --
+  // -- Movimentação (admissões vs desligamentos), ancorada no período --
+  // "Ano inteiro" => Jan–Dez do ano; mês específico => 12 meses terminando nele.
   const movimentacao = useMemo(() => {
     const meses: {
       ano: number;
@@ -183,16 +220,15 @@ export default function Relatorios() {
       a: number;
       b: number;
     }[] = [];
-    for (let i = 11; i >= 0; i--) {
-      const ref = new Date(HOJE);
-      ref.setMonth(ref.getMonth() - i);
-      meses.push({
-        ano: ref.getFullYear(),
-        mes: ref.getMonth(),
-        nome: MESES_PT[ref.getMonth()].slice(0, 3),
-        a: 0,
-        b: 0,
-      });
+    if (filtroMes === 0) {
+      for (let m = 0; m < 12; m++) {
+        meses.push({ ano: filtroAno, mes: m, nome: MESES_PT[m].slice(0, 3), a: 0, b: 0 });
+      }
+    } else {
+      for (let i = 11; i >= 0; i--) {
+        const ref = new Date(filtroAno, filtroMes - 1 - i, 1);
+        meses.push({ ano: ref.getFullYear(), mes: ref.getMonth(), nome: MESES_PT[ref.getMonth()].slice(0, 3), a: 0, b: 0 });
+      }
     }
     const idx = new Map(meses.map((m, i) => [`${m.ano}-${m.mes}`, i]));
     for (const c of colaboradores) {
@@ -217,7 +253,7 @@ export default function Relatorios() {
       chart: meses.map((m) => ({ nome: m.nome, a: m.a, b: m.b })),
       porNome,
     };
-  }, [colaboradores]);
+  }, [colaboradores, filtroMes, filtroAno]);
 
   // -- Enquadramento salarial --
   const enquadramento = useMemo(() => {
@@ -451,6 +487,35 @@ export default function Relatorios() {
         description="Visão executiva da Impresilk — folha, movimentação e enquadramento. Clique nas barras, fatias e cartões para ver os nomes."
       />
 
+      {/* Filtro de período — controla movimentação e turnover */}
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Período</span>
+        <select
+          value={filtroMes}
+          onChange={(e) => setFiltroMes(Number(e.target.value))}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          aria-label="Mês"
+        >
+          <option value={0}>Ano inteiro</option>
+          {MESES_PT.map((nome, i) => (
+            <option key={i} value={i + 1}>{nome}</option>
+          ))}
+        </select>
+        <select
+          value={filtroAno}
+          onChange={(e) => setFiltroAno(Number(e.target.value))}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          aria-label="Ano"
+        >
+          {anosDisponiveis.map((ano) => (
+            <option key={ano} value={ano}>{ano}</option>
+          ))}
+        </select>
+        <span className="hidden text-xs text-slate-400 sm:inline">
+          Movimentação e turnover: {rotuloPeriodo} · folha e quadro mostram a posição atual
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <button
           type="button"
@@ -514,22 +579,20 @@ export default function Relatorios() {
         <button
           type="button"
           className="text-left w-full"
-          onClick={() => {
-            const limite12m = new Date(HOJE);
-            limite12m.setMonth(limite12m.getMonth() - 12);
+          onClick={() =>
             drill.abrir(
-              "Desligamentos — 12 meses",
-              colaboradores.filter((c) => aposOuIgual(c.dataDesligamento, limite12m)),
-              `${indicadores.desligamentos12m} desligamento(s) nos últimos 12 meses`,
-            );
-          }}
+              `Desligamentos · ${rotuloPeriodo}`,
+              periodo.deslig,
+              `${periodo.deslig.length} desligamento(s) · ${periodo.admit.length} admissão(ões) no período`,
+            )
+          }
         >
           <StatCard
-            label="Turnover 12m"
-            value={formatPercent(indicadores.turnover)}
+            label={`Turnover · ${rotuloPeriodo}`}
+            value={formatPercent(periodo.turnover)}
             icon={<TrendingDown className="h-5 w-5" />}
             accent="amber"
-            hint={`${indicadores.desligamentos12m} desligamento(s) em 12m`}
+            hint={`${periodo.deslig.length} deslig. · ${periodo.admit.length} adm. no período`}
           />
         </button>
       </div>
@@ -763,11 +826,25 @@ export default function Relatorios() {
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
-            title="Movimentação — 12 meses"
-            subtitle="Admissões e desligamentos por mês"
+            title="Movimentação"
+            subtitle={filtroMes === 0 ? `Admissões e desligamentos · ${filtroAno}` : `Admissões e desligamentos · 12 meses até ${rotuloPeriodo}`}
             icon={<CalendarRange className="h-[18px] w-[18px]" />}
           />
           <CardBody>
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+                <p className="text-lg font-semibold text-green-700">{periodo.admit.length}</p>
+                <p className="text-xs text-slate-500">Admissões · {rotuloPeriodo}</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+                <p className="text-lg font-semibold text-red-600">{periodo.deslig.length}</p>
+                <p className="text-xs text-slate-500">Desligamentos · {rotuloPeriodo}</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+                <p className={`text-lg font-semibold ${periodo.saldo >= 0 ? "text-green-700" : "text-red-600"}`}>{periodo.saldo >= 0 ? "+" : ""}{periodo.saldo}</p>
+                <p className="text-xs text-slate-500">Saldo no período</p>
+              </div>
+            </div>
             <BarrasDuplas
               data={movimentacao.chart}
               serieA={{ nome: "Admissões", cor: "#16a34a" }}
