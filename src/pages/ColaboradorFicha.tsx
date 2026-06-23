@@ -3,8 +3,9 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
   IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
+  Eye, Ear, Hand,
 } from "lucide-react";
-import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, SecaoColapsavel } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { HumorIndicador, PerfilComportamentalBadge, MotivacaoRosto, PerfilComportamentalGuia } from "@/components/ui/indicadores";
 import { DESC_PERFIL_COMPORTAMENTAL } from "@/lib/constants";
@@ -37,6 +38,18 @@ function idadeAnos(nascimento?: string | null): number | null {
   const m = HOJE.getMonth() - n.getMonth();
   if (m < 0 || (m === 0 && HOJE.getDate() < n.getDate())) anos -= 1;
   return anos < 0 ? 0 : anos;
+}
+
+// Selo do estilo de aprendizagem com ícone (Visual/Auditivo/Cinestésico).
+const ICONE_ESTILO: Record<string, typeof Eye> = { Visual: Eye, Auditivo: Ear, Cinestésico: Hand, Cinestesico: Hand };
+function EstiloAprendizagemBadge({ estilo }: { estilo?: string | null }) {
+  if (!estilo) return <span className="text-xs text-slate-400">—</span>;
+  const Icon = ICONE_ESTILO[estilo] ?? Brain;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700" title={`Estilo de aprendizagem: ${estilo}`}>
+      <Icon className="h-4 w-4 text-brand" /> {estilo}
+    </span>
+  );
 }
 
 export default function ColaboradorFicha() {
@@ -171,6 +184,18 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
                 <MotivacaoRosto score={c.motivacao} anterior={c.motivacaoAnterior} tamanho="lg" />
               </div>
             )}
+            {verGestao && c.perfilComportamental && (
+              <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Arquétipo</span>
+                <PerfilComportamentalBadge perfil={c.perfilComportamental} />
+              </div>
+            )}
+            {c.estiloAprendizagem && (
+              <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Aprendizagem</span>
+                <EstiloAprendizagemBadge estilo={c.estiloAprendizagem} />
+              </div>
+            )}
             <DotBadge label={`Enquadramento: ${enq}`} cor={corEnq} />
             {podeEditar && (
               <>
@@ -207,9 +232,7 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
   const faixa = d.faixaColab(c);
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader title="Dados pessoais" icon={<IdCard className="h-[18px] w-[18px]" />} />
-        <CardBody>
+      <SecaoColapsavel title="Dados pessoais" icon={<IdCard className="h-[18px] w-[18px]" />}>
           <dl className="grid grid-cols-2 gap-4">
             <Field label="CPF" value={sens ? formatCPF(c.cpf) : maskCPF(c.cpf)} />
             <Field label="Nascimento" value={formatDate(c.dataNascimento)} />
@@ -250,12 +273,9 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
               <Lock className="h-3.5 w-3.5" /> Dados sensíveis ocultados (LGPD).
             </p>
           )}
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
 
-      <Card>
-        <CardHeader title="Dados profissionais" icon={<Briefcase className="h-[18px] w-[18px]" />} />
-        <CardBody>
+      <SecaoColapsavel title="Dados profissionais" icon={<Briefcase className="h-[18px] w-[18px]" />}>
           <dl className="grid grid-cols-2 gap-4">
             <Field label="Cargo" value={d.nomeCargo(c)} />
             <Field label="Área" value={d.nomeArea(c.areaId)} />
@@ -297,12 +317,9 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
               </div>
             </div>
           )}
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
 
-      <Card className="lg:col-span-2">
-        <CardHeader title="Clima & estilo" subtitle="Engajamento, estilo de aprendizagem e enquadramento na empresa" icon={<Smile className="h-[18px] w-[18px]" />} />
-        <CardBody>
+      <SecaoColapsavel className="lg:col-span-2" title="Clima & estilo" subtitle="Engajamento, estilo de aprendizagem e enquadramento na empresa" icon={<Smile className="h-[18px] w-[18px]" />}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Humor / engajamento</p>
@@ -312,8 +329,7 @@ function AbaDados({ c, sens, cargo }: { c: import("@/data/types").Colaborador; s
             <Field label="Empresa" value={c.empresa} />
             <Field label="Sexo" value={c.sexo} />
           </div>
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
     </div>
   );
 }
@@ -329,14 +345,13 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
     : "Estável em relação à medição anterior.";
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader
-          title="Perfil comportamental"
-          subtitle="Mapeamento de temperamento e guia prático de gestão (uso interno)"
-          icon={<Brain className="h-[18px] w-[18px]" />}
-          action={c.perfilComportamental ? <PerfilComportamentalBadge perfil={c.perfilComportamental} /> : undefined}
-        />
-        <CardBody>
+      <SecaoColapsavel
+        className="lg:col-span-2"
+        title="Perfil comportamental"
+        subtitle="Mapeamento de temperamento e guia prático de gestão (uso interno)"
+        icon={<Brain className="h-[18px] w-[18px]" />}
+        action={c.perfilComportamental ? <PerfilComportamentalBadge perfil={c.perfilComportamental} /> : undefined}
+      >
           <PerfilComportamentalGuia perfil={c.perfilComportamental} />
           {c.perfilComportamental && (
             <div className="mt-4 border-t border-slate-100 pt-3">
@@ -348,12 +363,9 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
               </Link>
             </div>
           )}
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
 
-      <Card>
-        <CardHeader title="Motivação" subtitle="Indicador de engajamento (0 a 100)" icon={<Activity className="h-[18px] w-[18px]" />} />
-        <CardBody>
+      <SecaoColapsavel title="Motivação" subtitle="Indicador de engajamento (0 a 100)" icon={<Activity className="h-[18px] w-[18px]" />}>
           {tem ? (
             <div className="space-y-4">
               <div className="flex flex-col items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-5">
@@ -375,8 +387,7 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
           ) : (
             <EmptyState title="Motivação não informada" description="Ainda não há medição de motivação para este colaborador." icon={<Activity className="h-8 w-8" />} />
           )}
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
 
       {c.perfilComportamental && (
         <Card className="lg:col-span-3">
@@ -508,25 +519,23 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
       </div>
 
       {/* Resumo anual — quanto ganhou no ano, com todos os tipos de ganho */}
-      <Card>
-        <CardHeader
-          title={`Ganhos em ${anoSel}`}
-          subtitle="Tudo que recebeu no ano — salário, adiantamento, horas extras, comissão, incentivos e benefícios."
-          icon={<Wallet className="h-[18px] w-[18px]" />}
-          action={
-            <div className="flex flex-wrap items-center gap-2">
-              {anos.length > 1 && (
-                <Select value={anoSel} onChange={(e) => setAno(e.target.value)} className="w-24">
-                  {anos.map((a) => <option key={a} value={a}>{a}</option>)}
-                </Select>
-              )}
-              <button className="btn-outline" onClick={gerarRelatorio} title="Abre um demonstrativo limpo para imprimir ou salvar em PDF">
-                <FileText className="h-4 w-4" /> Gerar relatório (PDF)
-              </button>
-            </div>
-          }
-        />
-        <CardBody>
+      <SecaoColapsavel
+        title={`Ganhos em ${anoSel}`}
+        subtitle="Tudo que recebeu no ano — salário, adiantamento, horas extras, comissão, incentivos e benefícios."
+        icon={<Wallet className="h-[18px] w-[18px]" />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {anos.length > 1 && (
+              <Select value={anoSel} onChange={(e) => setAno(e.target.value)} className="w-24">
+                {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+              </Select>
+            )}
+            <button className="btn-outline" onClick={gerarRelatorio} title="Abre um demonstrativo limpo para imprimir ou salvar em PDF">
+              <FileText className="h-4 w-4" /> Gerar relatório (PDF)
+            </button>
+          </div>
+        }
+      >
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2 overflow-x-auto">
               <table className="w-full text-sm">
@@ -555,13 +564,10 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
               </div>
             </div>
           </div>
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader title={`O que recebeu em ${competenciaLabelLongo(compSel)}`} subtitle={parcial ? "Competência em andamento (uma das parcelas ainda não foi paga)" : "Composição do pagamento da competência"} icon={<Wallet className="h-[18px] w-[18px]" />} />
-          <CardBody>
+        <SecaoColapsavel className="lg:col-span-2" title={`O que recebeu em ${competenciaLabelLongo(compSel)}`} subtitle={parcial ? "Competência em andamento (uma das parcelas ainda não foi paga)" : "Composição do pagamento da competência"} icon={<Wallet className="h-[18px] w-[18px]" />}>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="border-b border-slate-100"><tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">% do mês</th></tr></thead>
@@ -577,8 +583,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
                 <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total recebido no mês</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalMes)}</td><td className="td" /></tr></tfoot>
               </table>
             </div>
-          </CardBody>
-        </Card>
+        </SecaoColapsavel>
         <div className="space-y-4">
           <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total em {competenciaLabelLongo(compSel)}</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(totalMes)}</p></CardBody></Card>
           <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Média mensal recebida</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p><p className="mt-1 text-xs text-slate-400">{comps.length} competência(s)</p></CardBody></Card>
@@ -586,9 +591,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
         </div>
       </div>
 
-      <Card>
-        <CardHeader title="Lançamentos da competência" subtitle="Cada pagamento com a data efetiva (vencimento)" icon={<History className="h-[18px] w-[18px]" />} />
-        <CardBody>
+      <SecaoColapsavel title="Lançamentos da competência" subtitle="Cada pagamento com a data efetiva (vencimento)" icon={<History className="h-[18px] w-[18px]" />}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-slate-100"><tr><th className="th">Data</th><th className="th">Tipo</th><th className="th">Descrição</th><th className="th text-right">Valor</th></tr></thead>
@@ -604,15 +607,11 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
               </tbody>
             </table>
           </div>
-        </CardBody>
-      </Card>
+        </SecaoColapsavel>
 
-      <Card>
-        <CardHeader title="Histórico mês a mês" subtitle="Total recebido por competência (para acompanhar a evolução e dar feedback)" icon={<Wallet className="h-[18px] w-[18px]" />} />
-        <CardBody>
+      <SecaoColapsavel title="Histórico mês a mês" subtitle="Total recebido por competência (para acompanhar a evolução e dar feedback)" icon={<Wallet className="h-[18px] w-[18px]" />}>
           <BarrasVerticais data={serie.map((s) => ({ nome: s.nome, valor: s.valor }))} moeda cor="#16334f" altura={220} />
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
     </div>
   );
 }
@@ -660,13 +659,12 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   };
 
   return (
-    <Card>
-      <CardHeader
+    <>
+      <SecaoColapsavel
         title="Documentos do colaborador"
         subtitle="Contratos, ASO, exames e certificados. Clique para abrir em nova aba."
         action={podeEditar ? <button className="btn-outline" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Anexar</button> : undefined}
-      />
-      <CardBody>
+      >
         {docs.length === 0 ? (
           <EmptyState title="Nenhum documento" description="Anexe contratos, ASO e exames." icon={<FileText className="h-8 w-8" />} />
         ) : (
@@ -699,9 +697,9 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
             })}
           </div>
         )}
-      </CardBody>
+      </SecaoColapsavel>
       {novo && <NovoDocumentoModal aberto={novo} onFechar={() => setNovo(false)} colaboradorId={colaboradorId} onCriar={adicionar} />}
-    </Card>
+    </>
   );
 }
 
@@ -781,9 +779,7 @@ function AbaFerias({ colaboradorId, podeEditar }: { colaboradorId: string; podeE
     toast("Período de férias adicionado.");
   };
   return (
-    <Card>
-      <CardHeader title="Férias" subtitle="Períodos aquisitivos, saldo e status" action={podeEditar ? <button className="btn-outline" onClick={adicionar}><Plus className="h-4 w-4" /> Novo período</button> : undefined} />
-      <CardBody>
+    <SecaoColapsavel title="Férias" subtitle="Períodos aquisitivos, saldo e status" action={podeEditar ? <button className="btn-outline" onClick={adicionar}><Plus className="h-4 w-4" /> Novo período</button> : undefined}>
         {lista.length === 0 ? <EmptyState title="Sem registros de férias" /> : (
           <div className="space-y-3">
             {lista.map((f) => (
@@ -797,8 +793,7 @@ function AbaFerias({ colaboradorId, podeEditar }: { colaboradorId: string; podeE
             ))}
           </div>
         )}
-      </CardBody>
-    </Card>
+      </SecaoColapsavel>
   );
 }
 
@@ -815,9 +810,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader title="Avaliação de desempenho" subtitle="Ciclo 2026.1" />
-        <CardBody>
+      <SecaoColapsavel title="Avaliação de desempenho" subtitle="Ciclo 2026.1">
           {aval ? (
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Técnico</span><span className="font-medium">{aval.notaTecnico}</span></div>
@@ -827,11 +820,8 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
               {aval.elegivelPromocao && <div className="rounded bg-green-50 px-3 py-2 text-xs text-green-700">Elegível → {aval.proximoNivel}</div>}
             </div>
           ) : <EmptyState title="Sem avaliação" />}
-        </CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="PDI" subtitle="Plano de Desenvolvimento Individual" />
-        <CardBody className="space-y-3">
+      </SecaoColapsavel>
+      <SecaoColapsavel title="PDI" subtitle="Plano de Desenvolvimento Individual" bodyClassName="space-y-3">
           {meusPdis.length === 0 ? <EmptyState title="Sem PDI" /> : meusPdis.map((p) => (
             <div key={p.id}>
               <div className="mb-1 flex justify-between text-sm"><span className="font-medium text-slate-700">{p.competencia}</span><span className="text-slate-400">{p.progresso}%</span></div>
@@ -839,27 +829,20 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
               <p className="mt-1 text-xs text-slate-500">{p.acao} → {p.resultadoEsperado}</p>
             </div>
           ))}
-        </CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="Metas" />
-        <CardBody className="space-y-2">
+      </SecaoColapsavel>
+      <SecaoColapsavel title="Metas" bodyClassName="space-y-2">
           {minhasMetas.length === 0 ? <EmptyState title="Sem metas individuais" /> : minhasMetas.map((m) => (
             <div key={m.id} className="flex items-center justify-between text-sm"><span className="text-slate-700">{m.titulo}</span><span className="text-slate-400">{m.valorAtual}/{m.valorAlvo}{m.unidade}</span></div>
           ))}
-        </CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="Feedbacks" />
-        <CardBody className="space-y-3">
+      </SecaoColapsavel>
+      <SecaoColapsavel title="Feedbacks" bodyClassName="space-y-3">
           {meusFb.length === 0 ? <EmptyState title="Sem feedbacks" /> : meusFb.map((f) => (
             <div key={f.id} className="rounded-lg border border-slate-100 px-3 py-2">
               <div className="mb-1 flex items-center justify-between"><Badge variant={f.tipo === "Positivo" ? "success" : f.tipo === "Desenvolvimento" ? "warning" : "info"}>{f.tipo}</Badge><span className="text-xs text-slate-400">{d.nomeColab(f.autorId)}</span></div>
               <p className="text-sm text-slate-600">{f.conteudo}</p>
             </div>
           ))}
-        </CardBody>
-      </Card>
+      </SecaoColapsavel>
     </div>
   );
 }
@@ -868,9 +851,7 @@ function AbaHistorico({ colaboradorId }: { colaboradorId: string }) {
   const { items } = useColecao("movimentacoes");
   const lista = items.filter((m) => m.colaboradorId === colaboradorId).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
   return (
-    <Card>
-      <CardHeader title="Histórico de movimentações" icon={<History className="h-[18px] w-[18px]" />} />
-      <CardBody>
+    <SecaoColapsavel title="Histórico de movimentações" icon={<History className="h-[18px] w-[18px]" />}>
         {lista.length === 0 ? <EmptyState title="Sem movimentações" /> : (
           <ol className="relative space-y-5 border-l border-slate-200 pl-6">
             {lista.map((m) => (
@@ -885,8 +866,7 @@ function AbaHistorico({ colaboradorId }: { colaboradorId: string }) {
             ))}
           </ol>
         )}
-      </CardBody>
-    </Card>
+      </SecaoColapsavel>
   );
 }
 
