@@ -542,6 +542,32 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
         </label>
       </div>
 
+      {/* Resumo do mês selecionado — composição da competência (vem antes do ano) */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SecaoColapsavel className="lg:col-span-2" title={`O que recebeu em ${competenciaLabelLongo(compSel)}`} subtitle={parcial ? "Competência em andamento (uma das parcelas ainda não foi paga)" : "Composição do pagamento da competência"} icon={<Wallet className="h-[18px] w-[18px]" />}>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-slate-100"><tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">% do mês</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {porTipo.map((t) => (
+                    <tr key={t.tipo}>
+                      <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
+                      <td className="td text-right tabular-nums">{formatBRL(t.valor)}</td>
+                      <td className="td text-right text-slate-500">{totalMes ? `${Math.round((t.valor / totalMes) * 100)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total recebido no mês</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalMes)}</td><td className="td" /></tr></tfoot>
+              </table>
+            </div>
+        </SecaoColapsavel>
+        <div className="space-y-4">
+          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total em {competenciaLabelLongo(compSel)}</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(totalMes)}</p></CardBody></Card>
+          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Média mensal recebida</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p><p className="mt-1 text-xs text-slate-400">{comps.length} competência(s)</p></CardBody></Card>
+          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário de referência (cadastro)</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(salarioRef)}</p></CardBody></Card>
+        </div>
+      </div>
+
       {/* Resumo anual — quanto ganhou no ano, com todos os tipos de ganho */}
       <SecaoColapsavel
         title={`Ganhos em ${anoSel}`}
@@ -605,31 +631,6 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
             </div>
           </div>
       </SecaoColapsavel>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <SecaoColapsavel className="lg:col-span-2" title={`O que recebeu em ${competenciaLabelLongo(compSel)}`} subtitle={parcial ? "Competência em andamento (uma das parcelas ainda não foi paga)" : "Composição do pagamento da competência"} icon={<Wallet className="h-[18px] w-[18px]" />}>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b border-slate-100"><tr><th className="th">Tipo</th><th className="th text-right">Valor</th><th className="th text-right">% do mês</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">
-                  {porTipo.map((t) => (
-                    <tr key={t.tipo}>
-                      <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
-                      <td className="td text-right tabular-nums">{formatBRL(t.valor)}</td>
-                      <td className="td text-right text-slate-500">{totalMes ? `${Math.round((t.valor / totalMes) * 100)}%` : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total recebido no mês</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalMes)}</td><td className="td" /></tr></tfoot>
-              </table>
-            </div>
-        </SecaoColapsavel>
-        <div className="space-y-4">
-          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total em {competenciaLabelLongo(compSel)}</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(totalMes)}</p></CardBody></Card>
-          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Média mensal recebida</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p><p className="mt-1 text-xs text-slate-400">{comps.length} competência(s)</p></CardBody></Card>
-          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário de referência (cadastro)</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(salarioRef)}</p></CardBody></Card>
-        </div>
-      </div>
 
       <SecaoColapsavel title="Lançamentos da competência" subtitle="Cada pagamento com a data efetiva (vencimento)" icon={<History className="h-[18px] w-[18px]" />}>
           <div className="overflow-x-auto">
