@@ -4,6 +4,7 @@ import { LogIn, Eye, EyeOff, User } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
+import { MASTER_COLAB_ID } from "@/lib/rbac";
 import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
 
 const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -57,8 +58,11 @@ export default function Login() {
       setErro("Senha incorreta.");
       return;
     }
-    // O perfil de acesso vem do cadastro de Usuário (quando existe); senão, do colaborador.
-    entrar(usuario?.perfil ?? alvo.perfil ?? "COLABORADOR", alvo.id);
+    // O diretor master (Leonardo) entra SEMPRE como ADMIN_RH com acesso total,
+    // independente de edições no cadastro de usuário. Os demais herdam o perfil
+    // do cadastro de Usuário (quando existe); senão, do colaborador.
+    const perfil = alvo.id === MASTER_COLAB_ID ? "ADMIN_RH" : (usuario?.perfil ?? alvo.perfil ?? "COLABORADOR");
+    entrar(perfil, alvo.id);
     navigate("/painel");
   };
 

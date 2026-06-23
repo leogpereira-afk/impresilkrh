@@ -97,7 +97,8 @@ export function ehMaster(sessao: Sessao | null): boolean {
 // quem não tem cadastro de usuário, ou de quem tem acesso total ("*").
 // Quando retorna um Set, a navegação e as rotas devem se limitar a esses módulos.
 export function modulosLiberados(sessao: Sessao | null, usuarios: Usuario[]): Set<string> | null {
-  if (!sessao || sessao.perfil === "ADMIN_RH") return null;
+  // ADMIN_RH e o diretor master têm acesso irrestrito a todos os módulos.
+  if (!sessao || sessao.perfil === "ADMIN_RH" || sessao.colaboradorId === MASTER_COLAB_ID) return null;
   const u = usuarios.find((x) => x.ativo && x.colaboradorId === sessao.colaboradorId);
   if (!u || !u.permissoes || u.permissoes.length === 0 || u.permissoes.includes("*")) return null;
   return new Set(u.permissoes);
