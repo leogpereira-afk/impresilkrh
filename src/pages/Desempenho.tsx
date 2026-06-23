@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Grid3x3, ClipboardCheck, Target, GraduationCap, MessageSquare,
   Award, AlertTriangle, Users, Gauge, Plus, PencilLine,
+  ClipboardList, Sparkles, Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -22,7 +23,7 @@ import {
   COR_POTENCIAL_DESEMPENHO, COR_RISCO, STATUS_DESEMPENHO, TIPOS_FEEDBACK,
   STATUS_META, STATUS_PDI, faixaMotivacao,
 } from "@/lib/constants";
-import type { Avaliacao, CicloAvaliacao, Colaborador, Feedback, Meta, PDI } from "@/data/types";
+import type { Avaliacao, CicloAvaliacao, Colaborador, Feedback, Meta, PDI, Pesquisa, PerguntaPesquisa, TipoPesquisa, StatusPesquisa, TipoPergunta } from "@/data/types";
 
 // ===================== Helpers de classificação (puros) =====================
 type Bucket = "Baixo" | "Médio" | "Alto";
@@ -300,13 +301,19 @@ export default function Desempenho() {
         />
       ),
     },
+    {
+      id: "pesquisas",
+      label: "Pesquisas e Dinâmicas",
+      icon: <ClipboardList className="h-4 w-4" />,
+      conteudo: <AbaPesquisas />,
+    },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Desempenho e Retenção"
-        description={`Matriz 9-Box, avaliações, metas, PDI e feedbacks — ${ciclo?.nome ?? "Ciclo 2026.1"}.`}
+        title="Desempenho, Retenção e Pesquisas"
+        description={`9-Box, avaliações, metas, PDI, feedbacks, pesquisas e dinâmicas — ${ciclo?.nome ?? "Ciclo 2026.1"}.`}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -1488,5 +1495,241 @@ function AbaFeedbacks({
         )}
       </Modal>
     </>
+  );
+}
+
+// ===================== Pesquisas e Dinâmicas =====================
+const VAR_STATUS_PESQ: Record<StatusPesquisa, "success" | "neutral" | "warning"> = {
+  Ativa: "success", Rascunho: "neutral", Encerrada: "warning",
+};
+const LABEL_PERGUNTA: Record<TipoPergunta, string> = {
+  Escala: "Escala (1–5)", Texto: "Texto livre", SimNao: "Sim / Não", Multipla: "Múltipla escolha",
+};
+
+function AbaPesquisas() {
+  const sessao = useSessao();
+  const toast = useToast();
+  const { items, criar, atualizar, remover } = useColecao("pesquisas");
+  const gere = podeGerir(sessao);
+  const [editar, setEditar] = useState<Pesquisa | null>(null);
+  const [novo, setNovo] = useState(false);
+
+  const pesquisas = items as Pesquisa[];
+  const surveys = pesquisas.filter((p) => p.tipo === "Pesquisa");
+  const dinamicas = pesquisas.filter((p) => p.tipo === "Dinâmica");
+  const ativas = pesquisas.filter((p) => p.status === "Ativa").length;
+
+  const salvar = (dados: Omit<Pesquisa, "id" | "criadoEm">) => {
+    if (editar && editar.id) atualizar(editar.id, dados);
+    else criar({ ...dados, criadoEm: new Date().toISOString().slice(0, 10) });
+    toast(editar && editar.id ? "Atualizada." : `${dados.tipo} criada.`);
+    setEditar(null); setNovo(false);
+  };
+  const ciclarStatus = (p: Pesquisa) => {
+    const prox: StatusPesquisa = p.status === "Ativa" ? "Encerrada" : "Ativa";
+    atualizar(p.id, { status: prox });
+    toast(`"${p.titulo}" agora está ${prox.toLowerCase()}.`);
+  };
+  const excluir = (p: Pesquisa) => {
+    if (confirm(`Excluir "${p.titulo}"?`)) { remover(p.id); toast("Removida."); }
+  };
+
+  const aberto = novo || !!editar;
+  const tipoNovo: TipoPesquisa = editar && !editar.id ? "Dinâmica" : "Pesquisa";
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="Pesquisas" value={surveys.length} icon={<ClipboardList className="h-5 w-5" />} accent="brand" />
+        <StatCard label="Dinâmicas" value={dinamicas.length} icon={<Sparkles className="h-5 w-5" />} accent="gold" />
+        <StatCard label="Ativas" value={ativas} icon={<ClipboardCheck className="h-5 w-5" />} accent="green" />
+        <StatCard label="Total" value={pesquisas.length} icon={<MessageSquare className="h-5 w-5" />} accent="blue" />
+      </div>
+
+      <Card>
+        <CardHeader
+          title="Banco de pesquisas"
+          subtitle="Clima, eNPS, pulse — com as perguntas de cada uma"
+          icon={<ClipboardList className="h-[18px] w-[18px]" />}
+          action={gere ? <button className="btn-outline" onClick={() => { setEditar(null); setNovo(true); }}><Plus className="h-4 w-4" /> Nova pesquisa</button> : undefined}
+        />
+        <CardBody>
+          {surveys.length === 0 ? (
+            <EmptyState title="Nenhuma pesquisa" description="Crie pesquisas de clima, eNPS e pulse com suas perguntas." icon={<ClipboardList className="h-8 w-8" />} />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {surveys.map((p) => (
+                <CardPesquisa key={p.id} p={p} gere={gere} onEdit={() => { setNovo(false); setEditar(p); }} onCiclo={() => ciclarStatus(p)} onDel={() => excluir(p)} />
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Dinâmicas de equipe"
+          subtitle="Quebra-gelos e atividades para integrar e engajar o time"
+          icon={<Sparkles className="h-[18px] w-[18px]" />}
+          action={gere ? <button className="btn-outline" onClick={() => { setNovo(false); setEditar({ id: "", titulo: "", tipo: "Dinâmica", status: "Rascunho", perguntas: [], criadoEm: "" } as Pesquisa); }}><Plus className="h-4 w-4" /> Nova dinâmica</button> : undefined}
+        />
+        <CardBody>
+          {dinamicas.length === 0 ? (
+            <EmptyState title="Nenhuma dinâmica" description="Cadastre dinâmicas com o roteiro da atividade." icon={<Sparkles className="h-8 w-8" />} />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {dinamicas.map((p) => (
+                <CardPesquisa key={p.id} p={p} gere={gere} onEdit={() => { setNovo(false); setEditar(p); }} onCiclo={() => ciclarStatus(p)} onDel={() => excluir(p)} />
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {gere && aberto && (
+        <PesquisaEditor
+          pesquisa={editar && editar.id ? editar : null}
+          tipoInicial={tipoNovo}
+          onFechar={() => { setEditar(null); setNovo(false); }}
+          onSalvar={salvar}
+        />
+      )}
+    </div>
+  );
+}
+
+function CardPesquisa({ p, gere, onEdit, onCiclo, onDel }: { p: Pesquisa; gere: boolean; onEdit: () => void; onCiclo: () => void; onDel: () => void }) {
+  return (
+    <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-semibold text-brand-ink">{p.titulo}</p>
+          <p className="text-xs text-slate-400">
+            {p.tipo}{p.publico ? ` · ${p.publico}` : ""}{p.anonima ? " · anônima" : ""}
+          </p>
+        </div>
+        <Badge variant={VAR_STATUS_PESQ[p.status]}>{p.status}</Badge>
+      </div>
+      {p.descricao && <p className="mt-2 text-sm leading-relaxed text-slate-600">{p.descricao}</p>}
+      {p.tipo === "Pesquisa" && p.perguntas.length > 0 && (
+        <ul className="mt-3 space-y-1 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          {p.perguntas.map((q, i) => (
+            <li key={q.id} className="flex items-start gap-2 text-xs text-slate-600">
+              <span className="font-semibold text-slate-400">{i + 1}.</span>
+              <span className="flex-1">{q.texto}</span>
+              <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-400 ring-1 ring-slate-200">{LABEL_PERGUNTA[q.tipo]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {gere && (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          <button className="btn-outline h-8 px-3 text-xs" onClick={onEdit}><PencilLine className="h-3.5 w-3.5" /> Editar</button>
+          <button className="btn-outline h-8 px-3 text-xs" onClick={onCiclo}>{p.status === "Ativa" ? "Encerrar" : "Ativar"}</button>
+          <button className="btn-ghost h-8 px-2 text-xs text-red-600" onClick={onDel} aria-label="Excluir"><Trash2 className="h-4 w-4" /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PesquisaEditor({ pesquisa, tipoInicial, onFechar, onSalvar }: {
+  pesquisa: Pesquisa | null;
+  tipoInicial: TipoPesquisa;
+  onFechar: () => void;
+  onSalvar: (dados: Omit<Pesquisa, "id" | "criadoEm">) => void;
+}) {
+  const toast = useToast();
+  const [titulo, setTitulo] = useState(pesquisa?.titulo ?? "");
+  const [tipo, setTipo] = useState<TipoPesquisa>(pesquisa?.tipo ?? tipoInicial);
+  const [status, setStatus] = useState<StatusPesquisa>(pesquisa?.status ?? "Rascunho");
+  const [anonima, setAnonima] = useState(pesquisa?.anonima ?? true);
+  const [publico, setPublico] = useState(pesquisa?.publico ?? "");
+  const [descricao, setDescricao] = useState(pesquisa?.descricao ?? "");
+  const [perguntas, setPerguntas] = useState<PerguntaPesquisa[]>(pesquisa?.perguntas ?? []);
+  const [seq, setSeq] = useState(0);
+
+  const novaPergunta = () => { setPerguntas((ps) => [...ps, { id: `q_${ps.length}_${seq}`, texto: "", tipo: "Escala" }]); setSeq((s) => s + 1); };
+  const mudarPergunta = (id: string, patch: Partial<PerguntaPesquisa>) => setPerguntas((ps) => ps.map((q) => (q.id === id ? { ...q, ...patch } : q)));
+  const removerPergunta = (id: string) => setPerguntas((ps) => ps.filter((q) => q.id !== id));
+
+  const salvar = () => {
+    if (!titulo.trim()) { toast("Dê um título.", "erro"); return; }
+    onSalvar({
+      titulo: titulo.trim(),
+      tipo,
+      status,
+      anonima: tipo === "Pesquisa" ? anonima : undefined,
+      publico: publico.trim() || undefined,
+      descricao: descricao.trim() || undefined,
+      perguntas: tipo === "Pesquisa" ? perguntas.filter((q) => q.texto.trim()) : [],
+    });
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={pesquisa ? "Editar" : tipo === "Dinâmica" ? "Nova dinâmica" : "Nova pesquisa"}
+      descricao="Defina os dados e, para pesquisas, as perguntas."
+      largura="max-w-2xl"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}><Plus className="h-4 w-4" /> Salvar</button></>}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Campo label="Título" obrigatorio className="sm:col-span-2">
+          <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Pesquisa de Clima 2026" />
+        </Campo>
+        <Campo label="Tipo">
+          <Select value={tipo} onChange={(e) => setTipo(e.target.value as TipoPesquisa)}>
+            <option value="Pesquisa">Pesquisa (com perguntas)</option>
+            <option value="Dinâmica">Dinâmica (atividade)</option>
+          </Select>
+        </Campo>
+        <Campo label="Status">
+          <Select value={status} onChange={(e) => setStatus(e.target.value as StatusPesquisa)}>
+            <option value="Rascunho">Rascunho</option>
+            <option value="Ativa">Ativa</option>
+            <option value="Encerrada">Encerrada</option>
+          </Select>
+        </Campo>
+        <Campo label="Público-alvo">
+          <Input value={publico} onChange={(e) => setPublico(e.target.value)} placeholder="Ex.: Todos os colaboradores" />
+        </Campo>
+        {tipo === "Pesquisa" && (
+          <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-600">
+            <input type="checkbox" checked={anonima} onChange={(e) => setAnonima(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />
+            Respostas anônimas
+          </label>
+        )}
+        <Campo label={tipo === "Dinâmica" ? "Roteiro da dinâmica" : "Descrição"} className="sm:col-span-2">
+          <Textarea rows={tipo === "Dinâmica" ? 4 : 2} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === "Dinâmica" ? "Objetivo, duração e passo a passo da atividade…" : "Sobre o que é a pesquisa…"} />
+        </Campo>
+
+        {tipo === "Pesquisa" && (
+          <div className="sm:col-span-2">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Perguntas ({perguntas.length})</p>
+              <button className="btn-outline h-8 px-3 text-xs" onClick={novaPergunta}><Plus className="h-3.5 w-3.5" /> Pergunta</button>
+            </div>
+            {perguntas.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">Adicione perguntas à pesquisa.</p>
+            ) : (
+              <ul className="space-y-2">
+                {perguntas.map((q, i) => (
+                  <li key={q.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5 sm:flex-row sm:items-center">
+                    <span className="text-xs font-semibold text-slate-400">{i + 1}.</span>
+                    <Input value={q.texto} onChange={(e) => mudarPergunta(q.id, { texto: e.target.value })} placeholder="Texto da pergunta" className="h-9 flex-1 py-1.5 text-sm" />
+                    <Select value={q.tipo} onChange={(e) => mudarPergunta(q.id, { tipo: e.target.value as TipoPergunta })} className="h-9 py-1.5 text-sm sm:w-44">
+                      {(Object.keys(LABEL_PERGUNTA) as TipoPergunta[]).map((t) => <option key={t} value={t}>{LABEL_PERGUNTA[t]}</option>)}
+                    </Select>
+                    <button className="btn-ghost h-9 px-2 text-red-600" onClick={() => removerPergunta(q.id)} aria-label="Remover pergunta"><Trash2 className="h-4 w-4" /></button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

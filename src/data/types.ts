@@ -516,3 +516,27 @@ export interface CertificacaoNR {
   instituicao?: string;
   observacao?: string;
 }
+
+// ===================== Pesquisas e dinâmicas (v7) =====================
+// Banco de pesquisas (clima, pulse, eNPS) e dinâmicas de equipe. Cada pesquisa
+// tem perguntas; dinâmicas são atividades com roteiro (campo descrição).
+export type TipoPesquisa = "Pesquisa" | "Dinâmica";
+export type StatusPesquisa = "Rascunho" | "Ativa" | "Encerrada";
+export type TipoPergunta = "Escala" | "Texto" | "SimNao" | "Multipla";
+export interface PerguntaPesquisa {
+  id: string;
+  texto: string;
+  tipo: TipoPergunta;
+  opcoes?: string[]; // para "Multipla"
+}
+export interface Pesquisa {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  tipo: TipoPesquisa;
+  status: StatusPesquisa;
+  anonima?: boolean;
+  publico?: string; // a quem se destina (texto livre: "Todos", uma área, etc.)
+  perguntas: PerguntaPesquisa[];
+  criadoEm: string;
+}
