@@ -4,6 +4,9 @@ import {
   Wallet,
   Coins,
   TrendingDown,
+  TrendingUp,
+  Minus,
+  Gauge,
   BarChart3,
   Building2,
   CalendarRange,
@@ -14,7 +17,9 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
+import { useColecao } from "@/lib/store";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import {
   BarrasVerticais,
@@ -36,6 +41,22 @@ const aposOuIgual = (s: string | null | undefined, ref: Date) => {
 import { COR_POSICAO_FAIXA } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
+
+// Cor da nota/média de desempenho (verde ≥80, âmbar ≥60, vermelho abaixo).
+const corNota = (n: number) => (n >= 80 ? "#16a34a" : n >= 60 ? "#d97706" : "#dc2626");
+
+// Variação (pts) com seta e cor — usado nas comparações de desempenho por setor.
+function Delta({ v }: { v: number | null }) {
+  if (v == null) return <span className="text-xs text-slate-300">—</span>;
+  const up = v > 0.05, down = v < -0.05;
+  const cor = up ? "#16a34a" : down ? "#dc2626" : "#94a3b8";
+  const Icon = up ? TrendingUp : down ? TrendingDown : Minus;
+  return (
+    <span className="inline-flex items-center justify-end gap-1 text-sm font-medium tabular-nums" style={{ color: cor }}>
+      <Icon className="h-3.5 w-3.5" />{v > 0 ? "+" : ""}{v.toFixed(1)}
+    </span>
+  );
+}
 
 // Faixas de tempo de casa (em meses)
 const FAIXAS_TEMPO: { nome: string; cor: string; teste: (m: number) => boolean }[] = [
@@ -193,6 +214,74 @@ export default function Relatorios() {
       valor: ativos.filter((c) => f.teste(mesesDeCasa(c.dataAdmissao))).length,
     }));
   }, [ativos]);
+
+  // -- Desempenho por setor (média das notas do ciclo) + comparação --
+  const { items: avaliacoes } = useColecao("avaliacoes");
+  const { items: ciclos } = useColecao("ciclos");
+  const cicloAtual = useMemo(
+    () => ciclos.find((c) => c.status === "Aberto") ?? [...ciclos].sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))[0],
+    [ciclos],
+  );
+  const cicloAnterior = useMemo(() => {
+    if (!cicloAtual) return undefined;
+    return [...ciclos]
+      .filter((c) => c.id !== cicloAtual.id && c.dataInicio < cicloAtual.dataInicio)
+      .sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))[0];
+  }, [ciclos, cicloAtual]);
+
+  // Mesma população do módulo Desempenho (não-inativos, fora da direção),
+  // para a média por setor bater exatamente entre as duas telas.
+  const baseDesemp = useMemo(
+    () => d.colaboradores.filter((c) => !c.ehDirecao && c.statusId !== "inativo"),
+    [d.colaboradores],
+  );
+
+  const desempenhoSetor = useMemo(() => {
+    // notaFinal (avaliação do gestor) por colaborador, para um dado ciclo
+    const notasDoCiclo = (cicloId?: string) => {
+      const m = new Map<string, number>();
+      if (!cicloId) return m;
+      for (const a of avaliacoes) {
+        if (a.tipo === "GESTOR" && a.cicloId === cicloId && a.notaFinal != null) m.set(a.colaboradorId, a.notaFinal);
+      }
+      return m;
+    };
+    const atual = notasDoCiclo(cicloAtual?.id);
+    const anterior = cicloAnterior ? notasDoCiclo(cicloAnterior.id) : null;
+    const media = (ns: number[]) => (ns.length ? ns.reduce((s, n) => s + n, 0) / ns.length : null);
+
+    const linhas = d.areas
+      .filter((a) => a.id !== "direcao")
+      .map((a) => {
+        const colabs = baseDesemp.filter((c) => c.areaId === a.id);
+        const notasA = colabs.map((c) => atual.get(c.id)).filter((n): n is number => n != null);
+        const notasP = anterior ? colabs.map((c) => anterior.get(c.id)).filter((n): n is number => n != null) : [];
+        return {
+          id: a.id, nome: a.nome,
+          total: colabs.length, avaliados: notasA.length,
+          media: media(notasA), mediaAnterior: anterior ? media(notasP) : null,
+        };
+      })
+      .filter((x) => x.total > 0)
+      .sort((a, b) => {
+        if (a.media == null) return b.media == null ? 0 : 1;
+        if (b.media == null) return -1;
+        return a.media - b.media; // menor média primeiro = onde atuar
+      });
+
+    const todas = [...atual.values()];
+    const mediaGeral = media(todas);
+    const focoId = linhas.find((l) => l.media != null)?.id;
+    return { linhas, mediaGeral, temAnterior: !!cicloAnterior, focoId };
+  }, [avaliacoes, baseDesemp, d.areas, cicloAtual, cicloAnterior]);
+
+  const drillDesempSetor = useCallback(
+    (areaId: string, nome: string, media: number | null) => {
+      const lista = baseDesemp.filter((c) => c.areaId === areaId);
+      drill.abrir(`Desempenho — ${nome}`, lista, media != null ? `Média ${media.toFixed(1)} · ${lista.length} colaborador(es)` : `${lista.length} colaborador(es) · sem notas`);
+    },
+    [baseDesemp, drill],
+  );
 
   // -- Drill-down: mapeia o item clicado de volta para os colaboradores --
   const drillFolhaArea = useCallback(
@@ -451,6 +540,83 @@ export default function Relatorios() {
             ) : (
               <div className="p-5">
                 <EmptyState title="Sem dados por área" />
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader
+            title="Desempenho por setor"
+            subtitle={
+              cicloAtual
+                ? `Média das notas — ${cicloAtual.nome}${desempenhoSetor.temAnterior && cicloAnterior ? ` · comparado a ${cicloAnterior.nome}` : ""}. Do menor para o maior — comece a atuar pelo topo.`
+                : "Média das notas de desempenho por setor"
+            }
+            icon={<Gauge className="h-[18px] w-[18px]" />}
+          />
+          <CardBody className="p-0">
+            {desempenhoSetor.mediaGeral == null ? (
+              <div className="p-5">
+                <EmptyState title="Sem notas lançadas" description="Lance avaliações no módulo Desempenho para ver a média por setor." />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-slate-100 bg-slate-50/50">
+                    <tr>
+                      <th className="th">Setor</th>
+                      <th className="th text-right">Avaliados</th>
+                      <th className="th text-right">Média</th>
+                      <th className="th text-right">vs. média geral</th>
+                      {desempenhoSetor.temAnterior && <th className="th text-right">vs. ciclo anterior</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {desempenhoSetor.linhas.map((l) => {
+                      const cor = l.media == null ? "#94a3b8" : corNota(l.media);
+                      const foco = l.media != null && l.id === desempenhoSetor.focoId;
+                      const dGeral = l.media != null && desempenhoSetor.mediaGeral != null ? l.media - desempenhoSetor.mediaGeral : null;
+                      const dAnt = l.media != null && l.mediaAnterior != null ? l.media - l.mediaAnterior : null;
+                      return (
+                        <tr
+                          key={l.id}
+                          className="cursor-pointer transition hover:bg-slate-50/60"
+                          onClick={() => drillDesempSetor(l.id, l.nome, l.media)}
+                          title={`Ver colaboradores de ${l.nome}`}
+                        >
+                          <td className="td">
+                            <span className="flex items-center gap-2 font-medium text-slate-700">
+                              {l.nome}
+                              {foco && <Badge variant="warning">Atue aqui</Badge>}
+                            </span>
+                          </td>
+                          <td className="td text-right text-slate-500 tabular-nums">{l.avaliados}/{l.total}</td>
+                          <td className="td text-right">
+                            <span className="font-semibold tabular-nums" style={{ color: cor }}>
+                              {l.media != null ? l.media.toFixed(1) : "—"}
+                            </span>
+                          </td>
+                          <td className="td text-right"><Delta v={dGeral} /></td>
+                          {desempenhoSetor.temAnterior && <td className="td text-right"><Delta v={dAnt} /></td>}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t border-slate-200 bg-slate-50/60">
+                    <tr>
+                      <td className="td font-semibold text-slate-700">Média geral</td>
+                      <td className="td" />
+                      <td className="td text-right font-semibold tabular-nums" style={{ color: desempenhoSetor.mediaGeral != null ? corNota(desempenhoSetor.mediaGeral) : undefined }}>
+                        {desempenhoSetor.mediaGeral != null ? desempenhoSetor.mediaGeral.toFixed(1) : "—"}
+                      </td>
+                      <td className="td" />
+                      {desempenhoSetor.temAnterior && <td className="td" />}
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             )}
           </CardBody>
