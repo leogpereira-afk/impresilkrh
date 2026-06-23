@@ -16,6 +16,7 @@ import {
   HeartPulse,
   DoorOpen,
   Info,
+  Plane,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -113,6 +114,7 @@ export default function Relatorios() {
 
   const ativos = d.ativos;
   const colaboradores = d.colaboradores;
+  const { items: viagens } = useColecao("viagens");
 
   // -- Filtro de período (mês/ano), igual ao Painel. Controla a movimentação
   //    (admissões/desligamentos) e o turnover. mês 0 = "Ano inteiro".
@@ -133,6 +135,24 @@ export default function Relatorios() {
     return filtroMes === 0 ? true : dt.getMonth() + 1 === filtroMes;
   };
   const rotuloPeriodo = filtroMes === 0 ? `${filtroAno}` : `${MESES_PT[filtroMes - 1]}/${filtroAno}`;
+
+  // Dashboard de Viagens e Diárias (exclui canceladas), no período selecionado.
+  const dashViagens = useMemo(() => {
+    const validas = viagens.filter((v) => v.status !== "Cancelada" && noPeriodo(v.dataInicio));
+    const total = validas.reduce((a, v) => a + (v.valorTotal ?? 0), 0);
+    const dias = validas.reduce((a, v) => a + (v.dias ?? 0), 0);
+    const porColab = new Map<string, number>();
+    validas.forEach((v) => porColab.set(v.colaboradorId, (porColab.get(v.colaboradorId) ?? 0) + (v.valorTotal ?? 0)));
+    const colabChart = [...porColab.entries()]
+      .map(([id, valor]) => ({ nome: d.nomeColab(id).split(" ")[0], valor, id }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 10);
+    const porMes = new Array(12).fill(0);
+    validas.forEach((v) => { const dt = parseData(v.dataInicio); if (dt && dt.getFullYear() === filtroAno) porMes[dt.getMonth()] += (v.valorTotal ?? 0); });
+    const mesChart = porMes.map((valor, i) => ({ nome: MESES_PT[i].slice(0, 3), valor }));
+    return { total, dias, count: validas.length, colabChart, mesChart };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viagens, filtroAno, filtroMes, d]);
 
   // Movimentação e turnover do período selecionado.
   const periodo = useMemo(() => {
@@ -991,6 +1011,58 @@ export default function Relatorios() {
           />
           <CardBody>
             <BarrasColoridas data={tempoDeCasa} onItemClick={drillTempoCasa} />
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader
+            title="Viagens e diárias"
+            subtitle={`Custos de deslocamento — ${rotuloPeriodo}. As diárias também compõem os ganhos do colaborador (aba Financeiro).`}
+            icon={<Plane className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {dashViagens.count === 0 ? (
+              <EmptyState title="Sem viagens no período" description={`Nenhuma diária registrada em ${rotuloPeriodo}.`} icon={<Plane className="h-8 w-8" />} />
+            ) : (
+              <>
+                <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    { label: "Total em diárias", valor: formatBRL(dashViagens.total) },
+                    { label: "Viagens", valor: dashViagens.count },
+                    { label: "Dias em campo", valor: dashViagens.dias },
+                    { label: "Custo médio/viagem", valor: formatBRL(dashViagens.count ? dashViagens.total / dashViagens.count : 0) },
+                  ].map((m) => (
+                    <div key={m.label} className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-center">
+                      <p className="text-lg font-semibold text-slate-800 tabular-nums">{m.valor}</p>
+                      <p className="text-xs text-slate-500">{m.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-slate-500">Gasto por colaborador (top 10)</p>
+                    <BarrasVerticais
+                      data={dashViagens.colabChart}
+                      cor="#c2a14d"
+                      moeda
+                      onItemClick={(nome) => {
+                        const alvo = dashViagens.colabChart.find((x) => x.nome === nome);
+                        const c = alvo ? d.colabById.get(alvo.id) : undefined;
+                        if (c) drill.abrir(`Diárias de ${c.nome}`, [c], "Custos de viagem no período");
+                      }}
+                    />
+                  </div>
+                  {filtroMes === 0 && (
+                    <div>
+                      <p className="mb-2 text-xs font-medium text-slate-500">Gasto por mês ({filtroAno})</p>
+                      <BarrasVerticais data={dashViagens.mesChart} cor="#16334f" moeda />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </CardBody>
         </Card>
       </div>

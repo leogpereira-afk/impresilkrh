@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
   IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
-  Eye, Ear, Hand,
+  Eye, Ear, Hand, Plane,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, SecaoColapsavel } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -419,6 +419,7 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
 
 export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sens: boolean }) {
   const { items: pagamentos } = useColecao("pagamentos");
+  const { items: viagens } = useColecao("viagens");
   const d = useDominio();
   const toast = useToast();
   const meus = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id), [pagamentos, c.id]);
@@ -463,6 +464,15 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const mesesNoAno = new Set(doAno.map((p) => p.competencia)).size;
   const mediaMesAno = mesesNoAno ? totalAno / mesesNoAno : 0;
   const serieAno = serie.filter((s) => s.competencia.startsWith(anoSel));
+
+  // Diárias de viagem do ano — também compõem o que o colaborador recebe.
+  const diariasAno = useMemo(
+    () => viagens
+      .filter((v) => v.colaboradorId === c.id && v.status !== "Cancelada" && parseData(v.dataInicio)?.getFullYear() === Number(anoSel))
+      .reduce((a, v) => a + (v.valorTotal ?? 0), 0),
+    [viagens, c.id, anoSel],
+  );
+  const totalComDiarias = totalAno + diariasAno;
 
   const cargoNome = d.nomeCargo(c);
   const areaNome = d.nomeArea(c.areaId);
@@ -576,6 +586,22 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
                 <p className="text-xs uppercase tracking-wide text-slate-400">Média por mês</p>
                 <p className="mt-0.5 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMesAno)}</p>
               </div>
+              {diariasAno > 0 && (
+                <>
+                  <div className="flex items-center gap-3 rounded-xl border border-gold-100 bg-gold-50/40 px-4 py-3">
+                    <Plane className="h-5 w-5 shrink-0 text-gold-600" />
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gold-700">Diárias de viagem</p>
+                      <p className="mt-0.5 text-2xl font-semibold text-gold-700">{formatBRL(diariasAno)}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-brand">Total com diárias ({anoSel})</p>
+                    <p className="mt-0.5 text-2xl font-bold text-brand-ink">{formatBRL(totalComDiarias)}</p>
+                    <p className="mt-1 text-xs text-slate-500">Folha + diárias de viagem</p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
       </SecaoColapsavel>
