@@ -29,6 +29,7 @@ import {
   BarrasColoridas,
   Rosca,
 } from "@/components/charts/charts";
+import { cn } from "@/lib/cn";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
@@ -147,38 +148,49 @@ export default function Relatorios() {
     return { admit, deslig, saldo: admit.length - deslig.length, turnover };
   }, [colaboradores, ativos, filtroMes, filtroAno]);
 
-  // -- Folha real (pagamentos enviados) por competência, somando SÓ os ativos.
-  //    Reflete o que foi alimentado no módulo de Custos e respeita o período. --
+  // -- Folha real (pagamentos enviados), somando SÓ os ativos. Duas bases:
+  //    "caixa" = pelo dia em que o pagamento saiu (dataPagamento);
+  //    "competencia" = pelo mês de referência (competencia). Respeita o período. --
   const { items: pagamentos } = useColecao("pagamentos");
   const idsAtivos = useMemo(() => new Set(ativos.map((c) => c.id)), [ativos]);
+  const [baseFolha, setBaseFolha] = useState<"caixa" | "competencia">("caixa");
   const folhaReal = useMemo(() => {
+    const porCaixa = new Map<string, number>();
     const porComp = new Map<string, number>();
     for (const p of pagamentos) {
       if (!idsAtivos.has(p.colaboradorId)) continue; // só ativos
       porComp.set(p.competencia, (porComp.get(p.competencia) ?? 0) + p.valor);
+      const dt = parseData(p.dataPagamento);
+      const ck = dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia;
+      porCaixa.set(ck, (porCaixa.get(ck) ?? 0) + p.valor);
     }
     const compDe = (mes: number) => `${filtroAno}-${String(mes).padStart(2, "0")}`;
-    let totalPeriodo = 0;
-    if (filtroMes === 0) {
-      for (const [comp, v] of porComp) if (comp.startsWith(`${filtroAno}-`)) totalPeriodo += v;
-    } else {
-      totalPeriodo = porComp.get(compDe(filtroMes)) ?? 0;
-    }
-    const serie = MESES_PT.map((nome, i) => ({ nome: nome.slice(0, 3), valor: porComp.get(compDe(i + 1)) ?? 0 }));
-    const mesesComDados = serie.filter((s) => s.valor > 0).length;
-    return { porComp, totalPeriodo, serie, temDados: porComp.size > 0, mesesAno: mesesComDados };
+    const resumo = (m: Map<string, number>) => {
+      let total = 0;
+      if (filtroMes === 0) { for (const [k, v] of m) if (k.startsWith(`${filtroAno}-`)) total += v; }
+      else total = m.get(compDe(filtroMes)) ?? 0;
+      const serie = MESES_PT.map((nome, i) => ({ nome: nome.slice(0, 3), valor: m.get(compDe(i + 1)) ?? 0 }));
+      return { total, serie, mapa: m };
+    };
+    return { caixa: resumo(porCaixa), competencia: resumo(porComp), temDados: porCaixa.size > 0 || porComp.size > 0 };
   }, [pagamentos, idsAtivos, filtroMes, filtroAno]);
+  const folhaAtual = folhaReal[baseFolha];
 
   const drillFolhaReal = useCallback(
     (nomeMes: string) => {
       const i = MESES_PT.findIndex((m) => m.slice(0, 3) === nomeMes);
       if (i < 0) return;
-      const comp = `${filtroAno}-${String(i + 1).padStart(2, "0")}`;
-      const ids = new Set(pagamentos.filter((p) => p.competencia === comp && idsAtivos.has(p.colaboradorId)).map((p) => p.colaboradorId));
+      const key = `${filtroAno}-${String(i + 1).padStart(2, "0")}`;
+      const noMes = (p: { competencia: string; dataPagamento?: string | null }) => {
+        if (baseFolha === "competencia") return p.competencia === key;
+        const dt = parseData(p.dataPagamento);
+        return (dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia) === key;
+      };
+      const ids = new Set(pagamentos.filter((p) => idsAtivos.has(p.colaboradorId) && noMes(p)).map((p) => p.colaboradorId));
       const lista = ativos.filter((c) => ids.has(c.id));
-      drill.abrir(`Folha real — ${nomeMes}/${filtroAno}`, lista, `${formatBRL(folhaReal.porComp.get(comp) ?? 0)} · ${lista.length} colaborador(es) pagos`);
+      drill.abrir(`Folha real (${baseFolha}) — ${nomeMes}/${filtroAno}`, lista, `${formatBRL(folhaReal[baseFolha].mapa.get(key) ?? 0)} · ${lista.length} colaborador(es)`);
     },
-    [pagamentos, idsAtivos, ativos, filtroAno, folhaReal, drill],
+    [pagamentos, idsAtivos, ativos, filtroAno, baseFolha, folhaReal, drill],
   );
 
   // -- Indicadores de cabeçalho --
@@ -635,21 +647,47 @@ export default function Relatorios() {
         <Card>
           <CardHeader
             title="Folha real (pagamentos)"
-            subtitle={`Soma dos pagamentos enviados, só dos ativos · ${rotuloPeriodo}. Clique numa barra para ver quem foi pago.`}
+            subtitle={`Só dos ativos · ${rotuloPeriodo}. Clique numa barra para ver quem foi pago.`}
             icon={<Wallet className="h-[18px] w-[18px]" />}
             action={
-              folhaReal.temDados ? (
-                <div className="text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Folha real · {rotuloPeriodo}</p>
-                  <p className="text-xl font-semibold text-brand-ink">{formatBRL(folhaReal.totalPeriodo)}</p>
-                </div>
-              ) : undefined
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                {(["caixa", "competencia"] as const).map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBaseFolha(b)}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-xs font-medium capitalize transition",
+                      baseFolha === b ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    )}
+                  >
+                    {b === "caixa" ? "Caixa" : "Competência"}
+                  </button>
+                ))}
+              </div>
             }
           />
-          <CardBody>
+          <CardBody className="space-y-4">
+            {/* Em cima: salário de carteira (contrato) × folha real paga no período */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Salário de carteira (contrato) · atual</p>
+                <p className="mt-0.5 text-2xl font-semibold text-gold-700">{formatBRL(indicadores.folha)}</p>
+                <p className="text-xs text-slate-400">Soma dos salários registrados dos ativos</p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Folha real · {baseFolha === "caixa" ? "caixa" : "competência"} · {rotuloPeriodo}
+                </p>
+                <p className="mt-0.5 text-2xl font-semibold text-brand-ink">{formatBRL(folhaAtual.total)}</p>
+                <p className="text-xs text-slate-400">
+                  {baseFolha === "caixa" ? "Pelo dia em que o pagamento saiu (caixa)" : "Pelo mês de competência (referência)"}
+                </p>
+              </div>
+            </div>
             {folhaReal.temDados ? (
               <BarrasVerticais
-                data={folhaReal.serie}
+                data={folhaAtual.serie}
                 moeda
                 cor="#16334f"
                 onItemClick={drillFolhaReal}
