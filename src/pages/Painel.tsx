@@ -319,7 +319,6 @@ export default function Painel() {
             <option key={ano} value={ano}>{ano}</option>
           ))}
         </select>
-        <span className="hidden text-xs text-slate-400 sm:inline">Métricas de período: {rotuloPeriodo}</span>
         <label className="ml-auto flex cursor-pointer items-center gap-2 text-sm text-slate-600">
           <input
             type="checkbox"
@@ -709,6 +708,7 @@ function PainelPessoal() {
   const { items: ferias } = useColecao("ferias");
   const { items: avaliacoes } = useColecao("avaliacoes");
   const { items: pdis } = useColecao("pdis");
+  const { items: pagamentos } = useColecao("pagamentos");
 
   const c = d.colabById.get(sessao!.colaboradorId);
   if (!c) return null;
@@ -719,6 +719,9 @@ function PainelPessoal() {
   const minhaAval = avaliacoes.find((a) => a.colaboradorId === c.id && a.tipo === "GESTOR");
   const meusPdis = pdis.filter((p) => p.colaboradorId === c.id);
   const meusDocsAlerta = documentos.filter((doc) => doc.colaboradorId === c.id && doc.dataVencimento && dias(doc.dataVencimento) <= JANELA_ALERTA_DIAS);
+  const anoAtual = String(HOJE.getFullYear());
+  const meusPagamentos = pagamentos.filter((p) => p.colaboradorId === c.id);
+  const ganhoAno = meusPagamentos.filter((p) => p.competencia.startsWith(anoAtual)).reduce((s, p) => s + p.valor, 0);
 
   return (
     <div>
@@ -729,6 +732,26 @@ function PainelPessoal() {
         <StatCard label="Nota da avaliação" value={minhaAval?.notaFinal ?? "—"} icon={<Award className="h-5 w-5" />} accent="gold" hint={minhaAval?.statusDesempenho ?? "Sem avaliação"} />
         <StatCard label="Documentos a vencer" value={meusDocsAlerta.length} icon={<FileWarning className="h-5 w-5" />} accent={meusDocsAlerta.length ? "amber" : "green"} />
       </div>
+
+      {meusPagamentos.length > 0 && (
+        <div className="mt-6">
+          <Link to="/meu-perfil?tab=ganhos" className="block">
+            <Card className="transition hover:-translate-y-0.5 hover:shadow-md">
+              <CardBody className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-50 text-green-700"><Wallet className="h-6 w-6" /></span>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Meus ganhos em {anoAtual}</p>
+                    <p className="text-2xl font-bold text-green-700">{formatBRL(ganhoAno)}</p>
+                    <p className="text-xs text-slate-400">Salário, adiantamento, horas extras, comissão, incentivos e benefícios pagos.</p>
+                  </div>
+                </div>
+                <span className="text-sm font-medium text-brand">Ver extrato e gerar comprovante →</span>
+              </CardBody>
+            </Card>
+          </Link>
+        </div>
+      )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>

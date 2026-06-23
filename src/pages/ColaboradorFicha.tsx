@@ -392,7 +392,7 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
   );
 }
 
-function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sens: boolean }) {
+export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sens: boolean }) {
   const { items: pagamentos } = useColecao("pagamentos");
   const d = useDominio();
   const toast = useToast();

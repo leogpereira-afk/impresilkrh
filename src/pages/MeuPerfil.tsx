@@ -1,12 +1,13 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   IdCard, Briefcase, FileText, Palmtree, Target, FileSignature,
-  ExternalLink, UserCircle,
+  ExternalLink, UserCircle, Wallet,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
+import { AbaFinanceiro } from "./ColaboradorFicha";
 import { useColecao } from "@/lib/store";
 import { getBlob } from "@/lib/blobstore";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
@@ -28,6 +29,8 @@ function enqVar(e: string): "danger" | "warning" | "success" | "info" {
 export default function MeuPerfil() {
   const sessao = useSessao();
   const d = useDominio();
+  const [params] = useSearchParams();
+  const abaInicial = params.get("tab") ?? undefined; // ex.: vindo do "Meus ganhos" no painel
   const c = sessao ? d.colabById.get(sessao.colaboradorId) : undefined;
 
   if (!c) {
@@ -70,8 +73,10 @@ export default function MeuPerfil() {
       </Card>
 
       <Tabs
+        inicial={abaInicial}
         abas={[
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} /> },
+          { id: "ganhos", label: "Meus ganhos", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro c={c} sens /> },
           { id: "docs", label: "Meus documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} /> },
           { id: "desenv", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: <AbaDesenvolvimento colaboradorId={c.id} /> },
