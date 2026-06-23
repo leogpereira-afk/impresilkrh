@@ -15,9 +15,12 @@ Impresilk, para que uma alteração feita em um computador apareça nos outros.
   guarda os dados no **Netlify Blobs** (armazenamento de objetos do Netlify).
 - Conflitos (a mesma ficha editada em dois lugares) são detectados por
   **data/hora** (`atualizadoEm`) e você decide qual versão manter.
+- **Sem senha:** a chave de acesso (`SYNC_TOKEN`) é **embutida no app no momento
+  do build**. Assim, **todo computador que abrir o app já sincroniza sozinho** —
+  ninguém precisa digitar nada.
 
-> Sem token configurado, **nada é enviado** — o sistema funciona 100% local,
-> exatamente como antes. A sincronização é **opcional** e ligada por você.
+> Enquanto o `SYNC_TOKEN` não existir no Netlify, **nada é enviado** — o sistema
+> funciona 100% local, exatamente como antes.
 
 ---
 
@@ -34,28 +37,30 @@ Impresilk, para que uma alteração feita em um computador apareça nos outros.
    - As funções são detectadas automaticamente em `netlify/functions`
      (já configurado no `netlify.toml`). Não precisa mexer.
 
-2. **Crie a senha de sincronização** (variável de ambiente):
+2. **Crie a variável `SYNC_TOKEN`** (a chave de acesso):
    - Site → **Site configuration → Environment variables → Add a variable**.
    - **Key:** `SYNC_TOKEN`
    - **Value:** uma senha forte à sua escolha (ex.: 20+ caracteres aleatórios).
-     Guarde-a — você vai digitá-la em cada computador.
-   - Salve e clique em **Deploy / Trigger deploy** para a variável valer.
+   - Salve e clique em **Deploy / Trigger deploy**.
+   - Importante: esse valor é **embutido no app durante o build** (é o que
+     dispensa digitar senha). Se você **trocar** o `SYNC_TOKEN` depois, refaça o
+     deploy para o app novo pegar a chave nova.
 
 3. **Ative o Netlify Blobs:**
    - Em geral já vem habilitado para o site. Se o painel pedir, ative
      **Blobs** em **Site configuration → Blobs**. Nenhuma outra configuração
      é necessária — a função usa o contexto automático do Netlify.
 
-4. **Conecte cada computador no app:**
-   - Abra o sistema, faça login como RH e clique em **Sincronizar** (no topo).
-   - Em **Conectar à nuvem**, digite a mesma `SYNC_TOKEN` e clique em
-     **Conectar este computador**. O app testa a conexão e liga a sincronização.
+4. **Pronto — já é automático:**
+   - Cada computador que **abrir o app** passa a sincronizar sozinho: puxa o que
+     mudou em outras máquinas ao abrir, ao voltar a ficar online e a cada minuto.
+   - Ninguém digita senha. Se quiser conferir, abra **Sincronizar** (no topo) e
+     use **Testar conexão**.
 
 5. **Defina o computador “oficial” (uma vez):**
    - No computador que tem os **dados mais completos**, abra **Sincronizar →
      Enviar tudo (oficial)**. Isso sobe tudo para a nuvem como versão base.
-   - Nos demais computadores, basta **Conectar** e usar **Sincronizar agora**
-     (ou esperar — ele sincroniza sozinho a cada minuto quando online).
+   - Os demais recebem sozinhos ao abrir (ou use **Sincronizar agora**).
 
 > A cada deploy que mude o “casco” do app, suba o número da versão do cache em
 > `public/sw.js` (constante `CACHE`, ex.: `impresilk-rh-v1` → `v2`). Isso força
@@ -65,19 +70,22 @@ Impresilk, para que uma alteração feita em um computador apareça nos outros.
 
 ## ⚠️ Aviso de segurança (importante)
 
-A `SYNC_TOKEN` digitada no app fica **guardada no navegador** e é enviada à
-função a cada chamada. Como o app roda no navegador, **esse token é visível nas
-ferramentas de desenvolvedor (DevTools)** de quem usa o computador.
+Para a sincronização ser **automática (sem senha)**, o `SYNC_TOKEN` é **embutido
+no app** durante o build. Ou seja, ele é **entregue a qualquer pessoa que abra o
+site** e fica **visível nas ferramentas de desenvolvedor (DevTools)**.
 
 - Serve para **barrar acesso casual e robôs** que achem a URL da função.
-- **NÃO é segurança forte.** Quem tiver acesso ao computador logado pode ler o
-  token.
-- Para dados realmente sensíveis, o ideal é um **login de verdade** (usuário e
-  senha por pessoa, com **token JWT** emitido pelo servidor e verificado a cada
-  requisição). Posso evoluir para esse modelo quando quiser.
+- **NÃO é segurança forte.** Quem conseguir abrir o site consegue ler a chave e,
+  com ela, chamar a função diretamente.
+- Como o sistema guarda dados sensíveis (CPF, salários, retiradas), o ideal para
+  proteção real é um **login de verdade** (usuário e senha por pessoa, com
+  **token JWT** emitido pelo servidor e verificado a cada requisição). Posso
+  evoluir para esse modelo quando quiser — é a forma correta de proteger dados
+  pessoais (inclusive para a LGPD).
 
-Mantenha os computadores com sessão de RH **protegidos por senha do sistema
-operacional** e não compartilhe a `SYNC_TOKEN` fora da equipe.
+Enquanto isso, mantenha o **endereço do site restrito à equipe**, os computadores
+**protegidos por senha do sistema operacional** e troque o `SYNC_TOKEN` (e
+refaça o deploy) se desconfiar de vazamento.
 
 ---
 

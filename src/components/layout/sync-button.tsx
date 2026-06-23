@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Cloud, CloudOff, RefreshCw, Check, AlertTriangle, Loader2, Download, Upload,
-  Info, Link2, ShieldAlert, Send, Power,
+  Info, ShieldAlert, Send, Power, Wifi, PlugZap,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { exportarDados, importarDados } from "@/lib/store";
 import {
-  statusSync, assinarSync, configSync, syncHabilitado, pendentesSync, conflitosSync,
-  configurarSync, testarConexao, sincronizarAgora, enviarTudo, aceitarServidor,
-  sobrescreverServidor, type StatusSync,
+  statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
+  conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
+  enviarTudo, aceitarServidor, sobrescreverServidor, type StatusSync,
 } from "@/lib/sync";
 
 // Aparência do indicador conforme o estado da nuvem.
 const VISUAL: Record<StatusSync, { rotulo: string; cor: string; Icone: typeof Cloud; girar?: boolean }> = {
-  off: { rotulo: "Nuvem desligada", cor: "text-slate-400", Icone: CloudOff },
-  ok: { rotulo: "Sincronizado", cor: "text-green-600", Icone: Check },
-  pending: { rotulo: "Pendências a enviar", cor: "text-amber-600", Icone: Cloud },
+  off: { rotulo: "Sincronização desligada", cor: "text-slate-400", Icone: CloudOff },
+  ok: { rotulo: "Tudo sincronizado", cor: "text-green-600", Icone: Check },
+  pending: { rotulo: "Enviando alterações…", cor: "text-amber-600", Icone: Cloud },
   offline: { rotulo: "Sem conexão", cor: "text-slate-400", Icone: CloudOff },
   syncing: { rotulo: "Sincronizando…", cor: "text-blue-600", Icone: RefreshCw, girar: true },
   conflito: { rotulo: "Conflito a resolver", cor: "text-red-600", Icone: AlertTriangle },
@@ -33,43 +33,19 @@ export function SyncButton() {
   const toast = useToast();
   const status = useStatusSync();
   const [aberto, setAberto] = useState(false);
-  const [tick, setTick] = useState(0); // re-render local após ações (conflitos)
+  const [tick, setTick] = useState(0); // re-render local após ações
   const fileRef = useRef<HTMLInputElement>(null);
   const recarregar = () => setTick((n) => n + 1);
 
   const cfg = configSync();
+  const configurado = syncConfigurado(); // o site tem SYNC_TOKEN embutido?
   const ligado = syncHabilitado();
   const pendentes = pendentesSync();
   const conflitos = conflitosSync();
   const vis = VISUAL[status];
 
-  // --- formulário de conexão ---
-  const [token, setToken] = useState(cfg.token);
   const [endpoint, setEndpoint] = useState(cfg.endpoint);
-  const [testando, setTestando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
-
-  const conectar = async () => {
-    if (!token.trim()) { toast("Informe a senha de sincronização.", "erro"); return; }
-    setTestando(true);
-    try {
-      const ok = await testarConexao(endpoint.trim() || cfg.endpoint, token.trim());
-      if (!ok) { toast("Não conectou: confira a senha e se a função está publicada.", "erro"); return; }
-      configurarSync({ endpoint: endpoint.trim() || cfg.endpoint, token: token.trim(), habilitado: true });
-      toast("Nuvem conectada. Este computador passará a sincronizar automaticamente.");
-      recarregar();
-    } catch {
-      toast("Falha ao testar a conexão (você está online?).", "erro");
-    } finally {
-      setTestando(false);
-    }
-  };
-
-  const desligar = () => {
-    configurarSync({ habilitado: false });
-    toast("Sincronização desligada neste computador. Os dados continuam salvos localmente.");
-    recarregar();
-  };
 
   const agora = async () => {
     setOcupado(true);
@@ -78,13 +54,29 @@ export function SyncButton() {
     finally { setOcupado(false); recarregar(); }
   };
 
+  const testar = async () => {
+    setOcupado(true);
+    try {
+      const ok = await testarConexao();
+      toast(ok ? "Conexão com a nuvem OK." : "Sem resposta da nuvem. Confira o deploy no Netlify.", ok ? "sucesso" : "erro");
+    } finally { setOcupado(false); recarregar(); }
+  };
+
   const enviarOficial = async () => {
     if (!confirm("Enviar TODOS os dados deste computador para a nuvem como versão oficial? Use isto apenas no computador principal, com os dados mais completos.")) return;
     setOcupado(true);
-    try { await enviarTudo(); toast("Tudo enviado para a nuvem. Os outros computadores receberão ao sincronizar."); }
+    try { await enviarTudo(); toast("Tudo enviado para a nuvem. Os outros computadores recebem ao abrir."); }
     catch (e) { toast(e instanceof Error ? e.message : "Falha ao enviar.", "erro"); }
     finally { setOcupado(false); recarregar(); }
   };
+
+  const alternarLigado = () => {
+    if (ligado) { desligarSync(); toast("Sincronização desligada neste computador. Os dados continuam salvos localmente."); }
+    else { ligarSync(); toast("Sincronização ligada neste computador."); }
+    recarregar();
+  };
+
+  const salvarEndpoint = () => { definirEndpoint(endpoint); toast("Endereço da função salvo."); recarregar(); };
 
   // --- backup manual (arquivo) ---
   const exportar = () => {
@@ -134,7 +126,7 @@ export function SyncButton() {
         aberto={aberto}
         onFechar={() => setAberto(false)}
         titulo="Sincronização entre computadores"
-        descricao="Mantém os dados iguais em todas as máquinas, automaticamente."
+        descricao="Automática: os dados ficam iguais em todas as máquinas, sem senha."
         largura="max-w-xl"
       >
         <div className="space-y-5" data-tick={tick}>
@@ -144,9 +136,11 @@ export function SyncButton() {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-brand-ink">{vis.rotulo}</p>
               <p className="text-xs text-slate-500">
-                {ligado
-                  ? `Conectado · ${pendentes} pendência(s)${conflitos.length ? ` · ${conflitos.length} conflito(s)` : ""}`
-                  : "Não conectado neste computador."}
+                {configurado
+                  ? ligado
+                    ? `Automática · ${pendentes} pendência(s)${conflitos.length ? ` · ${conflitos.length} conflito(s)` : ""}`
+                    : "Desligada neste computador."
+                  : "Ainda não configurada no Netlify."}
               </p>
             </div>
             {ligado && (
@@ -175,63 +169,62 @@ export function SyncButton() {
             </div>
           )}
 
-          {/* Conexão */}
-          {!ligado ? (
-            <div className="space-y-3 rounded-xl border border-slate-200 p-4">
-              <p className="flex items-center gap-1.5 text-sm font-semibold text-brand-ink"><Link2 className="h-4 w-4 text-brand" /> Conectar à nuvem</p>
+          {/* Não configurado: instrução de 1 variável no Netlify */}
+          {!configurado ? (
+            <div className="space-y-2 rounded-xl border border-slate-200 p-4">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-brand-ink"><PlugZap className="h-4 w-4 text-brand" /> Ligar a sincronização automática</p>
               <p className="text-xs leading-relaxed text-slate-500">
-                Digite a <strong>senha de sincronização</strong> (a mesma em todos os computadores). Ela deve ser igual ao
-                valor configurado no Netlify (variável <code className="rounded bg-slate-100 px-1">SYNC_TOKEN</code>).
+                Falta um passo, feito <strong>uma única vez</strong> no painel do Netlify: crie a variável de ambiente
+                <code className="mx-1 rounded bg-slate-100 px-1">SYNC_TOKEN</code> com uma senha forte e publique o site.
+                A partir daí, <strong>todo computador que abrir o app já sincroniza sozinho</strong> — ninguém digita nada.
+                O passo a passo está no arquivo <code className="rounded bg-slate-100 px-1">SINCRONIZACAO.md</code>.
               </p>
-              <div className="space-y-2">
-                <input
-                  type="password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="Senha de sincronização"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
-                />
-                <details className="text-xs text-slate-500">
-                  <summary className="cursor-pointer select-none hover:text-slate-700">Endereço da função (avançado)</summary>
-                  <input
-                    type="text"
-                    value={endpoint}
-                    onChange={(e) => setEndpoint(e.target.value)}
-                    placeholder="/.netlify/functions/sync"
-                    className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
-                  />
-                </details>
-              </div>
-              <button onClick={conectar} disabled={testando} className="btn-primary w-full justify-center disabled:opacity-50">
-                {testando ? <><Loader2 className="h-4 w-4 animate-spin" /> Testando…</> : <>Conectar este computador</>}
-              </button>
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
-                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <p>
-                  <strong>Aviso de segurança:</strong> esta senha fica guardada no navegador e trafega para a função.
-                  Ela protege contra acesso casual e robôs, mas <strong>não é segurança forte</strong> — qualquer pessoa
-                  com acesso ao computador pode vê-la nas ferramentas de desenvolvedor (DevTools). Para dados realmente
-                  sensíveis, o ideal é um login de verdade (usuário/senha por pessoa, com token JWT no servidor).
-                </p>
-              </div>
             </div>
           ) : (
             <div className="space-y-3 rounded-xl border border-slate-200 p-4">
-              <p className="text-sm font-semibold text-brand-ink">Computador principal</p>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-brand-ink"><Wifi className="h-4 w-4 text-brand" /> Computador principal</p>
               <p className="text-xs leading-relaxed text-slate-500">
-                Faça isto <strong>uma vez</strong>, no computador que tem os dados mais completos: envia tudo para a nuvem
-                como versão oficial. Nos outros, basta conectar e usar “Sincronizar agora”.
+                Faça <strong>uma vez</strong>, no computador com os dados mais completos: envia tudo para a nuvem como
+                versão oficial. Os outros recebem sozinhos ao abrir.
               </p>
               <div className="flex flex-wrap gap-2">
                 <button onClick={enviarOficial} disabled={ocupado} className="btn-primary flex-1 justify-center disabled:opacity-50">
                   {ocupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar tudo (oficial)
                 </button>
-                <button onClick={desligar} className="btn-outline justify-center">
-                  <Power className="h-4 w-4" /> Desligar aqui
+                <button onClick={testar} disabled={ocupado} className="btn-outline justify-center disabled:opacity-50">
+                  <PlugZap className="h-4 w-4" /> Testar conexão
+                </button>
+                <button onClick={alternarLigado} className="btn-outline justify-center">
+                  <Power className="h-4 w-4" /> {ligado ? "Desligar aqui" : "Ligar aqui"}
                 </button>
               </div>
+              <details className="text-xs text-slate-500">
+                <summary className="cursor-pointer select-none hover:text-slate-700">Endereço da função (avançado)</summary>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={endpoint}
+                    onChange={(e) => setEndpoint(e.target.value)}
+                    placeholder="/.netlify/functions/sync"
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                  />
+                  <button onClick={salvarEndpoint} className="btn-outline px-3">Salvar</button>
+                </div>
+              </details>
             </div>
           )}
+
+          {/* Aviso de segurança (sempre visível: vale para o modelo automático) */}
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+            <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <p>
+              <strong>Aviso de segurança:</strong> para ser automática (sem senha), a chave de acesso fica
+              <strong> embutida no app</strong> e é entregue a quem abrir o site — ou seja, é <strong>visível no
+              DevTools</strong>. Isso protege contra acesso casual e robôs, mas <strong>não é segurança forte</strong>.
+              Para dados realmente sensíveis, o ideal é um login de verdade (usuário/senha por pessoa, com token JWT no
+              servidor). Posso evoluir para esse modelo quando quiser.
+            </p>
+          </div>
 
           {/* Backup manual (alternativa offline) */}
           <details className="rounded-xl border border-slate-200">

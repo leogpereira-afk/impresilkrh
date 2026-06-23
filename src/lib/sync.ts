@@ -2,8 +2,10 @@
 // Sincronização offline-first (cliente). Escreve local na hora; enfileira a
 // ação; tenta sincronizar com a nuvem (Netlify Function) quando online.
 // Reconcilia por timestamp (atualizadoEm). Backend trocável (contrato estável).
-// É OPT-IN: enquanto não houver token configurado, nada é enviado e o app
-// funciona 100% local, como antes.
+//
+// AUTOMÁTICA, SEM SENHA: o token vem embutido no build (env SYNC_TOKEN do
+// Netlify). Todo computador que abre o app já sincroniza sozinho. Se o site
+// ainda não foi configurado (token vazio), tudo funciona 100% local, como antes.
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
 import { obter, definirColecao, aplicarSemSync, registrarMutacao, obterConfig } from "@/lib/store";
@@ -16,6 +18,13 @@ const ENDPOINT_PADRAO = "/.netlify/functions/sync";
 const MAX_TENTATIVAS = 25; // descarta a ação após N falhas permanentes
 const LOTE_PUSH = 100; // registros por chamada no envio em massa
 
+// Token embutido no build (vite "define" a partir da env SYNC_TOKEN do Netlify).
+// É isto que torna a sincronização AUTOMÁTICA: não há senha para digitar — todo
+// computador que abre o app já vem com o token e sincroniza sozinho. Quando o
+// site ainda não foi configurado, o valor é "" e a sincronização fica desligada.
+declare const __SYNC_TOKEN__: string;
+const TOKEN_BUILD = typeof __SYNC_TOKEN__ === "string" ? __SYNC_TOKEN__ : "";
+
 type Tipo = "upsert" | "delete";
 interface Acao { tipo: Tipo; colecao: string; id: string; falhas?: number; conflito?: boolean; servidor?: Envelope | null }
 interface Envelope { colecao: string; registro: Reg }
@@ -23,15 +32,24 @@ type Reg = { id: string; atualizadoEm?: string } & Record<string, unknown>;
 export type StatusSync = "off" | "ok" | "pending" | "offline" | "syncing" | "conflito" | "erro";
 
 // ---------------------------- configuração ----------------------------------
-interface CfgSync { endpoint: string; token: string; habilitado: boolean }
+// Sem senha: o token vem do build. O usuário só pode (opcionalmente) DESLIGAR a
+// sincronização neste computador, ou ajustar o endpoint (avançado).
+interface CfgSync { endpoint: string; desligado: boolean }
 function lerCfg(): CfgSync {
-  const base: CfgSync = { endpoint: ENDPOINT_PADRAO, token: "", habilitado: false };
+  const base: CfgSync = { endpoint: ENDPOINT_PADRAO, desligado: false };
   if (!temWindow) return base;
   try { return { ...base, ...JSON.parse(localStorage.getItem(K_CFG) || "{}") }; } catch { return base; }
 }
-function gravarCfg(c: CfgSync) { if (temWindow) localStorage.setItem(K_CFG, JSON.stringify(c)); }
-export function configSync(): CfgSync { return lerCfg(); }
-export function syncHabilitado(): boolean { const c = lerCfg(); return c.habilitado && !!c.token; }
+function gravarCfg(patch: Partial<CfgSync>) { if (temWindow) localStorage.setItem(K_CFG, JSON.stringify({ ...lerCfg(), ...patch })); }
+function tokenEfetivo(): string { return TOKEN_BUILD; }
+export function configSync(): CfgSync & { token: string; configurado: boolean } {
+  const c = lerCfg();
+  return { ...c, token: TOKEN_BUILD, configurado: !!TOKEN_BUILD };
+}
+export function syncConfigurado(): boolean { return !!TOKEN_BUILD; }
+export function syncHabilitado(): boolean { return !!TOKEN_BUILD && !lerCfg().desligado; }
+export function ligarSync(): void { gravarCfg({ desligado: false }); recalcStatus(); if (syncHabilitado()) { void trySync(); void pull(); } }
+export function desligarSync(): void { gravarCfg({ desligado: true }); recalcStatus(); }
 
 // ------------------------------- status -------------------------------------
 let status: StatusSync = syncHabilitado() ? "pending" : "off";
@@ -73,10 +91,10 @@ function enfileirar(colecao: string, tipo: Tipo, id: string) {
 // ------------------------------- HTTP ---------------------------------------
 class ErroHttp extends Error { constructor(public status: number, msg: string) { super(msg); } }
 async function chamar(action: string, payload: Record<string, unknown> = {}): Promise<any> {
-  const { endpoint, token } = lerCfg();
+  const { endpoint } = lerCfg();
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-token": token },
+    headers: { "content-type": "application/json", "x-token": tokenEfetivo() },
     body: JSON.stringify({ action, ...payload }),
   });
   if (!res.ok) throw new ErroHttp(res.status, await res.text().catch(() => res.statusText));
@@ -125,6 +143,7 @@ export async function trySync(): Promise<void> {
 // --------------------------- baixar (pull) ----------------------------------
 export async function pull(): Promise<void> {
   if (!syncHabilitado()) return;
+  if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
   try {
     const remoto = new Map<string, Envelope>();
@@ -159,8 +178,11 @@ export async function pull(): Promise<void> {
         definirColecao(nome as never, merged as never);
       }
     });
-  } finally {
     recalcStatus();
+  } catch (e) {
+    // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga
+    // a exceção — apenas reflete no status. Erro de rede → offline; HTTP → erro.
+    setStatus(eRede(e) ? "offline" : "erro");
   }
 }
 
@@ -209,23 +231,26 @@ export function sobrescreverServidor(colecao: string, id: string) {
 }
 
 // --------------------------- ativação / setup -------------------------------
-export async function testarConexao(endpoint: string, token: string): Promise<boolean> {
-  const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", "x-token": token }, body: JSON.stringify({ action: "ping" }) });
-  return res.ok;
+// Testa a conexão com o endpoint atual usando o token embutido (ping).
+export async function testarConexao(): Promise<boolean> {
+  if (!TOKEN_BUILD) return false;
+  try {
+    const { endpoint } = lerCfg();
+    const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", "x-token": tokenEfetivo() }, body: JSON.stringify({ action: "ping" }) });
+    return res.ok;
+  } catch { return false; }
 }
-export function configurarSync(patch: Partial<CfgSync>) {
-  gravarCfg({ ...lerCfg(), ...patch });
-  recalcStatus();
-  if (syncHabilitado()) { void trySync(); void pull(); }
-}
+export function definirEndpoint(endpoint: string) { gravarCfg({ endpoint: endpoint.trim() || ENDPOINT_PADRAO }); recalcStatus(); if (syncHabilitado()) void sincronizarAgora(); }
 export async function sincronizarAgora(): Promise<void> { await trySync(); await pull(); }
 
 // --------------------------- gatilhos ---------------------------------------
 // Hook chamado pelo store em cada mutação do usuário (só enfileira se ligado).
 registrarMutacao((colecao, tipo, id) => { if (syncHabilitado()) enfileirar(colecao, tipo, id); });
 if (temWindow) {
-  window.addEventListener("online", () => { recalcStatus(); void trySync(); });
+  // Ao abrir o app: já puxa o que mudou em outros computadores e envia pendências.
+  if (syncHabilitado() && navigator.onLine) { void trySync(); void pull(); }
+  window.addEventListener("online", () => { recalcStatus(); void trySync(); void pull(); });
   window.addEventListener("offline", () => recalcStatus());
-  // Tentativa periódica leve enquanto houver pendências/online (puxa updates de outras máquinas).
-  setInterval(() => { if (syncHabilitado() && navigator.onLine) { void trySync(); } }, 60_000);
+  // Tentativa periódica leve: envia pendências e puxa updates de outras máquinas.
+  setInterval(() => { if (syncHabilitado() && navigator.onLine) { void trySync(); void pull(); } }, 60_000);
 }
