@@ -204,6 +204,7 @@ export const STATUS_TREINAMENTO = ["Pendente", "Em andamento", "Concluído"] as 
 // Módulos do sistema (para o controle de permissões por usuário)
 export const MODULOS: { chave: string; label: string }[] = [
   { chave: "painel", label: "Painel" },
+  { chave: "calendario", label: "Calendário" },
   { chave: "colaboradores", label: "Colaboradores" },
   { chave: "organograma", label: "Organograma" },
   { chave: "carreira", label: "Carreira e Salários" },

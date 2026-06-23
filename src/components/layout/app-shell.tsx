@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Plane, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain,
+  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/brand/logo";
@@ -29,6 +29,7 @@ const RH = ["ADMIN_RH"];
 
 const NAV: ItemNav[] = [
   { href: "/painel", label: "Painel", icon: LayoutDashboard, perfis: TODOS, grupo: "Visão geral" },
+  { href: "/calendario", label: "Calendário", icon: CalendarDays, perfis: TODOS, grupo: "Visão geral" },
   // Pessoas — operações do quadro
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },

@@ -33,6 +33,7 @@ const Mensagens = lazy(() => import("@/pages/Mensagens"));
 const Treinamento = lazy(() => import("@/pages/Treinamento"));
 const Custos = lazy(() => import("@/pages/Custos"));
 const Comportamental = lazy(() => import("@/pages/Comportamental"));
+const Calendario = lazy(() => import("@/pages/Calendario"));
 
 function Protegido({ children }: { children: React.ReactNode }) {
   const sessao = useSessao();
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<Protegido><AppShell /></Protegido>}>
             <Route path="/painel" element={<Painel />} />
+            <Route path="/calendario" element={<Calendario />} />
             <Route path="/colaboradores" element={<Restrito perfis={GESTAO}><Colaboradores /></Restrito>} />
             <Route path="/colaboradores/:id" element={<ColaboradorFicha />} />
             <Route path="/organograma" element={<Organograma />} />

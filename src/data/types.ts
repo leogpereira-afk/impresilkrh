@@ -487,3 +487,18 @@ export interface ClassificacaoConta {
   nome: string;
   classe: ClasseCusto;
 }
+
+// ===================== Calendário / datas comemorativas (v5) =====================
+// Eventos fixos do calendário (feriados, datas comemorativas, dias mundiais do
+// segmento, fundação e reuniões). Aniversários de pessoas e de empresa são
+// derivados dos colaboradores — não ficam aqui.
+export type TipoEvento = "Feriado" | "Comemorativa" | "Reunião" | "Empresa" | "Outro";
+export interface EventoCalendario {
+  id: string;
+  titulo: string;
+  data: string; // "YYYY-MM-DD"
+  tipo: TipoEvento;
+  recorrenteAnual?: boolean; // repete todo ano (feriados fixos, datas comemorativas, fundação)
+  hora?: string | null; // "HH:MM" (reuniões)
+  descricao?: string | null;
+}
