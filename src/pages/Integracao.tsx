@@ -280,11 +280,6 @@ export default function Integracao() {
                 Jornada do colaborador
               </div>
             }
-            action={
-              <span className="hidden text-xs text-slate-400 sm:inline">
-                Clique em uma barra para auditar os colaboradores
-              </span>
-            }
           />
           <CardBody>
             <BarrasColoridas

@@ -22,6 +22,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
+import { Select } from "@/components/ui/form";
 import { useColecao } from "@/lib/store";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import {
@@ -531,33 +532,23 @@ export default function Relatorios() {
     <div>
       <PageHeader
         title="Relatórios gerenciais"
-        description="Visão executiva da Impresilk — folha, movimentação e enquadramento. Clique nas barras, fatias e cartões para ver os nomes."
+        description="Visão executiva da Impresilk — folha, movimentação e enquadramento."
       />
 
       {/* Filtro de período — controla movimentação e turnover */}
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Período</span>
-        <select
-          value={filtroMes}
-          onChange={(e) => setFiltroMes(Number(e.target.value))}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          aria-label="Mês"
-        >
+        <Select value={filtroMes} onChange={(e) => setFiltroMes(Number(e.target.value))} className="w-40" aria-label="Mês">
           <option value={0}>Ano inteiro</option>
           {MESES_PT.map((nome, i) => (
             <option key={i} value={i + 1}>{nome}</option>
           ))}
-        </select>
-        <select
-          value={filtroAno}
-          onChange={(e) => setFiltroAno(Number(e.target.value))}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          aria-label="Ano"
-        >
+        </Select>
+        <Select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))} className="w-28" aria-label="Ano">
           {anosDisponiveis.map((ano) => (
             <option key={ano} value={ano}>{ano}</option>
           ))}
-        </select>
+        </Select>
         <span className="hidden text-xs text-slate-400 sm:inline">
           Movimentação e turnover: {rotuloPeriodo} · folha e quadro mostram a posição atual
         </span>

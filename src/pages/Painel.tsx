@@ -10,6 +10,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { EmptyState, Progress } from "@/components/ui/misc";
+import { Select } from "@/components/ui/form";
 import { BarrasColoridas, BarrasVerticais, Rosca } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { HumorIndicador, PerfilComportamentalBadge } from "@/components/ui/indicadores";
@@ -298,27 +299,17 @@ export default function Painel() {
       {/* ---------- Filtro por mês/ano + inativos (v3) ---------- */}
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Período</span>
-        <select
-          value={filtroMes}
-          onChange={(e) => setFiltroMes(Number(e.target.value))}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          aria-label="Mês"
-        >
+        <Select value={filtroMes} onChange={(e) => setFiltroMes(Number(e.target.value))} className="w-40" aria-label="Mês">
           <option value={0}>Ano inteiro</option>
           {MESES_PT.map((nome, i) => (
             <option key={i} value={i + 1}>{nome}</option>
           ))}
-        </select>
-        <select
-          value={filtroAno}
-          onChange={(e) => setFiltroAno(Number(e.target.value))}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          aria-label="Ano"
-        >
+        </Select>
+        <Select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))} className="w-28" aria-label="Ano">
           {anosDisponiveis.map((ano) => (
             <option key={ano} value={ano}>{ano}</option>
           ))}
-        </select>
+        </Select>
         <label className="ml-auto flex cursor-pointer items-center gap-2 text-sm text-slate-600">
           <input
             type="checkbox"
@@ -382,7 +373,7 @@ export default function Painel() {
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Folha por setor" subtitle="Clique no gráfico ou na linha para ver quem compõe" icon={<Wallet className="h-[18px] w-[18px]" />} />
+              <CardHeader title="Folha por setor" subtitle="Composição da folha por setor" icon={<Wallet className="h-[18px] w-[18px]" />} />
               <CardBody>
                 {folhaPorArea.length === 0 ? <EmptyState title="Sem dados de folha" /> : (
                   <>
@@ -481,7 +472,7 @@ export default function Painel() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader title="Colaboradores por área" subtitle="Clique para ver os nomes" icon={<Users className="h-[18px] w-[18px]" />} />
+          <CardHeader title="Colaboradores por área" subtitle="Distribuição do quadro por área" icon={<Users className="h-[18px] w-[18px]" />} />
           <CardBody><BarrasVerticais data={porArea} onItemClick={(nome) => drill.abrir(`Área · ${nome}`, colabsPorArea(nome))} /></CardBody>
         </Card>
         <Card>
@@ -539,7 +530,7 @@ export default function Painel() {
                 <span className="text-3xl font-semibold tracking-tight text-brand-ink">{emTreinamento.length}</span>
                 <span className="mb-1 text-xs text-slate-400">colaborador(es)</span>
               </div>
-              <p className="mt-1 text-xs text-slate-500">Em treinamento · clique para ver os nomes</p>
+              <p className="mt-1 text-xs text-slate-500">Em treinamento</p>
             </button>
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>{treinosAbertos.length} treinamento(s) em aberto</span>

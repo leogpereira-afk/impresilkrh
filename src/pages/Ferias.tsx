@@ -301,7 +301,7 @@ export default function Ferias() {
         <Card>
           <CardHeader
             title="Quadro de Comando"
-            subtitle="Distribuição por status — clique numa barra para ver os colaboradores"
+            subtitle="Distribuição por status"
             icon={<BarChart3 className="h-[18px] w-[18px]" />}
           />
           <CardBody>
@@ -331,7 +331,7 @@ export default function Ferias() {
         <Card>
           <CardHeader
             title="Férias por área"
-            subtitle="Volume de registros por área — clique para detalhar"
+            subtitle="Volume de registros por área"
             icon={<BarChart3 className="h-[18px] w-[18px]" />}
           />
           <CardBody>

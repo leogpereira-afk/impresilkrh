@@ -557,51 +557,6 @@ function NoveBox({
       </CardBody>
     </Card>
 
-    {/* Como ler o 9-Box (legenda dinâmica) */}
-    <Card>
-      <CardHeader
-        title="Como ler o 9-Box"
-        subtitle="Guia rápido de leitura e ação por quadrante"
-        icon={<Grid3x3 className="h-[18px] w-[18px]" />}
-      />
-      <CardBody>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <GuiaItem
-            cor="bg-green-100 border-green-200"
-            titulo="Talentos a reter"
-            texto="Estrela, Alto potencial e Forte desempenho. Acelere, dê visibilidade e prepare sucessão."
-            qtd={
-              matriz.Alto.Alto.length +
-              matriz.Alto.Médio.length +
-              matriz.Médio.Alto.length
-            }
-          />
-          <GuiaItem
-            cor="bg-amber-50 border-amber-200"
-            titulo="Manter e desenvolver"
-            texto="Mantenedores e especialistas. Metas claras, feedback contínuo e desafios graduais."
-            qtd={
-              matriz.Médio.Médio.length +
-              matriz.Baixo.Alto.length +
-              matriz.Baixo.Médio.length +
-              matriz.Alto.Baixo.length +
-              matriz.Médio.Baixo.length
-            }
-          />
-          <GuiaItem
-            cor="bg-red-50 border-red-200"
-            titulo="Risco — plano de ação"
-            texto="Baixo desempenho e baixo potencial. Defina plano com prazo ou avalie realocação."
-            qtd={matriz.Baixo.Baixo.length}
-          />
-        </div>
-        <p className="mt-3 text-xs text-slate-400">
-          A dica de ação aparece em cada célula. Sem avaliação no ciclo, o desempenho é considerado
-          “Médio”. Clique numa célula para ver os nomes.
-        </p>
-      </CardBody>
-    </Card>
-
     {/* Atenção à retenção: cruza risco de saída alto com motivação baixa */}
     <Card>
       <CardHeader
@@ -720,31 +675,6 @@ function RetencaoLinha({
           </span>
         )}
       </div>
-    </div>
-  );
-}
-
-function GuiaItem({
-  cor,
-  titulo,
-  texto,
-  qtd,
-}: {
-  cor: string;
-  titulo: string;
-  texto: string;
-  qtd: number;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-100 p-3">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <span className={`h-3 w-3 rounded border ${cor}`} aria-hidden />
-          {titulo}
-        </span>
-        <Badge variant="neutral">{qtd}</Badge>
-      </div>
-      <p className="text-xs leading-snug text-slate-500">{texto}</p>
     </div>
   );
 }

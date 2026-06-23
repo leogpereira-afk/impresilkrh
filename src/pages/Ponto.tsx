@@ -187,7 +187,7 @@ function AbaAdvertencias({
       <Card className="mt-6">
         <CardHeader
           title="Advertências por colaborador"
-          subtitle="Reincidência disciplinar no escopo — clique para abrir a ficha"
+          subtitle="Reincidência disciplinar no escopo"
           icon={<Trophy className="h-[18px] w-[18px]" />}
         />
         <CardBody>
@@ -555,7 +555,7 @@ function AbaAbsenteismo({
       <Card className="mt-6">
         <CardHeader
           title="Quem mais falta"
-          subtitle="Ranking de ausências no período — clique para abrir a ficha"
+          subtitle="Ranking de ausências no período"
           icon={<Trophy className="h-[18px] w-[18px]" />}
         />
         <CardBody>

@@ -184,7 +184,7 @@ export default function Treinamento() {
         <Card>
           <CardHeader
             title="Treinamentos por tipo"
-            subtitle="Distribuição da carga de capacitação — clique para ver as pessoas"
+            subtitle="Distribuição da carga de capacitação"
             icon={<BookOpen className="h-[18px] w-[18px]" />}
           />
           <CardBody>
@@ -205,7 +205,7 @@ export default function Treinamento() {
         <Card>
           <CardHeader
             title="Treinamentos por status"
-            subtitle="Andamento geral das capacitações — clique para ver as pessoas"
+            subtitle="Andamento geral das capacitações"
             icon={<ListChecks className="h-[18px] w-[18px]" />}
           />
           <CardBody>
@@ -347,7 +347,7 @@ export default function Treinamento() {
       <Card className="mt-6">
         <CardHeader
           title="O que precisa treinar"
-          subtitle="Treinamentos pendentes agrupados — clique para ver quem precisa"
+          subtitle="Treinamentos pendentes agrupados"
           icon={<ListChecks className="h-[18px] w-[18px]" />}
         />
         <CardBody>
