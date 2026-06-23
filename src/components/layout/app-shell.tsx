@@ -29,30 +29,35 @@ const RH = ["ADMIN_RH"];
 
 const NAV: ItemNav[] = [
   { href: "/painel", label: "Painel", icon: LayoutDashboard, perfis: TODOS, grupo: "Visão geral" },
+  // Pessoas — operações do quadro
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
-  { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/comportamental", label: "Guia Comportamental", icon: Brain, perfis: TODOS, grupo: "Pessoas" },
-  { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Integração / Desligamento", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/viagens", label: "Viagens e Diárias", icon: Plane, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/comunicacao", label: "Comunicação Interna", icon: Megaphone, perfis: TODOS, grupo: "RH" },
-  { href: "/mensagens", label: "Disparo de Mensagens", icon: Send, perfis: GESTAO, grupo: "RH" },
-  { href: "/pops", label: "POPs e Procedimentos", icon: BookOpen, perfis: TODOS, grupo: "RH" },
-  { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "RH" },
-  { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "RH" },
-  { href: "/meu-perfil", label: "Meu perfil", icon: UserCircle, perfis: TODOS, grupo: "Conta" },
-  { href: "/aceites", label: "Termos e Aceites", icon: FileSignature, perfis: TODOS, grupo: "Conta" },
+  // Cargos & Custos — estrutura e dinheiro
+  { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
+  { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },
+  // Comunicação & Conteúdo — comunicação interna e material de referência
+  { href: "/comunicacao", label: "Comunicação Interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
+  { href: "/mensagens", label: "Disparo de Mensagens", icon: Send, perfis: GESTAO, grupo: "Comunicação & Conteúdo" },
+  { href: "/pops", label: "POPs e Procedimentos", icon: BookOpen, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
+  { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
+  { href: "/comportamental", label: "Guia Comportamental", icon: Brain, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
+  // Administração — só RH
   { href: "/relatorios", label: "Relatórios Gerenciais", icon: BarChart3, perfis: RH, grupo: "Administração" },
+  { href: "/aceites", label: "Termos e Aceites", icon: FileSignature, perfis: RH, grupo: "Administração" },
   { href: "/painel-controle", label: "Painel de Controle", icon: SlidersHorizontal, perfis: RH, grupo: "Administração" },
   { href: "/lgpd", label: "Registros de Acesso (LGPD)", icon: ShieldCheck, perfis: RH, grupo: "Administração" },
+  // Conta
+  { href: "/meu-perfil", label: "Meu perfil", icon: UserCircle, perfis: TODOS, grupo: "Conta" },
 ];
 
-const GRUPOS = ["Visão geral", "Pessoas", "RH", "Conta", "Administração"];
+const GRUPOS = ["Visão geral", "Pessoas", "Cargos & Custos", "Comunicação & Conteúdo", "Administração", "Conta"];
 
 export function AppShell() {
   const location = useLocation();

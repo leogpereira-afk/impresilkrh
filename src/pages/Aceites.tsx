@@ -39,12 +39,19 @@ export default function Aceites() {
         description="Aceite eletrônico do Código de Ética e ciência dos seus planos de desenvolvimento."
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <CodigoEticaCard c={c} />
-        <CienciaPdiCard c={c} />
-      </div>
+      <MeusTermos c={c} />
 
       {ehRH(sessao) && <AcompanhamentoCard />}
+    </div>
+  );
+}
+
+// Cards de aceite do próprio colaborador (reusado na aba "Termos" de Meu Perfil).
+export function MeusTermos({ c }: { c: Colaborador }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <CodigoEticaCard c={c} />
+      <CienciaPdiCard c={c} />
     </div>
   );
 }

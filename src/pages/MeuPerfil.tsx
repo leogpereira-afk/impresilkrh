@@ -8,6 +8,7 @@ import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { Badge, DotBadge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { AbaFinanceiro } from "./ColaboradorFicha";
+import { MeusTermos } from "./Aceites";
 import { useColecao } from "@/lib/store";
 import { getBlob } from "@/lib/blobstore";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
@@ -65,9 +66,6 @@ export default function MeuPerfil() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <DotBadge label={`Enquadramento: ${enq}`} cor={corEnq} />
-            <Link to="/aceites" className="btn-outline">
-              <FileSignature className="h-4 w-4" /> Termos e aceites
-            </Link>
           </div>
         </CardBody>
       </Card>
@@ -80,6 +78,7 @@ export default function MeuPerfil() {
           { id: "docs", label: "Meus documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} /> },
           { id: "desenv", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: <AbaDesenvolvimento colaboradorId={c.id} /> },
+          { id: "termos", label: "Termos e aceites", icon: <FileSignature className="h-4 w-4" />, conteudo: <MeusTermos c={c} /> },
         ]}
       />
     </div>
