@@ -45,6 +45,7 @@ export default function Painel() {
   const { items: advertencias } = useColecao("advertencias");
   const { items: treinamentos } = useColecao("treinamentos");
   const { items: pagamentos } = useColecao("pagamentos");
+  const { items: certificacoesNr } = useColecao("certificacoesNr");
 
   // ---------- Filtro por mês e ano (v3) ----------
   // mes === 0 => "Ano inteiro". Padrão = mês/ano de HOJE.
@@ -110,6 +111,9 @@ export default function Painel() {
 
   const docsAlerta = documentos.filter((doc) => ids.has(doc.colaboradorId) && doc.dataVencimento && dias(doc.dataVencimento) <= JANELA_ALERTA_DIAS);
   const docsVencidos = docsAlerta.filter((doc) => dias(doc.dataVencimento) < 0);
+  // NRs (treinamentos de segurança) a vencer/vencidas no escopo.
+  const nrsAlerta = certificacoesNr.filter((c) => ids.has(c.colaboradorId) && c.dataValidade && dias(c.dataValidade) <= JANELA_ALERTA_DIAS);
+  const nrsVencidas = nrsAlerta.filter((c) => dias(c.dataValidade!) < 0);
 
   const feriasAtivas = ferias.filter((f) => ids.has(f.colaboradorId) && f.status === "Em andamento");
   const proximosRetornos = ferias
@@ -451,6 +455,9 @@ export default function Painel() {
         <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Documentos a vencer", escopo.filter((c) => docsAlerta.some((doc) => doc.colaboradorId === c.id)), `${docsAlerta.length} documento(s) · ${docsVencidos.length} vencido(s)`)}>
           <StatCard label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"} />
         </button>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("NRs a vencer", escopo.filter((c) => nrsAlerta.some((n) => n.colaboradorId === c.id)), `${nrsAlerta.length} certificação(ões) · ${nrsVencidas.length} vencida(s)`)}>
+          <StatCard label="NRs a vencer" value={nrsAlerta.length} hint={`${nrsVencidas.length} vencida(s)`} icon={<Award className="h-5 w-5" />} accent={nrsVencidas.length ? "red" : nrsAlerta.length ? "amber" : "green"} />
+        </button>
         <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Avaliações pendentes", avaliacoesPendentes, "Ciclo 2026.1 · ainda sem avaliação do gestor")}>
           <StatCard label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />
         </button>
@@ -557,12 +564,27 @@ export default function Painel() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Alertas e pendências" subtitle="Conformidade de documentos, férias e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
+          <CardHeader title="Alertas e pendências" subtitle="Conformidade de documentos, NRs e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
-            {docsAlerta.length === 0 && avaliacoesPendentes.length === 0 ? (
+            {docsAlerta.length === 0 && avaliacoesPendentes.length === 0 && nrsAlerta.length === 0 ? (
               <EmptyState title="Tudo em dia" description="Nenhuma pendência crítica no seu escopo." icon={<ClipboardCheck className="h-8 w-8" />} />
             ) : (
               <>
+                {nrsAlerta.slice(0, 4).map((c) => {
+                  const dd = dias(c.dataValidade!);
+                  const vencido = dd < 0;
+                  return (
+                    <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-700">{c.nr} · {d.nomeColab(c.colaboradorId)}</p>
+                        <p className="text-xs text-slate-400">Treinamento de NR</p>
+                      </div>
+                      <Badge variant={vencido ? "danger" : "warning"}>
+                        {vencido ? `Vencida há ${Math.abs(dd)}d` : `Vence em ${dd}d`}
+                      </Badge>
+                    </div>
+                  );
+                })}
                 {docsAlerta.slice(0, 6).map((doc) => {
                   const dd = dias(doc.dataVencimento);
                   const vencido = dd < 0;
