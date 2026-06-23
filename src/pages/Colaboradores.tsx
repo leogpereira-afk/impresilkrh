@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3 } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { DotBadge, Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/form";
@@ -27,6 +28,7 @@ export default function Colaboradores() {
   const [fStatus, setFStatus] = useState("");
   const [mostrarInativos, setMostrarInativos] = useState(false); // padrão: só ativos
   const [novo, setNovo] = useState(false);
+  const [verNomes, setVerNomes] = useState(false); // lista simples de nomes (A–Z)
 
   // Áreas/setores navegáveis (sem a Direção).
   const areasNav = useMemo(() => d.areas.filter((a) => a.id !== "direcao"), [d.areas]);
@@ -58,6 +60,21 @@ export default function Colaboradores() {
       .filter((c) => (termo ? c.nome.toLowerCase().includes(termo) || d.nomeCargo(c).toLowerCase().includes(termo) : true))
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, d]);
+
+  // Lista simples de nomes, agrupada por inicial (A, B, C…) — só os nomes, sem
+  // cargo/setor. Usa a mesma lista já filtrada e ordenada alfabeticamente.
+  const inicial = (nome: string) =>
+    (nome.trim()[0] || "#").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const porLetra = useMemo(() => {
+    const m = new Map<string, Colaborador[]>();
+    for (const c of lista) {
+      const L = inicial(c.nome);
+      const arr = m.get(L) ?? [];
+      arr.push(c);
+      m.set(L, arr);
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
+  }, [lista]);
 
   // Agrupamento por setor (área) → subárea, sobre a lista já filtrada.
   const grupos = useMemo(() => {
@@ -316,6 +333,44 @@ export default function Colaboradores() {
           })}
         </div>
       )}
+
+      {/* Atalho ao final: lista simples de nomes (A–Z), fora de cargos/setores */}
+      {lista.length > 0 && (
+        <div className="mt-6 flex justify-center">
+          <button onClick={() => setVerNomes(true)} className="btn-outline">
+            <ArrowDownAZ className="h-4 w-4" /> Ver todos os nomes (A–Z)
+          </button>
+        </div>
+      )}
+
+      <Modal
+        aberto={verNomes}
+        onFechar={() => setVerNomes(false)}
+        titulo="Colaboradores em ordem alfabética"
+        descricao={`${lista.length} nome(s). Toque em um nome para abrir a ficha.`}
+        largura="max-w-2xl"
+      >
+        <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+          {porLetra.map(([letra, itens]) => (
+            <div key={letra}>
+              <p className="sticky top-0 z-10 bg-white py-1 text-xs font-bold uppercase tracking-[0.18em] text-brand">{letra}</p>
+              <ul className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+                {itens.map((c) => (
+                  <li key={c.id}>
+                    <Link
+                      to={`/colaboradores/${c.id}`}
+                      onClick={() => setVerNomes(false)}
+                      className="block truncate rounded-md px-2 py-1 text-sm text-slate-700 transition hover:bg-slate-50 hover:text-brand"
+                    >
+                      {c.nome}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       {novo && <ColaboradorForm aberto={novo} onFechar={() => setNovo(false)} />}
     </div>
