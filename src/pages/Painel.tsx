@@ -53,6 +53,7 @@ export default function Painel() {
   const [filtroAno, setFiltroAno] = useState<number>(HOJE.getFullYear());
   // Inativos só aparecem quando explicitamente marcado (padrão DESLIGADO).
   const [incluirInativos, setIncluirInativos] = useState<boolean>(false);
+  const [lembreteNr, setLembreteNr] = useState(true); // lembrete automático de NR
 
   const escopoBruto = useMemo(
     () => colaboradoresVisiveis(sessao, d.colaboradores),
@@ -299,6 +300,24 @@ export default function Painel() {
         title={`Painel de RH`}
         description={sessao?.perfil === "GESTOR" ? "Visão da sua equipe (hierarquia recursiva)." : "Visão geral do quadro de colaboradores da Impresilk."}
       />
+
+      {lembreteNr && nrsAlerta.length > 0 && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-amber-800">
+              {nrsVencidas.length > 0
+                ? `Atenção: ${nrsVencidas.length} certificação(ões) de NR vencida(s) na equipe.`
+                : `${nrsAlerta.length} certificação(ões) de NR a vencer em breve.`}
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              Reveja os treinamentos de segurança para manter a equipe apta.{" "}
+              <Link to="/sst" className="font-medium underline hover:text-amber-900">Abrir Saúde e Segurança</Link>
+            </p>
+          </div>
+          <button onClick={() => setLembreteNr(false)} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-100" aria-label="Dispensar lembrete">Dispensar</button>
+        </div>
+      )}
 
       {/* ---------- Filtro por mês/ano + inativos (v3) ---------- */}
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">

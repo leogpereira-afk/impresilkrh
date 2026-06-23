@@ -522,7 +522,7 @@ export interface CertificacaoNR {
 // tem perguntas; dinâmicas são atividades com roteiro (campo descrição).
 export type TipoPesquisa = "Pesquisa" | "Dinâmica";
 export type StatusPesquisa = "Rascunho" | "Ativa" | "Encerrada";
-export type TipoPergunta = "Escala" | "Texto" | "SimNao" | "Multipla";
+export type TipoPergunta = "Escala" | "Texto" | "SimNao" | "Multipla" | "Nps";
 export interface PerguntaPesquisa {
   id: string;
   texto: string;

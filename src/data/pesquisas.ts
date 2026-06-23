@@ -30,7 +30,7 @@ export const PESQUISAS: Pesquisa[] = [
     publico: "Todos os colaboradores",
     criadoEm: "2026-03-15",
     perguntas: [
-      { id: "q1", texto: "De 0 a 10, o quanto você recomendaria a Impresilk?", tipo: "Escala" },
+      { id: "q1", texto: "De 0 a 10, o quanto você recomendaria a Impresilk?", tipo: "Nps" },
       { id: "q2", texto: "Qual o principal motivo da sua nota?", tipo: "Texto" },
     ],
   },

@@ -1503,8 +1503,18 @@ const VAR_STATUS_PESQ: Record<StatusPesquisa, "success" | "neutral" | "warning">
   Ativa: "success", Rascunho: "neutral", Encerrada: "warning",
 };
 const LABEL_PERGUNTA: Record<TipoPergunta, string> = {
-  Escala: "Escala (1–5)", Texto: "Texto livre", SimNao: "Sim / Não", Multipla: "Múltipla escolha",
+  Escala: "Escala (1–5)", Texto: "Texto livre", SimNao: "Sim / Não", Multipla: "Múltipla escolha", Nps: "NPS (0–10)",
 };
+
+// eNPS = % promotores (9–10) − % detratores (0–6). Vai de -100 a +100.
+function calcularEnps(notas: number[]) {
+  if (!notas.length) return null;
+  const prom = notas.filter((n) => n >= 9).length;
+  const det = notas.filter((n) => n <= 6).length;
+  const neu = notas.length - prom - det;
+  const score = Math.round((prom / notas.length) * 100 - (det / notas.length) * 100);
+  return { score, prom, neu, det, total: notas.length };
+}
 
 function AbaPesquisas() {
   const sessao = useSessao();
@@ -1527,6 +1537,18 @@ function AbaPesquisas() {
   const surveys = pesquisas.filter((p) => p.tipo === "Pesquisa");
   const dinamicas = pesquisas.filter((p) => p.tipo === "Dinâmica");
   const ativas = pesquisas.filter((p) => p.status === "Ativa").length;
+  // eNPS consolidado: junta todas as respostas de perguntas tipo NPS (0–10).
+  const enpsGeral = useMemo(() => {
+    const notas: number[] = [];
+    for (const r of respostas) {
+      const pesq = pesquisas.find((p) => p.id === r.pesquisaId);
+      for (const ans of r.respostas) {
+        const q = pesq?.perguntas.find((x) => x.id === ans.perguntaId);
+        if (q?.tipo === "Nps") { const n = Number(ans.valor); if (!isNaN(n)) notas.push(n); }
+      }
+    }
+    return calcularEnps(notas);
+  }, [respostas, pesquisas]);
 
   const salvar = (dados: Omit<Pesquisa, "id" | "criadoEm">) => {
     if (editar && editar.id) atualizar(editar.id, dados);
@@ -1548,11 +1570,12 @@ function AbaPesquisas() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Pesquisas" value={surveys.length} icon={<ClipboardList className="h-5 w-5" />} accent="brand" />
         <StatCard label="Dinâmicas" value={dinamicas.length} icon={<Sparkles className="h-5 w-5" />} accent="gold" />
         <StatCard label="Ativas" value={ativas} icon={<ClipboardCheck className="h-5 w-5" />} accent="green" />
         <StatCard label="Total" value={pesquisas.length} icon={<MessageSquare className="h-5 w-5" />} accent="blue" />
+        <StatCard label="eNPS" value={enpsGeral ? `${enpsGeral.score > 0 ? "+" : ""}${enpsGeral.score}` : "—"} hint={enpsGeral ? `${enpsGeral.total} resposta(s)` : "sem respostas"} icon={<Gauge className="h-5 w-5" />} accent={enpsGeral ? (enpsGeral.score >= 0 ? "green" : "red") : "blue"} />
       </div>
 
       <Card>
@@ -1794,6 +1817,16 @@ function ResponderPesquisaModal({ pesquisa, onFechar, onEnviar }: {
                 ))}
               </div>
             )}
+            {q.tipo === "Nps" && (
+              <div className="flex flex-wrap gap-1.5">
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                  <button key={n} type="button" onClick={() => set(q.id, n)}
+                    className={`h-8 w-8 rounded-lg border text-xs font-semibold transition ${vals[q.id] === n ? "border-brand bg-brand text-white" : n <= 6 ? "border-red-100 text-red-600 hover:bg-red-50" : n <= 8 ? "border-amber-100 text-amber-600 hover:bg-amber-50" : "border-green-100 text-green-700 hover:bg-green-50"}`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
             {q.tipo === "SimNao" && (
               <div className="flex gap-2">
                 {["Sim", "Não"].map((op) => (
@@ -1828,8 +1861,28 @@ function ResultadosPesquisaModal({ pesquisa, respostas, onFechar }: {
 }) {
   const valoresDe = (qid: string) => respostas.map((r) => r.respostas.find((x) => x.perguntaId === qid)?.valor).filter((v) => v !== undefined) as (string | number)[];
 
+  const exportarPdf = () => {
+    const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
+    const linhas = pesquisa.perguntas.map((q, i) => {
+      const vals = valoresDe(q.id);
+      let resumo = "";
+      if (q.tipo === "Escala") { const n = vals.map(Number).filter((x) => !isNaN(x)); const m = n.length ? n.reduce((a, b) => a + b, 0) / n.length : 0; resumo = `Média ${m.toFixed(1)} · ${n.length} resposta(s)`; }
+      else if (q.tipo === "Nps") { const e = calcularEnps(vals.map(Number).filter((x) => !isNaN(x))); resumo = e ? `eNPS ${e.score > 0 ? "+" : ""}${e.score} (promotores ${e.prom} / neutros ${e.neu} / detratores ${e.det})` : "sem respostas"; }
+      else if (q.tipo === "SimNao") { resumo = `Sim ${vals.filter((v) => v === "Sim").length} · Não ${vals.filter((v) => v === "Não").length}`; }
+      else if (q.tipo === "Multipla") { resumo = (q.opcoes ?? []).map((op) => `${esc(op)}: ${vals.filter((v) => v === op).length}`).join(" · "); }
+      else { resumo = vals.length ? vals.map((v) => `“${esc(String(v))}”`).join("<br/>") : "sem respostas"; }
+      return `<tr><td>${i + 1}. ${esc(q.texto)}</td><td>${resumo}</td></tr>`;
+    }).join("");
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Resultados — ${esc(pesquisa.titulo)}</title>` +
+      `<style>body{font-family:Arial,sans-serif;color:#0f172a;padding:32px;max-width:800px;margin:auto}h1{font-size:20px;margin:0}.sub{color:#64748b;font-size:13px;margin:4px 0 18px}table{width:100%;border-collapse:collapse}td{border-bottom:1px solid #e2e8f0;padding:9px;vertical-align:top;font-size:13px}td:first-child{width:55%;font-weight:600}</style></head>` +
+      `<body><h1>${esc(pesquisa.titulo)}</h1><p class="sub">Impresilk · Resultados · ${respostas.length} resposta(s) · ${pesquisa.anonima ? "anônima" : "identificada"}</p><table>${linhas}</table></body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(html); w.document.close(); w.focus(); w.print(); }
+  };
+
   return (
-    <Modal aberto onFechar={onFechar} titulo={`Resultados — ${pesquisa.titulo}`} descricao={`${respostas.length} resposta(s) recebida(s).`} largura="max-w-xl">
+    <Modal aberto onFechar={onFechar} titulo={`Resultados — ${pesquisa.titulo}`} descricao={`${respostas.length} resposta(s) recebida(s).`} largura="max-w-xl"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Fechar</button>{respostas.length > 0 && <button className="btn-primary" onClick={exportarPdf}>Exportar PDF</button>}</>}>
       {respostas.length === 0 ? (
         <EmptyState title="Sem respostas ainda" description="Quando a equipe responder, os resultados aparecem aqui." icon={<ClipboardList className="h-8 w-8" />} />
       ) : (
@@ -1857,6 +1910,22 @@ function ResultadosPesquisaModal({ pesquisa, respostas, onFechar }: {
                           );
                         })}
                       </div>
+                    </div>
+                  );
+                })()}
+                {q.tipo === "Nps" && (() => {
+                  const nums = vals.map(Number).filter((n) => !isNaN(n));
+                  const e = calcularEnps(nums);
+                  if (!e) return <p className="text-sm text-slate-400">Sem respostas.</p>;
+                  return (
+                    <div>
+                      <p className="text-sm text-slate-600">eNPS: <span className={`text-lg font-bold ${e.score >= 0 ? "text-green-700" : "text-red-600"}`}>{e.score > 0 ? "+" : ""}{e.score}</span> · {e.total} resposta(s)</p>
+                      <div className="mt-2 flex h-3 overflow-hidden rounded-full">
+                        <div className="bg-red-400" style={{ width: `${(e.det / e.total) * 100}%` }} title={`Detratores: ${e.det}`} />
+                        <div className="bg-amber-300" style={{ width: `${(e.neu / e.total) * 100}%` }} title={`Neutros: ${e.neu}`} />
+                        <div className="bg-green-500" style={{ width: `${(e.prom / e.total) * 100}%` }} title={`Promotores: ${e.prom}`} />
+                      </div>
+                      <p className="mt-1.5 text-xs text-slate-400">Promotores {e.prom} · Neutros {e.neu} · Detratores {e.det}</p>
                     </div>
                   );
                 })()}
