@@ -15,6 +15,7 @@ import {
   Lock,
   HeartPulse,
   DoorOpen,
+  Info,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -685,6 +686,20 @@ export default function Relatorios() {
                 </p>
               </div>
             </div>
+
+            {/* Explicação das diferenças */}
+            <div className="rounded-lg border border-blue-100 bg-blue-50/40 px-4 py-3 text-xs leading-relaxed text-slate-600">
+              <p className="mb-1 flex items-center gap-1.5 font-semibold text-slate-700">
+                <Info className="h-3.5 w-3.5 text-blue-500" /> Entenda as diferenças
+              </p>
+              <ul className="space-y-1">
+                <li><strong className="text-slate-700">Salário de carteira</strong> — o salário do contrato (CTPS). É a base fixa, sem adiantamento, extras ou encargos.</li>
+                <li><strong className="text-slate-700">Folha real</strong> — o que de fato foi pago (salário + adiantamento + extras), a partir dos pagamentos que você sobe.</li>
+                <li><strong className="text-slate-700">Caixa</strong> — soma pelo <em>dia em que o dinheiro saiu</em>. É o desembolso real do mês: o adiantamento pago no dia 20 entra no caixa <em>deste</em> mês.</li>
+                <li><strong className="text-slate-700">Competência</strong> — soma pelo <em>mês a que o pagamento se refere</em>. O mesmo adiantamento do dia 20 vai para a competência do <em>mês seguinte</em> — por isso os totais diferem.</li>
+              </ul>
+            </div>
+
             {folhaReal.temDados ? (
               <BarrasVerticais
                 data={folhaAtual.serie}
