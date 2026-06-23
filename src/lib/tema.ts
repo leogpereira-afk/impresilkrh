@@ -1,6 +1,6 @@
 // Tema claro/escuro. A classe `dark` no <html> liga os overrides do index.css.
 // Preferência persiste no localStorage; sem escolha, segue o sistema operacional.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type Tema = "claro" | "escuro";
 const KEY = "impresilk.rh.v1:tema";
@@ -38,4 +38,21 @@ export function useTema() {
       return novo;
     });
   return { tema, alternar };
+}
+
+// Para componentes que precisam reagir ao tema (ex.: gráficos com cores via JS,
+// que o CSS não alcança). Observa a classe `dark` no <html> e re-renderiza.
+export function useTemaEscuro(): boolean {
+  const [escuro, setEscuro] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const sincronizar = () => setEscuro(root.classList.contains("dark"));
+    sincronizar();
+    const obs = new MutationObserver(sincronizar);
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return escuro;
 }
