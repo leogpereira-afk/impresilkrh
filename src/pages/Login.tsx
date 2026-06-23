@@ -42,7 +42,8 @@ export default function Login() {
       setErro("Senha incorreta.");
       return;
     }
-    entrar(alvo.perfil ?? "COLABORADOR", alvo.id);
+    // O perfil de acesso vem do cadastro de Usuário (quando existe); senão, do colaborador.
+    entrar(usuario?.perfil ?? alvo.perfil ?? "COLABORADOR", alvo.id);
     navigate("/painel");
   };
 

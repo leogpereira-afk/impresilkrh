@@ -33,9 +33,10 @@ if (leo) {
     id: "user-leonardo",
     nome: leo.nome,
     email: "diretoria@impresilk.com.br",
-    perfil: "GESTOR",
+    perfil: "ADMIN_RH", // diretoria/master com acesso total de administrador
     colaboradorId: leo.id,
     permissoes: ["*"],
+    senha: "1903",
     ativo: true,
     criadoEm: HOJE.toISOString(),
   });
