@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Plane, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Database, Clock, Send, GraduationCap, Lock, Coins,
+  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/brand/logo";
@@ -14,7 +14,6 @@ import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
 import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
-import { DadosControls } from "./dados-controls";
 
 interface ItemNav {
   href: string;
@@ -34,6 +33,7 @@ const NAV: ItemNav[] = [
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/comportamental", label: "Guia Comportamental", icon: Brain, perfis: TODOS, grupo: "Pessoas" },
   { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
@@ -68,7 +68,7 @@ export function AppShell() {
   useEffect(() => {
     const aviso = () =>
       toast(
-        "Armazenamento do navegador cheio: exporte um backup (Administração) e remova arquivos grandes. As últimas alterações podem não ter sido salvas.",
+        "Armazenamento do navegador cheio: exporte um backup em Painel de Controle › Marca & Backup e remova arquivos grandes. As últimas alterações podem não ter sido salvas.",
         "erro",
       );
     window.addEventListener("impresilk:armazenamento-cheio", aviso);
@@ -126,12 +126,6 @@ export function AppShell() {
 
   const Rodape = () => (
     <div className="space-y-2 border-t border-slate-100 p-3">
-      <div className="px-1">
-        <p className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-          <Database className="h-3 w-3" /> Backup dos dados
-        </p>
-        <DadosControls compacto />
-      </div>
       <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
         <Avatar nome={user.nome} size="sm" />
         <div className="min-w-0 flex-1">

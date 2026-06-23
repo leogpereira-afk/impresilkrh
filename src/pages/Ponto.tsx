@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2,
-  Upload, ExternalLink, CalendarRange, CalendarX2, Clock, CheckCircle2, Trophy, BarChart3,
+  Upload, ExternalLink, CalendarRange, CalendarX2, Clock, CheckCircle2, Trophy, BarChart3, Brain,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -20,6 +20,8 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, formatNumber, formatPercent } from "@/lib/format";
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
+import { GlossarioComportamental } from "@/components/comportamental/glossario";
+import { Link } from "react-router-dom";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
 
@@ -81,6 +83,24 @@ export default function Ponto() {
             label: "Absenteísmo",
             icon: <BarChart3 className="h-4 w-4" />,
             conteudo: <AbaAbsenteismo escopo={escopo} idsEscopo={idsEscopo} drill={drill} podeEditar={podeEditar} />,
+          },
+          {
+            id: "comportamental",
+            label: "Guia comportamental",
+            icon: <Brain className="h-4 w-4" />,
+            conteudo: (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-slate-50/60 px-4 py-3">
+                  <p className="text-sm text-slate-600">
+                    Antes de advertir, entenda o perfil. Como identificar e como lidar com cada pessoa.
+                  </p>
+                  <Link to="/comportamental" className="btn-outline shrink-0">
+                    <Brain className="h-4 w-4" /> Abrir guia completo
+                  </Link>
+                </div>
+                <GlossarioComportamental />
+              </div>
+            ),
           },
         ]}
       />
