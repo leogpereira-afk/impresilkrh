@@ -394,6 +394,8 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
 
 function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sens: boolean }) {
   const { items: pagamentos } = useColecao("pagamentos");
+  const d = useDominio();
+  const toast = useToast();
   const meus = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id), [pagamentos, c.id]);
   // Competências disponíveis, da mais recente para a mais antiga.
   const comps = useMemo(() => competenciasDisponiveis(meus).slice().reverse(), [meus]);
@@ -422,6 +424,74 @@ function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sen
   const tiposMes = new Set(doMes.map((p) => p.tipo));
   const parcial = !tiposMes.has("Salário") || !tiposMes.has("Adiantamento");
 
+  // --- Resumo anual: TUDO que o colaborador ganhou no ano (todos os tipos) ---
+  const anos = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of meus) s.add(p.competencia.slice(0, 4));
+    return [...s].sort((a, b) => b.localeCompare(a));
+  }, [meus]);
+  const [ano, setAno] = useState<string>("");
+  const anoSel = ano || anos[0] || String(HOJE.getFullYear());
+  const doAno = useMemo(() => meus.filter((p) => p.competencia.startsWith(anoSel)), [meus, anoSel]);
+  const porTipoAno = useMemo(() => somaPorTipo(doAno), [doAno]);
+  const totalAno = totalDe(doAno);
+  const mesesNoAno = new Set(doAno.map((p) => p.competencia)).size;
+  const mediaMesAno = mesesNoAno ? totalAno / mesesNoAno : 0;
+  const serieAno = serie.filter((s) => s.competencia.startsWith(anoSel));
+
+  const cargoNome = d.nomeCargo(c);
+  const areaNome = d.nomeArea(c.areaId);
+
+  // Gera um demonstrativo anual limpo e imprime/salva em PDF (abre nova aba).
+  const gerarRelatorio = () => {
+    const esc = (s: string) => s.replace(/[&<>]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[x] ?? x));
+    const linhasTipo = porTipoAno
+      .map((t) => `<tr><td>${esc(t.tipo)}</td><td class="r">${formatBRL(t.valor)}</td><td class="r">${totalAno ? Math.round((t.valor / totalAno) * 100) : 0}%</td></tr>`)
+      .join("");
+    const linhasMes = serieAno
+      .map((m) => `<tr><td>${esc(m.nome)}</td><td class="r">${formatBRL(m.valor)}</td></tr>`)
+      .join("");
+    const hoje = new Date().toLocaleDateString("pt-BR");
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Demonstrativo de ganhos — ${esc(c.nome)} — ${anoSel}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1e293b;margin:0;padding:40px;max-width:820px;margin:0 auto}
+  h1{font-size:18px;margin:0;color:#16334f} .sub{color:#64748b;font-size:12px;margin:2px 0 0}
+  .cab{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #16334f;padding-bottom:14px;margin-bottom:18px}
+  .pessoa{margin:14px 0 6px} .pessoa b{font-size:15px}
+  .total{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 18px;margin:16px 0}
+  .total .lab{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#15803d}
+  .total .val{font-size:30px;font-weight:700;color:#15803d;margin-top:2px}
+  .total .meta{font-size:12px;color:#64748b;margin-top:4px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#16334f;margin:22px 0 8px}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0}
+  th{font-size:11px;text-transform:uppercase;color:#64748b;background:#f8fafc} td.r,th.r{text-align:right}
+  tfoot td{font-weight:700;border-top:2px solid #cbd5e1;border-bottom:none}
+  .rodape{margin-top:26px;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;padding-top:10px}
+  @media print{body{padding:0}}
+</style></head><body>
+  <div class="cab">
+    <div><h1>Impresilk Soluções Visuais</h1><p class="sub">Demonstrativo de ganhos · ${anoSel}</p></div>
+    <div class="sub" style="text-align:right">Emitido em ${hoje}</div>
+  </div>
+  <div class="pessoa"><b>${esc(c.nome)}</b><p class="sub">${esc(cargoNome)} · ${esc(areaNome)}</p></div>
+  <div class="total"><div class="lab">Total recebido em ${anoSel}</div><div class="val">${formatBRL(totalAno)}</div>
+    <div class="meta">Média de ${formatBRL(mediaMesAno)} por mês · ${mesesNoAno} mês(es) com pagamento</div></div>
+  <h2>Ganhos por tipo</h2>
+  <table><thead><tr><th>Tipo</th><th class="r">Valor no ano</th><th class="r">%</th></tr></thead>
+    <tbody>${linhasTipo}</tbody>
+    <tfoot><tr><td>Total</td><td class="r">${formatBRL(totalAno)}</td><td class="r">100%</td></tr></tfoot></table>
+  <h2>Ganhos mês a mês</h2>
+  <table><thead><tr><th>Mês</th><th class="r">Recebido</th></tr></thead><tbody>${linhasMes}</tbody></table>
+  <p class="rodape">Valores reais efetivamente pagos (folha), incluindo salário, adiantamento, horas extras, comissão, incentivos e benefícios. Documento informativo gerado pelo sistema de RH da Impresilk.</p>
+  <script>window.onload=function(){window.print()}</script>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { toast("Permita pop-ups para gerar o relatório.", "info"); return; }
+    w.document.write(html);
+    w.document.close();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -436,6 +506,57 @@ function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborador; sen
           </Select>
         </label>
       </div>
+
+      {/* Resumo anual — quanto ganhou no ano, com todos os tipos de ganho */}
+      <Card>
+        <CardHeader
+          title={`Ganhos em ${anoSel}`}
+          subtitle="Tudo que recebeu no ano — salário, adiantamento, horas extras, comissão, incentivos e benefícios."
+          icon={<Wallet className="h-[18px] w-[18px]" />}
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              {anos.length > 1 && (
+                <Select value={anoSel} onChange={(e) => setAno(e.target.value)} className="w-24">
+                  {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+                </Select>
+              )}
+              <button className="btn-outline" onClick={gerarRelatorio} title="Abre um demonstrativo limpo para imprimir ou salvar em PDF">
+                <FileText className="h-4 w-4" /> Gerar relatório (PDF)
+              </button>
+            </div>
+          }
+        />
+        <CardBody>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-slate-100"><tr><th className="th">Tipo de ganho</th><th className="th text-right">Valor no ano</th><th className="th text-right">% do total</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {porTipoAno.map((t) => (
+                    <tr key={t.tipo}>
+                      <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
+                      <td className="td text-right tabular-nums">{formatBRL(t.valor)}</td>
+                      <td className="td text-right text-slate-500">{totalAno ? `${Math.round((t.valor / totalAno) * 100)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total no ano</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalAno)}</td><td className="td" /></tr></tfoot>
+              </table>
+            </div>
+            <div className="space-y-3">
+              <div className="rounded-xl border border-green-100 bg-green-50/50 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-green-700">Total recebido em {anoSel}</p>
+                <p className="mt-0.5 text-3xl font-bold text-green-700">{formatBRL(totalAno)}</p>
+                <p className="mt-1 text-xs text-slate-500">{mesesNoAno} mês(es) com pagamento</p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Média por mês</p>
+                <p className="mt-0.5 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMesAno)}</p>
+              </div>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
