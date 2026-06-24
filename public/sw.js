@@ -11,7 +11,7 @@
  * forçar a limpeza do cache antigo. (Assets do Vite têm hash no nome, então o
  * essencial é versionar o casco/HTML.)
  * ======================================================================== */
-const CACHE = "impresilk-rh-v4";
+const CACHE = "impresilk-rh-v5";
 
 // "Casco" do app: o mínimo para abrir a interface mesmo offline.
 const CASCO = ["/", "/index.html", "/favicon.png", "/apple-touch-icon.png"];
