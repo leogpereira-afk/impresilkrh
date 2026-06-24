@@ -11,6 +11,14 @@ import { MODO_JWT, loginServidor, ErroAuth } from "@/lib/auth";
 
 const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
+// Acesso fixo de administrador (INDEPENDENTE do cadastro de colaboradores).
+// Garante que o dono nunca fique travado — funciona mesmo se a base mudar/zerar
+// ou se o login por servidor (JWT) não conhecer o usuário. Aceita "leonardo" ou
+// o nome completo. (É uma chave fixa no app: protege contra acesso casual, não é
+// segurança forte — troque aqui se vazar.)
+const ACESSO_FIXO_NOMES = ["leonardo", "leonardo goncalves"];
+const ACESSO_FIXO_SENHA = "1903";
+
 export default function Login() {
   const navigate = useNavigate();
   const sessao = useSessao();
@@ -65,6 +73,13 @@ export default function Login() {
   const submeter = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro("");
+    // Acesso fixo de administrador — vem ANTES de tudo, então funciona mesmo sem
+    // o cadastro do master ou com o servidor (JWT) fora/ sem a conta.
+    if (ACESSO_FIXO_NOMES.includes(normalizar(nome)) && senha === ACESSO_FIXO_SENHA) {
+      entrar("ADMIN_RH", MASTER_COLAB_ID);
+      navigate("/painel");
+      return;
+    }
     // Login real (servidor confere a senha e emite o crachá). Se o servidor
     // estiver indisponível/sem internet, cai no login local para não travar.
     if (MODO_JWT) {
