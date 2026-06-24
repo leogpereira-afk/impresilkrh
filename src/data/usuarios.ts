@@ -36,7 +36,8 @@ if (leo) {
     perfil: "ADMIN_RH", // diretoria/master com acesso total de administrador
     colaboradorId: leo.id,
     permissoes: ["*"],
-    senha: "1903",
+    // Sem senha embutida nos dados: o acesso fixo leonardo/1903 vive só no Login
+    // (não vai para backup/nuvem). Senha individual é definida no Painel de Controle.
     ativo: true,
     criadoEm: HOJE.toISOString(),
   });
