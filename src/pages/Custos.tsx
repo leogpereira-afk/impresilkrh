@@ -144,7 +144,7 @@ export default function Custos() {
       ]);
       const aviso =
         naoCasados.length > 0
-          ? ` ${naoCasados.length} ${naoCasados.length === 1 ? "nome não casou" : "nomes não casaram"}.`
+          ? ` ${naoCasados.length} não casou${naoCasados.length <= 8 ? `: ${naoCasados.join(", ")}` : ""} (confira o cadastro).`
           : "";
       toast(`Pagamentos importados: ${registros.length} lançamentos.${aviso}`, naoCasados.length > 0 ? "info" : "sucesso");
     } catch (e) {

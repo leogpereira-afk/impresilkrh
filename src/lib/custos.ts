@@ -163,13 +163,7 @@ function competenciaPagto(iso: string): string {
 // Resultado/Contas a Pagar → Pagamento[] (folha real por pessoa).
 // Colunas (1-based): A nome "Colab: X", G despesa, K plano, N vencimento, P/T valor.
 export function parsePagamentos(linhas: Linha[], colaboradores: { id: string; nome: string }[]): { registros: import("@/data/types").Pagamento[]; naoCasados: string[] } {
-  const sys = colaboradores.map((c) => ({ id: c.id, n: norm(c.nome) }));
-  const matchId = (nome: string): string | null => {
-    const p = norm(nome);
-    let m = sys.find((s) => s.n === p) ?? sys.find((s) => s.n.startsWith(p)) ?? sys.find((s) => p.startsWith(s.n));
-    if (!m) { const pt = p.split(" "); m = sys.find((s) => { const st = s.n.split(" "); return pt.length >= 2 && pt[0] === st[0] && st.some((x) => x === pt[1]); }); }
-    return m ? m.id : null;
-  };
+  const matchId = criarCasadorDeNomes(colaboradores); // casador robusto (vencedor claro)
   const iso = (v: string | number | null): string | null => {
     if (v == null) return null;
     const s = String(v).trim();
@@ -204,13 +198,38 @@ export function parsePagamentos(linhas: Linha[], colaboradores: { id: string; no
 // listas simples (nome + valor). NÃO cria colaboradores: nome que não bater é
 // devolvido para conferência.
 export function valorBR(v: string | number | null): number { return moedaBR(v); }
+
+// Dois tokens "iguais" se um é prefixo do outro (cobre truncamento e abreviação:
+// "ferreira" ~ "f", "perei" ~ "pereira").
+const tokensIguais = (a: string, b: string) => a === b || a.startsWith(b) || b.startsWith(a);
+const baseNome = (nn: string) => nn.replace(/\s*\(?\d+\)?$/, "").trim(); // remove sufixo "(2)"
+
+// Casador de nomes robusto: pontua cada colaborador pelos tokens em comum (o
+// PRIMEIRO nome precisa bater) e só aceita um VENCEDOR CLARO. Empate entre o
+// mesmo nome + "(2)" → pega o original; empate entre pessoas diferentes (ex.:
+// dois "Reinaldo") → retorna null (não chuta — vira "não casado" para conferir).
+// É o que faz a planilha real (nomes truncados, acentos, abreviações) casar
+// certo pelo NOME, sem atribuir pagamento à pessoa errada.
 export function criarCasadorDeNomes(colaboradores: { id: string; nome: string }[]): (nome: string) => string | null {
   const sys = colaboradores.map((c) => ({ id: c.id, n: norm(c.nome) }));
   return (nome: string): string | null => {
     const p = norm(nome);
     if (!p) return null;
-    let m = sys.find((s) => s.n === p) ?? sys.find((s) => s.n.startsWith(p)) ?? sys.find((s) => p.startsWith(s.n));
-    if (!m) { const pt = p.split(" "); m = sys.find((s) => { const st = s.n.split(" "); return pt.length >= 2 && pt[0] === st[0] && st.some((x) => x === pt[1]); }); }
-    return m ? m.id : null;
+    const pt = p.split(" ");
+    let mx = 0;
+    let melhor: { id: string; n: string }[] = [];
+    for (const s of sys) {
+      const st = s.n.split(" ");
+      if (!st.length || !tokensIguais(pt[0], st[0])) continue; // 1º nome tem de bater
+      let sc = 0;
+      for (const tok of pt) if (st.some((t) => tokensIguais(t, tok))) sc++;
+      if (sc > mx) { mx = sc; melhor = [{ id: s.id, n: s.n }]; }
+      else if (sc === mx && sc > 0) melhor.push({ id: s.id, n: s.n });
+    }
+    if (melhor.length === 0) return null;
+    if (melhor.length === 1) return melhor[0].id;
+    const bases = new Set(melhor.map((m) => baseNome(m.n)));
+    if (bases.size === 1) return melhor.reduce((a, b) => (a.n.length <= b.n.length ? a : b)).id; // "X" vs "X (2)"
+    return null; // ambíguo de verdade → não chuta
   };
 }
