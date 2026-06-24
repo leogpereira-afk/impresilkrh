@@ -38,7 +38,7 @@ function corGrafico(hex: string, escuro: boolean): string {
 }
 
 // Paleta de eixos/grade/tooltip/legenda conforme o tema.
-function usarEstiloGrafico() {
+function useEstiloGrafico() {
   const escuro = useTemaEscuro();
   return {
     escuro,
@@ -74,7 +74,7 @@ export function BarrasVerticais({
   moeda?: boolean;
   onItemClick?: (nome: string) => void;
 }) {
-  const t = usarEstiloGrafico();
+  const t = useEstiloGrafico();
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <BarChart
@@ -126,7 +126,7 @@ export function BarrasDuplas({
   altura?: number;
   onItemClick?: (nome: string) => void;
 }) {
-  const t = usarEstiloGrafico();
+  const t = useEstiloGrafico();
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <BarChart
@@ -156,7 +156,7 @@ export function BarrasColoridas({
   altura?: number;
   onItemClick?: (nome: string) => void;
 }) {
-  const t = usarEstiloGrafico();
+  const t = useEstiloGrafico();
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <BarChart
@@ -188,7 +188,7 @@ export function Rosca({
   altura?: number;
   onItemClick?: (nome: string) => void;
 }) {
-  const t = usarEstiloGrafico();
+  const t = useEstiloGrafico();
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <PieChart>
