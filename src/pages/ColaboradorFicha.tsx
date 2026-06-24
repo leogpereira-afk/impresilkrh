@@ -513,6 +513,12 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const totalMes = totalDe(doMes);
   const serie = serieMensal(meus); // total recebido por competência
   const mediaMensal = comps.length ? totalDe(meus) / comps.length : 0;
+  // "Salário médio" = só salário + adiantamento (o pagamento recorrente, próximo do
+  // salário do cadastro), separado do ganho total — que inclui comissão, férias e
+  // extras e por isso fica bem acima do salário (era o que confundia: "salário alto").
+  const mediaSalario = comps.length
+    ? meus.filter((p) => p.tipo === "Salário" || p.tipo === "Adiantamento").reduce((s, p) => s + p.valor, 0) / comps.length
+    : 0;
   const tiposMes = new Set(doMes.map((p) => p.tipo));
   const parcial = !tiposMes.has("Salário") || !tiposMes.has("Adiantamento");
 
@@ -634,7 +640,12 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
         </SecaoColapsavel>
         <div className="space-y-4">
           <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total em {competenciaLabelLongo(compSel)}</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(totalMes)}</p></CardBody></Card>
-          <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Média mensal recebida</p><p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p><p className="mt-1 text-xs text-slate-400">{comps.length} competência(s)</p></CardBody></Card>
+          <Card><CardBody>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Ganho médio por mês</p>
+            <p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p>
+            <p className="mt-1 text-xs text-slate-400">Tudo: salário, comissão, férias e extras · {comps.length} mês(es)</p>
+            <p className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">Só salário + adiantamento: <span className="font-semibold text-slate-700">{formatBRL(mediaSalario)}</span>/mês</p>
+          </CardBody></Card>
           <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário de referência (cadastro)</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(salarioRef)}</p></CardBody></Card>
         </div>
       </div>
