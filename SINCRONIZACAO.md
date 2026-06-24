@@ -24,6 +24,29 @@ Impresilk, para que uma alteração feita em um computador apareça nos outros.
 
 ---
 
+## 🔎 "Atualizei aqui e não apareceu no outro PC" — solução rápida
+
+1. Abra **Sincronizar** (topo da tela) → **Diagnóstico da sincronização**. Ele
+   testa a nuvem e diz o problema exato:
+   - **"Token no app: VAZIO"** → o `SYNC_TOKEN` não foi embutido no build. Crie a
+     variável no Netlify e refaça o deploy (passo a passo abaixo) **ou**, para
+     ligar na hora, **cole o token** no próprio painel de Sincronização (vale
+     para aquele computador, sem refazer deploy).
+   - **"401 — token diferente"** → o token do app não bate com o `SYNC_TOKEN` do
+     Netlify. Use o mesmo valor nos dois.
+   - **"500 — Blobs"** → ative o **Netlify Blobs** no site.
+   - **"404 — função não publicada"** → confira o deploy (publish `dist`,
+     funções em `netlify/functions`).
+2. **Importante (modo login real / JWT):** se você tem `JWT_SECRET` no Netlify, o
+   app exige **estar logado pelo servidor** para sincronizar. Se alguém usa o
+   login local, fica **sem sincronizar**. Agora o app também aceita o **token
+   compartilhado** — então basta ter o `SYNC_TOKEN` (no build ou colado no app)
+   que **todo computador sincroniza, com ou sem login**.
+3. No computador com os **dados mais completos**, rode **Sincronizar → Enviar
+   tudo (oficial)** uma vez para semear a nuvem. Os outros recebem ao abrir.
+
+---
+
 ## Passo a passo de configuração no painel do Netlify
 
 > Faça uma vez só, na conta do Netlify onde o site está publicado.
