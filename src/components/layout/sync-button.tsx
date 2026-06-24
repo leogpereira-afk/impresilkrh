@@ -95,7 +95,12 @@ export function SyncButton() {
     try {
       const r = await apagarColecoes(["pagamentos", "planoContas"]);
       const tot = r.reduce((s, x) => s + x.apagadosNuvem, 0);
-      toast(`Folha e plano apagados. ${tot} registro(s) removidos da nuvem. Agora importe o arquivo corrigido e clique em "Enviar tudo".`);
+      const falhouNuvem = r.some((x) => x.erroNuvem);
+      if (falhouNuvem && configurado) {
+        toast("Apaguei a folha e o plano AQUI, mas a nuvem não respondeu. NÃO importe ainda — clique de novo até confirmar que a nuvem foi limpa.", "erro");
+      } else {
+        toast(`Folha e plano apagados. ${tot} registro(s) removidos da nuvem. Agora importe o arquivo corrigido e clique em "Enviar tudo".`);
+      }
     } catch (e) { toast(e instanceof Error ? e.message : "Falha ao apagar.", "erro"); }
     finally { setOcupado(false); recarregar(); }
   };

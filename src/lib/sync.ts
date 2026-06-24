@@ -174,10 +174,16 @@ export async function trySync(): Promise<void> {
 }
 
 // --------------------------- baixar (pull) ----------------------------------
+// Época dos dados: incrementada por apagarColecoes(). Um pull que começou ANTES de
+// uma limpeza não pode reaplicar o que acabou de ser apagado — ele confere a época
+// antes de gravar e desiste se mudou (senão a "folha apagada" voltaria na hora).
+let epocaDados = 0;
+
 export async function pull(): Promise<void> {
   if (!syncHabilitado()) return;
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
+  const epocaInicio = epocaDados;
   try {
     const remoto = new Map<string, Envelope>();
     let offset: number | null = 0;
@@ -186,6 +192,9 @@ export async function pull(): Promise<void> {
       for (const env of (resp.registros ?? []) as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
       offset = resp.nextOffset ?? null;
     }
+    // Houve uma limpeza (apagarColecoes) enquanto líamos a nuvem → este retrato está
+    // velho; descarta para não ressuscitar o que foi apagado.
+    if (epocaInicio !== epocaDados) { recalcStatus(); return; }
     const porColecao = new Map<string, Reg[]>();
     for (const { colecao, registro } of remoto.values()) { const arr = porColecao.get(colecao) ?? []; arr.push(registro); porColecao.set(colecao, arr); }
 
@@ -270,8 +279,9 @@ export async function enviarColecao(nome: string): Promise<void> {
 // "recomeçar do zero" de um conjunto de lançamentos (ex.: folha + plano de contas)
 // sem tocar no resto (cadastro etc.). Também limpa a fila pendente dessas coleções
 // para não re-subir nada. Sem isso, dados antigos na nuvem voltavam ao importar.
-export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; apagadosNuvem: number }[]> {
-  const resultado: { nome: string; apagadosNuvem: number }[] = [];
+export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; apagadosNuvem: number; erroNuvem: boolean }[]> {
+  const resultado: { nome: string; apagadosNuvem: number; erroNuvem: boolean }[] = [];
+  epocaDados++; // invalida qualquer pull em voo (não deixa o apagado voltar)
   setStatus("syncing");
   try {
     for (const nome of nomes) {
@@ -281,11 +291,12 @@ export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; a
       gravarFila(lerFila().filter((a) => a.colecao !== nome));
       // 3) zera na nuvem (apaga todos os blobs da coleção de uma vez)
       let apagados = 0;
+      let erroNuvem = false;
       if (syncConfigurado()) {
         try { const r = await chamar("limparColecao", { colecao: nome }); apagados = Number(r?.apagados ?? 0); }
-        catch { /* nuvem indisponível: ao menos o local ficou zerado */ }
+        catch { erroNuvem = true; } // nuvem não respondeu: local zerado, mas avisamos o usuário
       }
-      resultado.push({ nome, apagadosNuvem: apagados });
+      resultado.push({ nome, apagadosNuvem: apagados, erroNuvem });
     }
   } finally {
     recalcStatus();
