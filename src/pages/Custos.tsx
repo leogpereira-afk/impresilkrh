@@ -45,6 +45,7 @@ import {
   ehContaConfidencial,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
+import { enviarColecao } from "@/lib/sync";
 import type {
   ClassificacaoConta,
   ClasseCusto,
@@ -122,6 +123,7 @@ export default function Custos() {
         ...planoContas.filter((p: ContaPlano) => p.competencia !== compUpload),
         ...novos,
       ]);
+      void enviarColecao("planoContas"); // sobe pra nuvem na hora
       setComp(compUpload);
       toast(`Plano de contas importado: ${novos.length} contas em ${compLabel(compUpload)}.`);
     } catch (e) {
@@ -152,8 +154,9 @@ export default function Custos() {
           if (cpf && !c.cpf) { cpfsPreenchidos++; return { ...c, cpf }; }
           return c;
         });
-        if (cpfsPreenchidos) colaboradoresColecao.definir(atualizados);
+        if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
       }
+      void enviarColecao("pagamentos"); // sobe pra nuvem na hora (não fica só local)
       const aviso =
         naoCasados.length > 0
           ? ` ${naoCasados.length} não casou${naoCasados.length <= 8 ? `: ${naoCasados.join(", ")}` : ""} (confira o cadastro).`
@@ -182,6 +185,7 @@ export default function Custos() {
       ...pagamentos.filter((p: Pagamento) => !(p.tipo === "Comissão" && comps.has(p.competencia))),
       ...comissoesPrev.registros,
     ]);
+    void enviarColecao("pagamentos"); // sobe pra nuvem na hora
     toast(`${comissoesPrev.registros.length} comissão(ões) lançada(s) — já somam nos totais.`);
     setComissoesPrev(null);
   };

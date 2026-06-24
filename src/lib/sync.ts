@@ -188,7 +188,6 @@ export async function pull(): Promise<void> {
     }
     const porColecao = new Map<string, Reg[]>();
     for (const { colecao, registro } of remoto.values()) { const arr = porColecao.get(colecao) ?? []; arr.push(registro); porColecao.set(colecao, arr); }
-    const naFila = new Set(lerFila().map((a) => `${a.colecao}::${a.id}`));
 
     aplicarSemSync(() => {
       for (const nome of NOMES_COLECOES) {
@@ -203,9 +202,11 @@ export async function pull(): Promise<void> {
             const remNovo = !!rem.atualizadoEm && (!loc.atualizadoEm || rem.atualizadoEm > loc.atualizadoEm);
             merged.push(remNovo ? rem : loc); // mais novo vence
             remMap.delete(loc.id);
-          } else if (naFila.has(`${nome}::${loc.id}`)) {
-            merged.push(loc); // pendente local → preserva
-          } // senão: sumiu do servidor → remove
+          } else {
+            merged.push(loc); // PRESERVA SEMPRE o local — o pull nunca apaga dados
+            // (antes: registro ausente na nuvem era removido; isso zerava importações
+            //  e o cadastro base quando a nuvem ainda estava incompleta).
+          }
         }
         for (const rem of remMap.values()) merged.push(rem); // novos do servidor
         definirColecao(nome as never, merged as never);
@@ -236,6 +237,30 @@ export async function enviarTudo(): Promise<void> {
     for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
     await chamar("setCfg", { config: obterConfig() });
     gravarFila([]); // tudo já está no servidor
+  } finally {
+    recalcStatus();
+  }
+}
+
+// Envia (bulkUpsert) TODOS os registros de UMA coleção para a nuvem. Usado após
+// importações em massa (que gravam com definirColecao e por isso NÃO passam pelo
+// gancho de mutação) — assim o dado sobe na hora, sem depender de "Enviar tudo".
+// Best-effort: carimba atualizadoEm onde faltar e nunca quebra o fluxo da tela.
+export async function enviarColecao(nome: string): Promise<void> {
+  if (!syncHabilitado()) return;
+  if (temWindow && !navigator.onLine) { recalcStatus(); return; }
+  setStatus("syncing");
+  try {
+    const agora = new Date().toISOString();
+    let lote: Envelope[] = [];
+    aplicarSemSync(() => {
+      const carimbados = (obter(nome as never) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
+      definirColecao(nome as never, carimbados as never);
+      lote = carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r }));
+    });
+    for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
+  } catch {
+    /* fica local (o pull não apaga); o usuário pode usar "Enviar tudo" depois */
   } finally {
     recalcStatus();
   }
