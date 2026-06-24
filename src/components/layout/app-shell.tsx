@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
+import { NotificacoesButton } from "./notificacoes-button";
 import { Logo } from "@/components/brand/logo";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { PERFIL_LABEL } from "@/lib/constants";
@@ -198,6 +199,7 @@ export function AppShell() {
                 <p className="text-sm font-medium text-slate-800">{user.nome}</p>
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
               </div>
+              <NotificacoesButton />
               <button
                 onClick={alternarTema}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
