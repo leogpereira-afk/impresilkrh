@@ -213,4 +213,18 @@ function construir(spec: Spec, i: number): Colaborador {
 }
 
 // Empresa Neon removida do quadro a pedido do RH (v3).
-export const COLABORADORES: Colaborador[] = [...DIRECAO, ...EQUIPE.filter((s) => s.empresa !== "Neon")].map(construir);
+const BASE_COLABS = [...DIRECAO, ...EQUIPE.filter((s) => s.empresa !== "Neon")].map(construir);
+// Conserto de gestor órfão: a exclusão da Neon removeu o "Pedro Henrique Golçalves
+// Pereira" original; quem o tinha como gestor passa a apontar para o "(2)" (mesmo
+// gestor, registro ativo da Impresilk). Sem isso, ~55 pessoas ficam sem gestor e o
+// organograma/escopo do gestor quebram. Regra geral: gestorId inexistente cujo
+// "<id>-2" existe é remapeado para o "-2".
+{
+  const existentes = new Set(BASE_COLABS.map((c) => c.id));
+  for (const c of BASE_COLABS) {
+    if (c.gestorId && !existentes.has(c.gestorId) && existentes.has(`${c.gestorId}-2`)) {
+      c.gestorId = `${c.gestorId}-2`;
+    }
+  }
+}
+export const COLABORADORES: Colaborador[] = BASE_COLABS;
