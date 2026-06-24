@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
   IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
-  Eye, Ear, Hand, Plane,
+  Eye, Ear, Hand, Plane, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, SecaoColapsavel } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -427,6 +427,11 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const comps = useMemo(() => competenciasDisponiveis(meus).slice().reverse(), [meus]);
   const [comp, setComp] = useState<string>("");
   const compSel = comp || comps[0] || "";
+  // Navegação por mês (setas ◀ ▶). `comps` vem do mais novo para o mais antigo, e
+  // só inclui meses com lançamento — então pular para o anterior/próximo cruza o
+  // ano naturalmente (ex.: de Jan/2026 volta para Dez/2025).
+  const idxComp = Math.max(0, comps.indexOf(compSel));
+  const irMes = (delta: number) => { const i = idxComp + delta; if (i >= 0 && i < comps.length) setComp(comps[i]); };
 
   if (!sens) {
     return <EmptyState title="Informação restrita" description="Os dados financeiros do colaborador são visíveis apenas para o RH e para o próprio colaborador (LGPD)." icon={<Lock className="h-8 w-8" />} />;
@@ -534,12 +539,34 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
           <p className="text-xs uppercase tracking-wide text-slate-400">Remuneração real · extrato de folha</p>
           <p className="text-sm text-slate-500">Salário + adiantamento + extras + benefícios efetivamente pagos. Use para dar feedback.</p>
         </div>
-        <label className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm">
           <span className="text-slate-500">Competência</span>
-          <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-full sm:w-44">
-            {comps.map((k) => <option key={k} value={k}>{competenciaLabelLongo(k)}</option>)}
-          </Select>
-        </label>
+          <div className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => irMes(1)}
+              disabled={idxComp >= comps.length - 1}
+              title="Mês anterior"
+              aria-label="Mês anterior"
+              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-36 sm:w-44">
+              {comps.map((k) => <option key={k} value={k}>{competenciaLabelLongo(k)}</option>)}
+            </Select>
+            <button
+              type="button"
+              onClick={() => irMes(-1)}
+              disabled={idxComp <= 0}
+              title="Próximo mês"
+              aria-label="Próximo mês"
+              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Resumo do mês selecionado — composição da competência (vem antes do ano) */}
