@@ -44,7 +44,6 @@ import {
   ehContaConfidencial,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
-import { ImportarListaNome } from "@/components/custos/importar-lista-nome";
 import type {
   ClassificacaoConta,
   ClasseCusto,
@@ -68,6 +67,7 @@ export default function Custos() {
   const planoColecao = useColecao("planoContas");
   const classifColecao = useColecao("classificacaoCustos");
   const pagamentosColecao = useColecao("pagamentos");
+  const colaboradoresColecao = useColecao("colaboradores");
   const planoContas = planoColecao.items;
   const classificacaoCustos = classifColecao.items;
   const pagamentos = pagamentosColecao.items;
@@ -105,10 +105,6 @@ export default function Custos() {
   const refPagts = useRef<HTMLInputElement>(null);
   const hojeIso = new Date().toISOString().slice(0, 7);
   const [compUpload, setCompUpload] = useState<string>(ultimaComp || hojeIso);
-  // Importadores por nome (comissões das vendedoras + limpeza)
-  const refComissoes = useRef<HTMLInputElement>(null);
-  const refLimpeza = useRef<HTMLInputElement>(null);
-  const [importarLista, setImportarLista] = useState<{ tipo: string; titulo: string; linhas: (string | number | null)[][] } | null>(null);
 
   const importarPlano = async (file: File) => {
     try {
@@ -132,7 +128,7 @@ export default function Custos() {
   const importarPagamentos = async (file: File) => {
     try {
       const linhas = await lerPlanilha(file);
-      const { registros, naoCasados } = parsePagamentos(linhas, d.colaboradores);
+      const { registros, naoCasados, cpfsAprendidos } = parsePagamentos(linhas, d.colaboradores);
       if (registros.length === 0) {
         toast("Nenhum pagamento reconhecido na planilha.", "erro");
         return;
@@ -142,33 +138,27 @@ export default function Custos() {
         ...pagamentos.filter((p: Pagamento) => !compsImportadas.has(p.competencia)),
         ...registros,
       ]);
+      // Preenche o CPF no cadastro (só onde está vazio) — casamentos futuros viram
+      // por CPF, à prova de erro.
+      let cpfsPreenchidos = 0;
+      if (cpfsAprendidos.length) {
+        const mapa = new Map(cpfsAprendidos.map((x) => [x.colaboradorId, x.cpf]));
+        const atualizados = colaboradoresColecao.items.map((c) => {
+          const cpf = mapa.get(c.id);
+          if (cpf && !c.cpf) { cpfsPreenchidos++; return { ...c, cpf }; }
+          return c;
+        });
+        if (cpfsPreenchidos) colaboradoresColecao.definir(atualizados);
+      }
       const aviso =
         naoCasados.length > 0
           ? ` ${naoCasados.length} não casou${naoCasados.length <= 8 ? `: ${naoCasados.join(", ")}` : ""} (confira o cadastro).`
           : "";
-      toast(`Pagamentos importados: ${registros.length} lançamentos.${aviso}`, naoCasados.length > 0 ? "info" : "sucesso");
+      const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
+      toast(`Pagamentos importados: ${registros.length} lançamentos.${aviso}${avisoCpf}`, naoCasados.length > 0 ? "info" : "sucesso");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
     }
-  };
-
-  // Lista simples "nome + valor" (comissões/limpeza): lê e abre a prévia.
-  const abrirLista = async (file: File, tipo: string, titulo: string) => {
-    try {
-      const linhas = await lerPlanilha(file);
-      if (linhas.length === 0) { toast("Planilha vazia ou ilegível.", "erro"); return; }
-      setImportarLista({ tipo, titulo, linhas });
-    } catch (e) { toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro"); }
-  };
-  // Aplica a prévia: substitui os lançamentos do mesmo tipo/competência e insere.
-  const aplicarLista = (registros: Pagamento[], tipo: string, competencia: string) => {
-    pagamentosColecao.definir([
-      ...pagamentos.filter((p: Pagamento) => !(p.tipo === tipo && p.competencia === competencia)),
-      ...registros,
-    ]);
-    setComp(competencia);
-    toast(`${registros.length} lançamento(s) de ${tipo} em ${compLabel(competencia)} — já somam nos totais.`);
-    setImportarLista(null);
   };
 
   // ---------- Seção 1: custo individual por colaborador ----------
@@ -373,47 +363,6 @@ export default function Custos() {
           </CardBody>
         </Card>
       </div>
-
-      {/* Comissões (vendedoras) e Limpeza — listas dedicadas por NOME. Cada linha
-          casada vira um lançamento que SOMA nos totais (ficha, folha, Painel). */}
-      <Card className="mb-6">
-        <CardHeader
-          title="Comissões e Limpeza (listas por nome)"
-          subtitle="Planilhas dedicadas (nome + valor). Casa por nome, mostra prévia antes de lançar e entra na soma total."
-          icon={<Coins className="h-5 w-5" />}
-        />
-        <CardBody className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <input ref={refComissoes} type="file" accept=".xlsx,.csv" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) abrirLista(f, "Comissão", "Comissões (vendedoras)"); e.target.value = ""; }} />
-            <button className="btn-outline w-full justify-center" onClick={() => refComissoes.current?.click()}>
-              <Upload className="h-4 w-4" /> Importar comissões (vendedoras)
-            </button>
-          </div>
-          <div>
-            <input ref={refLimpeza} type="file" accept=".xlsx,.csv" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) abrirLista(f, "Limpeza/Faxina", "Limpeza"); e.target.value = ""; }} />
-            <button className="btn-outline w-full justify-center" onClick={() => refLimpeza.current?.click()}>
-              <Upload className="h-4 w-4" /> Importar limpeza
-            </button>
-          </div>
-        </CardBody>
-      </Card>
-
-      {importarLista && (
-        <ImportarListaNome
-          titulo={importarLista.titulo}
-          tipo={importarLista.tipo}
-          linhas={importarLista.linhas}
-          competencias={opcoesCompetencia(compUpload)}
-          competenciaInicial={compUpload}
-          colaboradores={d.colaboradores}
-          nomeColab={d.nomeColab}
-          contarSubstituir={(tipo, comp) => pagamentos.filter((p: Pagamento) => p.tipo === tipo && p.competencia === comp).length}
-          onAplicar={aplicarLista}
-          onFechar={() => setImportarLista(null)}
-        />
-      )}
 
       {semPlano ? (
         <EmptyState

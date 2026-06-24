@@ -162,35 +162,55 @@ function competenciaPagto(iso: string): string {
 
 // Resultado/Contas a Pagar → Pagamento[] (folha real por pessoa).
 // Colunas (1-based): A nome "Colab: X", G despesa, K plano, N vencimento, P/T valor.
-export function parsePagamentos(linhas: Linha[], colaboradores: { id: string; nome: string }[]): { registros: import("@/data/types").Pagamento[]; naoCasados: string[] } {
-  const matchId = criarCasadorDeNomes(colaboradores); // casador robusto (vencedor claro)
+export function parsePagamentos(
+  linhas: Linha[],
+  colaboradores: { id: string; nome: string; cpf?: string | null }[],
+): { registros: import("@/data/types").Pagamento[]; naoCasados: string[]; cpfsAprendidos: { colaboradorId: string; cpf: string }[] } {
+  const casarNome = criarCasadorDeNomes(colaboradores); // reserva (vencedor claro)
+  const soDigitos = (v: unknown) => String(v ?? "").replace(/\D/g, "");
   const iso = (v: string | number | null): string | null => {
     if (v == null) return null;
     const s = String(v).trim();
     const mm = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);
     if (!mm) return null;
-    let [, d, mo, y] = mm; const yy = y.length === 2 ? "20" + y : y;
+    const [, d, mo, y] = mm; const yy = y.length === 2 ? "20" + y : y;
     return `${yy}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
   };
+  // CPF MANDA (coluna C): à prova de nome truncado/xará. O nome é só reserva.
+  const porCpf = new Map<string, string>(); // cpf(11 díg.) → colaboradorId
+  for (const c of colaboradores) { const dg = soDigitos(c.cpf); if (dg.length === 11) porCpf.set(dg, c.id); }
+  const aprendidos = new Map<string, { id: string; fmt: string }>(); // p/ preencher cadastro
+  const linhasColab = linhas.filter((l) => String(l[0] ?? "").startsWith("Colab:"));
+
+  // PASSO 1: aprende CPF→id pelos nomes que casam com vencedor claro. Assim, mesmo
+  // sem CPF no cadastro, uma linha só com o 1º nome (ex.: "REINALDO") casa pelo
+  // CPF se outra linha do mesmo CPF trouxe o nome completo — e preenche o cadastro.
+  for (const l of linhasColab) {
+    const cpf = soDigitos(l[2]); // coluna C
+    if (cpf.length !== 11 || porCpf.has(cpf)) continue;
+    const id = casarNome(String(l[0]).slice(6).trim());
+    if (id) { porCpf.set(cpf, id); aprendidos.set(cpf, { id, fmt: String(l[2]).trim() }); }
+  }
+
+  // PASSO 2: lança tudo (qualquer tipo, inclusive "Outros", entra no total da pessoa).
   const registros: import("@/data/types").Pagamento[] = [];
   const naoCasados = new Set<string>();
-  const lote = Date.now().toString(36); // evita colisão de id entre uploads
+  const lote = Date.now().toString(36);
   let seq = 0;
-  for (const l of linhas) {
-    const a = l[0] == null ? "" : String(l[0]);
-    if (!a.startsWith("Colab:")) continue;
-    const nome = a.slice(6).trim();
+  for (const l of linhasColab) {
+    const nome = String(l[0]).slice(6).trim();
     const venc = iso(l[13]); // N
     const valor = moedaBR(l[19]) || moedaBR(l[15]); // T ou P
     if (!venc || valor <= 0) continue;
-    const id = matchId(nome);
+    const cpf = soDigitos(l[2]);
+    const id = (cpf.length === 11 ? porCpf.get(cpf) : undefined) ?? casarNome(nome);
     if (!id) { naoCasados.add(nome); continue; }
     const tipo = tipoDePlano(String(l[10] ?? ""), String(l[6] ?? "")); // K, G
     let desc = String(l[6] ?? "").replace(/\s+/g, " ").trim();
     if (/^pagamento colabora/i.test(desc) || desc.toLowerCase() === tipo.toLowerCase()) desc = "";
     registros.push({ id: `pg_up_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo, valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: desc || undefined });
   }
-  return { registros, naoCasados: [...naoCasados] };
+  return { registros, naoCasados: [...naoCasados], cpfsAprendidos: [...aprendidos.values()].map((v) => ({ colaboradorId: v.id, cpf: v.fmt })) };
 }
 
 // ---- Reuso para importadores por nome (comissões das vendedoras, limpeza) ----
