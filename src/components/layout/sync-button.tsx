@@ -9,8 +9,10 @@ import { exportarDados, importarDados } from "@/lib/store";
 import {
   statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
   conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
-  enviarTudo, aceitarServidor, sobrescreverServidor, type StatusSync,
+  enviarTudo, aceitarServidor, sobrescreverServidor, definirTokenSync, diagnosticar,
+  type StatusSync, type PassoDiag,
 } from "@/lib/sync";
+import { Stethoscope, KeyRound } from "lucide-react";
 import { MODO_JWT } from "@/lib/auth";
 
 // Aparência do indicador conforme o estado da nuvem.
@@ -47,6 +49,23 @@ export function SyncButton() {
 
   const [endpoint, setEndpoint] = useState(cfg.endpoint);
   const [ocupado, setOcupado] = useState(false);
+  const [token, setToken] = useState("");
+  const [diag, setDiag] = useState<PassoDiag[] | null>(null);
+
+  const rodarDiag = async () => {
+    setOcupado(true);
+    setDiag(null);
+    try { setDiag(await diagnosticar()); }
+    catch { toast("Não foi possível rodar o diagnóstico.", "erro"); }
+    finally { setOcupado(false); recarregar(); }
+  };
+  const salvarToken = () => {
+    if (!token.trim()) { toast("Cole o token primeiro.", "erro"); return; }
+    definirTokenSync(token);
+    setToken("");
+    toast("Token salvo neste computador. Sincronizando…");
+    recarregar();
+  };
 
   const agora = async () => {
     setOcupado(true);
@@ -154,13 +173,37 @@ export function SyncButton() {
             </div>
           )}
 
-          {/* Falta configurar: 1 linha objetiva */}
-          {!configurado && (
-            <p className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs leading-relaxed text-slate-600">
-              <PlugZap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
-              Crie a variável <code className="mx-0.5 rounded bg-slate-100 px-1">SYNC_TOKEN</code> no Netlify e publique. Depois é automático em todo computador. Passo a passo em <code className="rounded bg-slate-100 px-1">SINCRONIZACAO.md</code>.
-            </p>
+          {/* Falta o token: oferece corrigir AGORA colando o token (sem redeploy) */}
+          {!cfg.temToken && (
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <p className="flex items-start gap-2 text-xs leading-relaxed text-amber-800">
+                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Falta o token de sincronização. Defina <code className="rounded bg-amber-100 px-1">SYNC_TOKEN</code> no Netlify e publique — <strong>ou</strong> cole aqui o mesmo valor para ligar agora (vale neste computador).
+              </p>
+              <div className="flex gap-2">
+                <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Cole o SYNC_TOKEN"
+                  className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
+                <button onClick={salvarToken} className="btn-outline px-3 text-sm"><KeyRound className="h-4 w-4" /> Salvar</button>
+              </div>
+            </div>
           )}
+
+          {/* Diagnóstico: torna VISÍVEL por que a sincronização não funciona */}
+          <div className="space-y-2">
+            <button onClick={rodarDiag} disabled={ocupado} className="btn-outline w-full justify-center disabled:opacity-50">
+              {ocupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />} Diagnóstico da sincronização
+            </button>
+            {diag && (
+              <ul className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                {diag.map((p, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs">
+                    {p.ok ? <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />}
+                    <span><strong className="text-slate-700">{p.etapa}:</strong> <span className="text-slate-600">{p.detalhe}</span></span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           {/* Tudo o que é raro fica aqui dentro */}
           <details className="rounded-xl border border-slate-200">
@@ -180,6 +223,13 @@ export function SyncButton() {
               <div className="flex gap-2">
                 <button onClick={exportar} className="btn-outline flex-1 justify-center"><Download className="h-4 w-4" /> Backup</button>
                 <button onClick={() => fileRef.current?.click()} className="btn-outline flex-1 justify-center"><Upload className="h-4 w-4" /> Carregar</button>
+              </div>
+              {/* Token deste computador (cola/troca sem refazer o deploy) */}
+              <div className="flex gap-2">
+                <input type="password" value={token} onChange={(e) => setToken(e.target.value)}
+                  placeholder={cfg.tokenManual ? "Token colado — trocar" : "Colar token (override do build)"}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
+                <button onClick={salvarToken} className="btn-outline px-3 text-sm"><KeyRound className="h-4 w-4" /> Token</button>
               </div>
               {configurado && (
                 <div className="flex gap-2">

@@ -26,11 +26,30 @@ const LOTE_PUSH = 100; // registros por chamada no envio em massa
 //    no header x-token. Conveniente, porém o token fica visível no app.
 declare const __SYNC_TOKEN__: string;
 const TOKEN_BUILD = typeof __SYNC_TOKEN__ === "string" ? __SYNC_TOKEN__ : "";
+const K_TOKEN_MANUAL = `${NS}.token`;
 
-// Cabeçalho de autorização conforme o modo.
+// Token compartilhado = o embutido no build (env SYNC_TOKEN) OU um colado no app
+// (override por computador, sem refazer o deploy). É o modelo "automático" do
+// guia: todo computador que tem o token sincroniza — SEM depender de login.
+function tokenManual(): string { if (!temWindow) return ""; try { return localStorage.getItem(K_TOKEN_MANUAL) || ""; } catch { return ""; } }
+function tokenCompartilhado(): string { return tokenManual() || TOKEN_BUILD; }
+export function temTokenManual(): boolean { return !!tokenManual(); }
+export function tokenEmbutidoPresente(): boolean { return !!TOKEN_BUILD; }
+export function definirTokenSync(token: string): void {
+  if (temWindow) { try { localStorage.setItem(K_TOKEN_MANUAL, token.trim()); } catch { /* ignora */ } }
+  recalcStatus();
+  if (syncHabilitado()) void sincronizarAgora();
+}
+
+// Cabeçalho de autorização: SEMPRE manda o token compartilhado (x-token) quando
+// existe — assim sincroniza sem depender de login. Se houver crachá (JWT) válido,
+// manda também; o servidor aceita qualquer um dos dois.
 function cabecalhoAuth(): Record<string, string> {
-  if (MODO_JWT) { const t = tokenAtual(); return t ? { authorization: `Bearer ${t}` } : {}; }
-  return TOKEN_BUILD ? { "x-token": TOKEN_BUILD } : {};
+  const h: Record<string, string> = {};
+  const tok = tokenCompartilhado();
+  if (tok) h["x-token"] = tok;
+  if (MODO_JWT) { const t = tokenAtual(); if (t) h["authorization"] = `Bearer ${t}`; }
+  return h;
 }
 
 type Tipo = "upsert" | "delete";
@@ -49,16 +68,18 @@ function lerCfg(): CfgSync {
   try { return { ...base, ...JSON.parse(localStorage.getItem(K_CFG) || "{}") }; } catch { return base; }
 }
 function gravarCfg(patch: Partial<CfgSync>) { if (temWindow) localStorage.setItem(K_CFG, JSON.stringify({ ...lerCfg(), ...patch })); }
-// A nuvem está disponível? No login real, sempre (a função /sync existe). No
-// modo automático, só quando há token embutido.
-export function syncConfigurado(): boolean { return MODO_JWT || !!TOKEN_BUILD; }
-export function configSync(): CfgSync & { configurado: boolean; modoJwt: boolean } {
-  return { ...lerCfg(), configurado: syncConfigurado(), modoJwt: MODO_JWT };
+// A nuvem está configurada? Basta ter um token compartilhado (build ou colado no
+// app). No modo JWT também conta como configurado (login real fala com a função).
+export function syncConfigurado(): boolean { return !!tokenCompartilhado() || MODO_JWT; }
+export function configSync(): CfgSync & { configurado: boolean; modoJwt: boolean; temToken: boolean; tokenManual: boolean } {
+  return { ...lerCfg(), configurado: syncConfigurado(), modoJwt: MODO_JWT, temToken: !!tokenCompartilhado(), tokenManual: temTokenManual() };
 }
-// Habilitado para sincronizar agora? No login real, precisa de crachá válido.
+// Habilitado para sincronizar agora? Com token compartilhado, sincroniza
+// automaticamente (modelo do guia). Sem token, só no modo JWT com crachá válido.
 export function syncHabilitado(): boolean {
   if (lerCfg().desligado) return false;
-  return MODO_JWT ? !!tokenAtual() : !!TOKEN_BUILD;
+  if (tokenCompartilhado()) return true;
+  return MODO_JWT ? !!tokenAtual() : false;
 }
 export function ligarSync(): void { gravarCfg({ desligado: false }); recalcStatus(); if (syncHabilitado()) { void trySync(); void pull(); } }
 export function desligarSync(): void { gravarCfg({ desligado: true }); recalcStatus(); }
@@ -254,6 +275,40 @@ export async function testarConexao(): Promise<boolean> {
 }
 export function definirEndpoint(endpoint: string) { gravarCfg({ endpoint: endpoint.trim() || ENDPOINT_PADRAO }); recalcStatus(); if (syncHabilitado()) void sincronizarAgora(); }
 export async function sincronizarAgora(): Promise<void> { await trySync(); await pull(); }
+
+// --------------------------- diagnóstico ------------------------------------
+// Transforma falha silenciosa em mensagem clara. Roda ping → list → grava/apaga
+// um registro de teste, e descreve o erro exato de cada etapa (token vazio, 401
+// por token diferente, 500 do Blobs, rede). É o que faltava para enxergar por
+// que a sincronização "não funciona" sem mexer no Netlify às cegas.
+export interface PassoDiag { etapa: string; ok: boolean; detalhe: string }
+function descreverErro(e: unknown): string {
+  if (e instanceof ErroHttp) {
+    if (e.status === 401) return "401 Não autorizado — o token do app é DIFERENTE do SYNC_TOKEN do Netlify (ou faltou login).";
+    if (e.status === 500) return `500 no servidor — provável Netlify Blobs não ativo/sem permissão. (${(e.message || "").slice(0, 140)})`;
+    if (e.status === 404) return "404 — a função /sync não foi publicada (confira o deploy do Netlify).";
+    return `HTTP ${e.status} — ${(e.message || "").slice(0, 140)}`;
+  }
+  return "Sem resposta do servidor — offline, função fora do ar ou endpoint errado.";
+}
+export async function diagnosticar(): Promise<PassoDiag[]> {
+  const out: PassoDiag[] = [];
+  const tok = tokenCompartilhado();
+  out.push({ etapa: "Modo", ok: true, detalhe: MODO_JWT ? (tokenAtual() ? "Login real (JWT) — logado" : "Login real (JWT) — sem crachá; usando token compartilhado") : "Token compartilhado (automático)" });
+  out.push({ etapa: "Token no app", ok: !!tok, detalhe: tok ? `Presente (${temTokenManual() ? "colado no app" : "embutido no build"})` : "VAZIO — defina SYNC_TOKEN no Netlify (e publique) ou cole o token abaixo." });
+  if (!tok && !MODO_JWT) return out; // sem token nem JWT: nada a testar
+  try { const r = await chamar("ping"); out.push({ etapa: "Conexão (ping)", ok: !!r?.ok, detalhe: r?.ok ? "Servidor respondeu OK" : JSON.stringify(r).slice(0, 140) }); }
+  catch (e) { out.push({ etapa: "Conexão (ping)", ok: false, detalhe: descreverErro(e) }); return out; }
+  try { const r = await chamar("list", { offset: 0 }); out.push({ etapa: "Leitura (list)", ok: true, detalhe: `${r?.total ?? 0} registro(s) na nuvem` }); }
+  catch (e) { out.push({ etapa: "Leitura (list)", ok: false, detalhe: descreverErro(e) }); return out; }
+  try {
+    const id = `diag_${Math.random().toString(36).slice(2, 10)}`;
+    await chamar("upsert", { colecao: "_diagnostico", registro: { id, atualizadoEm: new Date().toISOString() } });
+    await chamar("delete", { colecao: "_diagnostico", id });
+    out.push({ etapa: "Gravação (ida e volta)", ok: true, detalhe: "Gravou e apagou um registro de teste na nuvem" });
+  } catch (e) { out.push({ etapa: "Gravação (ida e volta)", ok: false, detalhe: descreverErro(e) }); }
+  return out;
+}
 
 // --------------------------- gatilhos ---------------------------------------
 // Tempo real, na prática:
