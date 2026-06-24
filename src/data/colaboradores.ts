@@ -10,7 +10,7 @@ type Spec = {
   nivel?: string; salario?: number; adicionais?: number; statusId?: string; sexo?: string;
   humor?: string; estilo?: string; perfilComp?: string; nascimento?: string; admissao?: string;
   gestor?: string; perfil?: Perfil; risco?: string; potencial?: string;
-  ehDirecao?: boolean; semPessoais?: boolean; cargoLivre?: string;
+  ehDirecao?: boolean; semPessoais?: boolean; cargoLivre?: string; cpf?: string;
 };
 
 const DIRECAO: Spec[] = [
@@ -120,7 +120,7 @@ const EQUIPE: Spec[] = [
   { nome: "Thiago Cardoso Rodrigues", empresa: "Impresilk", areaId: "producao", cargoId: "analista-pcp", nivel: "N1", salario: 2500.0, statusId: "ativo", sexo: "Masculino", admissao: "2026-05-06", gestor: "Pedro Henrique Golçalves Pereira", risco: "Médio", potencial: "Médio" },
   { nome: "Vinicius Aguiar Rodrigues", empresa: "Impresilk", areaId: "producao", cargoId: "operador-cnc", nivel: "N3", salario: 2215.38, statusId: "ativo", sexo: "Masculino", humor: "Motivado", estilo: "Auditivo", perfilComp: "Colérico", nascimento: "1994-06-01", admissao: "2022-06-07", gestor: "Pedro Henrique Golçalves Pereira", risco: "Baixo", potencial: "Alto" },
   { nome: "Vinicius Silva Lins de Oliveira", empresa: "Impresilk", areaId: "comercial", cargoId: "projetista", nivel: "N1", salario: 1840.4, statusId: "ativo", sexo: "Masculino", humor: "Motivado", estilo: "Visual", perfilComp: "Fleumático", nascimento: "1999-05-17", admissao: "2024-11-01", gestor: "Jessica Fernanda Souza Sampaio", risco: "Baixo", potencial: "Médio" },
-  { nome: "Reinaldo Tadeu Campos Saraiva", empresa: "Impresilk", areaId: "producao", cargoId: "serralheiro", nivel: "N1", statusId: "ativo", sexo: "Masculino", nascimento: "1986-10-25", admissao: "2026-06-02", gestor: "Pedro Henrique Golçalves Pereira", risco: "Médio", potencial: "Médio" },
+  { nome: "Reinaldo Tadeu Campos Saraiva", empresa: "Impresilk", areaId: "producao", cargoId: "serralheiro", nivel: "N1", statusId: "ativo", sexo: "Masculino", cpf: "08142095645", nascimento: "1986-10-25", admissao: "2026-06-02", gestor: "Pedro Henrique Golçalves Pereira", risco: "Médio", potencial: "Médio" },
 ];
 
 const RUAS = ["Rua das Acácias", "Av. Cula Mangabeira", "Rua Coronel Prates", "Av. Mestra Fininha", "Rua Dois de Maio"];
@@ -150,7 +150,7 @@ function construir(spec: Spec, i: number): Colaborador {
     qtdFilhos: 0, valeTransporte: i % 3 !== 0,
   };
   if (!spec.semPessoais) {
-    base.cpf = gerarCPF(i + 100);
+    base.cpf = spec.cpf ?? gerarCPF(i + 100);
     base.telefone = `(38) 9${rint(8000, 9999)}-${rint(1000, 9999)}`;
     base.enderecoRua = RUAS[i % RUAS.length];
     base.enderecoNumero = String(rint(50, 1500));

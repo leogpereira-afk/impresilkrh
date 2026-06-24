@@ -213,6 +213,42 @@ export function parsePagamentos(
   return { registros, naoCasados: [...naoCasados], cpfsAprendidos: [...aprendidos.values()].map((v) => ({ colaboradorId: v.id, cpf: v.fmt })) };
 }
 
+// Importação SÓ das comissões, casando por NOME (caso à parte; o fluxo normal por
+// CPF segue para o resto). Pega as linhas cujo plano/descrição classificam como
+// "Comissão" e usa a competência da própria data de vencimento.
+export function parseComissoesPorNome(
+  linhas: Linha[],
+  colaboradores: { id: string; nome: string }[],
+): { registros: import("@/data/types").Pagamento[]; naoCasados: string[]; total: number } {
+  const casar = criarCasadorDeNomes(colaboradores);
+  const dataBR = (v: string | number | null): string | null => {
+    if (v == null) return null;
+    const mm = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(String(v).trim());
+    if (!mm) return null;
+    const [, d, mo, y] = mm; const yy = y.length === 2 ? "20" + y : y;
+    return `${yy}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  };
+  const registros: import("@/data/types").Pagamento[] = [];
+  const naoCasados = new Set<string>();
+  const lote = Date.now().toString(36);
+  let seq = 0; let total = 0;
+  for (const l of linhas) {
+    const a = String(l[0] ?? "");
+    if (!a.startsWith("Colab:")) continue;
+    if (classificarPagamento(String(l[10] ?? ""), String(l[6] ?? "")) !== "Comissão") continue; // só comissões
+    const venc = dataBR(l[13]);
+    const valor = moedaBR(l[19]) || moedaBR(l[15]);
+    if (!venc || valor <= 0) continue;
+    const nome = a.slice(6).trim();
+    const id = casar(nome);
+    if (!id) { naoCasados.add(nome); continue; }
+    const v2 = Math.round(valor * 100) / 100;
+    total += v2;
+    registros.push({ id: `cm_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo: "Comissão", valor: v2, dataPagamento: venc });
+  }
+  return { registros, naoCasados: [...naoCasados], total: Math.round(total * 100) / 100 };
+}
+
 // ---- Reuso para importadores por nome (comissões das vendedoras, limpeza) ----
 // Mesma lógica de moeda e de casamento de nome do parsePagamentos, exposta para
 // listas simples (nome + valor). NÃO cria colaboradores: nome que não bater é

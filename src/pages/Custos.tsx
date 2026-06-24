@@ -41,6 +41,7 @@ import {
   CLASSE_LABEL,
   parsePlanoContas,
   parsePagamentos,
+  parseComissoesPorNome,
   ehContaConfidencial,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
@@ -105,6 +106,9 @@ export default function Custos() {
   const refPagts = useRef<HTMLInputElement>(null);
   const hojeIso = new Date().toISOString().slice(0, 7);
   const [compUpload, setCompUpload] = useState<string>(ultimaComp || hojeIso);
+  // Importação avulsa de comissões, casando por NOME (caso à parte)
+  const refComissoesNome = useRef<HTMLInputElement>(null);
+  const [comissoesPrev, setComissoesPrev] = useState<{ registros: Pagamento[]; naoCasados: string[]; total: number } | null>(null);
 
   const importarPlano = async (file: File) => {
     try {
@@ -159,6 +163,27 @@ export default function Custos() {
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
     }
+  };
+
+  // Comissões avulsas (casadas por NOME): lê e abre a prévia.
+  const abrirComissoesNome = async (file: File) => {
+    try {
+      const linhas = await lerPlanilha(file);
+      const res = parseComissoesPorNome(linhas, d.colaboradores);
+      if (res.registros.length === 0 && res.naoCasados.length === 0) { toast("Nenhuma comissão reconhecida na planilha.", "erro"); return; }
+      setComissoesPrev(res);
+    } catch (e) { toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro"); }
+  };
+  // Aplica: substitui as comissões das competências afetadas e insere as novas.
+  const aplicarComissoesNome = () => {
+    if (!comissoesPrev) return;
+    const comps = new Set(comissoesPrev.registros.map((r) => r.competencia));
+    pagamentosColecao.definir([
+      ...pagamentos.filter((p: Pagamento) => !(p.tipo === "Comissão" && comps.has(p.competencia))),
+      ...comissoesPrev.registros,
+    ]);
+    toast(`${comissoesPrev.registros.length} comissão(ões) lançada(s) — já somam nos totais.`);
+    setComissoesPrev(null);
   };
 
   // ---------- Seção 1: custo individual por colaborador ----------
@@ -363,6 +388,71 @@ export default function Custos() {
           </CardBody>
         </Card>
       </div>
+
+      {/* Comissões avulsas — caso à parte, casado por NOME (some na soma total) */}
+      <Card className="mb-6">
+        <CardHeader
+          title="Comissões (por nome)"
+          subtitle="Importa só as comissões de uma planilha (formato Resultado), casando por nome. Para um caso pontual — o fluxo normal segue por CPF."
+          icon={<Coins className="h-5 w-5" />}
+        />
+        <CardBody>
+          <input ref={refComissoesNome} type="file" accept=".xlsx,.csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) abrirComissoesNome(f); e.target.value = ""; }} />
+          <button className="btn-outline" onClick={() => refComissoesNome.current?.click()}>
+            <Upload className="h-4 w-4" /> Importar comissões (por nome)
+          </button>
+        </CardBody>
+      </Card>
+
+      {comissoesPrev && (
+        <Modal
+          aberto
+          onFechar={() => setComissoesPrev(null)}
+          titulo="Comissões a lançar"
+          descricao="Casadas por nome. Só as que casarem serão lançadas; as competências afetadas têm a comissão substituída."
+          largura="max-w-lg"
+          rodape={<>
+            <button className="btn-outline" onClick={() => setComissoesPrev(null)}>Cancelar</button>
+            <button className="btn-primary disabled:opacity-50" disabled={comissoesPrev.registros.length === 0} onClick={aplicarComissoesNome}>
+              <Coins className="h-4 w-4" /> Lançar {comissoesPrev.registros.length}
+            </button>
+          </>}
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
+              <span className="font-medium text-green-700">{comissoesPrev.registros.length} casaram</span>
+              <span className="text-slate-400">·</span>
+              <span className="font-medium text-amber-700">{comissoesPrev.naoCasados.length} sem match</span>
+              <span className="ml-auto font-semibold text-brand-ink">Total: {formatBRL(comissoesPrev.total)}</span>
+            </div>
+            {comissoesPrev.registros.length > 0 && (
+              <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50"><tr><th className="th">Colaborador</th><th className="th">Competência</th><th className="th text-right">Valor</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {comissoesPrev.registros.map((r) => (
+                      <tr key={r.id}>
+                        <td className="td font-medium text-slate-700">{d.nomeColab(r.colaboradorId)}</td>
+                        <td className="td text-slate-500">{compLabel(r.competencia)}</td>
+                        <td className="td text-right tabular-nums">{formatBRL(r.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {comissoesPrev.naoCasados.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+                <p className="mb-1.5 text-xs font-semibold text-amber-800">Não encontrados (não serão lançados):</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {comissoesPrev.naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200">{n}</span>)}
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {semPlano ? (
         <EmptyState
