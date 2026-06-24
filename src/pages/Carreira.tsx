@@ -22,7 +22,9 @@ export default function Carreira() {
   const sessao = useSessao();
   const d = useDominio();
   const drill = useDrill();
-  const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !c.ehDirecao && c.cargoId), [sessao, d.colaboradores]);
+  // Só colaboradores ATIVOS aparecem no seletor de Carreira & Salários (desligados
+  // ficam de fora — d.ativos já exclui inativos/desligados).
+  const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.ativos).filter((c) => !c.ehDirecao && c.cargoId), [sessao, d.ativos]);
   const [colabId, setColabId] = useState(() => (sessao?.perfil === "COLABORADOR" ? sessao.colaboradorId : escopo[0]?.id ?? ""));
   // Conjunto de cargos expandidos na tabela salarial (Módulo 3 — "Pessoas no cargo").
   const [cargosExpandidos, setCargosExpandidos] = useState<Set<string>>(() => new Set());
