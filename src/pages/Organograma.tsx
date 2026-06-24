@@ -11,6 +11,10 @@ import {
   UserPlus,
   UserMinus,
   Camera,
+  Pencil,
+  Building2,
+  GitBranch,
+  LayoutGrid,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -18,6 +22,7 @@ import { Campo, Input, Select } from "@/components/ui/form";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Avatar } from "@/components/ui/misc";
 import { Badge } from "@/components/ui/badge";
+import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useColecao } from "@/lib/store";
 import { comprimirImagem } from "@/lib/imagem";
 import { useDominio } from "@/lib/dominio";
@@ -27,6 +32,8 @@ import { useToast } from "@/components/ui/toast";
 import { slug } from "@/data/_gen";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
+
+type Visao = "hierarquia" | "area" | "empresa";
 
 // Mantém a lógica de papéis do organograma, agora aplicada como um indicador
 // colorido (ponto/faixa lateral) por se tratar de uma linha e não mais de um card.
@@ -49,25 +56,51 @@ export default function Organograma() {
   const [mostrarPainel, setMostrarPainel] = useState(false);
   const [adicionarEm, setAdicionarEm] = useState<Colaborador | null>(null);
   const [removerAlvo, setRemoverAlvo] = useState<Colaborador | null>(null);
+  const [editarAlvo, setEditarAlvo] = useState<Colaborador | null>(null);
+  const [visao, setVisao] = useState<Visao>("hierarquia");
+  const [soAtivos, setSoAtivos] = useState(true);
   const fotoInputRef = useRef<HTMLInputElement>(null);
   const fotoAlvoRef = useRef<string | null>(null);
 
+  // Filtro "só ativos" (desligados/inativos fora) — padrão do sistema.
+  const ehAtivo = (c: Colaborador) => c.statusId !== "inativo" && !c.dataDesligamento;
+  const visiveis = useMemo(() => (soAtivos ? d.colaboradores.filter(ehAtivo) : d.colaboradores), [d.colaboradores, soAtivos]);
+  const visIds = useMemo(() => new Set(visiveis.map((c) => c.id)), [visiveis]);
+
+  // Pai EFETIVO: ao ocultar inativos, quem ficou sem gestor sobe na cadeia até o
+  // primeiro gestor visível — mantém a árvore conectada.
+  const paiEfetivo = useMemo(() => {
+    const cache = new Map<string, string | null>();
+    for (const c of visiveis) {
+      let g = c.gestorId ?? null;
+      while (g && !visIds.has(g)) g = d.colabById.get(g)?.gestorId ?? null;
+      cache.set(c.id, g && visIds.has(g) ? g : null);
+    }
+    return cache;
+  }, [visiveis, visIds, d.colabById]);
+
   const filhosPorGestor = useMemo(() => {
     const m = new Map<string, Colaborador[]>();
-    for (const c of d.colaboradores) {
-      if (c.gestorId) {
-        const arr = m.get(c.gestorId) ?? [];
-        arr.push(c);
-        m.set(c.gestorId, arr);
-      }
+    for (const c of visiveis) {
+      const p = paiEfetivo.get(c.id);
+      if (p) { const arr = m.get(p) ?? []; arr.push(c); m.set(p, arr); }
     }
     return m;
-  }, [d.colaboradores]);
+  }, [visiveis, paiEfetivo]);
 
-  const raizes = useMemo(
-    () => d.colaboradores.filter((c) => !c.gestorId || !d.colabById.has(c.gestorId)),
-    [d.colaboradores, d.colabById],
-  );
+  const raizes = useMemo(() => visiveis.filter((c) => !paiEfetivo.get(c.id)), [visiveis, paiEfetivo]);
+
+  // Agrupamentos para as visões "Por área" e "Por empresa".
+  const porArea = useMemo(() => {
+    return d.areas
+      .map((a) => ({ chave: a.id, titulo: a.nome, pessoas: visiveis.filter((c) => c.areaId === a.id).sort((x, y) => x.nome.localeCompare(y.nome)) }))
+      .filter((g) => g.pessoas.length > 0);
+  }, [d.areas, visiveis]);
+  const porEmpresa = useMemo(() => {
+    const mapa = new Map<string, Colaborador[]>();
+    for (const c of visiveis) { const e = c.empresa || "Sem empresa"; (mapa.get(e) ?? mapa.set(e, []).get(e)!).push(c); }
+    return [...mapa.entries()].map(([titulo, pessoas]) => ({ chave: titulo, titulo, pessoas: pessoas.sort((x, y) => x.nome.localeCompare(y.nome)) })).sort((a, b) => a.titulo.localeCompare(b.titulo));
+  }, [visiveis]);
 
   const ehGerente = (c: Colaborador) => (filhosPorGestor.get(c.id)?.length ?? 0) > 0 && !c.ehDirecao;
 
@@ -85,7 +118,7 @@ export default function Organograma() {
   // Remove uma pessoa do organograma: os subordinados diretos são reposicionados
   // sob o gestor da pessoa removida (reparent) e, em seguida, o registro é excluído.
   const removerDoOrganograma = (c: Colaborador) => {
-    const filhos = filhosPorGestor.get(c.id) ?? [];
+    const filhos = d.colaboradores.filter((x) => x.gestorId === c.id);
     for (const f of filhos) atualizar(f.id, { gestorId: c.gestorId ?? null });
     remover(c.id);
     toast(
@@ -196,6 +229,15 @@ export default function Organograma() {
             <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
               <button
                 type="button"
+                onClick={() => setEditarAlvo(c)}
+                title="Editar colaborador"
+                aria-label={`Editar ${c.nome}`}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => setAdicionarEm(c)}
                 title="Adicionar subordinado"
                 aria-label={`Adicionar subordinado a ${c.nome}`}
@@ -238,21 +280,81 @@ export default function Organograma() {
     );
   };
 
+  // Linha de pessoa para as visões agrupadas (por área / por empresa) — sem árvore.
+  const LinhaPessoa = ({ c }: { c: Colaborador }) => {
+    const cor = corNode(c, ehGerente(c));
+    return (
+      <div className="group flex items-center gap-2 rounded-lg border border-slate-100 p-2 transition hover:bg-slate-50">
+        <span className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)} title={cor.rotulo} aria-hidden />
+        {c.fotoDataUrl ? (
+          <img src={c.fotoDataUrl} alt={c.nome} className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200" />
+        ) : (
+          <Avatar nome={c.nome} size="sm" className="ring-1 ring-slate-200" />
+        )}
+        <Link to={`/colaboradores/${c.id}`} className="min-w-0 flex-1" title={`Abrir ficha de ${c.nome}`}>
+          <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">{c.nome}</p>
+          <p className="truncate text-[11px] text-slate-400">{d.nomeCargo(c)}{visao === "area" && c.empresa ? ` · ${c.empresa}` : ""}{visao === "empresa" ? ` · ${d.nomeArea(c.areaId)}` : ""}</p>
+        </Link>
+        {podeEditar && (
+          <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+            <button type="button" onClick={() => setEditarAlvo(c)} title="Editar colaborador" aria-label={`Editar ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Pencil className="h-4 w-4" /></button>
+            <button type="button" onClick={() => abrirSeletorFoto(c.id)} title="Enviar foto" aria-label={`Enviar foto de ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Camera className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setRemoverAlvo(c)} title="Remover do organograma" aria-label={`Remover ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"><UserMinus className="h-4 w-4" /></button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const grupos = visao === "area" ? porArea : porEmpresa;
+
   return (
     <div>
-      <PageHeader title="Organograma" description="Estrutura hierárquica da Impresilk. Navegue expandindo e recolhendo as equipes.">
-        <button className="btn-outline" onClick={expandirTudo}>
-          <ChevronsUpDown className="h-4 w-4" /> Expandir tudo
-        </button>
-        <button className="btn-outline" onClick={recolherTudo}>
-          <ChevronsDownUp className="h-4 w-4" /> Recolher tudo
-        </button>
+      <PageHeader title="Organograma" description="Estrutura da Impresilk — veja por hierarquia, área ou empresa, e edite na própria tela.">
+        {visao === "hierarquia" && (
+          <>
+            <button className="btn-outline" onClick={expandirTudo}>
+              <ChevronsUpDown className="h-4 w-4" /> Expandir tudo
+            </button>
+            <button className="btn-outline" onClick={recolherTudo}>
+              <ChevronsDownUp className="h-4 w-4" /> Recolher tudo
+            </button>
+          </>
+        )}
         {podeEditar && (
           <button className="btn-outline" onClick={() => setMostrarPainel((v) => !v)}>
             <SlidersHorizontal className="h-4 w-4" /> {mostrarPainel ? "Ocultar" : "Editar hierarquia"}
           </button>
         )}
       </PageHeader>
+
+      {/* Seletor de visão + filtro de ativos */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+          {([["hierarquia", "Hierarquia", GitBranch], ["area", "Por área", LayoutGrid], ["empresa", "Por empresa", Building2]] as const).map(([v, label, Icone]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setVisao(v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
+                visao === v ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700",
+              )}
+            >
+              <Icone className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600" title="Por padrão o organograma mostra só os ativos">
+          <input
+            type="checkbox"
+            checked={!soAtivos}
+            onChange={(e) => setSoAtivos(!e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+          />
+          Incluir inativos
+        </label>
+      </div>
 
       <div className="mb-4 flex flex-wrap gap-3 text-xs text-slate-500">
         <Legenda cor="bg-green-600" label="Fundadores" />
@@ -262,16 +364,30 @@ export default function Organograma() {
         <Legenda cor="bg-white border border-slate-300" label="Equipe" />
       </div>
 
-      <Card>
-        <CardBody>
-          {/* overflow-x-auto só atua como rede de segurança em telas muito estreitas */}
-          <div className="overflow-x-auto">
-            <ul className="min-w-[280px]">
-              {raizes.map((c) => <Node key={c.id} c={c} />)}
-            </ul>
-          </div>
-        </CardBody>
-      </Card>
+      {visao === "hierarquia" ? (
+        <Card>
+          <CardBody>
+            {/* overflow-x-auto só atua como rede de segurança em telas muito estreitas */}
+            <div className="overflow-x-auto">
+              <ul className="min-w-[280px]">
+                {raizes.length > 0 ? raizes.map((c) => <Node key={c.id} c={c} />) : <p className="text-sm text-slate-500">Nenhum colaborador para mostrar.</p>}
+              </ul>
+            </div>
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {grupos.map((g) => (
+            <Card key={g.chave}>
+              <CardHeader title={g.titulo} subtitle={`${g.pessoas.length} pessoa(s)`} icon={visao === "area" ? <LayoutGrid className="h-[18px] w-[18px]" /> : <Building2 className="h-[18px] w-[18px]" />} />
+              <CardBody className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {g.pessoas.map((c) => <LinhaPessoa key={c.id} c={c} />)}
+              </CardBody>
+            </Card>
+          ))}
+          {grupos.length === 0 && <Card><CardBody><p className="text-sm text-slate-500">Nenhum colaborador para mostrar.</p></CardBody></Card>}
+        </div>
+      )}
 
       {mostrarPainel && podeEditar && <PainelHierarquia />}
 
@@ -284,6 +400,10 @@ export default function Organograma() {
             className="hidden"
             onChange={aoSelecionarFoto}
           />
+          {/* Edição completa do colaborador (cargo, nível, gestor, dados...) */}
+          {editarAlvo && (
+            <ColaboradorForm aberto onFechar={() => setEditarAlvo(null)} editar={editarAlvo} />
+          )}
           {adicionarEm && (
             <ModalAdicionarSubordinado
               gestor={adicionarEm}
