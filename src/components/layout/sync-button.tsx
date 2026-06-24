@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Cloud, CloudOff, RefreshCw, Check, AlertTriangle, Loader2, Download, Upload,
-  Send, Power, ShieldAlert, PlugZap,
+  Send, Power, ShieldAlert, PlugZap, Trash2,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -10,6 +10,7 @@ import {
   statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
   conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
   enviarTudo, aceitarServidor, sobrescreverServidor, definirTokenSync, diagnosticar,
+  apagarColecoes,
   type StatusSync, type PassoDiag,
 } from "@/lib/sync";
 import { Stethoscope, KeyRound } from "lucide-react";
@@ -83,6 +84,19 @@ export function SyncButton() {
     setOcupado(true);
     try { await enviarTudo(); toast("Tudo enviado. Os outros computadores recebem ao abrir."); }
     catch (e) { toast(e instanceof Error ? e.message : "Falha ao enviar.", "erro"); }
+    finally { setOcupado(false); recarregar(); }
+  };
+  const apagarLancamentos = async () => {
+    if (!confirm(
+      "Apagar TODA a folha (pagamentos) e o plano de contas — deste computador E da nuvem?\n\n" +
+      "O cadastro de colaboradores NÃO é afetado. Use para recomeçar do zero antes de importar os dados corrigidos.\n\nEsta ação não pode ser desfeita.",
+    )) return;
+    setOcupado(true);
+    try {
+      const r = await apagarColecoes(["pagamentos", "planoContas"]);
+      const tot = r.reduce((s, x) => s + x.apagadosNuvem, 0);
+      toast(`Folha e plano apagados. ${tot} registro(s) removidos da nuvem. Agora importe o arquivo corrigido e clique em "Enviar tudo".`);
+    } catch (e) { toast(e instanceof Error ? e.message : "Falha ao apagar.", "erro"); }
     finally { setOcupado(false); recarregar(); }
   };
   const alternarLigado = () => {
@@ -224,6 +238,10 @@ export function SyncButton() {
                 <button onClick={exportar} className="btn-outline flex-1 justify-center"><Download className="h-4 w-4" /> Backup</button>
                 <button onClick={() => fileRef.current?.click()} className="btn-outline flex-1 justify-center"><Upload className="h-4 w-4" /> Carregar</button>
               </div>
+              {/* Recomeçar do zero: apaga folha + plano (local e nuvem). Não toca no cadastro. */}
+              <button onClick={apagarLancamentos} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50">
+                {ocupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Apagar folha e plano (recomeçar)
+              </button>
               {/* Token deste computador (cola/troca sem refazer o deploy) */}
               <div className="flex gap-2">
                 <input type="password" value={token} onChange={(e) => setToken(e.target.value)}

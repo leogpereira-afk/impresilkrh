@@ -266,6 +266,33 @@ export async function enviarColecao(nome: string): Promise<void> {
   }
 }
 
+// Apaga TODOS os registros de uma ou mais coleções — LOCAL e na NUVEM. É o
+// "recomeçar do zero" de um conjunto de lançamentos (ex.: folha + plano de contas)
+// sem tocar no resto (cadastro etc.). Também limpa a fila pendente dessas coleções
+// para não re-subir nada. Sem isso, dados antigos na nuvem voltavam ao importar.
+export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; apagadosNuvem: number }[]> {
+  const resultado: { nome: string; apagadosNuvem: number }[] = [];
+  setStatus("syncing");
+  try {
+    for (const nome of nomes) {
+      // 1) zera local (sem disparar push)
+      aplicarSemSync(() => definirColecao(nome as never, [] as never));
+      // 2) descarta pendências locais dessa coleção
+      gravarFila(lerFila().filter((a) => a.colecao !== nome));
+      // 3) zera na nuvem (apaga todos os blobs da coleção de uma vez)
+      let apagados = 0;
+      if (syncConfigurado()) {
+        try { const r = await chamar("limparColecao", { colecao: nome }); apagados = Number(r?.apagados ?? 0); }
+        catch { /* nuvem indisponível: ao menos o local ficou zerado */ }
+      }
+      resultado.push({ nome, apagadosNuvem: apagados });
+    }
+  } finally {
+    recalcStatus();
+  }
+  return resultado;
+}
+
 // --------------------------- conflitos --------------------------------------
 export function aceitarServidor(colecao: string, id: string) {
   const acao = lerFila().find((a) => mesma(a, { colecao, id }) && a.conflito);

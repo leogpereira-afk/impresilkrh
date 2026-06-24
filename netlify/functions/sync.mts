@@ -114,6 +114,17 @@ export default async (req: Request) => {
         return json({ ok: true });
       }
 
+      // ---- limpar coleção inteira (apaga TODOS os registros de uma coleção) ----
+      // Usado para "recomeçar do zero" um conjunto de lançamentos (ex.: folha,
+      // plano de contas) sem mexer nas demais coleções. Apaga só a coleção pedida.
+      case "limparColecao": {
+        const colecao = String(body.colecao ?? "");
+        if (!colecao) return json({ erro: "colecao obrigatória." }, 400);
+        const { blobs } = await registros.list({ prefix: `${colecao}::` });
+        await Promise.all(blobs.map((b) => registros.delete(b.key)));
+        return json({ ok: true, apagados: blobs.length });
+      }
+
       // ---- config global ----
       case "getCfg":
         return json({ config: (await configStore.get("config", { type: "json" }).catch(() => null)) ?? null });
