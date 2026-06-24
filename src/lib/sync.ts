@@ -230,20 +230,29 @@ export async function pull(): Promise<void> {
 }
 
 // ----------------- envio em massa (computador "oficial") --------------------
+// AUTORITATIVO: a nuvem passa a refletir EXATAMENTE este computador. Para cada
+// coleção, limpa a nuvem e regrava — assim registros antigos (ids que não existem
+// mais aqui) NÃO sobrevivem. É o que impede dados velhos de voltarem ao sincronizar.
+// Use só no computador oficial, com os dados mais completos.
 export async function enviarTudo(): Promise<void> {
   if (!syncHabilitado()) throw new Error("Configure a sincronização primeiro.");
+  epocaDados++; // invalida pulls em voo (não deixa o que vamos regravar se misturar)
   setStatus("syncing");
   try {
     const agora = new Date().toISOString();
-    const lote: Envelope[] = [];
+    const porColecao = new Map<string, Envelope[]>();
     aplicarSemSync(() => {
       for (const nome of NOMES_COLECOES) {
         const carimbados = (obter(nome) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
         definirColecao(nome as never, carimbados as never); // grava o carimbo local também
-        for (const r of carimbados) lote.push({ colecao: nome, registro: r });
+        porColecao.set(nome, carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r })));
       }
     });
-    for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
+    for (const nome of NOMES_COLECOES) {
+      await chamar("limparColecao", { colecao: nome }); // zera a coleção na nuvem
+      const lote = porColecao.get(nome) ?? [];
+      for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
+    }
     await chamar("setCfg", { config: obterConfig() });
     gravarFila([]); // tudo já está no servidor
   } finally {

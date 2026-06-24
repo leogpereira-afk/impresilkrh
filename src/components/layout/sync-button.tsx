@@ -80,7 +80,7 @@ export function SyncButton() {
     finally { setOcupado(false); recarregar(); }
   };
   const enviarOficial = async () => {
-    if (!confirm("Enviar TODOS os dados deste computador para a nuvem como versão oficial? Use apenas no computador principal, com os dados mais completos.")) return;
+    if (!confirm("Tornar este computador a versão OFICIAL? A nuvem passa a ser uma cópia exata deste computador — o que não estiver aqui é removido da nuvem. Use só no computador principal, com os dados mais completos.")) return;
     setOcupado(true);
     try { await enviarTudo(); toast("Tudo enviado. Os outros computadores recebem ao abrir."); }
     catch (e) { toast(e instanceof Error ? e.message : "Falha ao enviar.", "erro"); }
