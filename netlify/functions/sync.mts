@@ -39,12 +39,31 @@ export default async (req: Request) => {
   if (!secret && !syncToken) return json({ erro: "Sincronização não configurada (defina JWT_SECRET ou SYNC_TOKEN)." }, 500);
 
   let autorizado = false;
+  let jwtPayload: Record<string, any> | null = null;
   if (secret) {
     const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
-    if (m && (await verificarJwt(m[1], secret))) autorizado = true; // crachá válido
+    if (m) { jwtPayload = await verificarJwt(m[1], secret); if (jwtPayload) autorizado = true; } // crachá válido
   }
   if (!autorizado && syncToken && req.headers.get("x-token") === syncToken) autorizado = true; // token embutido
   if (!autorizado) return json({ erro: "Não autorizado." }, 401);
+
+  // Escopo LGPD: quem entra com crachá (JWT) e NÃO é ADMIN_RH não recebe dados
+  // sensíveis de terceiros (salário, CPF, dados familiares) nem a folha alheia.
+  // Acesso por token compartilhado (x-token) ou ADMIN_RH segue com tudo — o
+  // comportamento atual fica inalterado.
+  const ehAdmin = !jwtPayload || jwtPayload.perfil === "ADMIN_RH";
+  const meuId = jwtPayload?.sub ? String(jwtPayload.sub) : null;
+  const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia"];
+  const mascarar = (env: any) => {
+    if (ehAdmin || !env?.registro) return env;
+    if (env.colecao === "colaboradores" && env.registro.id !== meuId) {
+      const r = { ...env.registro };
+      for (const k of CAMPOS_SENSIVEIS) delete r[k];
+      return { ...env, registro: r };
+    }
+    if (env.colecao === "pagamentos" && env.registro.colaboradorId !== meuId) return null; // folha alheia
+    return env;
+  };
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ erro: "JSON inválido." }, 400); }
@@ -69,8 +88,9 @@ export default async (req: Request) => {
         const itens = await Promise.all(
           pagina.map((k) => registros.get(k, { type: "json" }).catch(() => null)),
         );
+        const visiveis = itens.filter(Boolean).map(mascarar).filter(Boolean); // aplica escopo LGPD
         const nextOffset = offset + PAGINA < chaves.length ? offset + PAGINA : null;
-        return json({ registros: itens.filter(Boolean), nextOffset, total: chaves.length });
+        return json({ registros: visiveis, nextOffset, total: chaves.length });
       }
 
       // ---- upsert (1 registro, com detecção de conflito) ----
