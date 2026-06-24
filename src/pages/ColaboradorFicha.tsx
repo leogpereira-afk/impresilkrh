@@ -262,11 +262,12 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
       </Card>
 
       <Tabs
+        idPersistencia="ficha-colaborador"
         abas={[
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} sens={sens} cargo={cargo} /> },
           { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} /> },
-          { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro c={c} sens={sens} /> },
+          { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro key={c.id} c={c} sens={sens} /> },
           ...(verGestao ? [{ id: "comportamental", label: "Comportamental", icon: <Brain className="h-4 w-4" />, conteudo: <AbaComportamental c={c} /> }] : []),
           { id: "desenv", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: <AbaDesenvolvimento colaboradorId={c.id} /> },
           { id: "hist", label: "Histórico", icon: <History className="h-4 w-4" />, conteudo: <AbaHistorico colaboradorId={c.id} /> },
@@ -473,6 +474,26 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const idxComp = Math.max(0, comps.indexOf(compSel));
   const irMes = (delta: number) => { const i = idxComp + delta; if (i >= 0 && i < comps.length) setComp(comps[i]); };
 
+  // Resumo anual — TODOS os hooks ficam ANTES de qualquer `return` condicional
+  // (Rules of Hooks): a contagem de hooks não pode mudar ao navegar entre
+  // colaboradores com/sem pagamentos, senão o React quebra a aba.
+  const anos = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of meus) s.add(p.competencia.slice(0, 4));
+    return [...s].sort((a, b) => b.localeCompare(a));
+  }, [meus]);
+  const [ano, setAno] = useState<string>("");
+  const anoSel = ano || anos[0] || String(HOJE.getFullYear());
+  const doAno = useMemo(() => meus.filter((p) => p.competencia.startsWith(anoSel)), [meus, anoSel]);
+  const porTipoAno = useMemo(() => somaPorTipo(doAno), [doAno]);
+  // Diárias de viagem do ano — também compõem o que o colaborador recebe.
+  const diariasAno = useMemo(
+    () => viagens
+      .filter((v) => v.colaboradorId === c.id && v.status !== "Cancelada" && parseData(v.dataInicio)?.getFullYear() === Number(anoSel))
+      .reduce((a, v) => a + (v.valorTotal ?? 0), 0),
+    [viagens, c.id, anoSel],
+  );
+
   if (!sens) {
     return <EmptyState title="Informação restrita" description="Os dados financeiros do colaborador são visíveis apenas para o RH e para o próprio colaborador (LGPD)." icon={<Lock className="h-8 w-8" />} />;
   }
@@ -495,28 +516,11 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const tiposMes = new Set(doMes.map((p) => p.tipo));
   const parcial = !tiposMes.has("Salário") || !tiposMes.has("Adiantamento");
 
-  // --- Resumo anual: TUDO que o colaborador ganhou no ano (todos os tipos) ---
-  const anos = useMemo(() => {
-    const s = new Set<string>();
-    for (const p of meus) s.add(p.competencia.slice(0, 4));
-    return [...s].sort((a, b) => b.localeCompare(a));
-  }, [meus]);
-  const [ano, setAno] = useState<string>("");
-  const anoSel = ano || anos[0] || String(HOJE.getFullYear());
-  const doAno = useMemo(() => meus.filter((p) => p.competencia.startsWith(anoSel)), [meus, anoSel]);
-  const porTipoAno = useMemo(() => somaPorTipo(doAno), [doAno]);
+  // Resumo anual — derivados (não-hooks; os hooks já foram calculados acima).
   const totalAno = totalDe(doAno);
   const mesesNoAno = new Set(doAno.map((p) => p.competencia)).size;
   const mediaMesAno = mesesNoAno ? totalAno / mesesNoAno : 0;
   const serieAno = serie.filter((s) => s.competencia.startsWith(anoSel));
-
-  // Diárias de viagem do ano — também compõem o que o colaborador recebe.
-  const diariasAno = useMemo(
-    () => viagens
-      .filter((v) => v.colaboradorId === c.id && v.status !== "Cancelada" && parseData(v.dataInicio)?.getFullYear() === Number(anoSel))
-      .reduce((a, v) => a + (v.valorTotal ?? 0), 0),
-    [viagens, c.id, anoSel],
-  );
   const totalComDiarias = totalAno + diariasAno;
 
   const cargoNome = d.nomeCargo(c);
