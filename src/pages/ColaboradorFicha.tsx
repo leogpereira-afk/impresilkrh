@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
   IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
@@ -18,7 +18,7 @@ import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH } from "@/lib/rbac";
+import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
 import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
 import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
@@ -73,6 +73,17 @@ export default function ColaboradorFicha() {
   const sens = podeVerDadosSensiveis(sessao, id);
   const verGestao = podeVerGestao(sessao, id, d.colaboradores);
 
+  // Navegação por nome (setas ◀ ▶ na ficha): lista visível ao usuário, em ordem
+  // alfabética, só ativos (mantém o "ver apenas ativos"). Se a ficha aberta for de
+  // um inativo, ele entra na lista para a navegação funcionar a partir dele.
+  const { anterior, proximo } = useMemo(() => {
+    const vis = colaboradoresVisiveis(sessao, d.colaboradores).filter((x) => x.statusId !== "inativo" && !x.dataDesligamento);
+    if (c && !vis.some((x) => x.id === c.id)) vis.push(c);
+    vis.sort((a, b) => a.nome.localeCompare(b.nome, "pt"));
+    const i = vis.findIndex((x) => x.id === id);
+    return { anterior: i > 0 ? vis[i - 1] : null, proximo: i >= 0 && i < vis.length - 1 ? vis[i + 1] : null };
+  }, [sessao, d.colaboradores, c, id]);
+
   useEffect(() => {
     if (podeVer && sens && sessao && sessao.colaboradorId !== id) {
       const nome = d.colabById.get(sessao.colaboradorId)?.nome ?? "Usuário";
@@ -86,11 +97,13 @@ export default function ColaboradorFicha() {
     return <EmptyState title="Acesso restrito" description="Você não tem permissão para ver este colaborador." icon={<Lock className="h-8 w-8" />} />;
   }
 
-  return <FichaConteudo c={c} sens={sens} verGestao={verGestao} podeEditar={ehRH(sessao)} />;
+  return <FichaConteudo c={c} sens={sens} verGestao={verGestao} podeEditar={ehRH(sessao)} anterior={anterior} proximo={proximo} />;
 }
 
-function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/types").Colaborador; sens: boolean; verGestao: boolean; podeEditar: boolean }) {
+type Colab = import("@/data/types").Colaborador;
+function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { c: Colab; sens: boolean; verGestao: boolean; podeEditar: boolean; anterior: Colab | null; proximo: Colab | null }) {
   const d = useDominio();
+  const navegar = useNavigate();
   const toast = useToast();
   const { atualizar } = useColecao("colaboradores");
   const fotoRef = useRef<HTMLInputElement>(null);
@@ -128,9 +141,34 @@ function FichaConteudo({ c, sens, verGestao, podeEditar }: { c: import("@/data/t
 
   return (
     <div>
-      <Link to="/colaboradores" className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand">
-        <ArrowLeft className="h-4 w-4" /> Voltar para colaboradores
-      </Link>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Link to="/colaboradores" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand">
+          <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Voltar para colaboradores</span><span className="sm:hidden">Voltar</span>
+        </Link>
+        {/* Navegação entre colaboradores (ordem alfabética dos visíveis/ativos). */}
+        <div className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => anterior && navegar(`/colaboradores/${anterior.id}`)}
+            disabled={!anterior}
+            title={anterior ? `Anterior: ${anterior.nome}` : "Primeiro da lista"}
+            aria-label="Colaborador anterior"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent"
+          >
+            <ChevronLeft className="h-4 w-4" /> <span className="hidden sm:inline">Anterior</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => proximo && navegar(`/colaboradores/${proximo.id}`)}
+            disabled={!proximo}
+            title={proximo ? `Próximo: ${proximo.nome}` : "Último da lista"}
+            aria-label="Próximo colaborador"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent"
+          >
+            <span className="hidden sm:inline">Próximo</span> <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
 
       {(aniversario || (aniversarioEmpresa && anosCasa > 0)) && (
         <div className="mb-4 flex flex-wrap gap-2">
@@ -426,7 +464,9 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   // Competências disponíveis, da mais recente para a mais antiga.
   const comps = useMemo(() => competenciasDisponiveis(meus).slice().reverse(), [meus]);
   const [comp, setComp] = useState<string>("");
-  const compSel = comp || comps[0] || "";
+  // Ao navegar entre colaboradores, a competência escolhida pode não existir para
+  // o próximo — então cai para a mais recente dele.
+  const compSel = (comp && comps.includes(comp)) ? comp : (comps[0] || "");
   // Navegação por mês (setas ◀ ▶). `comps` vem do mais novo para o mais antigo, e
   // só inclui meses com lançamento — então pular para o anterior/próximo cruza o
   // ano naturalmente (ex.: de Jan/2026 volta para Dez/2025).
