@@ -276,12 +276,18 @@ export function criarCasadorDeNomes(colaboradores: { id: string; nome: string }[
     let melhor: { id: string; n: string }[] = [];
     for (const s of sys) {
       const st = s.n.split(" ");
-      if (!st.length || !tokensIguais(pt[0], st[0])) continue; // 1º nome tem de bater
+      if (!st.length) continue;
+      // input de 1 token exige 1º nome IGUAL (não prefixo): "Carl" não casa "Carlos".
+      const primeiroOk = pt.length === 1 ? st[0] === pt[0] : tokensIguais(pt[0], st[0]);
+      if (!primeiroOk) continue; // 1º nome tem de bater
       let sc = 0;
       for (const tok of pt) if (st.some((t) => tokensIguais(t, tok))) sc++;
       if (sc > mx) { mx = sc; melhor = [{ id: s.id, n: s.n }]; }
       else if (sc === mx && sc > 0) melhor.push({ id: s.id, n: s.n });
     }
+    // input com 2+ tokens precisa casar PELO MENOS 2 tokens (não basta o 1º nome) —
+    // evita jogar "Maria Silva" em "Maria Souza".
+    if (pt.length >= 2 && mx < 2) return null;
     if (melhor.length === 0) return null;
     if (melhor.length === 1) return melhor[0].id;
     const bases = new Set(melhor.map((m) => baseNome(m.n)));
