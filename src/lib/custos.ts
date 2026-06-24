@@ -117,23 +117,41 @@ export function parsePlanoContas(linhas: Linha[], competencia: string): ContaPla
 
 const norm = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 
-function tipoDePlano(plano: string, desp: string): string {
-  const p = plano.toLowerCase(), dd = desp.toLowerCase();
-  if (/amil|unimed|sa[uú]de|odonto/.test(dd)) return "Plano de Saúde";
-  if (/sal[aá]rio/.test(p)) return "Salário";
-  if (/adiantamento/.test(p)) return "Adiantamento";
-  if (/f[eé]rias/.test(p)) return "Férias";
-  if (/hora/.test(p) || /hora extra/.test(dd)) return "Horas Extras";
-  if (/comiss/.test(p)) return "Comissão";
-  if (/produtividade/.test(p)) return "Incentivo de Produtividade";
-  if (/viagens|viagem/.test(p) || /viagens|viagem/.test(dd)) return "Incentivo de Viagens";
-  if (/vale transporte/.test(p)) return "Vale Transporte";
-  if (/rescis/.test(p)) return "Rescisão";
-  if (/freelancer/.test(p) || /empreita/.test(dd)) return "Freelancer (Empreita)";
-  if (/limpeza/.test(p) || /faxina/.test(dd)) return "Limpeza/Faxina";
-  if (/presta[cç][aã]o/.test(p)) return "Prestação de Serviços";
+// Classifica a descrição/plano nos 14 tipos canônicos (NÃO cria tipos novos).
+// Olha plano + descrição juntos; ordem do mais específico ao mais genérico — o
+// primeiro padrão que casar vence. Cobre as variações reais da planilha:
+//   Plano de Saúde  ← amil, unimed, saúde, odonto
+//   Vale Transporte ← vale transporte, vt
+//   Adiantamento    ← adiantamento (colaborador/salário)
+//   Férias          ← férias, pagamento férias, férias <nome>
+//   Rescisão        ← rescisão
+//   Comissão        ← comissão, comissão produção
+//   Limpeza/Faxina  ← faxina, faxinas, limpeza
+//   Freelancer      ← empreita (sábado/aeroporto/shopping/Sicoob), freelancer
+//   Horas Extras    ← hora extra, plantão, plantões, sábado
+//   Incentivo Prod. ← incentivo de produtividade, produtividade
+//   Incentivo Viag. ← viagem, viagens
+//   Salário         ← salário, adicional de salário, pagamento, pagamento colaborador
+//   Outros          ← documento saveiro, retirada de adesivo, licenciamento, adicional <nome>
+// NOTA: "Adicional <nome>", "Plantão" e "Empreita" são casos a confirmar (ver chat).
+export function classificarPagamento(plano: string, desp: string): string {
+  const t = `${plano} ${desp}`.toLowerCase();
+  if (/amil|unimed|sa[uú]de|odonto|plano de sa/.test(t)) return "Plano de Saúde";
+  if (/vale ?transporte|\bvt\b/.test(t)) return "Vale Transporte";
+  if (/adiantamento/.test(t)) return "Adiantamento";
+  if (/f[eé]rias/.test(t)) return "Férias";
+  if (/rescis/.test(t)) return "Rescisão";
+  if (/comiss/.test(t)) return "Comissão";
+  if (/faxina|limpeza/.test(t)) return "Limpeza/Faxina";
+  if (/empreita|freela/.test(t)) return "Freelancer (Empreita)";
+  if (/hora ?extra|plant[ãa]o|s[áa]bado/.test(t)) return "Horas Extras";
+  if (/produtividade/.test(t)) return "Incentivo de Produtividade";
+  if (/viage[mn]/.test(t)) return "Incentivo de Viagens";
+  if (/presta[cç][aã]o/.test(t)) return "Prestação de Serviços";
+  if (/sal[aá]rio|pagamento/.test(t)) return "Salário";
   return "Outros";
 }
+const tipoDePlano = classificarPagamento; // alias usado pelo parsePagamentos
 
 function competenciaPagto(iso: string): string {
   const [y, m, dd] = iso.split("-").map(Number);
@@ -179,4 +197,20 @@ export function parsePagamentos(linhas: Linha[], colaboradores: { id: string; no
     registros.push({ id: `pg_up_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo, valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: desc || undefined });
   }
   return { registros, naoCasados: [...naoCasados] };
+}
+
+// ---- Reuso para importadores por nome (comissões das vendedoras, limpeza) ----
+// Mesma lógica de moeda e de casamento de nome do parsePagamentos, exposta para
+// listas simples (nome + valor). NÃO cria colaboradores: nome que não bater é
+// devolvido para conferência.
+export function valorBR(v: string | number | null): number { return moedaBR(v); }
+export function criarCasadorDeNomes(colaboradores: { id: string; nome: string }[]): (nome: string) => string | null {
+  const sys = colaboradores.map((c) => ({ id: c.id, n: norm(c.nome) }));
+  return (nome: string): string | null => {
+    const p = norm(nome);
+    if (!p) return null;
+    let m = sys.find((s) => s.n === p) ?? sys.find((s) => s.n.startsWith(p)) ?? sys.find((s) => p.startsWith(s.n));
+    if (!m) { const pt = p.split(" "); m = sys.find((s) => { const st = s.n.split(" "); return pt.length >= 2 && pt[0] === st[0] && st.some((x) => x === pt[1]); }); }
+    return m ? m.id : null;
+  };
 }
