@@ -284,6 +284,22 @@ export async function enviarColecao(nome: string): Promise<void> {
   }
 }
 
+// Arquivos grandes (currículos, anexos) NÃO cabem no localStorage e não entram no
+// registro (inflaria a sincronização). Vão para o store de blobs da nuvem (mesmo
+// canal das fotos), com chave própria — assim ficam disponíveis em TODOS os
+// computadores. Localmente são cacheados no IndexedDB. Best-effort: precisa de rede.
+export async function enviarArquivoNuvem(id: string, dataUrl: string): Promise<boolean> {
+  if (!syncConfigurado()) return false;
+  if (temWindow && !navigator.onLine) return false;
+  try { const r = await chamar("putPhoto", { id, dataUrl }); return !!r?.ok; }
+  catch { return false; }
+}
+export async function buscarArquivoNuvem(id: string): Promise<string | null> {
+  if (!syncConfigurado()) return null;
+  try { const r = await chamar("getPhoto", { id }); return (r?.dataUrl as string | null) ?? null; }
+  catch { return null; }
+}
+
 // Apaga TODOS os registros de uma ou mais coleções — LOCAL e na NUVEM. É o
 // "recomeçar do zero" de um conjunto de lançamentos (ex.: folha + plano de contas)
 // sem tocar no resto (cadastro etc.). Também limpa a fila pendente dessas coleções

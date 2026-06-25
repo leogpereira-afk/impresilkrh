@@ -576,8 +576,8 @@ export interface Candidato {
   telefone?: string;
   origem?: string; // LinkedIn, indicação, site...
   linkCurriculo?: string; // URL opcional do currículo
-  curriculoNome?: string | null; // nome do arquivo anexado (conteúdo no IndexedDB "cv:<id>")
-  curriculoEmBlob?: boolean;
+  curriculoNome?: string | null; // nome do arquivo anexado
+  curriculoArquivo?: boolean; // tem arquivo: sobe para a nuvem ("cv:<id>") e cacheia local
   nota?: number | null; // 0-10 — usado para classificar
   etapa: EtapaCandidato;
   observacao?: string;

@@ -14,6 +14,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
+import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { cn } from "@/lib/cn";
 import type { Vaga, Candidato, StatusVaga, EtapaCandidato } from "@/data/types";
 
@@ -62,20 +63,21 @@ export default function Vagas() {
 
   const verCurriculo = async (c: Candidato) => {
     if (c.linkCurriculo) { window.open(c.linkCurriculo, "_blank", "noopener"); return; }
-    if (c.curriculoEmBlob) {
-      const dataUrl = await getBlob(`cv:${c.id}`);
+    if (c.curriculoArquivo) {
+      let dataUrl = await getBlob(`cv:${c.id}`); // cache local
+      if (!dataUrl) { dataUrl = await buscarArquivoNuvem(`cv:${c.id}`); if (dataUrl) void putBlob(`cv:${c.id}`, dataUrl); } // busca na nuvem e cacheia
       if (dataUrl) { const w = window.open(); if (w) w.document.write(`<iframe src="${dataUrl}" style="width:100%;height:100%;border:0"></iframe>`); }
-      else toast("Currículo não encontrado neste computador.", "erro");
+      else toast("Currículo não encontrado (sem rede para baixar da nuvem?).", "erro");
     }
   };
 
   const excluirVaga = (v: Vaga) => {
-    for (const c of candPorVaga.get(v.id) ?? []) { if (c.curriculoEmBlob) void delBlob(`cv:${c.id}`); removerCand(c.id); }
+    for (const c of candPorVaga.get(v.id) ?? []) { if (c.curriculoArquivo) void delBlob(`cv:${c.id}`); removerCand(c.id); }
     removerVaga(v.id);
     toast(`Vaga "${v.titulo}" removida.`);
   };
   const excluirCand = (c: Candidato) => {
-    if (c.curriculoEmBlob) void delBlob(`cv:${c.id}`);
+    if (c.curriculoArquivo) void delBlob(`cv:${c.id}`);
     removerCand(c.id);
     toast(`${c.nome} removido(a).`);
   };
@@ -159,7 +161,7 @@ export default function Vagas() {
                               <p className="text-[10px] uppercase tracking-wide text-slate-400">nota</p>
                             </div>
                             <Badge variant={corEtapa(c.etapa)}>{c.etapa}</Badge>
-                            {(c.curriculoEmBlob || c.linkCurriculo) && (
+                            {(c.curriculoArquivo || c.linkCurriculo) && (
                               <button onClick={() => verCurriculo(c)} title="Ver currículo" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand">
                                 {c.linkCurriculo ? <ExternalLink className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
                               </button>
@@ -202,9 +204,10 @@ export default function Vagas() {
             if (id) atualizarCand(id, dados);
             else { const r = criarCand({ etapa: "Triagem", criadoEm: new Date().toISOString(), ...dados }); alvoId = r.id; }
             if (arquivo && alvoId) {
-              const ok = await putBlob(`cv:${alvoId}`, arquivo.dataUrl);
-              if (ok) atualizarCand(alvoId, { curriculoEmBlob: true, curriculoNome: arquivo.nome, linkCurriculo: "" });
-              else toast("Não foi possível guardar o arquivo (muito grande?).", "erro");
+              void putBlob(`cv:${alvoId}`, arquivo.dataUrl); // cache local (rápido/offline)
+              const subiu = await enviarArquivoNuvem(`cv:${alvoId}`, arquivo.dataUrl); // sobe para a nuvem (todos os PCs)
+              atualizarCand(alvoId, { curriculoArquivo: true, curriculoNome: arquivo.nome, linkCurriculo: "" });
+              if (!subiu) toast("Candidato salvo, mas o currículo não subiu agora (sem rede?). Reabra a vaga online e salve de novo para enviar.", "erro");
             }
             toast("Candidato salvo.");
             setFormCand(null);
@@ -303,6 +306,7 @@ function CandidatoForm({ vagaId, cand, onFechar, onSalvar }: { vagaId: string; c
             <button type="button" className="btn-outline" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> Anexar</button>
             <span className="truncate text-xs text-slate-500">{arquivo?.nome ?? (cand?.curriculoNome ? `Atual: ${cand.curriculoNome}` : "Nenhum arquivo")}</span>
           </div>
+          <p className="mt-1 text-[11px] text-slate-400">O arquivo vai para a nuvem e aparece em todos os computadores (até 5 MB).</p>
         </Campo>
         <Campo label="…ou link do currículo"><Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…  (Drive, LinkedIn)" disabled={!!arquivo} /></Campo>
         <Campo label="Observações"><Textarea rows={2} value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Avaliação, pontos fortes/fracos…" /></Campo>
