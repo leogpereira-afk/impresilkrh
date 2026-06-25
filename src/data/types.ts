@@ -547,3 +547,39 @@ export interface RespostaPesquisa {
   respostas: { perguntaId: string; valor: string | number }[];
   criadoEm: string;
 }
+
+// ===================== Recrutamento — Vagas em aberto (v8) =====================
+// Vaga em aberto + candidatos com nota (0-10) para classificar/ranquear. O
+// currículo (arquivo) fica no IndexedDB sob "cv:<id>" (não infla a sincronização);
+// só os metadados e a nota sincronizam.
+export type StatusVaga = "Aberta" | "Em triagem" | "Fechada" | "Cancelada";
+export interface Vaga {
+  id: string;
+  titulo: string;
+  areaId?: string | null;
+  cargoId?: string | null;
+  nivelId?: string | null;
+  quantidade?: number; // nº de posições
+  descricao?: string;
+  requisitos?: string;
+  status: StatusVaga;
+  dataAbertura?: string | null; // ISO
+  criadoEm: string;
+}
+
+export type EtapaCandidato = "Triagem" | "Entrevista" | "Teste" | "Aprovado" | "Reprovado" | "Contratado";
+export interface Candidato {
+  id: string;
+  vagaId: string;
+  nome: string;
+  email?: string;
+  telefone?: string;
+  origem?: string; // LinkedIn, indicação, site...
+  linkCurriculo?: string; // URL opcional do currículo
+  curriculoNome?: string | null; // nome do arquivo anexado (conteúdo no IndexedDB "cv:<id>")
+  curriculoEmBlob?: boolean;
+  nota?: number | null; // 0-10 — usado para classificar
+  etapa: EtapaCandidato;
+  observacao?: string;
+  criadoEm: string;
+}

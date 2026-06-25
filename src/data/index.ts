@@ -7,7 +7,7 @@ import type {
   Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Aceite, Config,
   Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
   Treinamento, EtapaEvolucao, Usuario, Pagamento, ContaPlano, ClassificacaoConta, EventoCalendario,
-  CertificacaoNR, Pesquisa, RespostaPesquisa,
+  CertificacaoNR, Pesquisa, RespostaPesquisa, Vaga, Candidato,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -37,6 +37,7 @@ import { CLASSIFICACAO_CONTAS } from "./classificacaoContas";
 import { EVENTOS_CALENDARIO } from "./eventos";
 import { CERTIFICACOES_NR } from "./nrs";
 import { PESQUISAS } from "./pesquisas";
+import { VAGAS, CANDIDATOS } from "./vagas";
 
 export const VERSAO_DADOS = "1.0.0";
 
@@ -87,6 +88,8 @@ export interface ColecaoMap {
   certificacoesNr: CertificacaoNR;
   pesquisas: Pesquisa;
   respostasPesquisa: RespostaPesquisa;
+  vagas: Vaga;
+  candidatos: Candidato;
 }
 
 export type NomeColecao = keyof ColecaoMap;
@@ -133,6 +136,8 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     certificacoesNr: CERTIFICACOES_NR,
     pesquisas: PESQUISAS,
     respostasPesquisa: [],
+    vagas: VAGAS,
+    candidatos: CANDIDATOS,
   });
 }
 

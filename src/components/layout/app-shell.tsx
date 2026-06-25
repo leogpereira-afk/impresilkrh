@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, BookOpen, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
+  Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
   Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -37,6 +37,7 @@ const NAV: ItemNav[] = [
   { href: "/calendario", label: "Calendário", icon: CalendarDays, perfis: TODOS, grupo: "Visão geral" },
   // Pessoas — operações do quadro
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
@@ -51,7 +52,6 @@ const NAV: ItemNav[] = [
   // Comunicação & Conteúdo — comunicação interna e material de referência
   { href: "/comunicacao", label: "Comunicação Interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
   { href: "/mensagens", label: "Disparo de Mensagens", icon: Send, perfis: GESTAO, grupo: "Comunicação & Conteúdo" },
-  { href: "/pops", label: "POPs e Procedimentos", icon: BookOpen, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
   { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
   { href: "/comportamental", label: "Guia Comportamental", icon: Brain, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
   // Administração — só RH
