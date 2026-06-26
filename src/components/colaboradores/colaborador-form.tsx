@@ -176,10 +176,12 @@ export function ColaboradorForm({
 
         <Campo label="Endereço (rua)"><Input value={form.enderecoRua ?? ""} onChange={(e) => set({ enderecoRua: e.target.value })} /></Campo>
         <Campo label="Número"><Input value={form.enderecoNumero ?? ""} onChange={(e) => set({ enderecoNumero: e.target.value })} placeholder="nº" /></Campo>
+        <Campo label="Complemento"><Input value={form.enderecoComplemento ?? ""} onChange={(e) => set({ enderecoComplemento: e.target.value })} placeholder="Apto, bloco…" /></Campo>
         <Campo label="Bairro"><Input value={form.enderecoBairro ?? ""} onChange={(e) => set({ enderecoBairro: e.target.value })} /></Campo>
         <Campo label="CEP"><Input value={form.enderecoCep ?? ""} onChange={(e) => set({ enderecoCep: e.target.value })} /></Campo>
         <Campo label="Cidade"><Input value={form.cidade ?? ""} onChange={(e) => set({ cidade: e.target.value })} /></Campo>
         <Campo label="Cônjuge"><Input value={form.conjugeNome ?? ""} onChange={(e) => set({ conjugeNome: e.target.value })} /></Campo>
+        <Campo label="Telefone do cônjuge"><Input value={form.conjugeTelefone ?? ""} onChange={(e) => set({ conjugeTelefone: e.target.value })} placeholder="(00) 00000-0000" /></Campo>
         <Campo label="Matrícula eSocial"><Input value={form.matriculaEsocial ?? ""} onChange={(e) => set({ matriculaEsocial: e.target.value })} /></Campo>
         <Campo label="Vale-transporte">
           <label className="flex h-[42px] items-center gap-2 text-sm text-slate-600">
@@ -271,6 +273,36 @@ export function ColaboradorForm({
               <option value="">—</option>
               {CATEGORIAS_CNH.map((x) => <option key={x} value={x}>{x}</option>)}
             </Select>
+          </Campo>
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Organização & financeiro</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Campo label="Setor" hint="Agrupamento (pode espelhar a área)">
+            <Input value={form.setor ?? ""} onChange={(e) => set({ setor: e.target.value })} />
+          </Campo>
+          <Campo label="Função (planilha)" hint="Função original quando não há cargo">
+            <Input value={form.funcao ?? ""} onChange={(e) => set({ funcao: e.target.value })} />
+          </Campo>
+          <Campo label="Cargo livre (Direção)" hint="Rótulo p/ Direção sem cargo">
+            <Input value={form.cargoLivre ?? ""} onChange={(e) => set({ cargoLivre: e.target.value })} />
+          </Campo>
+          <Campo label="Adicionais (R$)" hint="Benefícios — painel financeiro">
+            <Input type="number" step="0.01" value={form.adicionais ?? ""} onChange={(e) => set({ adicionais: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          </Campo>
+          <Campo label="Motivação anterior (0–100)" hint="Registro anterior (tendência)">
+            <Input type="number" min={0} max={100} value={form.motivacaoAnterior ?? ""} onChange={(e) => set({ motivacaoAnterior: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          </Campo>
+          <Campo label="É Direção?" hint="Fundador/diretor — não conta no headcount">
+            <label className="flex h-[42px] items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={form.ehDirecao ?? false} onChange={(e) => set({ ehDirecao: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />
+              Não contar como headcount
+            </label>
+          </Campo>
+          <Campo label="Observação de enquadramento" className="sm:col-span-2 lg:col-span-3">
+            <Input value={form.observacaoEnquadramento ?? ""} onChange={(e) => set({ observacaoEnquadramento: e.target.value })} placeholder="Notas sobre o enquadramento salarial" />
           </Campo>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -9,6 +9,7 @@ import { DotBadge, Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/form";
 import { MotivacaoRosto } from "@/components/ui/indicadores";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
+import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
@@ -43,9 +44,51 @@ export default function Colaboradores() {
   const [subsAbertas, setSubsAbertas] = useState<Set<string>>(() => new Set());
 
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
+  const { items: ferias } = useColecao("ferias");
 
   // Inativo = desligado (data de desligamento) ou status "inativo".
   const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
+
+  // Cards de resumo — sobre o escopo de acesso, sem a Direção (mesma base da lista).
+  const resumo = useMemo(() => {
+    const base = escopo.filter((c) => !c.ehDirecao);
+    const emFerias = new Set(
+      ferias.filter((f) => f.status === "Em andamento").map((f) => f.colaboradorId),
+    );
+    return {
+      total: base.length,
+      ativos: base.filter((c) => !ehInativo(c)).length,
+      ferias: base.filter((c) => emFerias.has(c.id) && !ehInativo(c)).length,
+      desligados: base.filter((c) => ehInativo(c)).length,
+    };
+  }, [escopo, ferias]);
+
+  // Exporta a lista filtrada atual para CSV (Excel-friendly, separador ;).
+  const exportarCsv = () => {
+    const cols: [string, (c: Colaborador) => string | number][] = [
+      ["Nome", (c) => c.nome],
+      ["E-mail", (c) => c.email ?? ""],
+      ["Telefone", (c) => c.telefone ?? ""],
+      ["Cargo", (c) => d.nomeCargo(c)],
+      ["Área", (c) => d.nomeArea(c.areaId)],
+      ["Nível", (c) => d.nomeNivel(c.nivelId)],
+      ["Status", (c) => d.nomeStatus(c.statusId)],
+      ["Enquadramento", (c) => d.enquadrarColab(c)],
+      ["Admissão", (c) => (c.dataAdmissao ?? "").slice(0, 10)],
+    ];
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const linhas = [
+      cols.map((x) => x[0]).join(";"),
+      ...lista.map((c) => cols.map(([, fn]) => esc(fn(c))).join(";")),
+    ];
+    const blob = new Blob(["\uFEFF" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `colaboradores-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Lista filtrada (busca + filtros + chips). Compartilhada pelas duas visões.
   // Por padrão mostra só os ativos; "Incluir inativos" libera os desligados.
@@ -57,7 +100,14 @@ export default function Colaboradores() {
       .filter((c) => (fArea ? c.areaId === fArea : true))
       .filter((c) => (chips.size ? !!c.areaId && chips.has(c.areaId) : true))
       .filter((c) => (fStatus ? c.statusId === fStatus : true))
-      .filter((c) => (termo ? c.nome.toLowerCase().includes(termo) || d.nomeCargo(c).toLowerCase().includes(termo) : true))
+      .filter((c) =>
+        termo
+          ? c.nome.toLowerCase().includes(termo) ||
+            d.nomeCargo(c).toLowerCase().includes(termo) ||
+            (c.email ?? "").toLowerCase().includes(termo) ||
+            d.nomeArea(c.areaId).toLowerCase().includes(termo)
+          : true,
+      )
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, d]);
 
@@ -118,12 +168,35 @@ export default function Colaboradores() {
   return (
     <div>
       <PageHeader title="Colaboradores" description={`${lista.length} colaborador(es) no seu escopo de acesso.`}>
+        <button className="btn-outline" onClick={exportarCsv} disabled={lista.length === 0} title="Exporta a lista filtrada para CSV">
+          <Download className="h-4 w-4" /> Exportar CSV
+        </button>
         {ehRH(sessao) && (
           <button className="btn-primary" onClick={() => setNovo(true)}>
             <Plus className="h-4 w-4" /> Novo colaborador
           </button>
         )}
       </PageHeader>
+
+      {/* Cards de resumo do quadro */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: "Total", valor: resumo.total, icon: Users, cor: "text-slate-500", bg: "bg-slate-100" },
+          { label: "Ativos", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Em férias", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
+          { label: "Desligados", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
+        ].map(({ label, valor, icon: Icon, cor, bg }) => (
+          <Card key={label} className="flex items-center gap-3 p-4">
+            <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", bg)}>
+              <Icon className={cn("h-5 w-5", cor)} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-2xl font-bold leading-none text-slate-800">{valor}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">{label}</p>
+            </div>
+          </Card>
+        ))}
+      </div>
 
       {/* Chips de área (multi-seleção) */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -160,10 +233,10 @@ export default function Colaboradores() {
       </div>
 
       <Card className="mb-4 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative flex-1 sm:min-w-[200px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input className="pl-9" placeholder="Buscar por nome ou cargo…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <Input className="pl-9" placeholder="Buscar por nome, cargo, e-mail ou área…" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
           <Select value={fArea} onChange={(e) => setFArea(e.target.value)} className="sm:w-56">
             <option value="">Todas as áreas</option>
