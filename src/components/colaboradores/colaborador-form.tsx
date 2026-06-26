@@ -5,7 +5,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, enquadrar } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
-import type { Colaborador } from "@/data/types";
+import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
 
@@ -30,6 +30,21 @@ export function ColaboradorForm({
   const [form, setForm] = useState<Partial<Colaborador>>(editar ?? vazio);
   const set = (patch: Partial<Colaborador>) => setForm((f) => ({ ...f, ...patch }));
 
+  const filhos = form.filhos ?? [];
+  const addFilho = () => setForm((f) => ({ ...f, filhos: [...(f.filhos ?? []), { nome: "" }] }));
+  const removeFilho = (i: number) => setForm((f) => ({ ...f, filhos: (f.filhos ?? []).filter((_, j) => j !== i) }));
+  const setFilho = (i: number, patch: Partial<{ nome: string; nascimento: string }>) =>
+    setForm((f) => {
+      const arr = [...(f.filhos ?? [])];
+      arr[i] = { ...arr[i], ...patch };
+      return { ...f, filhos: arr };
+    });
+  const setEmergencia = (patch: Partial<ContatoEmergencia>) =>
+    setForm((f) => ({
+      ...f,
+      contatoEmergencia: { nome: "", parentesco: "", telefone: "", ...f.contatoEmergencia, ...patch },
+    }));
+
   const cargosArea = useMemo(
     () => d.cargos.filter((c) => c.areaId === form.areaId),
     [d.cargos, form.areaId],
@@ -48,8 +63,14 @@ export function ColaboradorForm({
     // Recalcula sempre que há cargo+salário; senão limpa (deixa o cálculo dinâmico assumir),
     // em vez de manter um enquadramento antigo "grudado".
     const enquadramento = cargo && form.salario != null ? enquadrar(form.salario, cargo.faixas) : null;
+    const filhosLimpos = (form.filhos ?? []).filter((x) => x.nome?.trim());
+    const ce = form.contatoEmergencia;
+    const temContato = !!(ce && (ce.nome?.trim() || ce.telefone?.trim() || ce.parentesco?.trim()));
     const dados: Partial<Colaborador> = {
       ...form,
+      filhos: filhosLimpos,
+      qtdFilhos: filhosLimpos.length,
+      contatoEmergencia: temContato ? ce : undefined,
       refMin: cargo?.faixas[0] ?? form.refMin ?? null,
       refMax: cargo?.faixas[4] ?? form.refMax ?? null,
       enquadramento,
@@ -166,6 +187,35 @@ export function ColaboradorForm({
             Optante pelo vale-transporte
           </label>
         </Campo>
+      </div>
+
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filhos</p>
+          <button type="button" className="text-xs font-medium text-brand hover:underline" onClick={addFilho}>+ Adicionar filho</button>
+        </div>
+        {filhos.length === 0 ? (
+          <p className="text-sm text-slate-400">Nenhum filho cadastrado.</p>
+        ) : (
+          <div className="space-y-2">
+            {filhos.map((f, i) => (
+              <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+                <Campo label="Nome"><Input value={f.nome ?? ""} onChange={(e) => setFilho(i, { nome: e.target.value })} /></Campo>
+                <Campo label="Nascimento"><Input type="date" value={(f.nascimento ?? "").slice(0, 10)} onChange={(e) => setFilho(i, { nascimento: e.target.value })} /></Campo>
+                <button type="button" className="btn-outline h-[42px] text-red-600" onClick={() => removeFilho(i)}>Remover</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Contato de emergência</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Campo label="Nome"><Input value={form.contatoEmergencia?.nome ?? ""} onChange={(e) => setEmergencia({ nome: e.target.value })} /></Campo>
+          <Campo label="Parentesco"><Input value={form.contatoEmergencia?.parentesco ?? ""} onChange={(e) => setEmergencia({ parentesco: e.target.value })} placeholder="Cônjuge, Mãe…" /></Campo>
+          <Campo label="Telefone"><Input value={form.contatoEmergencia?.telefone ?? ""} onChange={(e) => setEmergencia({ telefone: e.target.value })} placeholder="(00) 00000-0000" /></Campo>
+        </div>
       </div>
 
       <div className="mt-4 border-t border-slate-100 pt-4">
