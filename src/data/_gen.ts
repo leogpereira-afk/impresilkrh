@@ -54,8 +54,13 @@ export function addDias(base: Date | string, dias: number): string {
   return d.toISOString();
 }
 
-// Data de referência do sistema (para alertas/vencimentos coerentes com os dados).
-export const HOJE = new Date("2026-06-22T12:00:00");
+// Data de referência do sistema = HOJE real (avaliada ao abrir o app).
+// Antes era um dia FIXO (2026-06-22); com isso alertas, vencimentos, "é hoje?",
+// aniversários do mês, notificações e as datas-padrão dos formulários ficavam
+// congelados nessa data e nunca avançavam com o passar do tempo.
+// Os dados-semente usam offsets RELATIVOS a esta âncora (addDias(HOJE, ...)),
+// então continuam internamente coerentes ao ancorar no dia real.
+export const HOJE = new Date();
 
 export function uid(prefixo = "id"): string {
   return `${prefixo}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
