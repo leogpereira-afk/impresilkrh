@@ -111,6 +111,16 @@ let suprimirSync = false;
 export function registrarMutacao(fn: MutacaoCb): void {
   mutacaoCb = fn;
 }
+
+// Gancho de pós-importação: o sync se registra para EMPURRAR para a nuvem as
+// coleções recém-importadas de um backup. Sem isso, restaurar um backup só
+// gravava local — o dado nunca subia (importarDados usa cache/escrever direto,
+// não passa pelo gancho de mutação) e "sumia" ao trocar de computador.
+type PosImportCb = (colecoes: NomeColecao[]) => void;
+let posImportCb: PosImportCb | null = null;
+export function registrarPosImport(fn: PosImportCb): void {
+  posImportCb = fn;
+}
 export function aplicarSemSync<T>(fn: () => T): T {
   const antes = suprimirSync;
   suprimirSync = true;
@@ -238,11 +248,13 @@ export function importarDados(json: string): void {
   if (!parsed || typeof parsed !== "object" || !parsed.dados) {
     throw new Error("Arquivo inválido: estrutura de dados não reconhecida.");
   }
+  const importadas: NomeColecao[] = [];
   for (const nome of NOMES_COLECOES) {
     const v = parsed.dados[nome];
     if (Array.isArray(v)) {
       cache.set(nome, v);
       escrever(keyCol(nome), JSON.stringify(v));
+      importadas.push(nome);
     }
   }
   if (parsed.config) {
@@ -250,6 +262,9 @@ export function importarDados(json: string): void {
     escrever(CONFIG_KEY, JSON.stringify(configCache));
   }
   emitTudo();
+  // Sobe o backup importado para a nuvem (best-effort; se o sync estiver desligado
+  // ou offline, fica local e sobe depois). Sem isso o restore não se propagava.
+  if (posImportCb) posImportCb(importadas);
 }
 
 export function restaurarPadrao(): void {

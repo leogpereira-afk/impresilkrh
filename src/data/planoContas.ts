@@ -4,7 +4,12 @@
 // para não duplicar pai+filho. Editável/extensível via upload na tela de Custos.
 import type { ContaPlano } from "./types";
 
-export const PLANO_CONTAS: ContaPlano[] = [
+// Id estável de uma conta = competência + código. Determinístico de propósito:
+// reimportar o mesmo mês gera os mesmos ids, então a nuvem ATUALIZA a conta em vez
+// de duplicar. Sem id, o registro era descartado na sincronização (filtro r.id).
+export const idConta = (competencia: string, codigo: string) => `pc_${competencia}_${codigo}`;
+
+const LINHAS: Omit<ContaPlano, "id">[] = [
   { competencia: "2026-01", codigo: "2", nome: "Despesas", valor: 428681.08, folha: false },
   { competencia: "2026-01", codigo: "2.1", nome: "Despesas Funcionários", valor: 70169.77, folha: false },
   { competencia: "2026-01", codigo: "2.1.1", nome: "Salário", valor: 34249.49, folha: true },
@@ -1294,3 +1299,5 @@ export const PLANO_CONTAS: ContaPlano[] = [
   { competencia: "2026-06", codigo: "2.16", nome: "Investimentos", valor: 1000.0, folha: false },
   { competencia: "2026-06", codigo: "2.16.3", nome: "Investimentos", valor: 1000.0, folha: true },
 ];
+
+export const PLANO_CONTAS: ContaPlano[] = LINHAS.map((c) => ({ ...c, id: idConta(c.competencia, c.codigo) }));

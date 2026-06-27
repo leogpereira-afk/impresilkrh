@@ -8,7 +8,7 @@
 // ainda não foi configurado (token vazio), tudo funciona 100% local, como antes.
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecao, aplicarSemSync, registrarMutacao, obterConfig } from "@/lib/store";
+import { obter, definirColecao, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig } from "@/lib/store";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
 
 const temWindow = typeof window !== "undefined";
@@ -209,15 +209,21 @@ export async function pull(): Promise<void> {
           const rem = remMap.get(loc.id);
           if (rem) {
             const remNovo = !!rem.atualizadoEm && (!loc.atualizadoEm || rem.atualizadoEm > loc.atualizadoEm);
-            merged.push(remNovo ? rem : loc); // mais novo vence
+            if (remNovo) {
+              // Servidor mais novo vence. Se for LÁPIDE (exclusão remota), o registro
+              // some local — é o que impede o dado de "ressuscitar" no próximo pull.
+              if (!rem._apagado) merged.push(rem);
+            } else {
+              merged.push(loc); // local mais novo vence (até uma edição posterior à exclusão)
+            }
             remMap.delete(loc.id);
           } else {
-            merged.push(loc); // PRESERVA SEMPRE o local — o pull nunca apaga dados
-            // (antes: registro ausente na nuvem era removido; isso zerava importações
-            //  e o cadastro base quando a nuvem ainda estava incompleta).
+            merged.push(loc); // sem par na nuvem → PRESERVA o local (pull nunca apaga às cegas)
+            // (registro ausente ≠ apagado: ausência pode ser nuvem incompleta. Só uma
+            //  lápide explícita remove — ver acima.)
           }
         }
-        for (const rem of remMap.values()) merged.push(rem); // novos do servidor
+        for (const rem of remMap.values()) if (!rem._apagado) merged.push(rem); // novos do servidor (ignora lápides)
         definirColecao(nome as never, merged as never);
       }
     });
@@ -336,6 +342,10 @@ export function aceitarServidor(colecao: string, id: string) {
   if (env?.registro) {
     aplicarSemSync(() => {
       const arr = obter(colecao as never) as unknown as Reg[];
+      if (env.registro._apagado) {
+        definirColecao(colecao as never, arr.filter((r) => r.id !== id) as never); // servidor apagou → some local
+        return;
+      }
       const existe = arr.some((r) => r.id === id);
       definirColecao(colecao as never, (existe ? arr.map((r) => (r.id === id ? env.registro : r)) : [env.registro, ...arr]) as never);
     });
@@ -408,6 +418,9 @@ export async function diagnosticar(): Promise<PassoDiag[]> {
 //  • Um poll leve roda só ENQUANTO a aba está visível (economiza créditos do
 //    Netlify; nada de chamadas com a aba em segundo plano).
 registrarMutacao((colecao, tipo, id) => { if (syncHabilitado()) enfileirar(colecao, tipo, id); });
+// Restaurar um backup (importarDados) grava direto no store, sem passar pelo gancho
+// de mutação — então empurramos cada coleção importada para a nuvem aqui.
+registrarPosImport((colecoes) => { if (syncHabilitado()) for (const nome of colecoes) void enviarColecao(nome); });
 if (temWindow) {
   const ativo = () => syncHabilitado() && navigator.onLine;
   const ciclo = () => { if (ativo()) { void trySync(); void pull(); } };

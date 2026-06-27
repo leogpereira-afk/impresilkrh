@@ -3,6 +3,7 @@
 // O custo INDIVIDUAL por pessoa vem da folha real (pagamentos.ts); aqui tratamos
 // os totais por classe (individual/rateio/encargo/confidencial) e o comparativo.
 import type { ContaPlano, ClassificacaoConta, ClasseCusto } from "@/data/types";
+import { idConta } from "@/data/planoContas";
 import { MESES_PT } from "@/lib/format";
 
 export function classeMap(cls: ClassificacaoConta[]): Map<string, ClasseCusto> {
@@ -112,7 +113,7 @@ export function parsePlanoContas(linhas: Linha[], competencia: string): ContaPla
   }
   const codigos = new Set(brutos.map((b) => b.codigo));
   const ehFolha = (c: string) => { const p = c + "."; return ![...codigos].some((x) => x.startsWith(p)); };
-  return brutos.map((b) => ({ competencia, codigo: b.codigo, nome: b.nome, valor: Math.round(b.valor * 100) / 100, folha: ehFolha(b.codigo) }));
+  return brutos.map((b) => ({ id: idConta(competencia, b.codigo), competencia, codigo: b.codigo, nome: b.nome, valor: Math.round(b.valor * 100) / 100, folha: ehFolha(b.codigo) }));
 }
 
 const norm = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();

@@ -55,6 +55,7 @@ export default async (req: Request) => {
   const meuId = jwtPayload?.sub ? String(jwtPayload.sub) : null;
   const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia"];
   const mascarar = (env: any) => {
+    if (env?.registro?._apagado) return env; // lápide (exclusão): sem dado sensível, propaga p/ todos
     if (ehAdmin || !env?.registro) return env;
     if (env.colecao === "colaboradores" && env.registro.id !== meuId) {
       const r = { ...env.registro };
@@ -128,7 +129,12 @@ export default async (req: Request) => {
         const colecao = String(body.colecao ?? "");
         const id = String(body.id ?? "");
         if (!colecao || !id) return json({ erro: "colecao e id obrigatórios." }, 400);
-        await registros.delete(chave(colecao, id));
+        // LÁPIDE (tombstone): em vez de remover o blob, grava um marcador apagado com
+        // carimbo de tempo. Assim o pull em OUTROS computadores enxerga a exclusão e
+        // remove o registro local. Sem isso, o pull preservava o local órfão e o dado
+        // "ressuscitava" no próximo ciclo. Uma edição posterior (atualizadoEm > lápide)
+        // ainda vence — exclusão e edição concorrentes resolvem por timestamp.
+        await registros.setJSON(chave(colecao, id), { colecao, registro: { id, _apagado: true, atualizadoEm: new Date().toISOString() } });
         // limpeza best-effort de foto ligada (mesmo id)
         await fotos.delete(id).catch(() => {});
         return json({ ok: true });

@@ -467,6 +467,7 @@ export interface Pagamento {
 // Plano de Contas mensal (árvore de despesas). folha=true => conta sem subcontas
 // (some só as folhas para não duplicar pai+filho).
 export interface ContaPlano {
+  id: string; // = idConta(competencia, codigo) — estável, para sincronizar sem duplicar
   competencia: string; // "2026-05"
   codigo: string; // "2.1.15.4"
   nome: string;
