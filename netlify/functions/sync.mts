@@ -66,6 +66,18 @@ export default async (req: Request) => {
     return env;
   };
 
+  // Escopo de ESCRITA (espelha o de leitura). Acesso por token compartilhado
+  // (x-token) ou ADMIN_RH escreve tudo — comportamento atual inalterado. Um
+  // crachá (JWT) que NÃO é ADMIN_RH só pode mexer na PRÓPRIA ficha e na PRÓPRIA
+  // folha; operações em massa/destrutivas (bulkUpsert, limparColecao) são só de
+  // admin. Defesa no servidor: o cliente nunca é a única barreira.
+  const podeEscrever = (colecao: string, reg: any): boolean => {
+    if (ehAdmin) return true;
+    if (colecao === "colaboradores") return reg?.id === meuId; // só a própria ficha
+    if (colecao === "pagamentos") return reg?.colaboradorId === meuId; // só a própria folha
+    return true; // demais coleções operacionais
+  };
+
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ erro: "JSON inválido." }, 400); }
   const action = String(body.action ?? "");
@@ -99,6 +111,7 @@ export default async (req: Request) => {
         const colecao = String(body.colecao ?? "");
         const registro = body.registro as { id?: string; atualizadoEm?: string } | undefined;
         if (!colecao || !registro?.id) return json({ erro: "colecao e registro.id obrigatórios." }, 400);
+        if (!podeEscrever(colecao, registro)) return json({ erro: "Sem permissão para gravar este registro." }, 403);
         const k = chave(colecao, registro.id);
         const atual = (await registros.get(k, { type: "json" }).catch(() => null)) as
           | { registro?: { atualizadoEm?: string } }
@@ -115,6 +128,7 @@ export default async (req: Request) => {
 
       // ---- upsert em lote (push autoritativo, sem conflito) ----
       case "bulkUpsert": {
+        if (!ehAdmin) return json({ erro: "Operação em massa restrita ao RH." }, 403); // só admin/token
         const lote = (body.registros ?? []) as { colecao: string; registro: { id: string } }[];
         await Promise.all(
           lote
@@ -129,6 +143,12 @@ export default async (req: Request) => {
         const colecao = String(body.colecao ?? "");
         const id = String(body.id ?? "");
         if (!colecao || !id) return json({ erro: "colecao e id obrigatórios." }, 400);
+        // Escopo de escrita: não-admin (JWT) só apaga a própria ficha; folha alheia
+        // e exclusões fora do próprio escopo ficam bloqueadas.
+        if (!ehAdmin) {
+          if (colecao === "colaboradores" && id !== meuId) return json({ erro: "Sem permissão." }, 403);
+          if (colecao === "pagamentos") return json({ erro: "Sem permissão." }, 403);
+        }
         // LÁPIDE (tombstone): em vez de remover o blob, grava um marcador apagado com
         // carimbo de tempo. Assim o pull em OUTROS computadores enxerga a exclusão e
         // remove o registro local. Sem isso, o pull preservava o local órfão e o dado
@@ -144,6 +164,7 @@ export default async (req: Request) => {
       // Usado para "recomeçar do zero" um conjunto de lançamentos (ex.: folha,
       // plano de contas) sem mexer nas demais coleções. Apaga só a coleção pedida.
       case "limparColecao": {
+        if (!ehAdmin) return json({ erro: "Limpar coleção é restrito ao RH." }, 403); // destrutivo: só admin/token
         const colecao = String(body.colecao ?? "");
         if (!colecao) return json({ erro: "colecao obrigatória." }, 400);
         const { blobs } = await registros.list({ prefix: `${colecao}::` });
@@ -155,6 +176,7 @@ export default async (req: Request) => {
       case "getCfg":
         return json({ config: (await configStore.get("config", { type: "json" }).catch(() => null)) ?? null });
       case "setCfg":
+        if (!ehAdmin) return json({ erro: "Configuração global é restrita ao RH." }, 403);
         await configStore.setJSON("config", { config: body.config, atualizadoEm: new Date().toISOString() });
         return json({ ok: true });
 
