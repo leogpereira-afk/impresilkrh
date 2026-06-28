@@ -9,6 +9,22 @@ import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
 
+// Validações de integridade (só barram quando o campo está PREENCHIDO — todos
+// continuam opcionais). CPF confere os dois dígitos verificadores; e-mail usa um
+// formato simples; salário não pode ser negativo.
+function cpfValido(cpf: string): boolean {
+  const n = cpf.replace(/\D/g, "");
+  if (n.length !== 11 || /^(\d)\1{10}$/.test(n)) return false;
+  const dv = (base: string, pesoInicial: number) => {
+    let soma = 0;
+    for (let i = 0; i < base.length; i++) soma += Number(base[i]) * (pesoInicial - i);
+    const r = (soma * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(n.slice(0, 9), 10) === Number(n[9]) && dv(n.slice(0, 10), 11) === Number(n[10]);
+}
+const emailValido = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+
 export function ColaboradorForm({
   aberto,
   onFechar,
@@ -57,6 +73,18 @@ export function ColaboradorForm({
   const salvar = () => {
     if (!form.nome?.trim()) {
       toast("Informe o nome do colaborador.", "erro");
+      return;
+    }
+    if (form.cpf?.trim() && !cpfValido(form.cpf)) {
+      toast("CPF inválido. Confira os números (11 dígitos).", "erro");
+      return;
+    }
+    if (form.email?.trim() && !emailValido(form.email)) {
+      toast("E-mail inválido. Use o formato nome@dominio.com.", "erro");
+      return;
+    }
+    if (form.salario != null && form.salario < 0) {
+      toast("Salário não pode ser negativo.", "erro");
       return;
     }
     const cargo = form.cargoId ? d.cargoById.get(form.cargoId) : undefined;

@@ -115,9 +115,17 @@ function Estrutura() {
 function AreasManager() {
   const toast = useToast();
   const { items, criar, atualizar, remover } = useColecao("areas");
+  const { items: colaboradores } = useColecao("colaboradores");
+  const { items: cargos } = useColecao("cargos");
   const [edit, setEdit] = useState<Area | null>(null);
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<Area | null>(null);
+
+  // Dependentes: colaboradores e cargos vinculados a esta área. Excluir a área
+  // deixaria esses registros apontando para um id inexistente (área "—").
+  const dependentesArea = (id: string) =>
+    colaboradores.filter((c) => c.areaId === id).length + cargos.filter((c) => c.areaId === id).length;
+  const delEmUso = del ? dependentesArea(del.id) : 0;
 
   return (
     <Card>
@@ -149,7 +157,17 @@ function AreasManager() {
           }}
         />
       )}
-      <ConfirmDialog aberto={!!del} onFechar={() => setDel(null)} onConfirmar={() => { if (del) { remover(del.id); toast("Área excluída."); } }} titulo="Excluir área?" mensagem={`"${del?.nome}" será removida.`} />
+      <ConfirmDialog
+        aberto={!!del}
+        onFechar={() => setDel(null)}
+        onConfirmar={() => {
+          if (!del) return;
+          if (delEmUso > 0) { toast(`Não dá para excluir: ${delEmUso} registro(s) usam esta área. Reatribua-os antes.`, "erro"); setDel(null); return; }
+          remover(del.id); toast("Área excluída.");
+        }}
+        titulo="Excluir área?"
+        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} registro(s) (colaboradores/cargos) e não pode ser excluída.` : `"${del?.nome}" será removida.`}
+      />
     </Card>
   );
 }
@@ -190,10 +208,14 @@ function NiveisManager() {
 function StatusManager() {
   const toast = useToast();
   const { items, criar, atualizar, remover } = useColecao("status");
+  const { items: colaboradores } = useColecao("colaboradores");
   const [edit, setEdit] = useState<StatusColaborador | null>(null);
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<StatusColaborador | null>(null);
   const [form, setForm] = useState<Partial<StatusColaborador>>({});
+
+  // Colaboradores que estão neste status — excluí-lo os deixaria sem status válido.
+  const delEmUso = del ? colaboradores.filter((c) => c.statusId === del.id).length : 0;
 
   const abrir = (s: StatusColaborador | null) => { setForm(s ?? { nome: "", cor: "#64748b", contaComoAtivo: true, ordem: items.length }); s ? setEdit(s) : setNovo(true); };
 
@@ -229,7 +251,17 @@ function StatusManager() {
           </div>
         </Modal>
       )}
-      <ConfirmDialog aberto={!!del} onFechar={() => setDel(null)} onConfirmar={() => { if (del) { remover(del.id); toast("Status excluído."); } }} titulo="Excluir status?" mensagem={`"${del?.nome}" será removido.`} />
+      <ConfirmDialog
+        aberto={!!del}
+        onFechar={() => setDel(null)}
+        onConfirmar={() => {
+          if (!del) return;
+          if (delEmUso > 0) { toast(`Não dá para excluir: ${delEmUso} colaborador(es) estão neste status. Mude-os antes.`, "erro"); setDel(null); return; }
+          remover(del.id); toast("Status excluído.");
+        }}
+        titulo="Excluir status?"
+        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} colaborador(es) e não pode ser excluído.` : `"${del?.nome}" será removido.`}
+      />
     </Card>
   );
 }
@@ -243,6 +275,9 @@ function CargosSecao() {
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<Cargo | null>(null);
   const [form, setForm] = useState<Partial<Cargo>>({});
+
+  // Colaboradores neste cargo — excluí-lo os deixaria sem cargo válido.
+  const delEmUso = del ? d.colaboradores.filter((c) => c.cargoId === del.id).length : 0;
 
   const abrir = (c: Cargo | null) => {
     setForm(c ?? { nome: "", areaId: "producao", faixas: [1621, 1700, 1800, 1900, 2000], trilha: "" });
@@ -302,7 +337,17 @@ function CargosSecao() {
           </div>
         </Modal>
       )}
-      <ConfirmDialog aberto={!!del} onFechar={() => setDel(null)} onConfirmar={() => { if (del) { remover(del.id); toast("Cargo excluído."); } }} titulo="Excluir cargo?" mensagem={`"${del?.nome}" será removido.`} />
+      <ConfirmDialog
+        aberto={!!del}
+        onFechar={() => setDel(null)}
+        onConfirmar={() => {
+          if (!del) return;
+          if (delEmUso > 0) { toast(`Não dá para excluir: ${delEmUso} colaborador(es) têm este cargo. Reatribua-os antes.`, "erro"); setDel(null); return; }
+          remover(del.id); toast("Cargo excluído.");
+        }}
+        titulo="Excluir cargo?"
+        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} colaborador(es) e não pode ser excluído.` : `"${del?.nome}" será removido.`}
+      />
     </Card>
   );
 }
