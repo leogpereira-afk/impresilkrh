@@ -13,6 +13,8 @@ import {
   FileSpreadsheet,
   Plus,
   Plane,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
@@ -21,7 +23,7 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState, Progress } from "@/components/ui/misc";
 import { Select, Campo, Input } from "@/components/ui/form";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { useColecao } from "@/lib/store";
@@ -96,6 +98,8 @@ export default function Custos() {
   const [lancTipo, setLancTipo] = useState<string>("Comissão");
   const [lancValor, setLancValor] = useState<string>("");
   const [lancDesc, setLancDesc] = useState<string>("");
+  const [lancEditId, setLancEditId] = useState<string | null>(null);
+  const [pagExcluir, setPagExcluir] = useState<string | null>(null);
 
   // Competência efetiva (cai para a última quando a selecionada some / inicial vazia).
   const compAtiva = comp && competencias.includes(comp) ? comp : ultimaComp;
@@ -265,20 +269,48 @@ export default function Custos() {
     else classifColecao.criar({ codigo: conta.codigo, nome: conta.nome, classe });
   };
 
-  // Lança um pagamento manual para o colaborador no mês (preenche o que faltou na folha).
+  // Abre o modal de lançamento em modo "novo".
+  const abrirNovoLanc = () => {
+    setLancEditId(null);
+    setLancTipo("Comissão");
+    setLancValor("");
+    setLancDesc("");
+    setAddLanc(true);
+  };
+
+  // Abre o modal de lançamento em modo "edição" de um pagamento existente.
+  const abrirEdicaoLanc = (p: Pagamento) => {
+    setLancEditId(p.id);
+    setLancTipo(p.tipo);
+    setLancValor(String(p.valor));
+    setLancDesc(p.descricao === "Lançamento manual" ? "" : (p.descricao ?? ""));
+    setAddLanc(true);
+  };
+
+  // Lança/edita um pagamento manual para o colaborador no mês (preenche o que faltou na folha).
   const salvarLancamento = () => {
     const valor = Number(String(lancValor).replace(",", "."));
     if (!lancTipo) return toast("Escolha o tipo de pagamento.", "erro");
     if (!valor || valor <= 0) return toast("Informe um valor maior que zero.", "erro");
-    pagamentosColecao.criar({
-      colaboradorId: colabId,
-      competencia: compAtiva,
-      tipo: lancTipo,
-      valor: Math.round(valor * 100) / 100,
-      dataPagamento: `${compAtiva}-15`,
-      descricao: lancDesc.trim() || "Lançamento manual",
-    });
-    toast("Lançamento adicionado.");
+    if (lancEditId) {
+      pagamentosColecao.atualizar(lancEditId, {
+        tipo: lancTipo,
+        valor: Math.round(valor * 100) / 100,
+        descricao: lancDesc.trim() || "Lançamento manual",
+      });
+      toast("Lançamento atualizado.");
+    } else {
+      pagamentosColecao.criar({
+        colaboradorId: colabId,
+        competencia: compAtiva,
+        tipo: lancTipo,
+        valor: Math.round(valor * 100) / 100,
+        dataPagamento: `${compAtiva}-15`,
+        descricao: lancDesc.trim() || "Lançamento manual",
+      });
+      toast("Lançamento adicionado.");
+    }
+    setLancEditId(null);
     setAddLanc(false);
   };
 
@@ -512,7 +544,7 @@ export default function Custos() {
                     valor={comEncargos}
                     onChange={setComEncargos}
                   />
-                  <button type="button" onClick={() => { setLancTipo("Comissão"); setLancValor(""); setLancDesc(""); setAddLanc(true); }} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
+                  <button type="button" onClick={abrirNovoLanc} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
                     <Plus className="h-4 w-4" /> Lançamento
                   </button>
                 </div>
@@ -587,6 +619,43 @@ export default function Custos() {
                         </dl>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Lançamentos individuais (editar / excluir registro a registro) */}
+                {pagsDoColab.length > 0 && (
+                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200/70">
+                    <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Lançamentos individuais</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {pagsDoColab.map((p) => (
+                          <tr key={p.id} className="transition hover:bg-slate-50/60">
+                            <td className="px-3 py-2">
+                              <span className="flex items-center gap-2">
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(p.tipo) }} />
+                                <span className="text-slate-700">{p.tipo}</span>
+                                {p.descricao && p.descricao !== "Lançamento manual" && (
+                                  <span className="text-xs text-slate-400">· {p.descricao}</span>
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(p.valor)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicaoLanc(p)} aria-label={`Editar lançamento ${p.tipo}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setPagExcluir(p.id)} aria-label={`Excluir lançamento ${p.tipo}`}>
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
@@ -879,14 +948,14 @@ export default function Custos() {
       {/* Lançamento manual de pagamento (preenche itens faltantes, ex.: comissão) */}
       <Modal
         aberto={addLanc}
-        onFechar={() => setAddLanc(false)}
-        titulo="Adicionar lançamento"
+        onFechar={() => { setAddLanc(false); setLancEditId(null); }}
+        titulo={lancEditId ? "Editar lançamento" : "Adicionar lançamento"}
         descricao={`${d.colabById.get(colabId)?.nome ?? "Colaborador"} · ${compLabelLongo(compAtiva)}. Use para incluir um pagamento que faltou na folha.`}
         largura="max-w-md"
         rodape={
           <>
-            <button className="btn-outline" onClick={() => setAddLanc(false)}>Cancelar</button>
-            <button className="btn-primary" onClick={salvarLancamento}>Adicionar</button>
+            <button className="btn-outline" onClick={() => { setAddLanc(false); setLancEditId(null); }}>Cancelar</button>
+            <button className="btn-primary" onClick={salvarLancamento}>{lancEditId ? "Salvar" : "Adicionar"}</button>
           </>
         }
       >
@@ -904,6 +973,20 @@ export default function Custos() {
           </Campo>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        aberto={!!pagExcluir}
+        onFechar={() => setPagExcluir(null)}
+        onConfirmar={() => {
+          if (pagExcluir) {
+            pagamentosColecao.remover(pagExcluir);
+            toast("Lançamento excluído.");
+          }
+          setPagExcluir(null);
+        }}
+        titulo="Excluir lançamento"
+        mensagem="Este pagamento será removido da folha do colaborador. Esta ação não pode ser desfeita."
+      />
               </>
             ),
           },

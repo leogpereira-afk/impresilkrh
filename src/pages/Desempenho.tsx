@@ -9,7 +9,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
@@ -143,7 +143,7 @@ export default function Desempenho() {
   const { items: avaliacoes, criar: criarAval, atualizar: atualizarAval } = useColecao("avaliacoes");
   const { items: metas, criar: criarMeta, atualizar: atualizarMeta } = useColecao("metas");
   const { items: pdis, criar: criarPdi, atualizar: atualizarPdi } = useColecao("pdis");
-  const { items: feedbacks, criar: criarFeedback } = useColecao("feedbacks");
+  const { items: feedbacks, criar: criarFeedback, atualizar: atualizarFeedback, remover: removerFeedback } = useColecao("feedbacks");
   const { items: ciclos } = useColecao("ciclos");
 
   const gerir = podeGerir(sessao);
@@ -298,6 +298,8 @@ export default function Desempenho() {
           d={d}
           toast={toast}
           criarFeedback={criarFeedback}
+          atualizarFeedback={atualizarFeedback}
+          removerFeedback={removerFeedback}
         />
       ),
     },
@@ -1370,6 +1372,7 @@ function AbaPdi({
 
 // ===================== Aba 5 — Feedbacks =====================
 interface EdicaoFeedback {
+  id?: string;
   colaboradorId: string;
   tipo: string;
   conteudo: string;
@@ -1382,6 +1385,8 @@ function AbaFeedbacks({
   d,
   toast,
   criarFeedback,
+  atualizarFeedback,
+  removerFeedback,
 }: {
   feedbacks: Feedback[];
   escopo: Colaborador[];
@@ -1389,12 +1394,20 @@ function AbaFeedbacks({
   d: ReturnType<typeof useDominio>;
   toast: ReturnType<typeof useToast>;
   criarFeedback: ReturnType<typeof useColecao<"feedbacks">>["criar"];
+  atualizarFeedback: ReturnType<typeof useColecao<"feedbacks">>["atualizar"];
+  removerFeedback: ReturnType<typeof useColecao<"feedbacks">>["remover"];
 }) {
   const sessao = useSessao();
   const [edicao, setEdicao] = useState<EdicaoFeedback | null>(null);
+  const [excluir, setExcluir] = useState<string | null>(null);
+  const ehEdicao = !!edicao?.id;
 
   function abrirNovo() {
     setEdicao({ colaboradorId: escopo[0]?.id ?? "", tipo: "Positivo", conteudo: "" });
+  }
+
+  function abrirEdicao(f: Feedback) {
+    setEdicao({ id: f.id, colaboradorId: f.colaboradorId, tipo: f.tipo, conteudo: f.conteudo });
   }
 
   function salvar() {
@@ -1407,15 +1420,24 @@ function AbaFeedbacks({
       toast("Escreva o conteúdo do feedback.", "erro");
       return;
     }
-    criarFeedback({
-      colaboradorId: edicao.colaboradorId,
-      autorId: sessao?.colaboradorId ?? null,
-      tipo: edicao.tipo,
-      conteudo: edicao.conteudo.trim(),
-      contexto: "Ciclo 2026.1",
-      criadoEm: new Date().toISOString(),
-    });
-    toast("Feedback registrado.", "sucesso");
+    if (edicao.id) {
+      atualizarFeedback(edicao.id, {
+        colaboradorId: edicao.colaboradorId,
+        tipo: edicao.tipo,
+        conteudo: edicao.conteudo.trim(),
+      });
+      toast("Feedback atualizado.", "sucesso");
+    } else {
+      criarFeedback({
+        colaboradorId: edicao.colaboradorId,
+        autorId: sessao?.colaboradorId ?? null,
+        tipo: edicao.tipo,
+        conteudo: edicao.conteudo.trim(),
+        contexto: "Ciclo 2026.1",
+        criadoEm: new Date().toISOString(),
+      });
+      toast("Feedback registrado.", "sucesso");
+    }
     setEdicao(null);
   }
 
@@ -1451,7 +1473,19 @@ function AbaFeedbacks({
                       </p>
                     </div>
                   </div>
-                  <Badge variant={variantTipoFeedback(f.tipo)}>{f.tipo}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={variantTipoFeedback(f.tipo)}>{f.tipo}</Badge>
+                    {gerir && (
+                      <div className="flex items-center gap-1">
+                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicao(f)} aria-label="Editar feedback">
+                          <PencilLine className="h-4 w-4" />
+                        </button>
+                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(f.id)} aria-label="Excluir feedback">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{f.conteudo}</p>
               </div>
@@ -1463,11 +1497,11 @@ function AbaFeedbacks({
       <Modal
         aberto={!!edicao}
         onFechar={() => setEdicao(null)}
-        titulo="Novo feedback"
+        titulo={ehEdicao ? "Editar feedback" : "Novo feedback"}
         rodape={
           <>
             <button className="btn-outline" onClick={() => setEdicao(null)}>Cancelar</button>
-            <button className="btn-primary" onClick={salvar}>Registrar</button>
+            <button className="btn-primary" onClick={salvar}>{ehEdicao ? "Salvar" : "Registrar"}</button>
           </>
         }
       >
@@ -1494,6 +1528,20 @@ function AbaFeedbacks({
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        onFechar={() => setExcluir(null)}
+        onConfirmar={() => {
+          if (excluir) {
+            removerFeedback(excluir);
+            toast("Feedback removido.", "sucesso");
+          }
+          setExcluir(null);
+        }}
+        titulo="Excluir feedback"
+        mensagem="Tem certeza que deseja excluir este feedback? Esta ação não pode ser desfeita."
+      />
     </>
   );
 }

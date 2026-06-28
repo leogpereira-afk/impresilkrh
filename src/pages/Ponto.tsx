@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2,
+  AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2, Pencil,
   Upload, ExternalLink, CalendarRange, CalendarX2, Clock, CheckCircle2, Trophy, BarChart3, Brain,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -128,8 +128,9 @@ function AbaAdvertencias({
 }) {
   const d = useDominio();
   const toast = useToast();
-  const { items: advertencias, criar, remover } = useColecao("advertencias");
+  const { items: advertencias, criar, atualizar, remover } = useColecao("advertencias");
   const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState<(typeof advertencias)[number] | null>(null);
   const [excluir, setExcluir] = useState<string | null>(null);
 
   const lista = useMemo(
@@ -263,13 +264,22 @@ function AbaAdvertencias({
                     </td>
                     {podeEditar && (
                       <td className="td text-right">
-                        <button
-                          className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
-                          onClick={() => setExcluir(a.id)}
-                          aria-label="Excluir advertência"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            className="btn-ghost p-1.5 text-slate-400 hover:text-brand"
+                            onClick={() => setEditar(a)}
+                            aria-label="Editar advertência"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
+                            onClick={() => setExcluir(a.id)}
+                            aria-label="Excluir advertência"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -280,14 +290,23 @@ function AbaAdvertencias({
         )}
       </Card>
 
-      {novo && (
+      {(novo || editar) && (
         <NovaAdvertenciaModal
-          aberto={novo}
-          onFechar={() => setNovo(false)}
+          aberto={novo || !!editar}
+          inicial={editar}
+          onFechar={() => {
+            setNovo(false);
+            setEditar(null);
+          }}
           escopo={escopo}
-          onCriar={(payload) => {
-            criar(payload);
-            toast("Advertência registrada.");
+          onSalvar={(payload) => {
+            if (editar) {
+              atualizar(editar.id, payload);
+              toast("Advertência atualizada.");
+            } else {
+              criar(payload);
+              toast("Advertência registrada.");
+            }
           }}
         />
       )}
@@ -320,23 +339,28 @@ function abrirArquivo(dataUrl: string | null | undefined, toast: (msg: string, t
 
 function NovaAdvertenciaModal({
   aberto,
+  inicial,
   onFechar,
   escopo,
-  onCriar,
+  onSalvar,
 }: {
   aberto: boolean;
+  inicial?: Record<string, any> | null;
   onFechar: () => void;
   escopo: Colaborador[];
-  onCriar: (payload: Record<string, unknown>) => void;
+  onSalvar: (payload: Record<string, unknown>) => void;
 }) {
+  const ehEdicao = !!inicial;
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [colaboradorId, setColaboradorId] = useState("");
-  const [tipo, setTipo] = useState<string>(TIPOS_ADVERTENCIA[0]);
-  const [data, setData] = useState(iso(HOJE));
-  const [motivo, setMotivo] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string } | null>(null);
+  const [colaboradorId, setColaboradorId] = useState(inicial?.colaboradorId ?? "");
+  const [tipo, setTipo] = useState<string>(inicial?.tipo ?? TIPOS_ADVERTENCIA[0]);
+  const [data, setData] = useState(inicial?.data ? String(inicial.data).slice(0, 10) : iso(HOJE));
+  const [motivo, setMotivo] = useState(inicial?.motivo ?? "");
+  const [descricao, setDescricao] = useState(inicial?.descricao ?? "");
+  const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string } | null>(
+    inicial?.arquivoDataUrl ? { nome: inicial.arquivoNome ?? "Anexo atual", dataUrl: inicial.arquivoDataUrl } : null,
+  );
   const [lendo, setLendo] = useState(false);
 
   const onFile = (f: File) => {
@@ -356,7 +380,8 @@ function NovaAdvertenciaModal({
     if (!data) return toast("Informe a data da advertência.", "erro");
     if (!motivo.trim()) return toast("Informe o motivo da advertência.", "erro");
     if (lendo) return toast("Aguarde o anexo terminar de carregar.", "info");
-    onCriar({
+    onSalvar({
+      ...(inicial ?? {}),
       colaboradorId,
       tipo,
       data,
@@ -364,8 +389,8 @@ function NovaAdvertenciaModal({
       descricao: descricao.trim() || undefined,
       arquivoNome: arquivo?.nome ?? null,
       arquivoDataUrl: arquivo?.dataUrl ?? null,
-      registradoPor: "RH",
-      criadoEm: new Date().toISOString(),
+      registradoPor: inicial?.registradoPor ?? "RH",
+      criadoEm: inicial?.criadoEm ?? new Date().toISOString(),
     });
     onFechar();
   };
@@ -374,13 +399,13 @@ function NovaAdvertenciaModal({
     <Modal
       aberto={aberto}
       onFechar={onFechar}
-      titulo="Registrar advertência"
+      titulo={ehEdicao ? "Editar advertência" : "Registrar advertência"}
       descricao="Registro disciplinar conforme política interna de conduta."
       rodape={
         <>
           <button className="btn-outline" onClick={onFechar}>Cancelar</button>
           <button className="btn-primary" onClick={salvar} disabled={lendo}>
-            <Plus className="h-4 w-4" /> Registrar
+            {ehEdicao ? <><Pencil className="h-4 w-4" /> Salvar</> : <><Plus className="h-4 w-4" /> Registrar</>}
           </button>
         </>
       }
@@ -449,8 +474,9 @@ function AbaAbsenteismo({
 }) {
   const d = useDominio();
   const toast = useToast();
-  const { items: ausencias, criar, remover } = useColecao("ausencias");
+  const { items: ausencias, criar, atualizar, remover } = useColecao("ausencias");
   const [lancar, setLancar] = useState(false);
+  const [editar, setEditar] = useState<(typeof ausencias)[number] | null>(null);
   const [excluir, setExcluir] = useState<string | null>(null);
 
   const [de, setDe] = useState(() => iso(new Date(HOJE.getTime() - 90 * 86400000)));
@@ -677,9 +703,14 @@ function AbaAbsenteismo({
                     </td>
                     {podeEditar && (
                       <td className="td text-right">
-                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(a.id)} title="Excluir lançamento">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => setEditar(a)} title="Editar lançamento">
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(a.id)} title="Excluir lançamento">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -690,14 +721,24 @@ function AbaAbsenteismo({
         )}
       </Card>
 
-      {lancar && (
+      {(lancar || editar) && (
         <ModalLancarAusencia
           escopo={escopo}
-          onFechar={() => setLancar(false)}
-          onSalvar={(dados) => {
-            criar(dados);
-            toast("Ausência lançada.");
+          inicial={editar}
+          onFechar={() => {
             setLancar(false);
+            setEditar(null);
+          }}
+          onSalvar={(dados) => {
+            if (editar) {
+              atualizar(editar.id, dados);
+              toast("Ausência atualizada.");
+            } else {
+              criar(dados);
+              toast("Ausência lançada.");
+            }
+            setLancar(false);
+            setEditar(null);
           }}
         />
       )}
@@ -720,26 +761,30 @@ function AbaAbsenteismo({
 
 function ModalLancarAusencia({
   escopo,
+  inicial,
   onFechar,
   onSalvar,
 }: {
   escopo: Colaborador[];
+  inicial?: Record<string, any> | null;
   onFechar: () => void;
   onSalvar: (dados: { colaboradorId: string; data: string; tipo: string; horas?: number; justificada: boolean; observacao?: string }) => void;
 }) {
+  const ehEdicao = !!inicial;
   const toast = useToast();
-  const [colaboradorId, setColaboradorId] = useState(escopo[0]?.id ?? "");
-  const [data, setData] = useState(iso(HOJE));
-  const [tipo, setTipo] = useState<string>("Falta");
-  const [justificada, setJustificada] = useState(false);
-  const [horas, setHoras] = useState("");
-  const [observacao, setObservacao] = useState("");
+  const [colaboradorId, setColaboradorId] = useState(inicial?.colaboradorId ?? escopo[0]?.id ?? "");
+  const [data, setData] = useState(inicial?.data ? String(inicial.data).slice(0, 10) : iso(HOJE));
+  const [tipo, setTipo] = useState<string>(inicial?.tipo ?? "Falta");
+  const [justificada, setJustificada] = useState<boolean>(inicial?.justificada ?? false);
+  const [horas, setHoras] = useState(inicial?.horas != null ? String(inicial.horas) : "");
+  const [observacao, setObservacao] = useState(inicial?.observacao ?? "");
   const comHoras = tipo === "Atraso" || tipo === "Saída antecipada";
 
   const salvar = () => {
     if (!colaboradorId) return toast("Selecione o colaborador.", "erro");
     if (!data) return toast("Informe a data.", "erro");
     onSalvar({
+      ...(inicial ?? {}),
       colaboradorId,
       data,
       tipo,
@@ -753,9 +798,9 @@ function ModalLancarAusencia({
     <Modal
       aberto
       onFechar={onFechar}
-      titulo="Lançar falta / ausência"
+      titulo={ehEdicao ? "Editar falta / ausência" : "Lançar falta / ausência"}
       descricao="Registro manual de frequência da equipe."
-      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Lançar</button></>}
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>{ehEdicao ? "Salvar" : "Lançar"}</button></>}
     >
       <div className="space-y-3">
         <Campo label="Colaborador" obrigatorio>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2 } from "lucide-react";
+import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -185,10 +185,11 @@ function AbaCertificacoesNR() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
-  const { items, criar, remover } = useColecao("certificacoesNr");
+  const { items, criar, atualizar, remover } = useColecao("certificacoesNr");
   const gere = podeGerir(sessao);
   const FORM_VAZIO = { colaboradorId: "", nr: CATALOGO_NR[0].codigo, dataTreinamento: "", cargaHoraria: "", instituicao: "" };
   const [novo, setNovo] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(FORM_VAZIO);
 
   const escopo = useMemo(
@@ -214,19 +215,48 @@ function AbaCertificacoesNR() {
     }));
   }, [certs]);
 
+  const abrirNovo = () => {
+    setEditId(null);
+    setForm(FORM_VAZIO);
+    setNovo(true);
+  };
+
+  const abrirEdicao = (c: (typeof items)[number]) => {
+    setEditId(c.id);
+    setForm({
+      colaboradorId: c.colaboradorId,
+      nr: c.nr,
+      dataTreinamento: c.dataTreinamento ?? "",
+      cargaHoraria: c.cargaHoraria != null ? String(c.cargaHoraria) : "",
+      instituicao: c.instituicao ?? "",
+    });
+    setNovo(true);
+  };
+
+  const fecharModal = () => {
+    setNovo(false);
+    setEditId(null);
+    setForm(FORM_VAZIO);
+  };
+
   const salvar = () => {
     if (!form.colaboradorId || !form.dataTreinamento) { toast("Selecione o colaborador e a data do treinamento.", "erro"); return; }
-    criar({
+    const payload = {
       colaboradorId: form.colaboradorId,
       nr: form.nr,
       dataTreinamento: form.dataTreinamento,
       dataValidade: calcularValidadeNR(form.dataTreinamento, form.nr),
       cargaHoraria: form.cargaHoraria ? Number(form.cargaHoraria) : undefined,
       instituicao: form.instituicao.trim() || undefined,
-    });
-    toast(`Certificação ${form.nr} registrada para ${d.nomeColab(form.colaboradorId)}.`);
-    setForm(FORM_VAZIO);
-    setNovo(false);
+    };
+    if (editId) {
+      atualizar(editId, payload);
+      toast(`Certificação ${form.nr} atualizada para ${d.nomeColab(form.colaboradorId)}.`);
+    } else {
+      criar(payload);
+      toast(`Certificação ${form.nr} registrada para ${d.nomeColab(form.colaboradorId)}.`);
+    }
+    fecharModal();
   };
 
   const validadePrevista = form.dataTreinamento ? calcularValidadeNR(form.dataTreinamento, form.nr) : null;
@@ -245,7 +275,7 @@ function AbaCertificacoesNR() {
           title="NRs por colaborador"
           subtitle="Quem está apto a cada Norma Regulamentadora e o vencimento do treinamento"
           icon={<Award className="h-[18px] w-[18px]" />}
-          action={gere ? <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Registrar NR</button> : undefined}
+          action={gere ? <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={abrirNovo}><Plus className="h-4 w-4" /> Registrar NR</button> : undefined}
         />
         <CardBody className="space-y-5">
           {porNR.length === 0 ? (
@@ -281,9 +311,14 @@ function AbaCertificacoesNR() {
                         <div className="flex shrink-0 items-center gap-2">
                           <Badge variant={VARIANTE_SITUACAO[sit]}>{sit}</Badge>
                           {gere && (
-                            <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => { remover(c.id); toast("Certificação removida."); }} aria-label="Remover">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <>
+                              <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicao(c)} aria-label="Editar">
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => { remover(c.id); toast("Certificação removida."); }} aria-label="Remover">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </li>
@@ -299,13 +334,13 @@ function AbaCertificacoesNR() {
       {gere && (
         <Modal
           aberto={novo}
-          onFechar={() => { setNovo(false); setForm(FORM_VAZIO); }}
-          titulo="Registrar certificação de NR"
+          onFechar={fecharModal}
+          titulo={editId ? "Editar certificação de NR" : "Registrar certificação de NR"}
           descricao="Vincula uma NR a um colaborador; a validade é calculada automaticamente."
           rodape={
             <>
-              <button className="btn-outline" onClick={() => { setNovo(false); setForm(FORM_VAZIO); }}>Cancelar</button>
-              <button className="btn-primary" onClick={salvar}><Plus className="h-4 w-4" /> Salvar</button>
+              <button className="btn-outline" onClick={fecharModal}>Cancelar</button>
+              <button className="btn-primary" onClick={salvar}>{editId ? <><Pencil className="h-4 w-4" /> Salvar</> : <><Plus className="h-4 w-4" /> Salvar</>}</button>
             </>
           }
         >

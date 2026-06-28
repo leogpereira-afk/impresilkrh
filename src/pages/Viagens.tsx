@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Plane, Wallet, CalendarClock, MapPin, Plus, Trophy, Upload } from "lucide-react";
+import { Plane, Wallet, CalendarClock, MapPin, Plus, Trophy, Upload, Pencil } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { DotBadge } from "@/components/ui/badge";
@@ -53,6 +53,7 @@ export function ViagensPainel() {
   const { items: viagens, criar, atualizar } = useColecao("viagens");
 
   const [novo, setNovo] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormViagem>(FORM_VAZIO);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -188,6 +189,23 @@ export function ViagensPainel() {
   const resetForm = () => {
     setForm(FORM_VAZIO);
     setNovo(false);
+    setEditId(null);
+  };
+
+  const abrirEdicao = (v: (typeof viagens)[number]) => {
+    const iso = (s?: string | null) => (s && !isNaN(new Date(s).getTime()) ? new Date(s).toISOString().slice(0, 10) : "");
+    setForm({
+      colaboradorId: v.colaboradorId,
+      destino: v.destino ?? "",
+      dataInicio: iso(v.dataInicio),
+      dataFim: iso(v.dataFim),
+      dias: v.dias != null ? String(v.dias) : "",
+      valorDiaria: v.valorDiaria != null ? String(v.valorDiaria) : "",
+      finalidade: v.finalidade ?? "",
+      status: v.status ?? STATUS_VIAGEM[0],
+    });
+    setEditId(v.id);
+    setNovo(true);
   };
 
   const salvar = () => {
@@ -201,7 +219,7 @@ export function ViagensPainel() {
       toast("Informe dias e valor da diária válidos.", "erro");
       return;
     }
-    criar({
+    const payload = {
       colaboradorId: form.colaboradorId,
       destino: form.destino.trim(),
       dataInicio: new Date(`${form.dataInicio}T12:00:00`).toISOString(),
@@ -211,8 +229,14 @@ export function ViagensPainel() {
       valorTotal: dias * valorDiaria,
       finalidade: form.finalidade.trim() || undefined,
       status: form.status,
-    });
-    toast(`Viagem para ${form.destino.trim()} registrada.`);
+    };
+    if (editId) {
+      atualizar(editId, payload);
+      toast(`Viagem para ${form.destino.trim()} atualizada.`);
+    } else {
+      criar(payload);
+      toast(`Viagem para ${form.destino.trim()} registrada.`);
+    }
     resetForm();
   };
 
@@ -349,6 +373,7 @@ export function ViagensPainel() {
                   <th className="th hidden lg:table-cell">Diária</th>
                   <th className="th">Total</th>
                   <th className="th">Status</th>
+                  {podeEditar && <th className="th" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -389,6 +414,17 @@ export function ViagensPainel() {
                         <DotBadge label={v.status} cor={COR_STATUS_VIAGEM[v.status] ?? "#64748b"} />
                       )}
                     </td>
+                    {podeEditar && (
+                      <td className="td text-right">
+                        <button
+                          className="btn-ghost p-1.5 text-slate-400 hover:text-brand"
+                          onClick={() => abrirEdicao(v)}
+                          aria-label={`Editar viagem para ${v.destino}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -401,13 +437,13 @@ export function ViagensPainel() {
         <Modal
           aberto={novo}
           onFechar={resetForm}
-          titulo="Nova viagem"
+          titulo={editId ? "Editar viagem" : "Nova viagem"}
           descricao="Registre um deslocamento e o custo das diárias."
           rodape={
             <>
               <button className="btn-outline" onClick={resetForm}>Cancelar</button>
               <button className="btn-primary" onClick={salvar}>
-                <Plus className="h-4 w-4" /> Salvar
+                {editId ? <><Pencil className="h-4 w-4" /> Salvar</> : <><Plus className="h-4 w-4" /> Salvar</>}
               </button>
             </>
           }
