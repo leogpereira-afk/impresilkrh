@@ -44,7 +44,9 @@ import {
   parsePlanoContas,
   parsePagamentos,
   parseComissoesPorNome,
+  conciliarPagamentos,
   ehContaConfidencial,
+  type DiffPagamentos,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
 import { enviarColecao, apagarRegistrosNuvem } from "@/lib/sync";
@@ -114,6 +116,14 @@ export default function Custos() {
   // Importação avulsa de comissões, casando por NOME (caso à parte)
   const refComissoesNome = useRef<HTMLInputElement>(null);
   const [comissoesPrev, setComissoesPrev] = useState<{ registros: Pagamento[]; naoCasados: string[]; total: number } | null>(null);
+  // Prévia de conciliação da folha (subir a mesma planilha: mexe só no diferente).
+  const [folhaPrev, setFolhaPrev] = useState<{
+    diff: DiffPagamentos;
+    naoCasados: string[];
+    cpfsAprendidos: { colaboradorId: string; cpf: string }[];
+    totalLinhas: number;
+  } | null>(null);
+  const [removerAusentes, setRemoverAusentes] = useState(false);
 
   const importarPlano = async (file: File) => {
     try {
@@ -138,6 +148,8 @@ export default function Custos() {
     }
   };
 
+  // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
+  // mesma planilha de novo mostra o que é igual, o que mudou e o que é novo.
   const importarPagamentos = async (file: File) => {
     try {
       const linhas = await lerPlanilha(file);
@@ -147,38 +159,47 @@ export default function Custos() {
         return;
       }
       const compsImportadas = new Set(registros.map((r: Pagamento) => r.competencia));
-      // Os pagamentos antigos das competências reimportadas serão substituídos:
-      // marca lápide para eles saírem da nuvem também (senão voltam e duplicam).
-      // Exclui ids que continuam no novo conjunto (evita apagar o que foi regravado).
-      const novosIds = new Set(registros.map((r: Pagamento) => r.id));
-      const removidos = pagamentos.filter((p: Pagamento) => compsImportadas.has(p.competencia) && !novosIds.has(p.id)).map((p: Pagamento) => p.id);
-      pagamentosColecao.definir([
-        ...pagamentos.filter((p: Pagamento) => !compsImportadas.has(p.competencia)),
-        ...registros,
-      ]);
-      apagarRegistrosNuvem("pagamentos", removidos);
-      // Preenche o CPF no cadastro (só onde está vazio) — casamentos futuros viram
-      // por CPF, à prova de erro.
-      let cpfsPreenchidos = 0;
-      if (cpfsAprendidos.length) {
-        const mapa = new Map(cpfsAprendidos.map((x) => [x.colaboradorId, x.cpf]));
-        const atualizados = colaboradoresColecao.items.map((c) => {
-          const cpf = mapa.get(c.id);
-          if (cpf && !c.cpf) { cpfsPreenchidos++; return { ...c, cpf }; }
-          return c;
-        });
-        if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
-      }
-      void enviarColecao("pagamentos"); // sobe pra nuvem na hora (não fica só local)
-      const aviso =
-        naoCasados.length > 0
-          ? ` ${naoCasados.length} não casou${naoCasados.length <= 8 ? `: ${naoCasados.join(", ")}` : ""} (confira o cadastro).`
-          : "";
-      const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
-      toast(`Pagamentos importados: ${registros.length} lançamentos.${aviso}${avisoCpf}`, naoCasados.length > 0 ? "info" : "sucesso");
+      const existentesDaComp = pagamentos.filter((p: Pagamento) => compsImportadas.has(p.competencia));
+      const diff = conciliarPagamentos(existentesDaComp, registros);
+      setRemoverAusentes(false);
+      setFolhaPrev({ diff, naoCasados, cpfsAprendidos, totalLinhas: registros.length });
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
     }
+  };
+
+  // Aplica a prévia: mexe SÓ no que mudou (corrige alterados, insere novos) e,
+  // opcionalmente, remove os ausentes. Iguais não são tocados.
+  const aplicarFolha = () => {
+    if (!folhaPrev) return;
+    const { diff, cpfsAprendidos } = folhaPrev;
+    for (const { antigo, novo } of diff.alterados) {
+      pagamentosColecao.atualizar(antigo.id, { valor: novo.valor, dataPagamento: novo.dataPagamento, descricao: novo.descricao });
+    }
+    for (const n of diff.novos) pagamentosColecao.criar(n);
+    if (removerAusentes) {
+      for (const a of diff.ausentes) pagamentosColecao.remover(a.id);
+    }
+    // Preenche o CPF no cadastro (só onde está vazio).
+    let cpfsPreenchidos = 0;
+    if (cpfsAprendidos.length) {
+      const mapa = new Map(cpfsAprendidos.map((x) => [x.colaboradorId, x.cpf]));
+      const atualizados = colaboradoresColecao.items.map((c) => {
+        const cpf = mapa.get(c.id);
+        if (cpf && !c.cpf) { cpfsPreenchidos++; return { ...c, cpf }; }
+        return c;
+      });
+      if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
+    }
+    const mexeu = diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
+    const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
+    toast(
+      mexeu === 0
+        ? "Planilha idêntica ao que já estava — nada a alterar."
+        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${removerAusentes && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
+      "sucesso",
+    );
+    setFolhaPrev(null);
   };
 
   // Comissões avulsas (casadas por NOME): lê e abre a prévia.
@@ -501,6 +522,123 @@ export default function Custos() {
           </div>
         </Modal>
       )}
+
+      {folhaPrev && (() => {
+        const { diff, naoCasados } = folhaPrev;
+        const mexeu = diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
+        return (
+          <Modal
+            aberto
+            onFechar={() => setFolhaPrev(null)}
+            titulo="Conferir importação da folha"
+            descricao="Comparação com o que já está no sistema. Só o que mudou será alterado — o que é igual fica intacto."
+            largura="max-w-2xl"
+            rodape={<>
+              <button className="btn-outline" onClick={() => setFolhaPrev(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={aplicarFolha}>
+                <Coins className="h-4 w-4" /> {mexeu === 0 ? "Nada a alterar" : `Aplicar ${mexeu} alteração(ões)`}
+              </button>
+            </>}
+          >
+            <div className="space-y-3">
+              {/* Placar dos 4 grupos */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-center">
+                  <p className="text-xl font-bold tabular-nums text-slate-600">{diff.iguais.length}</p>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">iguais</p>
+                </div>
+                <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-2 text-center">
+                  <p className="text-xl font-bold tabular-nums text-blue-700">{diff.alterados.length}</p>
+                  <p className="text-[11px] uppercase tracking-wide text-blue-500">corrigidos</p>
+                </div>
+                <div className="rounded-xl border border-green-200 bg-green-50/60 px-3 py-2 text-center">
+                  <p className="text-xl font-bold tabular-nums text-green-700">{diff.novos.length}</p>
+                  <p className="text-[11px] uppercase tracking-wide text-green-600">novos</p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 text-center">
+                  <p className="text-xl font-bold tabular-nums text-amber-700">{diff.ausentes.length}</p>
+                  <p className="text-[11px] uppercase tracking-wide text-amber-600">fora da planilha</p>
+                </div>
+              </div>
+
+              {diff.alterados.length > 0 && (
+                <div className="rounded-xl border border-blue-200">
+                  <p className="border-b border-blue-100 bg-blue-50/50 px-3 py-1.5 text-xs font-semibold text-blue-800">Valores corrigidos</p>
+                  <div className="max-h-44 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {diff.alterados.map(({ antigo, novo }) => (
+                          <tr key={antigo.id}>
+                            <td className="td font-medium text-slate-700">{d.nomeColab(novo.colaboradorId)}</td>
+                            <td className="td text-slate-500">{compLabel(novo.competencia)} · {novo.tipo}</td>
+                            <td className="td text-right tabular-nums">
+                              <span className="text-slate-400 line-through">{formatBRL(antigo.valor)}</span>
+                              <span className="mx-1 text-slate-300">→</span>
+                              <span className="font-semibold text-blue-700">{formatBRL(novo.valor)}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {diff.novos.length > 0 && (
+                <div className="rounded-xl border border-green-200">
+                  <p className="border-b border-green-100 bg-green-50/50 px-3 py-1.5 text-xs font-semibold text-green-800">Novos lançamentos</p>
+                  <div className="max-h-44 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {diff.novos.map((n) => (
+                          <tr key={n.id}>
+                            <td className="td font-medium text-slate-700">{d.nomeColab(n.colaboradorId)}</td>
+                            <td className="td text-slate-500">{compLabel(n.competencia)} · {n.tipo}</td>
+                            <td className="td text-right tabular-nums font-semibold text-green-700">{formatBRL(n.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {diff.ausentes.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3">
+                  <p className="mb-1 text-xs font-semibold text-amber-800">No sistema, mas fora desta planilha ({diff.ausentes.length})</p>
+                  <p className="mb-2 text-[11px] text-slate-500">Podem ser lançamentos manuais (comissão, incentivo) ou linhas que saíram da folha. <strong>Ficam mantidos por padrão.</strong></p>
+                  <div className="max-h-32 overflow-y-auto rounded-lg bg-white/70">
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {diff.ausentes.map((a) => (
+                          <tr key={a.id}>
+                            <td className="td text-slate-600">{d.nomeColab(a.colaboradorId)}</td>
+                            <td className="td text-slate-500">{compLabel(a.competencia)} · {a.tipo}</td>
+                            <td className="td text-right tabular-nums text-slate-500">{formatBRL(a.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-amber-800">
+                    <input type="checkbox" checked={removerAusentes} onChange={(e) => setRemoverAusentes(e.target.checked)} />
+                    Remover também estes {diff.ausentes.length} lançamento(s) (cuidado: apaga manuais)
+                  </label>
+                </div>
+              )}
+
+              {naoCasados.length > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50/40 p-3">
+                  <p className="mb-1.5 text-xs font-semibold text-red-800">Não encontrados no cadastro ({naoCasados.length}) — não entram:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-red-700 ring-1 ring-red-200">{n}</span>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
 
       {semPlano ? (
         <EmptyState

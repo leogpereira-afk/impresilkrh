@@ -214,6 +214,63 @@ export function parsePagamentos(
   return { registros, naoCasados: [...naoCasados], cpfsAprendidos: [...aprendidos.values()].map((v) => ({ colaboradorId: v.id, cpf: v.fmt })) };
 }
 
+// ===================== Conciliação de importação (idempotente) =====================
+// Ao subir a MESMA planilha de novo, comparamos linha a linha com o que já existe
+// (nas competências da planilha) e classificamos em 4 grupos, para mexer só no que
+// mudou — e mostrar isso ao usuário antes de aplicar:
+//   • iguais     → já existem idênticos: não toca (mantém id e data de alteração).
+//   • alterados  → mesma pessoa/mês/tipo/data/descrição, VALOR diferente: corrige.
+//   • novos      → não existiam: insere.
+//   • ausentes   → existem no sistema mas NÃO vieram na planilha (ex.: lançamento
+//                  manual, ou linha removida da folha). Mantidos por padrão.
+type Pag = import("@/data/types").Pagamento;
+export interface DiffPagamentos {
+  iguais: Pag[];
+  alterados: { antigo: Pag; novo: Pag }[];
+  novos: Pag[];
+  ausentes: Pag[];
+}
+const dia10 = (s?: string | null) => String(s ?? "").slice(0, 10);
+// Assinatura completa (inclui valor): identifica linha idêntica.
+const sigCompleta = (p: Pag) => `${p.colaboradorId}|${p.competencia}|${p.tipo}|${dia10(p.dataPagamento)}|${(p.descricao ?? "").trim()}|${Math.round((p.valor ?? 0) * 100)}`;
+// Chave "de negócio" (sem valor): identifica a MESMA linha com valor corrigido.
+const chaveNegocio = (p: Pag) => `${p.colaboradorId}|${p.competencia}|${p.tipo}|${dia10(p.dataPagamento)}|${(p.descricao ?? "").trim()}`;
+
+function multimap(itens: Pag[], chave: (p: Pag) => string): Map<string, Pag[]> {
+  const m = new Map<string, Pag[]>();
+  for (const p of itens) { const arr = m.get(chave(p)); if (arr) arr.push(p); else m.set(chave(p), [p]); }
+  return m;
+}
+
+// `existentes` deve ser filtrado às competências presentes em `novos` (o resto não entra).
+export function conciliarPagamentos(existentes: Pag[], novos: Pag[]): DiffPagamentos {
+  // 1) casa idênticos por assinatura completa (multiconjunto)
+  const porSig = multimap(existentes, sigCompleta);
+  const iguais: Pag[] = [];
+  const novosResto: Pag[] = [];
+  for (const n of novos) {
+    const arr = porSig.get(sigCompleta(n));
+    if (arr && arr.length) iguais.push(arr.pop()!); // casou exato → mantém o existente
+    else novosResto.push(n);
+  }
+  const existResto: Pag[] = [];
+  for (const arr of porSig.values()) existResto.push(...arr);
+
+  // 2) do que sobrou, casa por chave de negócio (valor mudou) = alterado
+  const porChave = multimap(existResto, chaveNegocio);
+  const alterados: { antigo: Pag; novo: Pag }[] = [];
+  const novosFinal: Pag[] = [];
+  for (const n of novosResto) {
+    const arr = porChave.get(chaveNegocio(n));
+    if (arr && arr.length) alterados.push({ antigo: arr.pop()!, novo: n });
+    else novosFinal.push(n);
+  }
+  const ausentes: Pag[] = [];
+  for (const arr of porChave.values()) ausentes.push(...arr);
+
+  return { iguais, alterados, novos: novosFinal, ausentes };
+}
+
 // Importação SÓ das comissões, casando por NOME (caso à parte; o fluxo normal por
 // CPF segue para o resto). Pega as linhas cujo plano/descrição classificam como
 // "Comissão" e usa a competência da própria data de vencimento.
