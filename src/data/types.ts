@@ -567,6 +567,7 @@ export interface Vaga {
   requisitos?: string;
   status: StatusVaga;
   dataAbertura?: string | null; // ISO
+  divulgacaoInterna?: boolean; // true => aparece no Mural de Vagas para os colaboradores disputarem
   criadoEm: string;
 }
 
@@ -574,6 +575,7 @@ export type EtapaCandidato = "Triagem" | "Entrevista" | "Teste" | "Aprovado" | "
 export interface Candidato {
   id: string;
   vagaId: string;
+  colaboradorId?: string | null; // candidatura INTERNA: colaborador disputando a vaga pelo mural
   nome: string;
   email?: string;
   telefone?: string;

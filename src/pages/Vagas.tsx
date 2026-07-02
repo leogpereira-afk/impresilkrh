@@ -6,7 +6,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
-import { Campo, Input, Textarea, Select } from "@/components/ui/form";
+import { Campo, Input, Textarea, Select, Toggle } from "@/components/ui/form";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
@@ -16,6 +16,7 @@ import { useToast } from "@/components/ui/toast";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { cn } from "@/lib/cn";
+import { tempoDeCasa } from "@/lib/format";
 import type { Vaga, Candidato, StatusVaga, EtapaCandidato } from "@/data/types";
 
 const STATUS_VAGA: StatusVaga[] = ["Aberta", "Em triagem", "Fechada", "Cancelada"];
@@ -31,6 +32,8 @@ const corNota = (n?: number | null) =>
 export default function Vagas() {
   const { items: vagas, criar: criarVaga, atualizar: atualizarVaga, remover: removerVaga } = useColecao("vagas");
   const { items: candidatos, criar: criarCand, atualizar: atualizarCand, remover: removerCand } = useColecao("candidatos");
+  const { items: advertencias } = useColecao("advertencias");
+  const { criar: criarMov } = useColecao("movimentacoes");
   const d = useDominio();
   const toast = useToast();
 
@@ -118,6 +121,11 @@ export default function Vagas() {
                     </div>
                   </button>
                   <Badge variant={corStatus(v.status)}>{v.status}</Badge>
+                  {v.divulgacaoInterna && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700" title="Em disputa interna no Mural de Vagas">
+                      <Trophy className="h-3.5 w-3.5" /> No mural
+                    </span>
+                  )}
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                     <Users className="h-3.5 w-3.5" /> {lista.length}
                   </span>
@@ -135,6 +143,53 @@ export default function Vagas() {
                         {v.requisitos && <p><span className="font-medium text-slate-600">Requisitos:</span> {v.requisitos}</p>}
                       </div>
                     )}
+                    {(() => {
+                      // Comparador da disputa interna: os colaboradores candidatos
+                      // lado a lado, com dados do RH para uma decisão justa.
+                      const internos = lista.filter((c) => c.colaboradorId);
+                      if (internos.length === 0) return null;
+                      return (
+                        <div className="mb-4 overflow-hidden rounded-lg border border-amber-200/70 bg-white">
+                          <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50/60 px-3 py-2">
+                            <Trophy className="h-4 w-4 text-amber-600" />
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Disputa interna · {internos.length} colaborador(es)</p>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="border-b border-slate-100 bg-slate-50/50">
+                                <tr>
+                                  <th className="th">Colaborador</th>
+                                  <th className="th hidden sm:table-cell">Cargo atual</th>
+                                  <th className="th hidden md:table-cell">Tempo de casa</th>
+                                  <th className="th hidden md:table-cell">Advertências</th>
+                                  <th className="th">Nota</th>
+                                  <th className="th">Etapa</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {internos.map((c) => {
+                                  const colab = c.colaboradorId ? d.colabById.get(c.colaboradorId) : undefined;
+                                  const nAdv = c.colaboradorId ? advertencias.filter((a) => a.colaboradorId === c.colaboradorId).length : 0;
+                                  return (
+                                    <tr key={c.id}>
+                                      <td className="td font-medium text-slate-800">{c.nome}</td>
+                                      <td className="td hidden sm:table-cell text-slate-500">{colab ? `${d.nomeCargo(colab)} · ${d.nomeArea(colab.areaId)}` : "—"}</td>
+                                      <td className="td hidden md:table-cell text-slate-500">{colab?.dataAdmissao ? tempoDeCasa(colab.dataAdmissao) : "—"}</td>
+                                      <td className="td hidden md:table-cell">
+                                        <Badge variant={nAdv === 0 ? "success" : nAdv === 1 ? "warning" : "danger"}>{nAdv}</Badge>
+                                      </td>
+                                      <td className={cn("td font-semibold tabular-nums", corNota(c.nota))}>{c.nota != null ? c.nota.toLocaleString("pt-BR") : "—"}</td>
+                                      <td className="td"><Badge variant={corEtapa(c.etapa)}>{c.etapa}</Badge></td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-400">A motivação de cada um está nas observações do candidato. Ao marcar "Contratado", a movimentação entra no histórico automaticamente.</p>
+                        </div>
+                      );
+                    })()}
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Candidatos {lista.length > 0 && `· classificados por nota`}</p>
                       <button className="btn-outline px-2.5 py-1 text-xs" onClick={() => setFormCand({ vagaId: v.id, cand: null })}>
@@ -149,7 +204,10 @@ export default function Vagas() {
                           <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500" title={`${i + 1}º classificado`}>{i + 1}º</span>
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-slate-800">{c.nome}</p>
+                              <p className="flex items-center gap-2 truncate text-sm font-semibold text-slate-800">
+                                {c.nome}
+                                {c.colaboradorId && <Badge variant="info">Interno</Badge>}
+                              </p>
                               <p className="flex flex-wrap gap-x-3 truncate text-[11px] text-slate-400">
                                 {c.email && <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" />{c.email}</span>}
                                 {c.telefone && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{c.telefone}</span>}
@@ -201,7 +259,26 @@ export default function Vagas() {
           onFechar={() => setFormCand(null)}
           onSalvar={async (dados, arquivo, id) => {
             let alvoId = id;
-            if (id) atualizarCand(id, dados);
+            if (id) {
+              const anterior = candidatos.find((c) => c.id === id);
+              atualizarCand(id, dados);
+              // Disputa interna vencida: ao virar "Contratado", registra a
+              // movimentação no histórico do colaborador (promoção/transferência).
+              if (anterior?.colaboradorId && dados.etapa === "Contratado" && anterior.etapa !== "Contratado") {
+                const vaga = vagas.find((v) => v.id === anterior.vagaId);
+                const colab = d.colabById.get(anterior.colaboradorId);
+                criarMov({
+                  colaboradorId: anterior.colaboradorId,
+                  tipo: "Promoção",
+                  data: new Date().toISOString().slice(0, 10),
+                  descricao: `Venceu a disputa interna da vaga "${vaga?.titulo ?? ""}" (Mural de Vagas).`,
+                  cargoAnterior: colab ? d.nomeCargo(colab) : null,
+                  cargoNovo: vaga?.cargoId ? d.cargoById.get(vaga.cargoId)?.nome ?? null : null,
+                  registradoPor: "RH",
+                });
+                toast(`${colab?.nome ?? "Colaborador"} venceu a disputa — movimentação registrada no histórico.`, "sucesso");
+              }
+            }
             else { const r = criarCand({ etapa: "Triagem", criadoEm: new Date().toISOString(), ...dados }); alvoId = r.id; }
             if (arquivo && alvoId) {
               void putBlob(`cv:${alvoId}`, arquivo.dataUrl); // cache local (rápido/offline)
@@ -236,11 +313,12 @@ function VagaForm({ vaga, onFechar, onSalvar }: { vaga: Vaga | null; onFechar: (
   const [status, setStatus] = useState<StatusVaga>(vaga?.status ?? "Aberta");
   const [descricao, setDescricao] = useState(vaga?.descricao ?? "");
   const [requisitos, setRequisitos] = useState(vaga?.requisitos ?? "");
+  const [divulgacaoInterna, setDivulgacaoInterna] = useState<boolean>(vaga?.divulgacaoInterna ?? false);
   const cargosArea = d.cargos.filter((c) => !areaId || c.areaId === areaId);
 
   const salvar = () => {
     if (!titulo.trim()) return;
-    onSalvar({ titulo: titulo.trim(), areaId: areaId || null, cargoId: cargoId || null, nivelId: nivelId || null, quantidade: Number(quantidade) || 1, status, descricao: descricao.trim(), requisitos: requisitos.trim(), dataAbertura: vaga?.dataAbertura ?? new Date().toISOString().slice(0, 10) }, vaga?.id);
+    onSalvar({ titulo: titulo.trim(), areaId: areaId || null, cargoId: cargoId || null, nivelId: nivelId || null, quantidade: Number(quantidade) || 1, status, descricao: descricao.trim(), requisitos: requisitos.trim(), divulgacaoInterna, dataAbertura: vaga?.dataAbertura ?? new Date().toISOString().slice(0, 10) }, vaga?.id);
   };
 
   return (
@@ -257,6 +335,10 @@ function VagaForm({ vaga, onFechar, onSalvar }: { vaga: Vaga | null; onFechar: (
         <Campo label="Status"><Select value={status} onChange={(e) => setStatus(e.target.value as StatusVaga)}>{STATUS_VAGA.map((s) => <option key={s} value={s}>{s}</option>)}</Select></Campo>
         <Campo label="Descrição"><Textarea rows={2} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Resumo da vaga…" /></Campo>
         <Campo label="Requisitos"><Textarea rows={2} value={requisitos} onChange={(e) => setRequisitos(e.target.value)} placeholder="Requisitos e diferenciais…" /></Campo>
+        <div className="rounded-lg bg-amber-50/60 p-3">
+          <Toggle checked={divulgacaoInterna} onChange={setDivulgacaoInterna} label="Divulgar no Mural de Vagas (disputa interna)" />
+          <p className="mt-1 text-[11px] text-slate-500">Todos os colaboradores veem a vaga no mural e podem se candidatar. Enquanto a vaga estiver Aberta ou Em triagem.</p>
+        </div>
       </div>
     </Modal>
   );

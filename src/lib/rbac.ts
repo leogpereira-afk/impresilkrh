@@ -105,8 +105,9 @@ export function modulosLiberados(sessao: Sessao | null, usuarios: Usuario[]): Se
 }
 
 // O módulo (chave) está acessível para a sessão? "meu-perfil" é sempre liberado
-// para o usuário não ficar preso fora da própria conta.
+// para o usuário não ficar preso fora da própria conta; "mural-vagas" é sempre
+// liberado porque a disputa interna é aberta a todos por definição.
 export function moduloAcessivel(modulo: string, liberados: Set<string> | null): boolean {
-  if (modulo === "meu-perfil") return true;
+  if (modulo === "meu-perfil" || modulo === "mural-vagas") return true;
   return liberados === null || liberados.has(modulo);
 }

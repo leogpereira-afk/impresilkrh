@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree, Cake,
   AlertTriangle, CalendarClock, Award, Target, Laugh, Brain, PartyPopper,
-  Wallet, ShieldAlert, GraduationCap, UserX,
+  Wallet, ShieldAlert, GraduationCap, UserX, Trophy,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -739,6 +739,7 @@ function PainelPessoal() {
   const sessao = useSessao();
   const d = useDominio();
   const cicloNome = useCicloAtivo();
+  const { items: vagas } = useColecao("vagas");
   const { items: documentos } = useColecao("documentos");
   const { items: ferias } = useColecao("ferias");
   const { items: avaliacoes } = useColecao("avaliacoes");
@@ -761,6 +762,28 @@ function PainelPessoal() {
   return (
     <div>
       <PageHeader title={`Olá, ${c.nome.split(" ")[0]}`} description="Seu painel de autoatendimento na Impresilk." />
+
+      {(() => {
+        const emDisputa = vagas.filter((v) => v.divulgacaoInterna && (v.status === "Aberta" || v.status === "Em triagem")).length;
+        if (emDisputa === 0) return null;
+        return (
+          <Link to="/mural-vagas" className="mb-4 block">
+            <Card className="border-amber-200/70 bg-amber-50/40 transition hover:-translate-y-0.5 hover:shadow-md">
+              <CardBody className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700"><Trophy className="h-5 w-5" /></span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{emDisputa} vaga(s) em disputa interna</p>
+                    <p className="text-xs text-slate-500">Oportunidade de crescer dentro da Impresilk — veja o mural e candidate-se.</p>
+                  </div>
+                </div>
+                <span className="text-sm font-medium text-amber-700">Ver Mural de Vagas →</span>
+              </CardBody>
+            </Card>
+          </Link>
+        );
+      })()}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Cargo" value={<span className="text-base">{d.nomeCargo(c)}</span>} icon={<Users className="h-5 w-5" />} accent="brand" hint={`Nível ${d.nomeNivel(c.nivelId)}`} />
         <StatCard label="Saldo de férias" value={`${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={feriasAtiva ? feriasAtiva.status : "Em aberto"} />

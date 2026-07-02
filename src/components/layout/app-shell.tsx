@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
-  Sun, Moon,
+  Sun, Moon, Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -38,6 +38,7 @@ const NAV: ItemNav[] = [
   // Pessoas — operações do quadro
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
+  { href: "/mural-vagas", label: "Mural de Vagas", icon: Trophy, perfis: TODOS, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
