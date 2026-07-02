@@ -26,6 +26,7 @@ interface ItemNav {
   icon: React.ComponentType<{ className?: string }>;
   perfis: string[];
   grupo: string;
+  destaque?: boolean; // item em evidência no menu (cor âmbar/dourada)
 }
 
 const TODOS = ["ADMIN_RH", "GESTOR", "COLABORADOR"];
@@ -38,7 +39,7 @@ const NAV: ItemNav[] = [
   // Pessoas — operações do quadro
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
-  { href: "/mural-vagas", label: "Mural de Vagas", icon: Trophy, perfis: TODOS, grupo: "Pessoas" },
+  { href: "/mural-vagas", label: "Mural de Vagas", icon: Trophy, perfis: TODOS, grupo: "Pessoas", destaque: true },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
@@ -122,10 +123,14 @@ export function AppShell() {
                     onClick={() => setAberto(false)}
                     className={cn(
                       "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
-                      ativo ? "bg-brand text-white shadow-sm" : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
+                      ativo
+                        ? "bg-brand text-white shadow-sm"
+                        : item.destaque
+                          ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                          : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
                     )}
                   >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", ativo ? "text-gold-200" : "text-slate-400 group-hover:text-slate-600")} />
+                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", ativo ? "text-gold-200" : item.destaque ? "text-amber-600" : "text-slate-400 group-hover:text-slate-600")} />
                     <span className="flex-1">{item.label}</span>
                   </NavLink>
                 );
