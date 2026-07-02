@@ -179,9 +179,8 @@ export default function Colaboradores() {
       </PageHeader>
 
       {/* Cards de resumo do quadro */}
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-3 gap-3">
         {[
-          { label: "Total", valor: resumo.total, icon: Users, cor: "text-slate-500", bg: "bg-slate-100" },
           { label: "Ativos", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
           { label: "Em férias", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
           { label: "Desligados", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
