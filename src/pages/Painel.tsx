@@ -15,6 +15,7 @@ import { BarrasColoridas, BarrasVerticais, Rosca } from "@/components/charts/cha
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { HumorIndicador, PerfilComportamentalBadge } from "@/components/ui/indicadores";
 import { useColecao } from "@/lib/store";
+import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, contaHeadcount } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
@@ -39,6 +40,7 @@ export default function Painel() {
   const sessao = useSessao();
   const d = useDominio();
   const drill = useDrill();
+  const cicloNome = useCicloAtivo();
   const { items: documentos } = useColecao("documentos");
   const { items: ferias } = useColecao("ferias");
   const { items: avaliacoes } = useColecao("avaliacoes");
@@ -477,7 +479,7 @@ export default function Painel() {
         <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("NRs a vencer", escopo.filter((c) => nrsAlerta.some((n) => n.colaboradorId === c.id)), `${nrsAlerta.length} certificação(ões) · ${nrsVencidas.length} vencida(s)`)}>
           <StatCard label="NRs a vencer" value={nrsAlerta.length} hint={`${nrsVencidas.length} vencida(s)`} icon={<Award className="h-5 w-5" />} accent={nrsVencidas.length ? "red" : nrsAlerta.length ? "amber" : "green"} />
         </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Avaliações pendentes", avaliacoesPendentes, "Ciclo 2026.1 · ainda sem avaliação do gestor")}>
+        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Avaliações pendentes", avaliacoesPendentes, `${cicloNome} · ainda sem avaliação do gestor`)}>
           <StatCard label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />
         </button>
         <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}>
@@ -622,7 +624,7 @@ export default function Painel() {
                 {avaliacoesPendentes.slice(0, 3).map((c) => (
                   <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
                     <p className="truncate text-sm font-medium text-slate-700">Avaliação pendente · {c.nome}</p>
-                    <Badge variant="info">Ciclo 2026.1</Badge>
+                    <Badge variant="info">{cicloNome}</Badge>
                   </div>
                 ))}
               </>
@@ -704,7 +706,7 @@ export default function Painel() {
           </CardBody>
         </Card>
         <Card>
-          <CardHeader title="Elegíveis a promoção" subtitle="Ciclo 2026.1" icon={<Award className="h-[18px] w-[18px]" />} />
+          <CardHeader title="Elegíveis a promoção" subtitle={cicloNome} icon={<Award className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
             {elegiveis.length === 0 ? (
               <p className="text-sm text-slate-400">Nenhum elegível no momento.</p>
@@ -736,6 +738,7 @@ export default function Painel() {
 function PainelPessoal() {
   const sessao = useSessao();
   const d = useDominio();
+  const cicloNome = useCicloAtivo();
   const { items: documentos } = useColecao("documentos");
   const { items: ferias } = useColecao("ferias");
   const { items: avaliacoes } = useColecao("avaliacoes");
@@ -787,7 +790,7 @@ function PainelPessoal() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Meu desempenho" subtitle="Ciclo 2026.1" icon={<TrendingUp className="h-[18px] w-[18px]" />} />
+          <CardHeader title="Meu desempenho" subtitle={cicloNome} icon={<TrendingUp className="h-[18px] w-[18px]" />} />
           <CardBody>
             {minhaAval ? (
               <div className="space-y-3">

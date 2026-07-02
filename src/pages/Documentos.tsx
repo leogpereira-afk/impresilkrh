@@ -15,6 +15,7 @@ import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
+import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
@@ -234,18 +235,34 @@ function Repositorio() {
   const totalCategorias = porCategoria.size;
   const comArquivo = items.filter((a) => temAnexo(a)).length;
 
-  // Resolve o conteúdo do arquivo: IndexedDB (novos) ou data URL inline (legado).
-  const resolver = async (arq: ArquivoRepositorio): Promise<string | null> =>
-    arq.arquivoEmBlob ? await getBlob(`doc:${arq.id}`) : (arq.arquivoDataUrl ?? null);
+  // Resolve o conteúdo do arquivo: IndexedDB (novos), nuvem (outros PCs) ou
+  // data URL inline (legado). Aproveita para curar: arquivo local que ainda não
+  // está na nuvem sobe na primeira abertura.
+  const resolver = async (arq: ArquivoRepositorio): Promise<string | null> => {
+    if (!arq.arquivoEmBlob) return arq.arquivoDataUrl ?? null;
+    let dataUrl = await getBlob(`doc:${arq.id}`);
+    if (!dataUrl) {
+      dataUrl = await buscarArquivoNuvem(`doc:${arq.id}`);
+      if (dataUrl) void putBlob(`doc:${arq.id}`, dataUrl); // cacheia local
+    } else if (!arq.arquivoNaNuvem) {
+      void enviarArquivoNuvem(`doc:${arq.id}`, dataUrl).then((subiu) => {
+        if (subiu) atualizar(arq.id, { arquivoNaNuvem: true });
+      });
+    }
+    return dataUrl;
+  };
 
-  // Adiciona ao repositório: metadados no localStorage, conteúdo no IndexedDB.
+  // Adiciona ao repositório: metadados no localStorage, conteúdo no IndexedDB
+  // e na nuvem (disponível em todos os computadores).
   // Retorna true se gravou (ou não havia anexo); false se o arquivo não coube.
   const adicionar = async (meta: Partial<ArquivoRepositorio>, dataUrl: string | null): Promise<boolean> => {
     const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
     if (!dataUrl) return true;
     const ok = await putBlob(`doc:${rec.id}`, dataUrl);
     if (ok) {
-      atualizar(rec.id, { arquivoEmBlob: true });
+      const subiu = await enviarArquivoNuvem(`doc:${rec.id}`, dataUrl);
+      atualizar(rec.id, { arquivoEmBlob: true, arquivoNaNuvem: subiu });
+      if (!subiu) toast("Arquivo salvo neste computador; sem internet ele ainda não subiu para a nuvem. Abra-o quando estiver online que ele sobe sozinho.", "info");
       return true;
     }
     if (dataUrl.length < 1_200_000) {

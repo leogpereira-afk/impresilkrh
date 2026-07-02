@@ -13,6 +13,7 @@ import { Campo, Input, Select, Toggle } from "@/components/ui/form";
 import { ConteudoManager } from "@/components/painel/conteudo-manager";
 import { DadosControls } from "@/components/layout/dados-controls";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
+import { enviarConfigNuvem } from "@/lib/sync";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { MODO_JWT, definirSenhaUsuario, removerSenhaUsuario } from "@/lib/auth";
@@ -423,16 +424,19 @@ function AvaliacaoSecao() {
 function MarcaSecao() {
   const toast = useToast();
   const config = useConfig();
+  // Salva local e sobe para a nuvem (com debounce) — assim os outros computadores
+  // recebem o nome/cores da empresa ao abrir o app.
+  const salvarCfg = (patch: Parameters<typeof salvarConfig>[0]) => { salvarConfig(patch); enviarConfigNuvem(); };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader title="Identidade e empresa" icon={<Palette className="h-[18px] w-[18px]" />} />
         <CardBody className="grid gap-3 sm:grid-cols-2">
-          <Campo label="Nome da empresa"><Input defaultValue={config.empresaNome} onBlur={(e) => { salvarConfig({ empresaNome: e.target.value }); toast("Salvo."); }} /></Campo>
-          <Campo label="Cidade"><Input defaultValue={config.empresaCidade} onBlur={(e) => salvarConfig({ empresaCidade: e.target.value })} /></Campo>
-          <Campo label="Cor primária"><input type="color" className="h-10 w-20 rounded border border-slate-300" value={config.corPrimaria} onChange={(e) => salvarConfig({ corPrimaria: e.target.value })} /></Campo>
-          <Campo label="Cor de acento"><input type="color" className="h-10 w-20 rounded border border-slate-300" value={config.corAcento} onChange={(e) => salvarConfig({ corAcento: e.target.value })} /></Campo>
+          <Campo label="Nome da empresa"><Input defaultValue={config.empresaNome} onBlur={(e) => { salvarCfg({ empresaNome: e.target.value }); toast("Salvo."); }} /></Campo>
+          <Campo label="Cidade"><Input defaultValue={config.empresaCidade} onBlur={(e) => salvarCfg({ empresaCidade: e.target.value })} /></Campo>
+          <Campo label="Cor primária"><input type="color" className="h-10 w-20 rounded border border-slate-300" value={config.corPrimaria} onChange={(e) => salvarCfg({ corPrimaria: e.target.value })} /></Campo>
+          <Campo label="Cor de acento"><input type="color" className="h-10 w-20 rounded border border-slate-300" value={config.corAcento} onChange={(e) => salvarCfg({ corAcento: e.target.value })} /></Campo>
         </CardBody>
       </Card>
 

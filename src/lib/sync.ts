@@ -8,7 +8,7 @@
 // ainda não foi configurado (token vazio), tudo funciona 100% local, como antes.
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecao, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig } from "@/lib/store";
+import { obter, definirColecao, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, salvarConfig } from "@/lib/store";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
 
 const temWindow = typeof window !== "undefined";
@@ -95,15 +95,25 @@ function recalcStatus() {
   const fila = lerFila();
   if (fila.some((a) => a.conflito)) return setStatus("conflito");
   if (temWindow && !navigator.onLine) return setStatus("offline");
-  setStatus(fila.length ? "pending" : "ok");
+  setStatus(fila.length || lerMassa().length ? "pending" : "ok");
 }
 
 // -------------------------------- fila --------------------------------------
 function lerFila(): Acao[] { if (!temWindow) return []; try { return JSON.parse(localStorage.getItem(K_FILA) || "[]"); } catch { return []; } }
 function gravarFila(f: Acao[]) { if (temWindow) localStorage.setItem(K_FILA, JSON.stringify(f)); }
 const mesma = (a: Acao, b: { colecao: string; id: string }) => a.colecao === b.colecao && a.id === b.id;
-export function pendentesSync(): number { return lerFila().filter((a) => !a.conflito).length; }
+export function pendentesSync(): number { return lerFila().filter((a) => !a.conflito).length + lerMassa().length; }
 export function conflitosSync(): Acao[] { return lerFila().filter((a) => a.conflito); }
+
+// ---- fila de envios em massa que falharam ----
+// enviarColecao era "best-effort": se a internet caísse na hora de uma importação,
+// a coleção ficava só local e NINGUÉM ficava sabendo (foi assim que o plano de
+// contas ficou meses sem subir). Agora a coleção que falhou entra nesta fila e é
+// retentada a cada ciclo até subir — e o status mostra a pendência.
+const K_MASSA = `${NS}.massa`;
+function lerMassa(): string[] { if (!temWindow) return []; try { return JSON.parse(localStorage.getItem(K_MASSA) || "[]"); } catch { return []; } }
+function gravarMassa(nomes: string[]) { if (temWindow) try { localStorage.setItem(K_MASSA, JSON.stringify([...new Set(nomes)])); } catch { /* ignora */ } }
+function marcarMassaPendente(nome: string) { gravarMassa([...lerMassa(), nome]); }
 
 // Deduplicação: upsert do mesmo id substitui o anterior; delete descarta upserts
 // pendentes do mesmo id e não duplica deletes.
@@ -179,12 +189,20 @@ export async function trySync(): Promise<void> {
 // antes de gravar e desiste se mudou (senão a "folha apagada" voltaria na hora).
 let epocaDados = 0;
 
+// Versão dos dados vista no último pull completo. O servidor incrementa a cada
+// escrita; se não mudou, o pull pula o download completo (1 chamada leve em vez
+// de baixar TODOS os registros a cada ciclo — economia grande de créditos).
+let ultimaRev: number | null = null;
+
 export async function pull(): Promise<void> {
   if (!syncHabilitado()) return;
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
   const epocaInicio = epocaDados;
   try {
+    let revAtual: number | null = null;
+    try { revAtual = ((await chamar("rev")) as { rev?: number | null })?.rev ?? null; } catch { revAtual = null; }
+    if (revAtual !== null && ultimaRev !== null && revAtual === ultimaRev) { recalcStatus(); return; } // nada mudou na nuvem
     const remoto = new Map<string, Envelope>();
     let offset: number | null = 0;
     while (offset !== null) {
@@ -227,6 +245,7 @@ export async function pull(): Promise<void> {
         definirColecao(nome as never, merged as never);
       }
     });
+    ultimaRev = revAtual; // retrato aplicado: próximos ciclos pulam se nada mudar
     recalcStatus();
   } catch (e) {
     // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga
@@ -269,10 +288,12 @@ export async function enviarTudo(): Promise<void> {
 // Envia (bulkUpsert) TODOS os registros de UMA coleção para a nuvem. Usado após
 // importações em massa (que gravam com definirColecao e por isso NÃO passam pelo
 // gancho de mutação) — assim o dado sobe na hora, sem depender de "Enviar tudo".
-// Best-effort: carimba atualizadoEm onde faltar e nunca quebra o fluxo da tela.
-export async function enviarColecao(nome: string): Promise<void> {
-  if (!syncHabilitado()) return;
-  if (temWindow && !navigator.onLine) { recalcStatus(); return; }
+// Carimba atualizadoEm onde faltar e nunca quebra o fluxo da tela. Se falhar
+// (sem rede, servidor fora), a coleção entra na fila de massa e é retentada a
+// cada ciclo — nada de falha silenciosa. Retorna true quando subiu.
+export async function enviarColecao(nome: string): Promise<boolean> {
+  if (!syncHabilitado()) return false;
+  if (temWindow && !navigator.onLine) { marcarMassaPendente(nome); recalcStatus(); return false; }
   setStatus("syncing");
   try {
     const agora = new Date().toISOString();
@@ -283,8 +304,11 @@ export async function enviarColecao(nome: string): Promise<void> {
       lote = carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r }));
     });
     for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
+    gravarMassa(lerMassa().filter((n) => n !== nome)); // subiu: sai da fila de retentativa
+    return true;
   } catch {
-    /* fica local (o pull não apaga); o usuário pode usar "Enviar tudo" depois */
+    marcarMassaPendente(nome); // fica na fila e retenta no próximo ciclo (status mostra pendência)
+    return false;
   } finally {
     recalcStatus();
   }
@@ -374,6 +398,25 @@ export async function testarConexao(): Promise<boolean> {
 export function definirEndpoint(endpoint: string) { gravarCfg({ endpoint: endpoint.trim() || ENDPOINT_PADRAO }); recalcStatus(); if (syncHabilitado()) void sincronizarAgora(); }
 export async function sincronizarAgora(): Promise<void> { await trySync(); await pull(); }
 
+// --------------------- config global (nome/cores da empresa) -----------------
+// Antes a config só subia no "Enviar tudo" e NUNCA descia — cada computador
+// ficava com a sua. Agora: sobe quando o RH salva (com debounce, para não
+// disparar a cada arrasto do seletor de cor) e desce uma vez ao abrir o app.
+let cfgTimer: ReturnType<typeof setTimeout> | null = null;
+export function enviarConfigNuvem(): void {
+  if (!syncHabilitado()) return;
+  if (cfgTimer) clearTimeout(cfgTimer);
+  cfgTimer = setTimeout(() => { void chamar("setCfg", { config: obterConfig() }).catch(() => { /* retenta no próximo salvar */ }); }, 1500);
+}
+async function puxarConfig(): Promise<void> {
+  if (!syncHabilitado()) return;
+  try {
+    const r = (await chamar("getCfg")) as { config?: { config?: Record<string, unknown> } | Record<string, unknown> | null };
+    const c = ((r?.config as { config?: Record<string, unknown> })?.config ?? r?.config) as Record<string, unknown> | null;
+    if (c && typeof c === "object" && !Array.isArray(c)) salvarConfig(c as never);
+  } catch { /* offline ou sem config remota — segue com a local */ }
+}
+
 // --------------------------- diagnóstico ------------------------------------
 // Transforma falha silenciosa em mensagem clara. Roda ping → list → grava/apaga
 // um registro de teste, e descreve o erro exato de cada etapa (token vazio, 401
@@ -423,8 +466,14 @@ registrarMutacao((colecao, tipo, id) => { if (syncHabilitado()) enfileirar(colec
 registrarPosImport((colecoes) => { if (syncHabilitado()) for (const nome of colecoes) void enviarColecao(nome); });
 if (temWindow) {
   const ativo = () => syncHabilitado() && navigator.onLine;
-  const ciclo = () => { if (ativo()) { void trySync(); void pull(); } };
+  const ciclo = () => {
+    if (!ativo()) return;
+    for (const nome of lerMassa()) void enviarColecao(nome); // retenta importações que falharam
+    void trySync();
+    void pull();
+  };
   ciclo(); // ao abrir
+  void puxarConfig(); // config da empresa desce uma vez, ao abrir
   window.addEventListener("online", () => { recalcStatus(); ciclo(); });
   window.addEventListener("offline", () => recalcStatus());
   window.addEventListener("impresilk:autenticado", () => { recalcStatus(); ciclo(); }); // logou → já sincroniza

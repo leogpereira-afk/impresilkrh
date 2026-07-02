@@ -15,6 +15,7 @@ import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
+import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, indiceNivel } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
@@ -315,7 +316,7 @@ export default function Desempenho() {
     <div>
       <PageHeader
         title="Desempenho, Retenção e Pesquisas"
-        description={`9-Box, avaliações, metas, PDI, feedbacks, pesquisas e dinâmicas — ${ciclo?.nome ?? "Ciclo 2026.1"}.`}
+        description={`9-Box, avaliações, metas, PDI, feedbacks, pesquisas e dinâmicas — ${ciclo?.nome ?? "ciclo atual"}.`}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -1398,6 +1399,7 @@ function AbaFeedbacks({
   removerFeedback: ReturnType<typeof useColecao<"feedbacks">>["remover"];
 }) {
   const sessao = useSessao();
+  const cicloNome = useCicloAtivo();
   const [edicao, setEdicao] = useState<EdicaoFeedback | null>(null);
   const [excluir, setExcluir] = useState<string | null>(null);
   const ehEdicao = !!edicao?.id;
@@ -1433,7 +1435,7 @@ function AbaFeedbacks({
         autorId: sessao?.colaboradorId ?? null,
         tipo: edicao.tipo,
         conteudo: edicao.conteudo.trim(),
-        contexto: "Ciclo 2026.1",
+        contexto: cicloNome,
         criadoEm: new Date().toISOString(),
       });
       toast("Feedback registrado.", "sucesso");

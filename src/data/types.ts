@@ -130,6 +130,7 @@ export interface Documento {
   arquivoNome?: string | null;
   arquivoDataUrl?: string | null; // legado: data URL inline. Novos uploads vão para IndexedDB.
   arquivoEmBlob?: boolean; // true => conteúdo guardado no IndexedDB sob a chave "doc:<id>"
+  arquivoNaNuvem?: boolean; // true => cópia confirmada no blob da nuvem (disponível em todos os PCs)
   tamanhoBytes?: number | null;
   dataEmissao?: string | null;
   dataVencimento?: string | null;
@@ -408,6 +409,7 @@ export interface ArquivoRepositorio {
   arquivoNome?: string | null;
   arquivoDataUrl?: string | null; // legado inline
   arquivoEmBlob?: boolean; // true => conteúdo no IndexedDB sob "doc:<id>"
+  arquivoNaNuvem?: boolean; // true => cópia confirmada no blob da nuvem (disponível em todos os PCs)
   tamanhoBytes?: number | null;
   criadoEm: string;
 }

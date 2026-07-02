@@ -85,12 +85,23 @@ export default async (req: Request) => {
   const registros = loja("impresilk-registros");
   const configStore = loja("impresilk-config");
   const fotos = loja("impresilk-fotos");
+  const meta = loja("impresilk-meta");
+
+  // Contador de versão dos dados: muda a cada escrita. O app consulta só este
+  // número (1 leitura) e pula o download completo quando nada mudou — em vez de
+  // baixar todos os registros a cada ciclo. Best-effort: se falhar, o pior caso
+  // é o app baixar tudo como antes.
+  const marcarMudanca = () => meta.setJSON("rev", { rev: Date.now() }).catch(() => {});
 
   try {
     switch (action) {
       // ---- saúde ----
       case "ping":
         return json({ ok: true, ts: new Date().toISOString() });
+
+      // ---- versão dos dados (pull econômico) ----
+      case "rev":
+        return json({ rev: ((await meta.get("rev", { type: "json" }).catch(() => null)) as { rev?: number } | null)?.rev ?? null });
 
       // ---- listar (paginado) ----
       case "list": {
@@ -123,6 +134,7 @@ export default async (req: Request) => {
           return json({ conflito: true, servidor: atual });
         }
         await registros.setJSON(k, { colecao, registro });
+        await marcarMudanca();
         return json({ ok: true, atualizadoEm: enviadoTs ?? null });
       }
 
@@ -135,6 +147,7 @@ export default async (req: Request) => {
             .filter((x) => x?.colecao && x?.registro?.id)
             .map((x) => registros.setJSON(chave(x.colecao, x.registro.id), { colecao: x.colecao, registro: x.registro })),
         );
+        await marcarMudanca();
         return json({ ok: true, gravados: lote.length });
       }
 
@@ -155,8 +168,9 @@ export default async (req: Request) => {
         // "ressuscitava" no próximo ciclo. Uma edição posterior (atualizadoEm > lápide)
         // ainda vence — exclusão e edição concorrentes resolvem por timestamp.
         await registros.setJSON(chave(colecao, id), { colecao, registro: { id, _apagado: true, atualizadoEm: new Date().toISOString() } });
-        // limpeza best-effort de foto ligada (mesmo id)
-        await fotos.delete(id).catch(() => {});
+        // limpeza best-effort de arquivos ligados ao registro (foto, anexo, currículo)
+        await Promise.all([id, `doc:${id}`, `cv:${id}`].map((k) => fotos.delete(k).catch(() => {})));
+        await marcarMudanca();
         return json({ ok: true });
       }
 
@@ -169,6 +183,7 @@ export default async (req: Request) => {
         if (!colecao) return json({ erro: "colecao obrigatória." }, 400);
         const { blobs } = await registros.list({ prefix: `${colecao}::` });
         await Promise.all(blobs.map((b) => registros.delete(b.key)));
+        await marcarMudanca();
         return json({ ok: true, apagados: blobs.length });
       }
 

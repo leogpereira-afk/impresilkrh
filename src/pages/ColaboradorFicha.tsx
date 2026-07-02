@@ -16,6 +16,7 @@ import { Campo, Input, Select } from "@/components/ui/form";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
+import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
@@ -24,6 +25,7 @@ import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData } fro
 import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
 import { comprimirImagem } from "@/lib/imagem";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
+import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
@@ -749,14 +751,17 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
   const [novo, setNovo] = useState(false);
 
-  // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior).
+  // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior)
+  // E na nuvem (mesmo canal dos currículos) — assim o anexo abre em qualquer PC.
   // Retorna true se o anexo foi gravado (ou não havia anexo); false se o arquivo não coube.
   const adicionar = async (meta: Partial<import("@/data/types").Documento>, dataUrl: string | null): Promise<boolean> => {
     const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
     if (!dataUrl) return true;
     const ok = await putBlob(`doc:${rec.id}`, dataUrl);
     if (ok) {
-      atualizar(rec.id, { arquivoEmBlob: true });
+      const subiu = await enviarArquivoNuvem(`doc:${rec.id}`, dataUrl);
+      atualizar(rec.id, { arquivoEmBlob: true, arquivoNaNuvem: subiu });
+      if (!subiu) toast("Anexo salvo neste computador; sem internet ele ainda não subiu para a nuvem. Abra o documento quando estiver online que ele sobe sozinho.", "info");
       return true;
     }
     if (dataUrl.length < 1_200_000) {
@@ -768,9 +773,26 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   };
 
   const abrir = async (doc: import("@/data/types").Documento) => {
-    const dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
+    let dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
+    if (doc.arquivoEmBlob) {
+      if (!dataUrl) {
+        // Anexado em outro computador: baixa da nuvem e guarda cópia local.
+        dataUrl = await buscarArquivoNuvem(`doc:${doc.id}`);
+        if (dataUrl) void putBlob(`doc:${doc.id}`, dataUrl);
+      } else if (!doc.arquivoNaNuvem) {
+        // Anexo antigo (de antes da nuvem de arquivos): aproveita a abertura para subir.
+        void enviarArquivoNuvem(`doc:${doc.id}`, dataUrl).then((subiu) => {
+          if (subiu) atualizar(doc.id, { arquivoNaNuvem: true });
+        });
+      }
+    }
     if (!dataUrl) {
-      toast("Este registro não possui arquivo anexado.", "info");
+      toast(
+        doc.arquivoEmBlob
+          ? "Arquivo não encontrado neste computador nem na nuvem (pode ter sido anexado offline em outro PC)."
+          : "Este registro não possui arquivo anexado.",
+        "info",
+      );
       return;
     }
     const w = window.open();
@@ -922,6 +944,7 @@ function AbaFerias({ colaboradorId, podeEditar }: { colaboradorId: string; podeE
 
 function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
   const d = useDominio();
+  const cicloNome = useCicloAtivo();
   const { items: metas } = useColecao("metas");
   const { items: pdis } = useColecao("pdis");
   const { items: feedbacks } = useColecao("feedbacks");
@@ -933,7 +956,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <SecaoColapsavel title="Avaliação de desempenho" subtitle="Ciclo 2026.1">
+      <SecaoColapsavel title="Avaliação de desempenho" subtitle={cicloNome}>
           {aval ? (
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Técnico</span><span className="font-medium">{aval.notaTecnico}</span></div>

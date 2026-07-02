@@ -10,7 +10,9 @@ import { Tabs } from "@/components/ui/tabs";
 import { AbaFinanceiro } from "./ColaboradorFicha";
 import { MeusTermos } from "./Aceites";
 import { useColecao } from "@/lib/store";
-import { getBlob } from "@/lib/blobstore";
+import { useCicloAtivo } from "@/lib/ciclo";
+import { getBlob, putBlob } from "@/lib/blobstore";
+import { buscarArquivoNuvem } from "@/lib/sync";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { formatBRL, formatCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
@@ -144,7 +146,12 @@ function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
 
   const abrir = async (doc: import("@/data/types").Documento) => {
-    const dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
+    let dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
+    if (!dataUrl && doc.arquivoEmBlob) {
+      // Anexado em outro computador (RH): baixa da nuvem e guarda cópia local.
+      dataUrl = await buscarArquivoNuvem(`doc:${doc.id}`);
+      if (dataUrl) void putBlob(`doc:${doc.id}`, dataUrl);
+    }
     if (!dataUrl) return;
     const w = window.open();
     if (w) w.document.write(`<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`);
@@ -229,6 +236,7 @@ function AbaFerias({ colaboradorId }: { colaboradorId: string }) {
 }
 
 function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
+  const cicloNome = useCicloAtivo();
   const { items: avaliacoes } = useColecao("avaliacoes");
   const { items: pdis } = useColecao("pdis");
   const aval = avaliacoes.find((a) => a.colaboradorId === colaboradorId && a.tipo === "GESTOR");
@@ -237,7 +245,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
-        <CardHeader title="Avaliação de desempenho" subtitle="Ciclo 2026.1" />
+        <CardHeader title="Avaliação de desempenho" subtitle={cicloNome} />
         <CardBody>
           {aval ? (
             <div className="space-y-2 text-sm">

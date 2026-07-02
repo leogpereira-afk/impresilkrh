@@ -9,6 +9,10 @@ aplicarTema(temaInicial());
 // Sincronização offline-first: registra o gancho de mutações do store e os
 // ouvintes de online/offline. É opt-in — sem token configurado, nada é enviado.
 import "@/lib/sync";
+// Migrações de dados locais (ex.: plano de contas antigo sem id) — rodam antes
+// do primeiro render e empurram o que foi corrigido para a nuvem.
+import { rodarMigracoes } from "@/lib/migracoes";
+rodarMigracoes();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
