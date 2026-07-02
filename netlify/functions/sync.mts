@@ -22,11 +22,15 @@ const chave = (colecao: string, id: string) => `${colecao}::${id}`;
 // site-id e o token de Blobs já vêm injetados). Se não houver contexto
 // automático (ex.: deploy manual ou ambiente atípico), cai para as variáveis
 // BLOBS_SITE_ID / BLOBS_TOKEN. Assim a mesma função roda em qualquer cenário.
-function loja(nome: string) {
+function loja(nome: string, forte = false) {
   const siteID = process.env.BLOBS_SITE_ID;
   const token = process.env.BLOBS_TOKEN;
-  if (siteID && token) return getStore({ name: nome, siteID, token });
-  return getStore(nome); // contexto automático (caso normal no Netlify)
+  // consistency "strong": leitura sempre enxerga a última escrita. Usado só no
+  // contador de versão (1 chave, lida a cada ciclo) — sem isso, a sobrescrita
+  // da mesma chave pode demorar até ~1 min para aparecer e o app pularia pulls.
+  const opts = forte ? ({ consistency: "strong" } as const) : {};
+  if (siteID && token) return getStore({ name: nome, siteID, token, ...opts });
+  return getStore({ name: nome, ...opts }); // contexto automático (caso normal no Netlify)
 }
 
 export default async (req: Request) => {
@@ -85,7 +89,7 @@ export default async (req: Request) => {
   const registros = loja("impresilk-registros");
   const configStore = loja("impresilk-config");
   const fotos = loja("impresilk-fotos");
-  const meta = loja("impresilk-meta");
+  const meta = loja("impresilk-meta", true);
 
   // Contador de versão dos dados: muda a cada escrita. O app consulta só este
   // número (1 leitura) e pula o download completo quando nada mudou — em vez de
