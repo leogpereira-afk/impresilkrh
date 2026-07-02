@@ -123,14 +123,17 @@ export function AppShell() {
                     onClick={() => setAberto(false)}
                     className={cn(
                       "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
-                      ativo
-                        ? "bg-brand text-white shadow-sm"
-                        : item.destaque
-                          ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                      // Item em destaque: pílula inteira dourada, sempre — ativo só escurece.
+                      item.destaque
+                        ? ativo
+                          ? "bg-gold-600 text-white shadow-sm"
+                          : "bg-gold text-white shadow-sm hover:bg-gold-500"
+                        : ativo
+                          ? "bg-brand text-white shadow-sm"
                           : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
                     )}
                   >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", ativo ? "text-gold-200" : item.destaque ? "text-amber-600" : "text-slate-400 group-hover:text-slate-600")} />
+                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", item.destaque ? "text-gold-100" : ativo ? "text-gold-200" : "text-slate-400 group-hover:text-slate-600")} />
                     <span className="flex-1">{item.label}</span>
                   </NavLink>
                 );
