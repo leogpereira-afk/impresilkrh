@@ -18,6 +18,10 @@ export const MODELOS_CHECKLIST: ModeloChecklist[] = [
       { titulo: "Tour e conhecimento das instalações físicas", responsavel: "Gestor" },
       { titulo: "Leitura e aceite do Código de Ética", responsavel: "Colaborador" },
       { titulo: "Treinamento inicial completo do cargo", responsavel: "Gestor" },
+      // Integração ao setor (pessoa × produção): segurança e acesso às ferramentas.
+      { titulo: "Apresentação às máquinas e áreas de risco do setor", responsavel: "Gestor" },
+      { titulo: "Treinamento de segurança do setor (NRs aplicáveis)", responsavel: "SST" },
+      { titulo: "Liberação de softwares e licenças da função", responsavel: "Gestor" },
       { titulo: "Aplicação do Perfil Comportamental", responsavel: "RH" },
       { titulo: "Designação de Padrinho (mentor)", responsavel: "Gestor" },
     ],

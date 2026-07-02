@@ -201,6 +201,24 @@ export const CATEGORIAS_CNH = ["Não possui", "A", "B", "AB", "C", "D", "E", "AC
 export const TIPOS_TREINAMENTO = ["Obrigatório", "Reciclagem", "Onboarding", "Técnico", "Segurança"] as const;
 export const STATUS_TREINAMENTO = ["Pendente", "Em andamento", "Concluído"] as const;
 
+// Catálogo de treinamentos sugeridos (capacitação de PESSOAS para as funções da
+// Impresilk — comunicação visual com serralheria, impressão e instalação).
+// É só sugestão de preenchimento: o título continua livre.
+export const CATALOGO_TREINAMENTOS = [
+  "Uso de EPIs do setor (NR-06)",
+  "Trabalho em Altura — formação/reciclagem (NR-35)",
+  "Eletricidade para luminosos (NR-10)",
+  "Segurança em Máquinas e Equipamentos (NR-12)",
+  "Inflamáveis: tintas e solventes (NR-20)",
+  "Operação de plotter de impressão (capacitação)",
+  "Operação de plotter de recorte e acabamento (capacitação)",
+  "Solda — segurança e prática (capacitação)",
+  "Operação de CNC/router (capacitação)",
+  "Medição e conferência em campo (capacitação)",
+  "Atendimento ao cliente para equipe de campo",
+  "Integração de novos colaboradores (onboarding)",
+] as const;
+
 // Módulos do sistema (para o controle de permissões por usuário)
 export const MODULOS: { chave: string; label: string }[] = [
   { chave: "painel", label: "Painel" },

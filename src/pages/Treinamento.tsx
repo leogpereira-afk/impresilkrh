@@ -18,7 +18,7 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, formatPercent } from "@/lib/format";
-import { TIPOS_TREINAMENTO, STATUS_TREINAMENTO } from "@/lib/constants";
+import { TIPOS_TREINAMENTO, STATUS_TREINAMENTO, CATALOGO_TREINAMENTOS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador, Treinamento } from "@/data/types";
 
@@ -486,7 +486,10 @@ function NovoTreinamentoModal({
           </Select>
         </Campo>
         <Campo label="Título" obrigatorio className="sm:col-span-2">
-          <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Uso de EPIs e Segurança (NR-06)" />
+          <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Uso de EPIs e Segurança (NR-06)" list="catalogo-treinamentos" />
+          <datalist id="catalogo-treinamentos">
+            {CATALOGO_TREINAMENTOS.map((t) => <option key={t} value={t} />)}
+          </datalist>
         </Campo>
         <Campo label="Tipo" obrigatorio>
           <Select value={tipo} onChange={(e) => setTipo(e.target.value)}>

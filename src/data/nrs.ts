@@ -16,6 +16,10 @@ export const CATALOGO_NR: DefinicaoNR[] = [
   { codigo: "NR-12", nome: "Segurança no Trabalho em Máquinas e Equipamentos", validadeMeses: 24 },
   { codigo: "NR-17", nome: "Ergonomia", validadeMeses: 0 },
   { codigo: "NR-18", nome: "Condições e Meio Ambiente na Indústria da Construção", validadeMeses: 12 },
+  // Reciclagem da NR-20 varia com a classe da instalação (1 a 3 anos) — 24 meses
+  // é o intermediário; ajuste com o técnico de segurança se necessário.
+  { codigo: "NR-20", nome: "Inflamáveis e Combustíveis (tintas, solventes, thinner)", validadeMeses: 24 },
+  { codigo: "NR-26", nome: "Sinalização de Segurança", validadeMeses: 0 },
   { codigo: "NR-33", nome: "Segurança nos Trabalhos em Espaços Confinados", validadeMeses: 12 },
   { codigo: "NR-35", nome: "Trabalho em Altura", validadeMeses: 24 },
 ];
