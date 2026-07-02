@@ -47,7 +47,7 @@ import {
   ehContaConfidencial,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
-import { enviarColecao } from "@/lib/sync";
+import { enviarColecao, apagarRegistrosNuvem } from "@/lib/sync";
 import type {
   ClassificacaoConta,
   ClasseCusto,
@@ -123,10 +123,13 @@ export default function Custos() {
         toast("Nenhuma conta reconhecida na planilha.", "erro");
         return;
       }
+      const novosIds = new Set(novos.map((n: ContaPlano) => n.id));
+      const removidos = planoContas.filter((p: ContaPlano) => p.competencia === compUpload && !novosIds.has(p.id)).map((p: ContaPlano) => p.id);
       planoColecao.definir([
         ...planoContas.filter((p: ContaPlano) => p.competencia !== compUpload),
         ...novos,
       ]);
+      apagarRegistrosNuvem("planoContas", removidos); // lápide nas contas substituídas
       void enviarColecao("planoContas"); // sobe pra nuvem na hora
       setComp(compUpload);
       toast(`Plano de contas importado: ${novos.length} contas em ${compLabel(compUpload)}.`);
@@ -144,10 +147,16 @@ export default function Custos() {
         return;
       }
       const compsImportadas = new Set(registros.map((r: Pagamento) => r.competencia));
+      // Os pagamentos antigos das competências reimportadas serão substituídos:
+      // marca lápide para eles saírem da nuvem também (senão voltam e duplicam).
+      // Exclui ids que continuam no novo conjunto (evita apagar o que foi regravado).
+      const novosIds = new Set(registros.map((r: Pagamento) => r.id));
+      const removidos = pagamentos.filter((p: Pagamento) => compsImportadas.has(p.competencia) && !novosIds.has(p.id)).map((p: Pagamento) => p.id);
       pagamentosColecao.definir([
         ...pagamentos.filter((p: Pagamento) => !compsImportadas.has(p.competencia)),
         ...registros,
       ]);
+      apagarRegistrosNuvem("pagamentos", removidos);
       // Preenche o CPF no cadastro (só onde está vazio) — casamentos futuros viram
       // por CPF, à prova de erro.
       let cpfsPreenchidos = 0;
@@ -185,10 +194,13 @@ export default function Custos() {
   const aplicarComissoesNome = () => {
     if (!comissoesPrev) return;
     const comps = new Set(comissoesPrev.registros.map((r) => r.competencia));
+    const novosIds = new Set(comissoesPrev.registros.map((r) => r.id));
+    const removidos = pagamentos.filter((p: Pagamento) => p.tipo === "Comissão" && comps.has(p.competencia) && !novosIds.has(p.id)).map((p: Pagamento) => p.id);
     pagamentosColecao.definir([
       ...pagamentos.filter((p: Pagamento) => !(p.tipo === "Comissão" && comps.has(p.competencia))),
       ...comissoesPrev.registros,
     ]);
+    apagarRegistrosNuvem("pagamentos", removidos); // lápide nos antigos (não voltam da nuvem)
     void enviarColecao("pagamentos"); // sobe pra nuvem na hora
     toast(`${comissoesPrev.registros.length} comissão(ões) lançada(s) — já somam nos totais.`);
     setComissoesPrev(null);

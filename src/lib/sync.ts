@@ -314,6 +314,16 @@ export async function enviarColecao(nome: string): Promise<boolean> {
   }
 }
 
+// Enfileira EXCLUSÕES (lápides) de registros específicos. Serve para as
+// importações que SUBSTITUEM dados (folha, comissões, plano de contas): os
+// registros antigos que saíram no `definir` precisam de lápide, senão continuam
+// na nuvem com ids diferentes e VOLTAM no próximo pull — foi exatamente o que
+// duplicou a folha de maio/junho. Sem sync ligado, não faz nada (fica só local).
+export function apagarRegistrosNuvem(colecao: string, ids: string[]): void {
+  if (!syncHabilitado()) return;
+  for (const id of ids) if (id) enfileirar(colecao, "delete", id);
+}
+
 // Arquivos grandes (currículos, anexos) NÃO cabem no localStorage e não entram no
 // registro (inflaria a sincronização). Vão para o store de blobs da nuvem (mesmo
 // canal das fotos), com chave própria — assim ficam disponíveis em TODOS os
