@@ -1326,6 +1326,12 @@ export default function Custos() {
             ),
           },
           {
+            id: "global",
+            label: "Custo Global (Funcionários)",
+            icon: <Layers className="h-4 w-4" />,
+            conteudo: <CustoGlobalFuncionarios />,
+          },
+          {
             id: "viagens",
             label: "Viagens e Diárias",
             icon: <Plane className="h-4 w-4" />,
@@ -1333,6 +1339,113 @@ export default function Custos() {
           },
         ]}
       />
+    </div>
+  );
+}
+
+// ===================== Custo Global de Funcionários (bate com o DRE) =====================
+// Soma as contas do grupo "Funcionários" do plano de contas — as que começam com
+// "2.1." (Salário, Adiantamento, FGTS, Férias, Comissão Interna, Alimentação,
+// Confraternização, etc.). É a MESMA base que o DRE usa, então o total bate.
+// Diferente da "Folha real" (que soma o pago por pessoa), aqui é a visão contábil
+// global, incluindo os custos coletivos (alimentação, confraternização, FGTS mensal).
+const PREFIXO_FUNCIONARIOS = "2.1.";
+function CustoGlobalFuncionarios() {
+  const { items: plano } = useColecao("planoContas");
+  const competencias = useMemo(() => competenciasPlano(plano), [plano]);
+  const [comp, setComp] = useState<string>("");
+  const compAtiva = comp && competencias.includes(comp) ? comp : (competencias[competencias.length - 1] ?? "");
+  const idx = competencias.indexOf(compAtiva);
+  const irMes = (d: number) => { const n = competencias[idx + d]; if (n) setComp(n); };
+
+  const { grupos, total } = useMemo(() => {
+    const doMes = folhasDoMes(plano, compAtiva).filter((p) => String(p.codigo).startsWith(PREFIXO_FUNCIONARIOS));
+    const nomePorCodigo = new Map(plano.filter((p) => p.competencia === compAtiva).map((p) => [p.codigo, p.nome]));
+    const g = new Map<string, { nome: string; valor: number }>();
+    for (const p of doMes) {
+      const cat = String(p.codigo).split(".").slice(0, 3).join("."); // agrupa no nível 2.1.X
+      const nome = nomePorCodigo.get(cat) ?? p.nome;
+      const atual = g.get(cat) ?? { nome, valor: 0 };
+      atual.valor += p.valor;
+      g.set(cat, atual);
+    }
+    const grupos = [...g.entries()].map(([cod, v]) => ({ cod, ...v })).sort((a, b) => b.valor - a.valor);
+    return { grupos, total: grupos.reduce((s, x) => s + x.valor, 0) };
+  }, [plano, compAtiva]);
+
+  if (competencias.length === 0) {
+    return (
+      <EmptyState
+        title="Sem plano de contas importado"
+        description="Envie a planilha de plano de contas (na aba Custos de Colaboradores) para calcular o custo global."
+        icon={<Layers className="h-10 w-10" />}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Custo global de funcionários"
+          subtitle={`Contas de pessoal (grupo ${PREFIXO_FUNCIONARIOS}*) · ${compLabelLongo(compAtiva)}`}
+          icon={<Layers className="h-5 w-5" />}
+          action={
+            <div className="flex items-center gap-1.5">
+              <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
+                {competencias.map((c) => <option key={c} value={c}>{compLabelLongo(c)}</option>)}
+              </Select>
+              <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          }
+        />
+        <CardBody>
+          <div className="mb-5 grid gap-3 sm:grid-cols-3">
+            <StatCard label="Custo global de funcionários" value={formatBRL(total)} accent="brand" icon={<Users className="h-4 w-4" />} hint={`Deve bater com "Funcionários" no DRE`} />
+            <StatCard label="Categorias" value={grupos.length} accent="blue" icon={<Layers className="h-4 w-4" />} hint="Contas de pessoal no mês" />
+            <StatCard label="Competência" value={<span className="text-base">{compLabelLongo(compAtiva)}</span>} accent="gold" icon={<Wallet className="h-4 w-4" />} />
+          </div>
+          {grupos.length === 0 ? (
+            <EmptyState title="Sem contas de funcionários neste mês" description="Não há lançamentos do grupo 2.1.* nesta competência." icon={<Coins className="h-8 w-8" />} />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-slate-100 bg-slate-50/50">
+                  <tr>
+                    <th className="th">Conta</th>
+                    <th className="th hidden sm:table-cell">Código</th>
+                    <th className="th text-right">Valor</th>
+                    <th className="th text-right">% do total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {grupos.map((g) => (
+                    <tr key={g.cod} className="transition hover:bg-slate-50/60">
+                      <td className="td font-medium text-slate-800">{g.nome}</td>
+                      <td className="td hidden sm:table-cell text-slate-400">{g.cod}</td>
+                      <td className="td text-right font-medium text-slate-800">{formatBRL(g.valor)}</td>
+                      <td className="td text-right text-slate-500">{total > 0 ? `${((g.valor / total) * 100).toFixed(1)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-50/60">
+                    <td className="td font-semibold text-brand-ink" colSpan={2}>Total de funcionários no mês</td>
+                    <td className="td text-right font-semibold text-brand-ink">{formatBRL(total)}</td>
+                    <td className="td text-right font-semibold text-brand-ink">100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            Esta é a visão <strong>contábil</strong> (plano de contas, grupo {PREFIXO_FUNCIONARIOS}*) — inclui os custos coletivos como alimentação, confraternização e o FGTS mensal. É a mesma base do DRE, então o total deve bater. A aba "Custos de Colaboradores" mostra a folha real <strong>por pessoa</strong>.
+          </p>
+        </CardBody>
+      </Card>
     </div>
   );
 }
