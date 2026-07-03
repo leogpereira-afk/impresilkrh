@@ -189,11 +189,20 @@ export default function Custos() {
     }
   };
 
-  // Aplica a prévia: mexe SÓ no que mudou (corrige alterados, insere novos) e,
-  // opcionalmente, remove os ausentes. Iguais não são tocados.
+  // Aplica a prévia: mexe SÓ no que mudou (corrige valores, insere novos, atualiza
+  // descrições) e, opcionalmente, remove os ausentes. Iguais sem mudança não são tocados.
   const aplicarFolha = () => {
     if (!folhaPrev) return;
     const { diff, cpfsAprendidos } = folhaPrev;
+    const nd = (s?: string) => (s ?? "").trim();
+    // Linhas iguais (mesmo valor) cuja DESCRIÇÃO mudou — atualiza só o texto.
+    let descAtualizadas = 0;
+    for (const { antigo, novo } of diff.iguais) {
+      if (nd(antigo.descricao) !== nd(novo.descricao)) {
+        pagamentosColecao.atualizar(antigo.id, { descricao: novo.descricao || undefined });
+        descAtualizadas++;
+      }
+    }
     for (const { antigo, novo } of diff.alterados) {
       pagamentosColecao.atualizar(antigo.id, { valor: novo.valor, dataPagamento: novo.dataPagamento, descricao: novo.descricao });
     }
@@ -212,12 +221,12 @@ export default function Custos() {
       });
       if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
     }
-    const mexeu = diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
+    const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
     const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
     toast(
       mexeu === 0
         ? "Planilha idêntica ao que já estava — nada a alterar."
-        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${removerAusentes && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
+        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${removerAusentes && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
       "sucesso",
     );
     setFolhaPrev(null);
@@ -553,7 +562,9 @@ export default function Custos() {
 
       {folhaPrev && (() => {
         const { diff, naoCasados } = folhaPrev;
-        const mexeu = diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
+        const nd = (s?: string) => (s ?? "").trim();
+        const descAtualizar = diff.iguais.filter((p) => nd(p.antigo.descricao) !== nd(p.novo.descricao));
+        const mexeu = descAtualizar.length + diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
         return (
           <Modal
             aberto
@@ -623,6 +634,28 @@ export default function Custos() {
                             <td className="td font-medium text-slate-700">{d.nomeColab(n.colaboradorId)}</td>
                             <td className="td text-slate-500">{compLabel(n.competencia)} · {n.tipo}</td>
                             <td className="td text-right tabular-nums font-semibold text-green-700">{formatBRL(n.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {descAtualizar.length > 0 && (
+                <div className="rounded-xl border border-violet-200">
+                  <p className="border-b border-violet-100 bg-violet-50/50 px-3 py-1.5 text-xs font-semibold text-violet-800">Descrições a atualizar ({descAtualizar.length}) — mesmo valor, só o texto muda</p>
+                  <div className="max-h-44 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {descAtualizar.map(({ antigo, novo }) => (
+                          <tr key={antigo.id}>
+                            <td className="td font-medium text-slate-700">{d.nomeColab(novo.colaboradorId)}</td>
+                            <td className="td text-right">
+                              <span className="text-slate-400 line-through">{antigo.descricao || "—"}</span>
+                              <span className="mx-1 text-slate-300">→</span>
+                              <span className="font-medium text-violet-700">{novo.descricao || "—"}</span>
+                            </td>
                           </tr>
                         ))}
                       </tbody>

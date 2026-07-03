@@ -207,8 +207,14 @@ export function parsePagamentos(
     const id = (cpf.length === 11 ? porCpf.get(cpf) : undefined) ?? casarNome(nome);
     if (!id) { naoCasados.add(nome); continue; }
     const tipo = tipoDePlano(String(l[10] ?? ""), String(l[6] ?? "")); // K, G
-    let desc = String(l[6] ?? "").replace(/\s+/g, " ").trim();
-    if (/^pagamento colabora/i.test(desc) || desc.toLowerCase() === tipo.toLowerCase()) desc = "";
+    // Descrição: pega a mais informativa entre "Despesa" (G) e "Descrição" (H),
+    // ignorando as genéricas ("Pagamento Colaborador" ou repetição do próprio tipo).
+    // Ex.: Despesa "INCENTIVO DE PRODUTIVIDADE" + Descrição "Portas Adriano" → usa "Portas Adriano".
+    const semAcento = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const generico = (s: string) => !s || /^pagamento colabora/i.test(s) || semAcento(s) === semAcento(tipo);
+    const g = String(l[6] ?? "").replace(/\s+/g, " ").trim(); // Despesa
+    const h = String(l[7] ?? "").replace(/\s+/g, " ").trim(); // Descrição
+    const desc = [g, h].filter((s) => !generico(s)).sort((a, b) => b.length - a.length)[0] ?? "";
     registros.push({ id: `pg_up_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo, valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: desc || undefined });
   }
   return { registros, naoCasados: [...naoCasados], cpfsAprendidos: [...aprendidos.values()].map((v) => ({ colaboradorId: v.id, cpf: v.fmt })) };
@@ -218,23 +224,26 @@ export function parsePagamentos(
 // Ao subir a MESMA planilha de novo, comparamos linha a linha com o que já existe
 // (nas competências da planilha) e classificamos em 4 grupos, para mexer só no que
 // mudou — e mostrar isso ao usuário antes de aplicar:
-//   • iguais     → já existem idênticos: não toca (mantém id e data de alteração).
-//   • alterados  → mesma pessoa/mês/tipo/data/descrição, VALOR diferente: corrige.
+//   • iguais     → mesma identidade e valor. Não mexe no valor; se a DESCRIÇÃO
+//                  mudou (ex.: agora puxa a coluna "Descrição"), atualiza só ela.
+//   • alterados  → mesma pessoa/mês/tipo/data, VALOR diferente: corrige.
 //   • novos      → não existiam: insere.
 //   • ausentes   → existem no sistema mas NÃO vieram na planilha (ex.: lançamento
 //                  manual, ou linha removida da folha). Mantidos por padrão.
+// A descrição NÃO faz parte da identidade — senão, mudar o texto duplicaria o
+// lançamento. Ela é tratada como um campo que pode ser atualizado.
 type Pag = import("@/data/types").Pagamento;
 export interface DiffPagamentos {
-  iguais: Pag[];
+  iguais: { antigo: Pag; novo: Pag }[];
   alterados: { antigo: Pag; novo: Pag }[];
   novos: Pag[];
   ausentes: Pag[];
 }
 const dia10 = (s?: string | null) => String(s ?? "").slice(0, 10);
-// Assinatura completa (inclui valor): identifica linha idêntica.
-const sigCompleta = (p: Pag) => `${p.colaboradorId}|${p.competencia}|${p.tipo}|${dia10(p.dataPagamento)}|${(p.descricao ?? "").trim()}|${Math.round((p.valor ?? 0) * 100)}`;
-// Chave "de negócio" (sem valor): identifica a MESMA linha com valor corrigido.
-const chaveNegocio = (p: Pag) => `${p.colaboradorId}|${p.competencia}|${p.tipo}|${dia10(p.dataPagamento)}|${(p.descricao ?? "").trim()}`;
+// Identidade + valor: identifica a MESMA linha (a descrição fica de fora).
+const sigCompleta = (p: Pag) => `${p.colaboradorId}|${p.competencia}|${p.tipo}|${dia10(p.dataPagamento)}|${Math.round((p.valor ?? 0) * 100)}`;
+// Chave de identidade (sem valor): a MESMA linha com valor corrigido.
+const chaveNegocio = (p: Pag) => `${p.colaboradorId}|${p.competencia}|${p.tipo}|${dia10(p.dataPagamento)}`;
 
 function multimap(itens: Pag[], chave: (p: Pag) => string): Map<string, Pag[]> {
   const m = new Map<string, Pag[]>();
@@ -244,13 +253,14 @@ function multimap(itens: Pag[], chave: (p: Pag) => string): Map<string, Pag[]> {
 
 // `existentes` deve ser filtrado às competências presentes em `novos` (o resto não entra).
 export function conciliarPagamentos(existentes: Pag[], novos: Pag[]): DiffPagamentos {
-  // 1) casa idênticos por assinatura completa (multiconjunto)
+  // 1) casa por identidade + valor (multiconjunto). Guarda o par para poder
+  //    atualizar a descrição do existente se o texto mudou.
   const porSig = multimap(existentes, sigCompleta);
-  const iguais: Pag[] = [];
+  const iguais: { antigo: Pag; novo: Pag }[] = [];
   const novosResto: Pag[] = [];
   for (const n of novos) {
     const arr = porSig.get(sigCompleta(n));
-    if (arr && arr.length) iguais.push(arr.pop()!); // casou exato → mantém o existente
+    if (arr && arr.length) iguais.push({ antigo: arr.pop()!, novo: n }); // mesma linha → mantém o existente
     else novosResto.push(n);
   }
   const existResto: Pag[] = [];
