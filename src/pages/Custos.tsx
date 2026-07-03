@@ -15,6 +15,9 @@ import {
   Plane,
   Pencil,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
@@ -105,6 +108,19 @@ export default function Custos() {
 
   // Competência efetiva (cai para a última quando a selecionada some / inicial vazia).
   const compAtiva = comp && competencias.includes(comp) ? comp : ultimaComp;
+
+  // Navegação por setas: entre colaboradores (‹ ›, circular) e entre meses (‹ ›).
+  const idxColab = ativosOrdenados.findIndex((c) => c.id === colabId);
+  const irColab = (delta: number) => {
+    if (!ativosOrdenados.length) return;
+    const base = idxColab < 0 ? 0 : idxColab;
+    setColabId(ativosOrdenados[(base + delta + ativosOrdenados.length) % ativosOrdenados.length].id);
+  };
+  const idxComp = competencias.indexOf(compAtiva);
+  const irMes = (delta: number) => {
+    const i = idxComp + delta;
+    if (i >= 0 && i < competencias.length) setComp(competencias[i]);
+  };
   const nColab = d.ativos.length;
   const mapaClasse = useMemo(() => classeMap(classificacaoCustos), [classificacaoCustos]);
 
@@ -233,6 +249,12 @@ export default function Custos() {
     [pagamentos, colabId, compAtiva],
   );
   const linhasColab = useMemo(() => somaPorTipo(pagsDoColab), [pagsDoColab]);
+
+  // ---------- Resumo geral do mês (folha de todos os colaboradores) ----------
+  const pagsDoMes = useMemo(() => pagamentos.filter((p: Pagamento) => p.competencia === compAtiva), [pagamentos, compAtiva]);
+  const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
+  const totalMes = useMemo(() => linhasMes.reduce((s, l) => s + l.valor, 0), [linhasMes]);
+  const pessoasNoMes = useMemo(() => new Set(pagsDoMes.map((p) => p.colaboradorId)).size, [pagsDoMes]);
   // No modo "Só Salário" excluímos o tipo "Adiantamento" (a soma não duplica).
   const linhasConsideradas = useMemo(
     () => (comAdiantamento ? linhasColab : linhasColab.filter((l) => l.tipo !== "Adiantamento")),
@@ -661,18 +683,40 @@ export default function Custos() {
                 subtitle={`Folha real de ${compLabelLongo(compAtiva)}`}
                 icon={<Users className="h-5 w-5" />}
                 action={
-                  <Select
-                    value={colabId}
-                    onChange={(e) => setColabId(e.target.value)}
-                    className="h-9 w-auto py-0 text-sm"
-                  >
-                    {ativosOrdenados.length === 0 && <option value="">Sem colaboradores ativos</option>}
-                    {ativosOrdenados.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nome}
-                      </option>
-                    ))}
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => irColab(-1)}
+                      disabled={ativosOrdenados.length < 2}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Colaborador anterior"
+                      title="Colaborador anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <Select
+                      value={colabId}
+                      onChange={(e) => setColabId(e.target.value)}
+                      className="h-9 w-auto py-0 text-sm"
+                    >
+                      {ativosOrdenados.length === 0 && <option value="">Sem colaboradores ativos</option>}
+                      {ativosOrdenados.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => irColab(1)}
+                      disabled={ativosOrdenados.length < 2}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Próximo colaborador"
+                      title="Próximo colaborador"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 }
               />
               <CardBody>
@@ -821,6 +865,99 @@ export default function Custos() {
                   </div>
                   <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
                 </div>
+              </CardBody>
+            </Card>
+          </section>
+
+          {/* ===================== SEÇÃO 1-geral — folha do mês (todos) ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <Users className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Folha geral do mês</h2>
+            </div>
+
+            <Card>
+              <CardHeader
+                title="Resumo do mês"
+                subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
+                icon={<CalendarDays className="h-5 w-5" />}
+                action={
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => irMes(-1)}
+                      disabled={idxComp <= 0}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Mês anterior"
+                      title="Mês anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
+                      {competencias.map((c) => (
+                        <option key={c} value={c}>{compLabelLongo(c)}</option>
+                      ))}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => irMes(1)}
+                      disabled={idxComp < 0 || idxComp >= competencias.length - 1}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Próximo mês"
+                      title="Próximo mês"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                }
+              />
+              <CardBody>
+                {pagsDoMes.length === 0 ? (
+                  <EmptyState
+                    title="Sem pagamentos neste mês"
+                    description="Não há folha lançada nesta competência."
+                    icon={<Coins className="h-8 w-8" />}
+                  />
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {/* Tabela por tipo (mês inteiro) */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="border-b border-slate-100 bg-slate-50/50">
+                          <tr>
+                            <th className="th">Tipo de pagamento</th>
+                            <th className="th text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {linhasMes.map((l) => (
+                            <tr key={l.tipo}>
+                              <td className="td">
+                                <span className="flex items-center gap-2">
+                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
+                                  {l.tipo}
+                                </span>
+                              </td>
+                              <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-50/60">
+                            <td className="td font-semibold text-brand-ink">Total pago no mês</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totalMes)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Destaques do mês */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
+                      <StatCard label="Colaboradores pagos" value={pessoasNoMes} accent="blue" icon={<Users className="h-4 w-4" />} hint="Com lançamento no mês" />
+                      <StatCard label="Média por colaborador" value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)} accent="gold" icon={<Coins className="h-4 w-4" />} hint="Total ÷ pagos" />
+                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
+                    </div>
+                  </div>
+                )}
               </CardBody>
             </Card>
           </section>
