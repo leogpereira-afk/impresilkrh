@@ -1352,11 +1352,18 @@ export default function Custos() {
 const PREFIXO_FUNCIONARIOS = "2.1.";
 function CustoGlobalFuncionarios() {
   const { items: plano } = useColecao("planoContas");
+  const { items: pagamentos } = useColecao("pagamentos");
   const competencias = useMemo(() => competenciasPlano(plano), [plano]);
   const [comp, setComp] = useState<string>("");
   const compAtiva = comp && competencias.includes(comp) ? comp : (competencias[competencias.length - 1] ?? "");
   const idx = competencias.indexOf(compAtiva);
   const irMes = (d: number) => { const n = competencias[idx + d]; if (n) setComp(n); };
+
+  // Folha real por pessoa (soma dos pagamentos do mês) — para comparar lado a lado.
+  const folhaReal = useMemo(
+    () => pagamentos.filter((p: Pagamento) => p.competencia === compAtiva).reduce((s, p) => s + (p.valor || 0), 0),
+    [pagamentos, compAtiva],
+  );
 
   const { grupos, total } = useMemo(() => {
     const doMes = folhasDoMes(plano, compAtiva).filter((p) => String(p.codigo).startsWith(PREFIXO_FUNCIONARIOS));
@@ -1405,11 +1412,40 @@ function CustoGlobalFuncionarios() {
           }
         />
         <CardBody>
-          <div className="mb-5 grid gap-3 sm:grid-cols-3">
-            <StatCard label="Custo global de funcionários" value={formatBRL(total)} accent="brand" icon={<Users className="h-4 w-4" />} hint={`Deve bater com "Funcionários" no DRE`} />
-            <StatCard label="Categorias" value={grupos.length} accent="blue" icon={<Layers className="h-4 w-4" />} hint="Contas de pessoal no mês" />
-            <StatCard label="Competência" value={<span className="text-base">{compLabelLongo(compAtiva)}</span>} accent="gold" icon={<Wallet className="h-4 w-4" />} />
+          {/* Lado a lado: folha real (por pessoa) × custo global (contábil) */}
+          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Folha real (por pessoa)</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{formatBRL(folhaReal)}</p>
+              <p className="mt-0.5 text-xs text-slate-500">O que foi pago a cada colaborador (aba "Custos de Colaboradores").</p>
+            </div>
+            <div className="rounded-2xl border border-brand/30 bg-brand/5 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-brand">Custo global (contábil)</p>
+              <p className="mt-1 text-2xl font-bold text-brand-ink">{formatBRL(total)}</p>
+              <p className="mt-0.5 text-xs text-slate-500">Grupo {PREFIXO_FUNCIONARIOS}* do plano — bate com o "Funcionários" no DRE.</p>
+            </div>
           </div>
+
+          {/* Custos extras (coletivos) em destaque, separados da folha por pessoa */}
+          {(() => {
+            const acha = (cod: string) => grupos.find((g) => g.cod === cod);
+            const extras = [
+              { c: acha("2.1.14"), label: "Alimentação", accent: "green" as const },
+              { c: acha("2.1.15"), label: "Confraternização", accent: "amber" as const },
+            ].filter((x) => x.c);
+            if (extras.length === 0) return null;
+            return (
+              <div className="mb-5">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Custos extras (coletivos) — não vão para a folha por pessoa</p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {extras.map((x) => (
+                    <StatCard key={x.label} label={x.label} value={formatBRL(x.c!.valor)} accent={x.accent} icon={<ReceiptText className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
+                  ))}
+                  <StatCard label="Categorias no mês" value={grupos.length} accent="blue" icon={<Layers className="h-4 w-4" />} hint="Contas de pessoal" />
+                </div>
+              </div>
+            );
+          })()}
           {grupos.length === 0 ? (
             <EmptyState title="Sem contas de funcionários neste mês" description="Não há lançamentos do grupo 2.1.* nesta competência." icon={<Coins className="h-8 w-8" />} />
           ) : (
