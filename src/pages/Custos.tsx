@@ -63,7 +63,12 @@ import type {
 // Classes disponíveis no editor (confidencial fica fora — societárias só do master).
 const CLASSES_EDITAVEIS: ClasseCusto[] = ["individual", "rateio", "encargo", "ignorar"];
 
-// Encargos sobre o bruto (salário + adiantamento) — custo real do colaborador.
+// Composição do salário (base dos encargos): Salário + Adiantamento = 1 salário,
+// mais a Limpeza/Faxina, que também compõe a remuneração de quem faz. Encargos
+// (FGTS/13º/férias) incidem sobre este bruto.
+const TIPOS_COMPOSICAO_SALARIO = ["Salário", "Adiantamento", "Limpeza/Faxina"];
+
+// Encargos sobre o bruto — custo real do colaborador.
 const FGTS_PCT = 0.08;
 const PROVISAO_13 = 1 / 12;
 const PROVISAO_FERIAS = (1 / 12) * 1.3333;
@@ -262,9 +267,10 @@ export default function Custos() {
   );
   const custoPago = useMemo(() => linhasConsideradas.reduce((s, l) => s + l.valor, 0), [linhasConsideradas]);
 
-  // Bruto = Salário + Adiantamento (base dos encargos), independente do toggle de adiantamento.
+  // Bruto = composição do salário (Salário + Adiantamento + Limpeza/Faxina), base
+  // dos encargos, independente do toggle de adiantamento.
   const bruto = useMemo(
-    () => linhasColab.filter((l) => l.tipo === "Salário" || l.tipo === "Adiantamento").reduce((s, l) => s + l.valor, 0),
+    () => linhasColab.filter((l) => TIPOS_COMPOSICAO_SALARIO.includes(l.tipo)).reduce((s, l) => s + l.valor, 0),
     [linhasColab],
   );
   const fgts = bruto * FGTS_PCT;
