@@ -63,10 +63,10 @@ import type {
 // Classes disponíveis no editor (confidencial fica fora — societárias só do master).
 const CLASSES_EDITAVEIS: ClasseCusto[] = ["individual", "rateio", "encargo", "ignorar"];
 
-// Composição do salário (base dos encargos): Salário + Adiantamento = 1 salário,
-// mais a Limpeza/Faxina, que também compõe a remuneração de quem faz. Encargos
-// (FGTS/13º/férias) incidem sobre este bruto.
-const TIPOS_COMPOSICAO_SALARIO = ["Salário", "Adiantamento", "Limpeza/Faxina"];
+// Base dos encargos: só Salário + Adiantamento (= 1 salário). Os demais tipos
+// (Limpeza/Faxina, Horas Extras, Comissão etc.) entram no TOTAL PAGO à pessoa —
+// pra saber quanto a Impresilk pagou no mês —, mas NÃO geram FGTS/13º/férias aqui.
+const TIPOS_BASE_ENCARGOS = ["Salário", "Adiantamento"];
 
 // Encargos sobre o bruto — custo real do colaborador.
 const FGTS_PCT = 0.08;
@@ -267,10 +267,10 @@ export default function Custos() {
   );
   const custoPago = useMemo(() => linhasConsideradas.reduce((s, l) => s + l.valor, 0), [linhasConsideradas]);
 
-  // Bruto = composição do salário (Salário + Adiantamento + Limpeza/Faxina), base
-  // dos encargos, independente do toggle de adiantamento.
+  // Bruto = base dos encargos (Salário + Adiantamento), independente do toggle de
+  // adiantamento. Faxina/extras entram no total pago, mas não nesta base.
   const bruto = useMemo(
-    () => linhasColab.filter((l) => TIPOS_COMPOSICAO_SALARIO.includes(l.tipo)).reduce((s, l) => s + l.valor, 0),
+    () => linhasColab.filter((l) => TIPOS_BASE_ENCARGOS.includes(l.tipo)).reduce((s, l) => s + l.valor, 0),
     [linhasColab],
   );
   const fgts = bruto * FGTS_PCT;
