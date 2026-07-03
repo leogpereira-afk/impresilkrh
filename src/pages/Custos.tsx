@@ -34,7 +34,7 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
-import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO } from "@/lib/folha";
+import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
 import {
   classeMap,
   competenciasPlano,
@@ -274,7 +274,11 @@ export default function Custos() {
     () => (comAdiantamento ? linhasColab : linhasColab.filter((l) => l.tipo !== "Adiantamento")),
     [linhasColab, comAdiantamento],
   );
-  const custoPago = useMemo(() => linhasConsideradas.reduce((s, l) => s + l.valor, 0), [linhasConsideradas]);
+  // Custo pago = o que foi pago À PESSOA. Exclui encargos (FGTS lançado), que são
+  // custo da empresa, não pagamento ao colaborador.
+  const custoPago = useMemo(() => linhasConsideradas.filter((l) => !TIPOS_ENCARGO.includes(l.tipo)).reduce((s, l) => s + l.valor, 0), [linhasConsideradas]);
+  // FGTS real lançado para a pessoa (ex.: rescisão) — encargo, entra no custo real.
+  const fgtsLancado = useMemo(() => linhasColab.filter((l) => l.tipo === "FGTS").reduce((s, l) => s + l.valor, 0), [linhasColab]);
 
   // Bruto = base dos encargos (Salário + Adiantamento), independente do toggle de
   // adiantamento. Faxina/extras entram no total pago, mas não nesta base.
@@ -285,7 +289,8 @@ export default function Custos() {
   const fgts = bruto * FGTS_PCT;
   const prov13 = bruto * PROVISAO_13;
   const provFerias = bruto * PROVISAO_FERIAS;
-  const encargos = fgts + prov13 + provFerias;
+  // Encargos = estimados (8% + 13º + férias) + FGTS real lançado (rescisão etc.).
+  const encargos = fgts + prov13 + provFerias + fgtsLancado;
   const custoReal = custoPago + encargos;
   const custoTotalColab = comEncargos ? custoReal : custoPago;
   const colabSel = d.colabById.get(colabId);
@@ -801,7 +806,8 @@ export default function Custos() {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {linhasColab.map((l) => {
-                            const ignorado = !comAdiantamento && l.tipo === "Adiantamento";
+                            const ehEncargo = TIPOS_ENCARGO.includes(l.tipo);
+                            const ignorado = (!comAdiantamento && l.tipo === "Adiantamento") || ehEncargo;
                             return (
                               <tr key={l.tipo} className={ignorado ? "opacity-40" : undefined}>
                                 <td className="td">
@@ -811,7 +817,9 @@ export default function Custos() {
                                       style={{ backgroundColor: corDoTipo(l.tipo) }}
                                     />
                                     {l.tipo}
-                                    {ignorado && <span className="text-xs text-slate-400">(não somado)</span>}
+                                    {ehEncargo
+                                      ? <span className="text-xs text-slate-400">(encargo — entra no custo real)</span>
+                                      : ignorado && <span className="text-xs text-slate-400">(não somado)</span>}
                                   </span>
                                 </td>
                                 <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
@@ -845,6 +853,7 @@ export default function Custos() {
                           <LinhaEncargo label="FGTS (8%)" valor={fgts} />
                           <LinhaEncargo label="Provisão 13º (1/12)" valor={prov13} />
                           <LinhaEncargo label="Provisão Férias (1/12 × 1,3333)" valor={provFerias} />
+                          {fgtsLancado > 0 && <LinhaEncargo label="FGTS lançado (rescisão)" valor={fgtsLancado} />}
                           <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-700">
                             <dt>Total de encargos</dt>
                             <dd>{formatBRL(encargos)}</dd>

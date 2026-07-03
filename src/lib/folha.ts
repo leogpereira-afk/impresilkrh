@@ -18,8 +18,12 @@ export const TIPOS_PAGAMENTO: { tipo: string; cor: string }[] = [
   { tipo: "Limpeza/Faxina", cor: "#65a30d" },
   { tipo: "Prestação de Serviços", cor: "#0d9488" },
   { tipo: "Rescisão", cor: "#dc2626" },
+  { tipo: "FGTS", cor: "#b45309" },
   { tipo: "Outros", cor: "#64748b" },
 ];
+// Tipos que são ENCARGO da empresa (não pagos à pessoa): entram no custo real,
+// não no "custo pago". FGTS por funcionário (ex.: rescisão) cai aqui.
+export const TIPOS_ENCARGO = ["FGTS"];
 const ORDEM = new Map(TIPOS_PAGAMENTO.map((t, i) => [t.tipo, i]));
 export const corDoTipo = (tipo: string) => TIPOS_PAGAMENTO.find((t) => t.tipo === tipo)?.cor ?? "#64748b";
 export const ordemDoTipo = (tipo: string) => ORDEM.get(tipo) ?? 99;

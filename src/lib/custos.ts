@@ -217,6 +217,28 @@ export function parsePagamentos(
     const desc = [g, h].filter((s) => !generico(s)).sort((a, b) => b.length - a.length)[0] ?? "";
     registros.push({ id: `pg_up_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo, valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: desc || undefined });
   }
+
+  // PASSO 3: FGTS por funcionário. As linhas de FGTS NÃO começam com "Colab:"
+  // (fornecedor "FGTS"/"Não definido"), mas quando têm o nome da pessoa na
+  // descrição (ex.: "FGTS OSMANE", "fgts Camila") são um encargo daquele
+  // colaborador — atribui a ele com tipo "FGTS". O FGTS mensal da folha inteira
+  // (descrição só "FGTS", sem nome) não casa e fica de fora (segue estimado).
+  const limparFgts = (s: string) =>
+    s.replace(/f[gt]?g?ts|rescis[aã]o|recis[aã]o|rescis[oó]rio|guia|recolhimento|regular|colaboradores?|\bdo\b|\bde\b|\bda\b/gi, " ")
+      .replace(/\s+/g, " ").trim();
+  for (const l of linhas) {
+    if (String(l[0] ?? "").startsWith("Colab:")) continue; // já tratado no passo 2
+    const g = String(l[6] ?? ""); const h = String(l[7] ?? "");
+    if (!/fgts/i.test(`${g} ${h}`)) continue; // não é FGTS
+    const venc = iso(l[13]);
+    const valor = moedaBR(l[19]) || moedaBR(l[15]);
+    if (!venc || valor <= 0) continue;
+    const nomeAlvo = limparFgts(`${h} ${g}`); // sobra o nome, se houver
+    const id = nomeAlvo ? casarNome(nomeAlvo) : null;
+    if (!id) continue; // FGTS sem nome (mensal da folha) → coletivo, não atribui
+    const detalhe = String(h || g).replace(/\s+/g, " ").trim();
+    registros.push({ id: `pg_up_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo: "FGTS", valor: Math.round(valor * 100) / 100, dataPagamento: venc, descricao: detalhe || undefined });
+  }
   return { registros, naoCasados: [...naoCasados], cpfsAprendidos: [...aprendidos.values()].map((v) => ({ colaboradorId: v.id, cpf: v.fmt })) };
 }
 
