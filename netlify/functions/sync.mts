@@ -18,19 +18,17 @@ const json = (corpo: unknown, status = 200) =>
 
 const chave = (colecao: string, id: string) => `${colecao}::${id}`;
 
-// Helper de loja: usa o contexto automático do Netlify (em produção/CI o
-// site-id e o token de Blobs já vêm injetados). Se não houver contexto
-// automático (ex.: deploy manual ou ambiente atípico), cai para as variáveis
-// BLOBS_SITE_ID / BLOBS_TOKEN. Assim a mesma função roda em qualquer cenário.
+// Helper de loja: SEMPRE o contexto automático do Netlify (o runtime injeta o
+// site-id e o token de Blobs). NÃO usar BLOBS_TOKEN/BLOBS_SITE_ID manual — um
+// personal access token expira em ~7 dias e derruba o sync silenciosamente (foi
+// exatamente o que aconteceu no PCP). Se um dia precisar rodar fora do Netlify,
+// use `netlify blobs` local ou injete o contexto pelo próprio runtime.
 function loja(nome: string, forte = false) {
-  const siteID = process.env.BLOBS_SITE_ID;
-  const token = process.env.BLOBS_TOKEN;
   // consistency "strong": leitura sempre enxerga a última escrita. Usado só no
   // contador de versão (1 chave, lida a cada ciclo) — sem isso, a sobrescrita
   // da mesma chave pode demorar até ~1 min para aparecer e o app pularia pulls.
   const opts = forte ? ({ consistency: "strong" } as const) : {};
-  if (siteID && token) return getStore({ name: nome, siteID, token, ...opts });
-  return getStore({ name: nome, ...opts }); // contexto automático (caso normal no Netlify)
+  return getStore({ name: nome, ...opts });
 }
 
 export default async (req: Request) => {

@@ -11,7 +11,7 @@
  * forçar a limpeza do cache antigo. (Assets do Vite têm hash no nome, então o
  * essencial é versionar o casco/HTML.)
  * ======================================================================== */
-const CACHE = "impresilk-rh-v5";
+const CACHE = "impresilk-rh-v6";
 
 // "Casco" do app: o mínimo para abrir a interface mesmo offline.
 const CASCO = ["/", "/index.html", "/favicon.png", "/apple-touch-icon.png"];
@@ -50,8 +50,11 @@ self.addEventListener("fetch", (event) => {
 
   // 4) Network-first: tenta a rede; em sucesso, atualiza o cache; em falha
   //    (offline), entrega do cache. Para navegação (HTML), o fallback é o casco.
+  //    Navegação (HTML) busca SEMPRE fresco (cache: "no-store"), ignorando o cache
+  //    HTTP do browser — assim todo deploy novo chega no F5, sem hard-refresh.
+  const reqRede = req.mode === "navigate" ? new Request(req.url, { cache: "no-store", credentials: "same-origin" }) : req;
   event.respondWith(
-    fetch(req)
+    fetch(reqRede)
       .then((resp) => {
         // Guarda uma cópia das respostas boas para uso offline futuro.
         if (resp && resp.status === 200 && resp.type === "basic") {
