@@ -109,7 +109,7 @@ export function AppShell() {
         if (!itens.length) return null;
         return (
           <div key={grupo}>
-            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
               {grupo}
             </p>
             <div className="space-y-0.5">
@@ -123,17 +123,18 @@ export function AppShell() {
                     onClick={() => setAberto(false)}
                     className={cn(
                       "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
-                      // Item em destaque: pílula inteira dourada, sempre — ativo só escurece.
+                      // Sidebar navy: item em destaque = pílula dourada; ativo = realce
+                      // claro translúcido; inativo = texto claro com hover suave.
                       item.destaque
                         ? ativo
                           ? "bg-gold-600 text-white shadow-sm"
                           : "bg-gold text-white shadow-sm hover:bg-gold-500"
                         : ativo
-                          ? "bg-brand text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900",
+                          ? "bg-white/15 text-white shadow-sm"
+                          : "text-slate-200 hover:bg-white/10 hover:text-white",
                     )}
                   >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", item.destaque ? "text-gold-100" : ativo ? "text-gold-200" : "text-slate-400 group-hover:text-slate-600")} />
+                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", item.destaque ? "text-gold-100" : ativo ? "text-gold-300" : "text-slate-300 group-hover:text-white")} />
                     <span className="flex-1">{item.label}</span>
                   </NavLink>
                 );
@@ -146,19 +147,19 @@ export function AppShell() {
   );
 
   const Rodape = () => (
-    <div className="space-y-2 border-t border-slate-100 p-3">
+    <div className="space-y-2 border-t border-white/10 p-3">
       <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
         <Avatar nome={user.nome} size="sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-800">{user.nome}</p>
-          <p className="truncate text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
+          <p className="truncate text-sm font-medium text-white">{user.nome}</p>
+          <p className="truncate text-xs text-slate-400">{PERFIL_LABEL[user.perfil]}</p>
         </div>
         <button
           onClick={() => {
             logoutAuth();
             navigate("/login");
           }}
-          className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
+          className="btn-ghost p-1.5 text-slate-300 hover:text-red-400"
           title="Sair"
         >
           <LogOut className="h-[18px] w-[18px]" />
@@ -169,9 +170,9 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-[var(--bg)]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200/70 bg-white/80 backdrop-blur-xl lg:flex">
-        <div className="flex h-20 items-center justify-center border-b border-slate-100 px-5">
-          <Logo variant="color" className="h-12" />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 bg-brand lg:flex">
+        <div className="flex h-20 items-center justify-center border-b border-white/10 px-5">
+          <Logo variant="white" className="h-12" />
         </div>
         <NavConteudo />
         <Rodape />
@@ -180,10 +181,10 @@ export function AppShell() {
       {aberto && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm animate-fade-in" onClick={() => setAberto(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-white shadow-soft animate-scale-in">
-            <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
-              <Logo variant="color" className="h-11" />
-              <button onClick={() => setAberto(false)} className="btn-ghost p-1.5">
+          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-brand shadow-soft animate-scale-in">
+            <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
+              <Logo variant="white" className="h-11" />
+              <button onClick={() => setAberto(false)} className="btn-ghost p-1.5 text-slate-300 hover:text-white">
                 <X className="h-5 w-5" />
               </button>
             </div>

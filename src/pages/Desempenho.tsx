@@ -1602,7 +1602,7 @@ function AbaPesquisas() {
 
   const salvar = (dados: Omit<Pesquisa, "id" | "criadoEm">) => {
     if (editar && editar.id) atualizar(editar.id, dados);
-    else criar({ ...dados, criadoEm: new Date().toISOString().slice(0, 10) });
+    else criar({ ...dados, criadoEm: diaLocalISO() });
     toast(editar && editar.id ? "Atualizada." : `${dados.tipo} criada.`);
     setEditar(null); setNovo(false);
   };
