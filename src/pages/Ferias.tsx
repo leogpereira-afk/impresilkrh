@@ -14,7 +14,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, parseData } from "@/lib/format";
+import { formatDate, parseData, diaLocalISO } from "@/lib/format";
 import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Ferias as TFerias, Colaborador } from "@/data/types";
@@ -28,7 +28,7 @@ const addDiasISO = (base: string, dias: number) => {
 };
 
 // ISO -> "yyyy-MM-dd" para inputs type="date" (e o caminho inverso).
-const isoParaInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : "");
+const isoParaInput = (iso?: string | null) => { const d = parseData(iso); return d ? diaLocalISO(d) : ""; };
 const inputParaIso = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
 
 // Paleta dos status de férias (alinhada às variantes de Badge / Quadro de Comando).

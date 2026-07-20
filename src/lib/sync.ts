@@ -158,15 +158,23 @@ export async function trySync(): Promise<void> {
         if (acao.tipo === "upsert") {
           const registro = (obter(acao.colecao as never) as unknown as Reg[]).find((r) => r.id === acao.id);
           if (!registro) { gravarFila(lerFila().filter((a) => !mesma(a, acao))); continue; } // sumiu local
+          const enviadoTs = registro.atualizadoEm; // versão que estamos mandando
           const resp = await chamar("upsert", { colecao: acao.colecao, registro });
           if (resp?.conflito) {
             gravarFila(lerFila().map((a) => (mesma(a, acao) && a.tipo === "upsert" ? { ...a, conflito: true, servidor: resp.servidor } : a)));
             continue;
           }
+          // Sucesso → tira da fila SÓ se não houve edição durante o envio (atualizadoEm
+          // ainda bate). Se o usuário salvou de novo "em voo", a versão nova permanece
+          // na fila e sobe no próximo ciclo — nenhuma edição se perde.
+          const atual = (obter(acao.colecao as never) as unknown as Reg[]).find((r) => r.id === acao.id);
+          if (!atual || atual.atualizadoEm === enviadoTs) {
+            gravarFila(lerFila().filter((a) => !mesma(a, acao)));
+          }
         } else {
           await chamar("delete", { colecao: acao.colecao, id: acao.id });
+          gravarFila(lerFila().filter((a) => !mesma(a, acao))); // delete é idempotente → remove
         }
-        gravarFila(lerFila().filter((a) => !mesma(a, acao))); // sucesso → remove
       } catch (e) {
         if (eRede(e)) { setStatus("offline"); return; } // para o ciclo; retenta no próximo gatilho
         // falha permanente (token, 4xx/5xx): conta e descarta após o limite
@@ -204,11 +212,23 @@ export async function pull(): Promise<void> {
     try { revAtual = ((await chamar("rev")) as { rev?: number | null })?.rev ?? null; } catch { revAtual = null; }
     if (revAtual !== null && ultimaRev !== null && revAtual === ultimaRev) { recalcStatus(); return; } // nada mudou na nuvem
     const remoto = new Map<string, Envelope>();
-    let offset: number | null = 0;
-    while (offset !== null) {
-      const resp = await chamar("list", { offset });
+    // Paginação por CHAVE (keyset): manda a última chave vista em `after`. Fallback
+    // para offset se o servidor for antigo (só devolve nextOffset). Guard de páginas
+    // evita laço infinito caso um servidor bugado nunca sinalize o fim.
+    let after: string | null = null;
+    let offset = 0;
+    let usaKeyset = true;
+    for (let pag = 0; pag < 500; pag++) {
+      const resp = await chamar("list", usaKeyset ? { after } : { offset });
       for (const env of (resp.registros ?? []) as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
-      offset = resp.nextOffset ?? null;
+      if ("nextAfter" in resp) {
+        if (resp.nextAfter == null) break; // keyset terminou
+        after = String(resp.nextAfter);
+      } else if (resp.nextOffset != null) {
+        usaKeyset = false; offset = Number(resp.nextOffset); // servidor antigo → offset
+      } else {
+        break; // sem próxima página
+      }
     }
     // Houve uma limpeza (apagarColecoes) enquanto líamos a nuvem → este retrato está
     // velho; descarta para não ressuscitar o que foi apagado.

@@ -21,7 +21,7 @@ import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
-import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
+import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData, diaLocalISO } from "@/lib/format";
 import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
 import { comprimirImagem } from "@/lib/imagem";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
@@ -1020,7 +1020,7 @@ function DesligarModal({ aberto, onFechar, c }: { aberto: boolean; onFechar: () 
   const toast = useToast();
   const { atualizar } = useColecao("colaboradores");
   const { criar: criarMov } = useColecao("movimentacoes");
-  const [data, setData] = useState(HOJE.toISOString().slice(0, 10));
+  const [data, setData] = useState(diaLocalISO(HOJE));
   const confirmar = () => {
     atualizar(c.id, { statusId: "inativo", dataDesligamento: data });
     criarMov({ colaboradorId: c.id, tipo: "Afastamento", data, descricao: "Desligamento registrado.", registradoPor: "RH" });

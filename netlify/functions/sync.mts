@@ -106,17 +106,33 @@ export default async (req: Request) => {
         return json({ rev: ((await meta.get("rev", { type: "json" }).catch(() => null)) as { rev?: number } | null)?.rev ?? null });
 
       // ---- listar (paginado) ----
+      // Paginação por CHAVE (keyset): o cliente manda a última chave vista em
+      // `after` e recebe a próxima página + `nextAfter`. Assim uma inserção entre
+      // páginas nunca "pula" um registro (o que aconteceria com offset). Mantém
+      // `offset`/`nextOffset` como fallback para clientes em cache antigo.
       case "list": {
-        const offset = Math.max(0, Number(body.offset ?? 0) | 0);
         const { blobs } = await registros.list();
         const chaves = blobs.map((b) => b.key).sort();
-        const pagina = chaves.slice(offset, offset + PAGINA);
+        const after = body.after != null ? String(body.after) : null;
+        // início da página: por chave (primeira > after) ou por offset (compat).
+        let inicio: number;
+        if (after !== null) {
+          inicio = chaves.findIndex((k) => k > after);
+          if (inicio < 0) inicio = chaves.length; // acabou
+        } else {
+          inicio = Math.max(0, Number(body.offset ?? 0) | 0);
+        }
+        const pagina = chaves.slice(inicio, inicio + PAGINA); // chaves cruas desta página
         const itens = await Promise.all(
           pagina.map((k) => registros.get(k, { type: "json" }).catch(() => null)),
         );
         const visiveis = itens.filter(Boolean).map(mascarar).filter(Boolean); // aplica escopo LGPD
-        const nextOffset = offset + PAGINA < chaves.length ? offset + PAGINA : null;
-        return json({ registros: visiveis, nextOffset, total: chaves.length });
+        const temMais = inicio + PAGINA < chaves.length;
+        // nextAfter = ÚLTIMA CHAVE CRUA da página (não a última visível), senão o
+        // mascaramento LGPD poderia encurtar e repetir/pular registros.
+        const nextAfter = temMais && pagina.length ? pagina[pagina.length - 1] : null;
+        const nextOffset = temMais ? inicio + PAGINA : null;
+        return json({ registros: visiveis, nextAfter, nextOffset, total: chaves.length });
       }
 
       // ---- upsert (1 registro, com detecção de conflito) ----
