@@ -14,6 +14,7 @@ import { NOMES_COLECOES } from "@/data";
 import { obter, definirColecao } from "@/lib/store";
 import { idConta } from "@/data/planoContas";
 import { enviarColecao } from "@/lib/sync";
+import { criarHash, ehHash, podeHashear } from "@/lib/senha";
 
 type RegSolto = { id?: string } & Record<string, unknown>;
 
@@ -40,6 +41,34 @@ export function rodarMigracoes(): void {
     void enviarColecao(nome); // sobe já (ou entra na fila de retentativa se estiver offline)
   }
   aplicarPacoteConteudoRH();
+  void migrarSenhasParaHash();
+}
+
+// ---------------------------------------------------------------------------
+// Senhas em texto puro → hash. O campo `senha` do cadastro de usuários era
+// gravado como o usuário digitou e SUBIA PARA A NUVEM assim. Qualquer pessoa com
+// o app aberto (DevTools) ou com um backup em mãos lia a senha de todo mundo.
+// Aqui trocamos pelo hash e apagamos o texto — local e na nuvem (o envio
+// sobrescreve o registro antigo). Roda uma vez; se o navegador não tiver
+// WebCrypto, não mexe em nada (o login antigo continua funcionando).
+// ---------------------------------------------------------------------------
+async function migrarSenhasParaHash(): Promise<void> {
+  if (typeof window === "undefined" || !podeHashear()) return;
+  const usuarios = obter("usuarios") as unknown as (RegSolto & { senha?: string; senhaHash?: unknown })[];
+  if (!Array.isArray(usuarios) || !usuarios.some((u) => typeof u?.senha === "string" && u.senha.trim())) return;
+  const convertidos = await Promise.all(
+    usuarios.map(async (u) => {
+      const texto = typeof u?.senha === "string" ? u.senha.trim() : "";
+      if (!texto) return u;
+      try {
+        const senhaHash = ehHash(u.senhaHash) ? u.senhaHash : await criarHash(texto);
+        const { senha: _fora, ...resto } = u;
+        return { ...resto, senhaHash };
+      } catch { return u; }
+    }),
+  );
+  definirColecao("usuarios" as never, convertidos as never);
+  void enviarColecao("usuarios"); // apaga o texto puro também na nuvem
 }
 
 // ---------------------------------------------------------------------------

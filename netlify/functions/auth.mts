@@ -65,7 +65,10 @@ export default async (req: Request) => {
         }
 
         const conta = (await contas.get(usuario, { type: "json" }).catch(() => null)) as Conta | null;
-        if (!conta) return json({ erro: "Usuário não encontrado ou sem senha cadastrada." }, 401);
+        // `semConta` avisa o app: esta pessoa ainda não foi provisionada aqui, então
+        // ele deve tentar o login local em vez de mostrar "senha incorreta". É o que
+        // permite LIGAR o login real antes de todo mundo ter senha no servidor.
+        if (!conta) return json({ erro: "Usuário ainda sem senha cadastrada no servidor.", semConta: true }, 401);
         if (!(await conferirSenha(senha, conta))) return json({ erro: "Senha incorreta." }, 401);
         const token = await assinarJwt({ sub: conta.colaboradorId, perfil: conta.perfil, nome: conta.nome }, secret, EXP_SEG);
         return json({ token, perfil: conta.perfil, colaboradorId: conta.colaboradorId, nome: conta.nome });

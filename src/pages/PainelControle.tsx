@@ -17,6 +17,7 @@ import { enviarConfigNuvem } from "@/lib/sync";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { MODO_JWT, definirSenhaUsuario, removerSenhaUsuario } from "@/lib/auth";
+import { criarHash, podeHashear } from "@/lib/senha";
 import { ehMaster } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { formatBRL } from "@/lib/format";
@@ -537,8 +538,11 @@ function UsuariosSecao() {
   // colaborador vinculado). Use uma vez ao ligar o login real.
   const [migrando, setMigrando] = useState(false);
   const migrarSenhas = async () => {
+    // Só dá para reenviar senha que ainda esteja em texto (formato antigo). Depois
+    // que o app converteu tudo para hash, ninguém — nem o RH — consegue lê-las de
+    // volta; aí a senha de cada pessoa é definida uma a uma, no formulário.
     const alvos = usuarios.filter((u) => u.ativo && u.colaboradorId && u.senha?.trim());
-    if (alvos.length === 0) { toast("Nenhum usuário com senha cadastrada para migrar.", "erro"); return; }
+    if (alvos.length === 0) { toast("Nada a migrar: as senhas já estão protegidas. Defina a senha de cada pessoa no formulário do usuário.", "erro"); return; }
     setMigrando(true);
     let ok = 0;
     for (const u of alvos) {
@@ -628,10 +632,21 @@ function UsuariosSecao() {
           colaboradores={d.colaboradores}
           onFechar={() => { setNovo(false); setEdit(null); }}
           onSalvar={(dados) => {
-            if (edit) atualizar(edit.id, dados);
-            else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...dados });
-            void provisionarNoServidor(dados); // login real: ativa a senha no servidor
-            toast("Usuário salvo."); setNovo(false); setEdit(null);
+            void (async () => {
+              // A senha digitada NUNCA é gravada como texto: vira hash aqui e o
+              // texto só existe nesta função (para provisionar no servidor).
+              const { senha: digitada, ...resto } = dados;
+              const campos: Partial<Usuario> = { ...resto };
+              if (digitada) {
+                if (!podeHashear()) { toast("Este navegador não consegue proteger a senha. Use o app pelo endereço https.", "erro"); return; }
+                campos.senhaHash = await criarHash(digitada);
+                campos.senha = undefined; // apaga qualquer texto puro que restasse
+              }
+              if (edit) atualizar(edit.id, campos as never);
+              else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...campos } as never);
+              if (digitada) await provisionarNoServidor({ ...resto, senha: digitada }); // login real: ativa a senha no servidor
+              toast("Usuário salvo."); setNovo(false); setEdit(null);
+            })();
           }}
         />
       )}
@@ -669,7 +684,10 @@ function UsuarioEditor({
   const [colaboradorId, setColaboradorId] = useState<string>(usuario?.colaboradorId ?? "");
   const [ativo, setAtivo] = useState<boolean>(usuario?.ativo ?? true);
   const [permissoes, setPermissoes] = useState<string[]>(usuario?.permissoes ?? []);
-  const [senha, setSenha] = useState(usuario?.senha ?? "");
+  // Começa VAZIO de propósito: a senha guardada é um hash, não dá para exibi-la.
+  // Em branco = mantém a que já existe.
+  const [senha, setSenha] = useState("");
+  const jaTemSenha = !!(usuario?.senhaHash || usuario?.senha?.trim());
   const [verSenha, setVerSenha] = useState(false);
 
   const acessoTotal = permissoes.includes("*");
@@ -715,9 +733,15 @@ function UsuarioEditor({
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo label="Nome" obrigatorio><Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo" /></Campo>
           <Campo label="E-mail" obrigatorio><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@impresilk.com.br" /></Campo>
-          <Campo label="Senha de acesso" hint="Senha individual de login. Em branco = usa a senha padrão do sistema." className="sm:col-span-2">
+          <Campo
+            label="Senha de acesso"
+            hint={jaTemSenha
+              ? "Esta pessoa já tem senha. Digite algo aqui só para TROCAR — em branco, mantém a atual. (A senha é guardada protegida; nem o RH consegue vê-la.)"
+              : "Senha individual de login. Em branco = usa a senha padrão do sistema."}
+            className="sm:col-span-2"
+          >
             <div className="relative">
-              <Input type={verSenha ? "text" : "password"} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Defina uma senha para este usuário" className="pr-10" />
+              <Input type={verSenha ? "text" : "password"} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder={jaTemSenha ? "Deixe em branco para manter a senha atual" : "Defina uma senha para este usuário"} className="pr-10" />
               <button type="button" onClick={() => setVerSenha((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
                 {verSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>

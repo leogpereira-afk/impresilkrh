@@ -445,7 +445,11 @@ export interface Usuario {
   perfil: Perfil;
   colaboradorId?: string | null;
   permissoes: string[]; // chaves de módulos liberados, ou ["*"] para tudo
-  senha?: string; // senha de acesso individual (vazio = usa a senha padrão do sistema)
+  /** @deprecated senha em TEXTO PURO (formato antigo). Migrada para `senhaHash`
+   *  na abertura do app — não gravar mais neste campo. */
+  senha?: string;
+  /** Impressão digital da senha (PBKDF2). Não dá para voltar dela à senha. */
+  senhaHash?: import("@/lib/senha").SenhaGuardada;
   ativo: boolean;
   criadoEm: string;
 }

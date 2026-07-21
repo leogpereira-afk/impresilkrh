@@ -8,6 +8,7 @@ import { useColecao } from "@/lib/store";
 import { MASTER_COLAB_ID } from "@/lib/rbac";
 import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
 import { MODO_JWT, loginServidor, ErroAuth } from "@/lib/auth";
+import { conferirHash, ehHash } from "@/lib/senha";
 
 const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -38,7 +39,7 @@ export default function Login() {
 
   // Resolve nome+senha pela base local (login antigo). Usado quando NÃO há login
   // por servidor, ou como degradação segura quando o servidor está fora do ar.
-  const resolverLocal = (): { perfil: Perfil; colaboradorId: string } | { erro: string } => {
+  const resolverLocal = async (): Promise<{ perfil: Perfil; colaboradorId: string } | { erro: string }> => {
     const n = normalizar(nome);
     const exatos = pessoas.filter((c) => normalizar(c.nome) === n);
     let alvo = exatos.length === 1 ? exatos[0] : undefined;
@@ -56,14 +57,19 @@ export default function Login() {
     }
     if (!alvo) return { erro: "Nome não encontrado. Digite seu nome completo como está cadastrado." };
     const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === alvo!.id);
+    // A senha guardada é um HASH (formato novo). Registros antigos ainda podem ter
+    // a senha em texto — aceitos até a migração converter (ver lib/migracoes.ts).
     const senhaUsuario = usuario?.senha?.trim();
-    const ok = senha === SENHA_DEMO || (!!senhaUsuario && senha === senhaUsuario);
+    const ok =
+      senha === SENHA_DEMO ||
+      (ehHash(usuario?.senhaHash) && (await conferirHash(senha, usuario!.senhaHash!))) ||
+      (!!senhaUsuario && senha === senhaUsuario);
     if (!ok) return { erro: "Senha incorreta." };
     const perfil = alvo.id === MASTER_COLAB_ID ? "ADMIN_RH" : (usuario?.perfil ?? alvo.perfil ?? "COLABORADOR");
     return { perfil, colaboradorId: alvo.id };
   };
-  const entrarLocal = (): boolean => {
-    const r = resolverLocal();
+  const entrarLocal = async (): Promise<boolean> => {
+    const r = await resolverLocal();
     if ("erro" in r) { setErro(r.erro); return false; }
     entrar(r.perfil, r.colaboradorId);
     navigate("/painel");
@@ -82,20 +88,26 @@ export default function Login() {
     }
     // Login real (servidor confere a senha e emite o crachá). Se o servidor
     // estiver indisponível/sem internet, cai no login local para não travar.
-    if (MODO_JWT) {
-      setEntrando(true);
-      try {
-        await loginServidor(nome, senha);
-        navigate("/painel");
-      } catch (err) {
-        if (err instanceof ErroAuth && err.tipo === "credencial") setErro(err.message || "Senha incorreta.");
-        else if (!entrarLocal()) setErro("Sem conexão para entrar agora. Tente novamente com internet.");
-      } finally {
-        setEntrando(false);
+    setEntrando(true);
+    try {
+      if (MODO_JWT) {
+        try {
+          await loginServidor(nome, senha);
+          navigate("/painel");
+          return;
+        } catch (err) {
+          // Senha errada de quem TEM conta no servidor: mostra e para aqui.
+          // Quem ainda não tem conta lá (ou servidor fora) cai no login local —
+          // é o que permite ligar o login real sem travar ninguém.
+          if (err instanceof ErroAuth && err.tipo === "credencial") { setErro(err.message || "Senha incorreta."); return; }
+          if (!(await entrarLocal())) setErro("Sem conexão para entrar agora. Tente novamente com internet.");
+          return;
+        }
       }
-      return;
+      await entrarLocal();
+    } finally {
+      setEntrando(false);
     }
-    entrarLocal();
   };
 
   return (

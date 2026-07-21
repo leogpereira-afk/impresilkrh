@@ -10,6 +10,11 @@
 import { NOMES_COLECOES } from "@/data";
 import { obter, definirColecao, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, salvarConfig } from "@/lib/store";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
+import { obterSessao } from "@/lib/session";
+
+// Coleções que o app pode baixar ANTES de alguém entrar. Só o cadastro de acesso
+// (com a senha em hash) — nada de folha, ficha, documento ou prontuário.
+const COLECOES_PRE_LOGIN = ["usuarios"];
 
 const temWindow = typeof window !== "undefined";
 const NS = "impresilk.sync";
@@ -255,10 +260,17 @@ export async function pull(): Promise<void> {
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
   const epocaInicio = epocaDados;
+  // SEM NINGUÉM LOGADO o app não baixa a base: antes bastava abrir o endereço
+  // para o navegador puxar folha, CPFs e prontuários inteiros para o disco, sem
+  // digitar nada. Agora, deslogado, ele traz só `usuarios` — o mínimo para
+  // conferir a senha num computador novo (e lá só existe o hash, não a senha).
+  const restrito = !obterSessao();
   try {
     let revAtual: number | null = null;
-    try { revAtual = ((await chamar("rev")) as { rev?: number | null })?.rev ?? null; } catch { revAtual = null; }
-    if (revAtual !== null && ultimaRev !== null && revAtual === ultimaRev) { recalcStatus(); return; } // nada mudou na nuvem
+    if (!restrito) {
+      try { revAtual = ((await chamar("rev")) as { rev?: number | null })?.rev ?? null; } catch { revAtual = null; }
+      if (revAtual !== null && ultimaRev !== null && revAtual === ultimaRev) { recalcStatus(); return; } // nada mudou na nuvem
+    }
     const remoto = new Map<string, Envelope>();
     // Paginação por CHAVE (keyset): manda a última chave vista em `after`. Fallback
     // para offset se o servidor for antigo (só devolve nextOffset). Guard de páginas
@@ -267,7 +279,7 @@ export async function pull(): Promise<void> {
     let offset = 0;
     let usaKeyset = true;
     for (let pag = 0; pag < 500; pag++) {
-      const resp = await chamar("list", usaKeyset ? { after } : { offset });
+      const resp = await chamar("list", { ...(usaKeyset ? { after } : { offset }), ...(restrito ? { colecoes: COLECOES_PRE_LOGIN } : {}) });
       for (const env of (resp.registros ?? []) as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
       if ("nextAfter" in resp) {
         if (resp.nextAfter == null) break; // keyset terminou
@@ -313,7 +325,9 @@ export async function pull(): Promise<void> {
         definirColecao(nome as never, merged as never);
       }
     });
-    ultimaRev = revAtual; // retrato aplicado: próximos ciclos pulam se nada mudar
+    // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
+    // (deslogado) faria o app achar que já tem tudo e nunca baixar o resto.
+    if (!restrito) ultimaRev = revAtual;
     recalcStatus();
   } catch (e) {
     // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga
@@ -554,7 +568,9 @@ if (temWindow) {
   void puxarConfig(); // config da empresa desce uma vez, ao abrir
   window.addEventListener("online", () => { recalcStatus(); ciclo(); });
   window.addEventListener("offline", () => recalcStatus());
-  window.addEventListener("impresilk:autenticado", () => { recalcStatus(); ciclo(); }); // logou → já sincroniza
+  // Logou → baixa a base completa. Zera a revisão memorizada, senão o pull
+  // restrito de antes do login faria o app achar que já está em dia.
+  window.addEventListener("impresilk:autenticado", () => { ultimaRev = null; recalcStatus(); ciclo(); });
   window.addEventListener("focus", () => { if (ativo()) void pull(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ciclo(); });
   // Poll leve só com a aba visível (≈ a cada 20s) — sensação de tempo real sem gastar créditos à toa.

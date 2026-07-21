@@ -140,7 +140,17 @@ export default async (req: Request) => {
       // `offset`/`nextOffset` como fallback para clientes em cache antigo.
       case "list": {
         const { blobs } = await registros.list();
-        const chaves = blobs.map((b) => b.key).sort();
+        // Filtro por coleção (as chaves são "colecao::id", então basta o prefixo).
+        // Usado pelo app para baixar SÓ o necessário — por exemplo, antes do login
+        // ele pede apenas `usuarios`, em vez de puxar a base inteira.
+        const filtro = Array.isArray(body.colecoes)
+          ? (body.colecoes as unknown[]).map(String)
+          : body.colecao != null ? [String(body.colecao)] : null;
+        const prefixos = filtro?.map((c) => `${c}::`) ?? null;
+        const chaves = blobs
+          .map((b) => b.key)
+          .filter((k) => !prefixos || prefixos.some((p) => k.startsWith(p)))
+          .sort();
         const after = body.after != null ? String(body.after) : null;
         // início da página: por chave (primeira > after) ou por offset (compat).
         let inicio: number;

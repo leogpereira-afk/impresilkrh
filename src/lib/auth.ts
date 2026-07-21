@@ -64,7 +64,9 @@ export async function loginServidor(usuario: string, senha: string): Promise<Ses
   }
   // 401 = credencial inválida (mostra o erro). Qualquer outra coisa (404/5xx/501
   // = função ausente/fora do ar) é tratada como "indisponível" → login local.
-  if (res.status === 401) throw new ErroAuth("credencial", data?.erro || "Senha incorreta.");
+  // Exceção: 401 com `semConta` significa "essa pessoa ainda não tem senha no
+  // servidor" — isso NÃO é senha errada, é transição; cai no login local.
+  if (res.status === 401 && !data?.semConta) throw new ErroAuth("credencial", data?.erro || "Senha incorreta.");
   throw new ErroAuth("indisponivel", data?.erro || "Login indisponível no momento.");
 }
 
