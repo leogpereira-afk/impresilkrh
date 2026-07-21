@@ -79,15 +79,11 @@ export default function Login() {
   const submeter = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro("");
-    // Acesso fixo de administrador — vem ANTES de tudo, então funciona mesmo sem
-    // o cadastro do master ou com o servidor (JWT) fora/ sem a conta.
-    if (ACESSO_FIXO_NOMES.includes(normalizar(nome)) && senha === ACESSO_FIXO_SENHA) {
-      entrar("ADMIN_RH", MASTER_COLAB_ID);
-      navigate("/painel");
-      return;
-    }
-    // Login real (servidor confere a senha e emite o crachá). Se o servidor
-    // estiver indisponível/sem internet, cai no login local para não travar.
+    const acessoFixo = ACESSO_FIXO_NOMES.includes(normalizar(nome)) && senha === ACESSO_FIXO_SENHA;
+    // Login real PRIMEIRO (servidor confere a senha e emite o crachá). O acesso
+    // fixo ficou para trás de propósito: se ele viesse antes, o diretor entraria
+    // sempre pela porta velha — sem crachá — e a migração nunca aconteceria. Ele
+    // continua valendo como PORTA DE EMERGÊNCIA quando o servidor recusa ou some.
     setEntrando(true);
     try {
       if (MODO_JWT) {
@@ -99,12 +95,11 @@ export default function Login() {
           // Senha errada de quem TEM conta no servidor: mostra e para aqui.
           // Quem ainda não tem conta lá (ou servidor fora) cai no login local —
           // é o que permite ligar o login real sem travar ninguém.
-          if (err instanceof ErroAuth && err.tipo === "credencial") { setErro(err.message || "Senha incorreta."); return; }
-          if (!(await entrarLocal())) setErro("Sem conexão para entrar agora. Tente novamente com internet.");
-          return;
+          if (err instanceof ErroAuth && err.tipo === "credencial" && !acessoFixo) { setErro(err.message || "Senha incorreta."); return; }
         }
       }
-      await entrarLocal();
+      if (acessoFixo) { entrar("ADMIN_RH", MASTER_COLAB_ID); navigate("/painel"); return; }
+      if (!(await entrarLocal()) && MODO_JWT) setErro((e) => e || "Sem conexão para entrar agora. Tente novamente com internet.");
     } finally {
       setEntrando(false);
     }
