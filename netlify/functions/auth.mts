@@ -55,13 +55,17 @@ export default async (req: Request) => {
         const senha = String(body.senha ?? "");
         if (!usuario || !senha) return json({ erro: "Informe usuário e senha." }, 400);
 
-        // Master via variável de ambiente (sempre ADMIN_RH; nunca fica em Blob).
+        // Master (diretor). A senha da variável de ambiente é apenas a INICIAL:
+        // assim que ele troca a senha dentro do app, passa a valer a conta gravada
+        // aqui — a senha definitiva nunca fica escrita numa configuração.
         const masterUsuario = normalizarUsuario(process.env.AUTH_MASTER_USUARIO || "leonardo");
         const masterSenha = process.env.AUTH_MASTER_SENHA || "";
         if (usuario === masterUsuario) {
-          if (!masterSenha || senha !== masterSenha) return json({ erro: "Senha incorreta." }, 401);
+          const propria = (await contas.get(masterUsuario, { type: "json" }).catch(() => null)) as Conta | null;
+          const ok = propria ? await conferirSenha(senha, propria) : !!masterSenha && senha === masterSenha;
+          if (!ok) return json({ erro: "Senha incorreta." }, 401);
           const token = await assinarJwt({ sub: MASTER_COLAB_ID, perfil: "ADMIN_RH", master: true }, secret, EXP_SEG);
-          return json({ token, perfil: "ADMIN_RH", colaboradorId: MASTER_COLAB_ID });
+          return json({ token, perfil: "ADMIN_RH", colaboradorId: MASTER_COLAB_ID, trocarSenha: !propria });
         }
 
         const conta = (await contas.get(usuario, { type: "json" }).catch(() => null)) as Conta | null;
@@ -72,6 +76,41 @@ export default async (req: Request) => {
         if (!(await conferirSenha(senha, conta))) return json({ erro: "Senha incorreta." }, 401);
         const token = await assinarJwt({ sub: conta.colaboradorId, perfil: conta.perfil, nome: conta.nome }, secret, EXP_SEG);
         return json({ token, perfil: conta.perfil, colaboradorId: conta.colaboradorId, nome: conta.nome });
+      }
+
+      // -------- trocar a PRÓPRIA senha (qualquer pessoa logada) --------
+      // Precisa da senha atual, para um crachá roubado não conseguir tomar a conta.
+      case "trocarMinhaSenha": {
+        const sess = await sessaoDoPedido(req, secret);
+        if (!sess?.sub) return json({ erro: "Entre no sistema para trocar sua senha." }, 401);
+        const atual = String(body.senhaAtual ?? "");
+        const nova = String(body.novaSenha ?? "");
+        if (nova.length < 6) return json({ erro: "A nova senha precisa ter pelo menos 6 caracteres." }, 400);
+        const masterUsuario = normalizarUsuario(process.env.AUTH_MASTER_USUARIO || "leonardo");
+        const ehMaster = sess.master === true || sess.sub === MASTER_COLAB_ID;
+        const chave = ehMaster ? masterUsuario : normalizarUsuario(String(body.usuario ?? sess.nome ?? ""));
+        if (!chave) return json({ erro: "Não consegui identificar seu usuário." }, 400);
+
+        const conta = (await contas.get(chave, { type: "json" }).catch(() => null)) as Conta | null;
+        // Confere a senha atual: conta já gravada → hash; master ainda na senha
+        // inicial (variável do Netlify) → compara com ela.
+        const confereAtual = conta
+          ? await conferirSenha(atual, conta)
+          : ehMaster && !!process.env.AUTH_MASTER_SENHA && atual === process.env.AUTH_MASTER_SENHA;
+        if (!confereAtual) return json({ erro: "Senha atual incorreta." }, 401);
+        if (conta && conta.colaboradorId !== sess.sub && !ehMaster) return json({ erro: "Essa conta não é sua." }, 403);
+
+        const reg = await hashSenha(nova);
+        const nova_: Conta = {
+          usuario: chave,
+          colaboradorId: conta?.colaboradorId ?? String(sess.sub),
+          nome: conta?.nome ?? (sess.nome ? String(sess.nome) : undefined),
+          perfil: conta?.perfil ?? String(sess.perfil ?? "COLABORADOR"),
+          ...reg,
+          atualizadoEm: new Date().toISOString(),
+        };
+        await contas.setJSON(chave, nova_);
+        return json({ ok: true });
       }
 
       // -------- definir/atualizar senha (somente ADMIN_RH) --------

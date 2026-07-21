@@ -92,6 +92,13 @@ export const definirSenhaUsuario = (p: { usuario: string; colaboradorId: string;
 export const removerSenhaUsuario = (usuario: string) => chamarAuth("removerSenha", { usuario });
 export const listarContasServidor = (): Promise<ContaServidor[]> => chamarAuth("listarContas").then((d) => d.contas ?? []);
 
+// ------- cada pessoa troca a PRÓPRIA senha (sem passar pelo RH) -------
+export const trocarMinhaSenha = (senhaAtual: string, novaSenha: string, usuario?: string) =>
+  chamarAuth("trocarMinhaSenha", { senhaAtual, novaSenha, ...(usuario ? { usuario } : {}) });
+
+/** Está logado pelo servidor (tem crachá válido)? Só aí dá para trocar a senha lá. */
+export function logadoNoServidor(): boolean { return MODO_JWT && !!tokenAtual(); }
+
 // Na carga do app (MODO_JWT): sem crachá válido → garante que não há sessão
 // pendurada (força ir ao login). Com crachá válido, mantém a sessão.
 if (temWindow && MODO_JWT && !tokenAtual()) sair();

@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   IdCard, Briefcase, FileText, Palmtree, Target, FileSignature,
-  ExternalLink, UserCircle, Wallet,
+  ExternalLink, UserCircle, Wallet, KeyRound,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -15,6 +16,9 @@ import { getBlob, putBlob } from "@/lib/blobstore";
 import { buscarArquivoNuvem } from "@/lib/sync";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
+import { logadoNoServidor, trocarMinhaSenha } from "@/lib/auth";
+import { Campo, Input } from "@/components/ui/form";
+import { useToast } from "@/components/ui/toast";
 import { formatBRL, formatCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
 import { COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
@@ -137,7 +141,52 @@ function AbaDados({ c }: { c: Colaborador }) {
           </dl>
         </CardBody>
       </Card>
+
+      <CartaoSenha nome={c.nome} />
     </div>
+  );
+}
+
+// Cada pessoa troca a própria senha, sem precisar pedir ao RH — e sem que a senha
+// nova apareça em lugar nenhum: ela vai direto para o servidor, que guarda só o
+// hash. Só aparece quando o login real está ligado e a pessoa entrou por ele.
+function CartaoSenha({ nome }: { nome: string }) {
+  const toast = useToast();
+  const [atual, setAtual] = useState("");
+  const [nova, setNova] = useState("");
+  const [conf, setConf] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  if (!logadoNoServidor()) return null;
+
+  const salvar = async () => {
+    if (nova.length < 6) return toast("A nova senha precisa ter pelo menos 6 caracteres.", "erro");
+    if (nova !== conf) return toast("A confirmação não confere com a nova senha.", "erro");
+    setSalvando(true);
+    try {
+      await trocarMinhaSenha(atual, nova, nome);
+      setAtual(""); setNova(""); setConf("");
+      toast("Senha alterada. Use a nova na próxima vez que entrar.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Não consegui alterar a senha.", "erro");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader title="Minha senha" subtitle="Troque quando quiser. Ninguém — nem o RH — consegue ver a sua senha." icon={<KeyRound className="h-[18px] w-[18px]" />} />
+      <CardBody>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Campo label="Senha atual"><Input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} autoComplete="current-password" /></Campo>
+          <Campo label="Nova senha" hint="Mínimo 6 caracteres."><Input type="password" value={nova} onChange={(e) => setNova(e.target.value)} autoComplete="new-password" /></Campo>
+          <Campo label="Repita a nova senha"><Input type="password" value={conf} onChange={(e) => setConf(e.target.value)} autoComplete="new-password" /></Campo>
+        </div>
+        <button className="btn-primary mt-4" onClick={() => void salvar()} disabled={salvando || !atual || !nova}>
+          {salvando ? "Alterando…" : "Alterar senha"}
+        </button>
+      </CardBody>
+    </Card>
   );
 }
 
