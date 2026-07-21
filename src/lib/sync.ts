@@ -67,7 +67,18 @@ function lerCfg(): CfgSync {
   if (!temWindow) return base;
   try { return { ...base, ...JSON.parse(localStorage.getItem(K_CFG) || "{}") }; } catch { return base; }
 }
-function gravarCfg(patch: Partial<CfgSync>) { if (temWindow) localStorage.setItem(K_CFG, JSON.stringify({ ...lerCfg(), ...patch })); }
+// Escrita resiliente: se a cota do navegador estourar, NÃO deixa a exceção subir
+// (antes ela estourava dentro do salvar() do formulário, o toast de sucesso não
+// aparecia e o usuário clicava de novo, duplicando o lançamento). Avisa a UI pelo
+// mesmo evento que o store usa.
+function guardar(chave: string, valor: string): boolean {
+  if (!temWindow) return true;
+  try { localStorage.setItem(chave, valor); return true; } catch {
+    try { window.dispatchEvent(new CustomEvent("impresilk:armazenamento-cheio", { detail: { key: chave } })); } catch { /* ignora */ }
+    return false;
+  }
+}
+function gravarCfg(patch: Partial<CfgSync>) { guardar(K_CFG, JSON.stringify({ ...lerCfg(), ...patch })); }
 // A nuvem está configurada? Basta ter um token compartilhado (build ou colado no
 // app). No modo JWT também conta como configurado (login real fala com a função).
 export function syncConfigurado(): boolean { return !!tokenCompartilhado() || MODO_JWT; }
@@ -94,13 +105,15 @@ function recalcStatus() {
   if (!syncHabilitado()) return setStatus("off");
   const fila = lerFila();
   if (fila.some((a) => a.conflito)) return setStatus("conflito");
+  // Alteração que não subiu depois de todas as tentativas: precisa aparecer.
+  if (falhasSync().length) return setStatus("erro");
   if (temWindow && !navigator.onLine) return setStatus("offline");
   setStatus(fila.length || lerMassa().length ? "pending" : "ok");
 }
 
 // -------------------------------- fila --------------------------------------
 function lerFila(): Acao[] { if (!temWindow) return []; try { return JSON.parse(localStorage.getItem(K_FILA) || "[]"); } catch { return []; } }
-function gravarFila(f: Acao[]) { if (temWindow) localStorage.setItem(K_FILA, JSON.stringify(f)); }
+function gravarFila(f: Acao[]) { guardar(K_FILA, JSON.stringify(f)); }
 const mesma = (a: Acao, b: { colecao: string; id: string }) => a.colecao === b.colecao && a.id === b.id;
 export function pendentesSync(): number { return lerFila().filter((a) => !a.conflito).length + lerMassa().length; }
 export function conflitosSync(): Acao[] { return lerFila().filter((a) => a.conflito); }
@@ -112,7 +125,35 @@ export function conflitosSync(): Acao[] { return lerFila().filter((a) => a.confl
 // retentada a cada ciclo até subir — e o status mostra a pendência.
 const K_MASSA = `${NS}.massa`;
 function lerMassa(): string[] { if (!temWindow) return []; try { return JSON.parse(localStorage.getItem(K_MASSA) || "[]"); } catch { return []; } }
-function gravarMassa(nomes: string[]) { if (temWindow) try { localStorage.setItem(K_MASSA, JSON.stringify([...new Set(nomes)])); } catch { /* ignora */ } }
+function gravarMassa(nomes: string[]) { guardar(K_MASSA, JSON.stringify([...new Set(nomes)])); }
+
+// ---- caixa de falhas (o que não subiu depois de MAX_TENTATIVAS) ----
+// Antes essas ações eram descartadas em silêncio. Agora ficam aqui, visíveis na
+// tela de sincronização, com o erro — e podem ser recolocadas na fila.
+export interface FalhaSync { tipo: Tipo; colecao: string; id: string; erro: string; em: string }
+const K_FALHAS = `${NS}.falhas`;
+export function falhasSync(): FalhaSync[] {
+  if (!temWindow) return [];
+  try { return JSON.parse(localStorage.getItem(K_FALHAS) || "[]"); } catch { return []; }
+}
+function registrarFalha(f: FalhaSync) {
+  const atuais = falhasSync().filter((x) => !(x.colecao === f.colecao && x.id === f.id && x.tipo === f.tipo));
+  guardar(K_FALHAS, JSON.stringify([f, ...atuais].slice(0, 200)));
+  ouvintes.forEach((cb) => cb());
+}
+/** Recoloca as ações que falharam de volta na fila (botão "tentar de novo"). */
+export function retentarFalhas(): number {
+  const fs = falhasSync();
+  if (!fs.length) return 0;
+  const fila = lerFila();
+  for (const f of fs) if (!fila.some((a) => mesma(a, { colecao: f.colecao, id: f.id }) && a.tipo === f.tipo)) fila.push({ tipo: f.tipo, colecao: f.colecao, id: f.id });
+  gravarFila(fila);
+  guardar(K_FALHAS, "[]");
+  recalcStatus();
+  void trySync();
+  return fs.length;
+}
+export function limparFalhas(): void { guardar(K_FALHAS, "[]"); ouvintes.forEach((cb) => cb()); }
 function marcarMassaPendente(nome: string) { gravarMassa([...lerMassa(), nome]); }
 
 // Deduplicação: upsert do mesmo id substitui o anterior; delete descarta upserts
@@ -177,12 +218,19 @@ export async function trySync(): Promise<void> {
         }
       } catch (e) {
         if (eRede(e)) { setStatus("offline"); return; } // para o ciclo; retenta no próximo gatilho
-        // falha permanente (token, 4xx/5xx): conta e descarta após o limite
-        gravarFila(
-          lerFila()
-            .map((a) => (mesma(a, acao) && a.tipo === acao.tipo ? { ...a, falhas: (a.falhas ?? 0) + 1 } : a))
-            .filter((a) => !(mesma(a, acao) && a.tipo === acao.tipo && (a.falhas ?? 0) >= MAX_TENTATIVAS)),
-        );
+        // Falha PERMANENTE (token errado, 403 de escopo, 500 do Blobs): conta a
+        // tentativa. Ao bater o limite, NÃO descarta em silêncio (era assim antes,
+        // e a alteração do usuário sumia sem ninguém saber): move para a caixa de
+        // falhas, que fica visível e pode ser retentada à mão.
+        const msg = e instanceof ErroHttp ? `HTTP ${e.status} — ${(e.message || "").slice(0, 120)}` : "Falha desconhecida";
+        const fila = lerFila().map((a) => (mesma(a, acao) && a.tipo === acao.tipo ? { ...a, falhas: (a.falhas ?? 0) + 1 } : a));
+        const estourou = fila.find((a) => mesma(a, acao) && a.tipo === acao.tipo && (a.falhas ?? 0) >= MAX_TENTATIVAS);
+        if (estourou) {
+          registrarFalha({ tipo: estourou.tipo, colecao: estourou.colecao, id: estourou.id, erro: msg, em: new Date().toISOString() });
+          gravarFila(fila.filter((a) => !(mesma(a, acao) && a.tipo === acao.tipo)));
+        } else {
+          gravarFila(fila);
+        }
       }
     }
   } finally {

@@ -750,6 +750,7 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
   const { items, criar, atualizar, remover } = useColecao("documentos");
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
   const [novo, setNovo] = useState(false);
+  const [excluir, setExcluir] = useState<import("@/data/types").Documento | null>(null);
 
   // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior)
   // E na nuvem (mesmo canal dos currículos) — assim o anexo abre em qualquer PC.
@@ -834,7 +835,7 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
                       </Badge>
                     )}
                     {podeEditar && (
-                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => excluirDoc(doc)}><Trash2 className="h-4 w-4" /></button>
+                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(doc)} aria-label={`Excluir ${doc.nome}`}><Trash2 className="h-4 w-4" /></button>
                     )}
                   </div>
                 </div>
@@ -844,6 +845,30 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
         )}
       </SecaoColapsavel>
       {novo && <NovoDocumentoModal aberto={novo} onFechar={() => setNovo(false)} colaboradorId={colaboradorId} onCriar={adicionar} />}
+      {/* Exclusão de documento é irreversível (apaga o anexo da nuvem também):
+          nunca no clique seco da lixeira — sempre confirmando o que vai sumir. */}
+      <ConfirmDialog
+        aberto={!!excluir}
+        onFechar={() => setExcluir(null)}
+        onConfirmar={async () => {
+          if (excluir) {
+            const nome = excluir.nome;
+            await excluirDoc(excluir);
+            toast(`"${nome}" removido.`);
+          }
+          setExcluir(null);
+        }}
+        titulo="Excluir documento"
+        textoConfirmar="Excluir"
+        mensagem={
+          excluir ? (
+            <>
+              Excluir <strong>{excluir.nome}</strong>{excluir.categoria ? ` (${excluir.categoria})` : ""}? O arquivo anexado
+              também é apagado da nuvem e <strong>não há como desfazer</strong>.
+            </>
+          ) : ""
+        }
+      />
     </>
   );
 }

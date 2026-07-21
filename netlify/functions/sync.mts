@@ -69,15 +69,43 @@ export default async (req: Request) => {
   };
 
   // Escopo de ESCRITA (espelha o de leitura). Acesso por token compartilhado
-  // (x-token) ou ADMIN_RH escreve tudo — comportamento atual inalterado. Um
-  // crachá (JWT) que NÃO é ADMIN_RH só pode mexer na PRÓPRIA ficha e na PRÓPRIA
-  // folha; operações em massa/destrutivas (bulkUpsert, limparColecao) são só de
-  // admin. Defesa no servidor: o cliente nunca é a única barreira.
+  // (x-token) ou ADMIN_RH escreve tudo — comportamento atual inalterado.
+  // Para um crachá (JWT) que NÃO é ADMIN_RH a regra é LISTA DE PERMISSÃO (antes
+  // era liberar por padrão, o que deixava um não-admin salvar o PRÓPRIO usuário
+  // com perfil ADMIN_RH e virar administrador).
+  const perfil = jwtPayload?.perfil ? String(jwtPayload.perfil) : null;
+  // Credenciais e consentimento: só o RH mexe, em qualquer hipótese.
+  const SO_ADMIN = new Set(["usuarios", "consentimentos"]);
+  // Coleções que o próprio colaborador escreve — sempre limitado ao seu id.
+  const DO_PROPRIO: Record<string, (r: any) => boolean> = {
+    colaboradores: (r) => r?.id === meuId,
+    pagamentos: (r) => r?.colaboradorId === meuId,
+    candidatos: (r) => r?.colaboradorId === meuId, // candidatura no Mural de Vagas
+    aceites: (r) => r?.colaboradorId === meuId,
+    respostasPesquisa: (r) => r?.colaboradorId === meuId || r?.colaboradorId == null, // anônima
+  };
   const podeEscrever = (colecao: string, reg: any): boolean => {
     if (ehAdmin) return true;
-    if (colecao === "colaboradores") return reg?.id === meuId; // só a própria ficha
-    if (colecao === "pagamentos") return reg?.colaboradorId === meuId; // só a própria folha
-    return true; // demais coleções operacionais
+    if (SO_ADMIN.has(colecao)) return false;
+    const regra = DO_PROPRIO[colecao];
+    if (regra) return regra(reg);
+    // Demais coleções operacionais: gestor sim, colaborador comum não.
+    return perfil === "GESTOR";
+  };
+
+  // Arquivos (fotos, anexos "doc:", currículos "cv:") — quem não é admin só
+  // acessa o que é seu. Antes putPhoto/getPhoto não checavam NADA: bastava
+  // saber o id para ler ou sobrescrever o atestado de qualquer pessoa.
+  const idArquivoValido = (id: string) => !!id && !id.includes("/") && !id.includes("..");
+  const podeArquivo = async (id: string): Promise<boolean> => {
+    if (ehAdmin) return true;
+    if (!meuId) return false;
+    if (id === meuId) return true; // a própria foto
+    const m = /^(doc|cv):(.+)$/.exec(id);
+    if (!m) return false;
+    const col = m[1] === "doc" ? "documentos" : "candidatos";
+    const env = (await registros.get(chave(col, m[2]), { type: "json" }).catch(() => null)) as any;
+    return env?.registro?.colaboradorId === meuId;
   };
 
   let body: Record<string, unknown>;
@@ -145,6 +173,11 @@ export default async (req: Request) => {
         const atual = (await registros.get(k, { type: "json" }).catch(() => null)) as
           | { registro?: { atualizadoEm?: string } }
           | null;
+        // Trilha LGPD é APPEND-ONLY para quem não é RH: pode registrar um acesso
+        // novo, nunca reescrever um já gravado (senão dá para apagar o próprio rastro).
+        if (!ehAdmin && colecao === "acessos" && atual) {
+          return json({ erro: "A trilha de acessos não pode ser alterada." }, 403);
+        }
         const servidorTs = atual?.registro?.atualizadoEm;
         const enviadoTs = registro.atualizadoEm;
         // Conflito: servidor mais novo que o enviado → não sobrescreve.
@@ -174,11 +207,15 @@ export default async (req: Request) => {
         const colecao = String(body.colecao ?? "");
         const id = String(body.id ?? "");
         if (!colecao || !id) return json({ erro: "colecao e id obrigatórios." }, 400);
-        // Escopo de escrita: não-admin (JWT) só apaga a própria ficha; folha alheia
-        // e exclusões fora do próprio escopo ficam bloqueadas.
+        // Escopo de exclusão: usa a MESMA lista de permissão da escrita. Credenciais,
+        // consentimentos e a trilha de acessos não podem ser apagados por não-admin
+        // (a trilha é append-only); folha alheia e ficha alheia idem.
         if (!ehAdmin) {
+          if (SO_ADMIN.has(colecao) || colecao === "acessos") return json({ erro: "Sem permissão." }, 403);
           if (colecao === "colaboradores" && id !== meuId) return json({ erro: "Sem permissão." }, 403);
           if (colecao === "pagamentos") return json({ erro: "Sem permissão." }, 403);
+          const regraDono = DO_PROPRIO[colecao];
+          if (!regraDono && perfil !== "GESTOR") return json({ erro: "Sem permissão." }, 403);
         }
         // LÁPIDE (tombstone): em vez de remover o blob, grava um marcador apagado com
         // carimbo de tempo. Assim o pull em OUTROS computadores enxerga a exclusão e
@@ -213,15 +250,20 @@ export default async (req: Request) => {
         await configStore.setJSON("config", { config: body.config, atualizadoEm: new Date().toISOString() });
         return json({ ok: true });
 
-      // ---- fotos / imagens ----
+      // ---- fotos / imagens / anexos ----
+      // Guardam também anexos de documentos ("doc:<id>") e currículos ("cv:<id>"),
+      // então o escopo vale aqui como vale para os registros.
       case "putPhoto": {
         const id = String(body.id ?? "");
-        if (!id || !body.dataUrl) return json({ erro: "id e dataUrl obrigatórios." }, 400);
+        if (!idArquivoValido(id) || !body.dataUrl) return json({ erro: "id e dataUrl obrigatórios." }, 400);
+        if (!(await podeArquivo(id))) return json({ erro: "Sem permissão para este arquivo." }, 403);
         await fotos.set(id, String(body.dataUrl));
         return json({ ok: true });
       }
       case "getPhoto": {
         const id = String(body.id ?? "");
+        if (!idArquivoValido(id)) return json({ erro: "id inválido." }, 400);
+        if (!(await podeArquivo(id))) return json({ erro: "Sem permissão para este arquivo." }, 403);
         const dataUrl = await fotos.get(id, { type: "text" }).catch(() => null);
         return json({ dataUrl: dataUrl ?? null });
       }

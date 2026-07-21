@@ -10,7 +10,7 @@ import {
   statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
   conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
   enviarTudo, aceitarServidor, sobrescreverServidor, definirTokenSync, diagnosticar,
-  apagarColecoes,
+  apagarColecoes, falhasSync, retentarFalhas, limparFalhas,
   type StatusSync, type PassoDiag,
 } from "@/lib/sync";
 import { Stethoscope, KeyRound } from "lucide-react";
@@ -46,6 +46,7 @@ export function SyncButton() {
   const ligado = syncHabilitado();
   const pendentes = pendentesSync();
   const conflitos = conflitosSync();
+  const falhas = falhasSync();
   const vis = VISUAL[status];
 
   const [endpoint, setEndpoint] = useState(cfg.endpoint);
@@ -189,6 +190,40 @@ export function SyncButton() {
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Alterações que NÃO subiram (antes eram descartadas em silêncio) */}
+          {falhas.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-red-200 bg-red-50/50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-red-700">
+                  <AlertTriangle className="h-4 w-4" /> {falhas.length} alteração(ões) não subiram
+                </p>
+                <span className="flex gap-1.5">
+                  <button
+                    onClick={() => { const n = retentarFalhas(); recarregar(); toast(n ? `${n} alteração(ões) recolocada(s) na fila.` : "Nada a retentar."); }}
+                    className="rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-medium text-brand hover:bg-brand-100"
+                  >
+                    Tentar de novo
+                  </button>
+                  <button
+                    onClick={() => { limparFalhas(); recarregar(); toast("Lista de falhas limpa."); }}
+                    className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    Descartar
+                  </button>
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">Ficaram guardadas em vez de sumir. Se o erro for de permissão ou token, corrija e clique em "Tentar de novo".</p>
+              <div className="max-h-32 space-y-1 overflow-y-auto">
+                {falhas.slice(0, 20).map((f) => (
+                  <div key={`${f.tipo}:${f.colecao}::${f.id}`} className="rounded-lg border border-red-100 bg-white px-3 py-1.5 text-xs">
+                    <span className="text-slate-600"><strong>{f.colecao}</strong> · {f.tipo}</span>
+                    <span className="ml-2 text-red-600">{f.erro}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
