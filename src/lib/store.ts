@@ -243,6 +243,70 @@ export function exportarDados(): string {
   );
 }
 
+// ---- Conferência do backup ANTES de restaurar ----
+// Importar trocava tudo na hora, sem checar nada além de "tem a chave dados".
+// Escolher o arquivo errado (backup velho, de outro sistema, ou pela metade)
+// apagava a base inteira — e o resultado ainda subia para a nuvem. Agora dá
+// para ver o que vai entrar, o que vai sair, e o que parece errado.
+export interface LinhaBackup { colecao: NomeColecao; agora: number; noArquivo: number; diferenca: number }
+export interface AnaliseBackup {
+  linhas: LinhaBackup[];
+  exportadoEm: string | null;
+  /** Problemas que devem fazer a pessoa parar e pensar. */
+  alertas: string[];
+  /** Total de registros que somem se restaurar. */
+  perdaTotal: number;
+  ganhoTotal: number;
+}
+
+export function analisarBackup(json: string): AnaliseBackup {
+  let parsed: { app?: string; versao?: number; exportadoEm?: string; dados?: Record<string, unknown[]> };
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("Arquivo ilegível: não é um .json válido.");
+  }
+  if (!parsed || typeof parsed !== "object" || !parsed.dados || typeof parsed.dados !== "object") {
+    throw new Error("Arquivo inválido: não parece um backup do RH (falta a seção de dados).");
+  }
+
+  const alertas: string[] = [];
+  if (parsed.app && parsed.app !== "impresilk-rh") {
+    alertas.push(`Este backup é do sistema "${parsed.app}", não do RH. Restaurar vai misturar dados de sistemas diferentes.`);
+  }
+  if (parsed.exportadoEm) {
+    const dias = Math.round((Date.now() - new Date(parsed.exportadoEm).getTime()) / 86_400_000);
+    if (dias > 30) alertas.push(`O backup tem ${dias} dias. Tudo que foi feito depois dessa data será perdido.`);
+  } else {
+    alertas.push("O arquivo não diz quando foi gerado — não dá para saber se é recente.");
+  }
+
+  const linhas: LinhaBackup[] = [];
+  let ausentes = 0;
+  for (const nome of NOMES_COLECOES) {
+    const v = parsed.dados[nome];
+    const agora = (ler(nome) as unknown[]).length;
+    if (!Array.isArray(v)) {
+      if (agora > 0) ausentes++;
+      continue; // coleção que o arquivo não traz fica intacta (importarDados a ignora)
+    }
+    const noArquivo = v.length;
+    if (agora || noArquivo) linhas.push({ colecao: nome, agora, noArquivo, diferenca: noArquivo - agora });
+  }
+  if (ausentes > 0) {
+    alertas.push(`${ausentes} coleção(ões) que existem aqui não vêm no arquivo — elas ficam como estão, sem serem tocadas.`);
+  }
+
+  const perdaTotal = linhas.reduce((s, l) => s + Math.max(0, -l.diferenca), 0);
+  const ganhoTotal = linhas.reduce((s, l) => s + Math.max(0, l.diferenca), 0);
+  const zerando = linhas.filter((l) => l.agora > 0 && l.noArquivo === 0);
+  if (zerando.length) {
+    alertas.push(`${zerando.length} coleção(ões) ficariam VAZIAS: ${zerando.slice(0, 4).map((l) => l.colecao).join(", ")}${zerando.length > 4 ? "…" : ""}.`);
+  }
+
+  return { linhas: linhas.sort((a, b) => a.diferenca - b.diferenca), exportadoEm: parsed.exportadoEm ?? null, alertas, perdaTotal, ganhoTotal };
+}
+
 export function importarDados(json: string): void {
   const parsed = JSON.parse(json) as { dados?: Record<string, unknown[]>; config?: Partial<Config> };
   if (!parsed || typeof parsed !== "object" || !parsed.dados) {

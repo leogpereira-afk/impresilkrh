@@ -133,6 +133,20 @@ export default async (req: Request) => {
       case "rev":
         return json({ rev: ((await meta.get("rev", { type: "json" }).catch(() => null)) as { rev?: number } | null)?.rev ?? null });
 
+      // ---- quantos itens existem por coleção (sem baixar nada) ----
+      // Serve para o app avisar o que SUMIRIA da nuvem antes de sobrescrevê-la
+      // com o conteúdo de um computador ("tornar oficial"). Conta chaves, então
+      // inclui as lápides de exclusão — bom o bastante para o aviso.
+      case "resumo": {
+        const { blobs } = await registros.list();
+        const contagem: Record<string, number> = {};
+        for (const b of blobs) {
+          const col = b.key.split("::")[0];
+          if (col) contagem[col] = (contagem[col] ?? 0) + 1;
+        }
+        return json({ contagem, total: blobs.length });
+      }
+
       // ---- listar (paginado) ----
       // Paginação por CHAVE (keyset): o cliente manda a última chave vista em
       // `after` e recebe a próxima página + `nextAfter`. Assim uma inserção entre

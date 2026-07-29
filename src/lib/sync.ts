@@ -336,6 +336,24 @@ export async function pull(): Promise<void> {
   }
 }
 
+// ---- prévia do "tornar este computador oficial" ----
+// Sobrescrever a nuvem com o conteúdo daqui é a ação mais destrutiva do app: se
+// este computador estiver com a base pela metade, o que falta some da nuvem para
+// todo mundo. Antes só havia um aviso de texto. Aqui a gente compara de verdade.
+export interface LinhaOficial { colecao: string; aqui: number; naNuvem: number; some: number }
+export async function previaEnviarTudo(): Promise<{ linhas: LinhaOficial[]; someTotal: number }> {
+  if (!syncHabilitado()) throw new Error("Configure a sincronização primeiro.");
+  const resp = (await chamar("resumo")) as { contagem?: Record<string, number> };
+  const contagem = resp?.contagem ?? {};
+  const linhas: LinhaOficial[] = [];
+  for (const nome of NOMES_COLECOES) {
+    const aqui = (obter(nome) as unknown as Reg[]).filter((r) => r?.id).length;
+    const naNuvem = contagem[nome] ?? 0;
+    if (aqui || naNuvem) linhas.push({ colecao: nome, aqui, naNuvem, some: Math.max(0, naNuvem - aqui) });
+  }
+  return { linhas: linhas.sort((a, b) => b.some - a.some), someTotal: linhas.reduce((s, l) => s + l.some, 0) };
+}
+
 // ----------------- envio em massa (computador "oficial") --------------------
 // AUTORITATIVO: a nuvem passa a refletir EXATAMENTE este computador. Para cada
 // coleção, limpa a nuvem e regrava — assim registros antigos (ids que não existem

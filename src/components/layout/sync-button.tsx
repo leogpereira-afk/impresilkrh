@@ -10,8 +10,8 @@ import {
   statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
   conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
   enviarTudo, aceitarServidor, sobrescreverServidor, definirTokenSync, diagnosticar,
-  apagarColecoes, falhasSync, retentarFalhas, limparFalhas,
-  type StatusSync, type PassoDiag,
+  apagarColecoes, falhasSync, retentarFalhas, limparFalhas, previaEnviarTudo,
+  type StatusSync, type PassoDiag, type LinhaOficial,
 } from "@/lib/sync";
 import { Stethoscope, KeyRound } from "lucide-react";
 import { MODO_JWT } from "@/lib/auth";
@@ -53,6 +53,7 @@ export function SyncButton() {
   const [ocupado, setOcupado] = useState(false);
   const [token, setToken] = useState("");
   const [diag, setDiag] = useState<PassoDiag[] | null>(null);
+  const [previa, setPrevia] = useState<{ linhas: LinhaOficial[]; someTotal: number } | null>(null);
 
   const rodarDiag = async () => {
     setOcupado(true);
@@ -80,8 +81,17 @@ export function SyncButton() {
     try { const ok = await testarConexao(); toast(ok ? "Conexão com a nuvem OK." : "Sem resposta da nuvem. Confira o deploy.", ok ? "sucesso" : "erro"); }
     finally { setOcupado(false); recarregar(); }
   };
+  // Sobrescrever a nuvem é a ação mais destrutiva do app. Antes bastava aceitar
+  // um aviso de texto — sem saber QUANTO sumiria. Agora compara com a nuvem e só
+  // deixa passar depois de mostrar o estrago.
   const enviarOficial = async () => {
-    if (!confirm("Tornar este computador a versão OFICIAL? A nuvem passa a ser uma cópia exata deste computador — o que não estiver aqui é removido da nuvem. Use só no computador principal, com os dados mais completos.")) return;
+    setOcupado(true);
+    try { setPrevia(await previaEnviarTudo()); }
+    catch (e) { toast(e instanceof Error ? e.message : "Não consegui comparar com a nuvem.", "erro"); }
+    finally { setOcupado(false); }
+  };
+  const confirmarOficial = async () => {
+    setPrevia(null);
     setOcupado(true);
     try { await enviarTudo(); toast("Tudo enviado. Os outros computadores recebem ao abrir."); }
     catch (e) { toast(e instanceof Error ? e.message : "Falha ao enviar.", "erro"); }
@@ -311,6 +321,73 @@ export function SyncButton() {
           </details>
         </div>
       </Modal>
+
+      {/* Prévia de "tornar este computador oficial" — mostra o que sumiria da nuvem */}
+      {previa && (
+        <Modal
+          aberto
+          onFechar={() => setPrevia(null)}
+          titulo="Tornar este computador a versão oficial"
+          descricao="A nuvem passa a ser uma cópia exata deste computador."
+          largura="max-w-xl"
+          rodape={
+            <>
+              <button className="btn-outline" onClick={() => setPrevia(null)}>Cancelar</button>
+              <button className="btn-danger" onClick={() => void confirmarOficial()} disabled={ocupado}>
+                {previa.someTotal > 0 ? `Sobrescrever e remover ${previa.someTotal}` : "Sobrescrever a nuvem"}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            {previa.someTotal > 0 ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                <p className="flex gap-2 text-sm font-semibold text-red-700">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {previa.someTotal} registro(s) que estão na nuvem NÃO estão neste computador.
+                </p>
+                <p className="mt-1 text-xs text-red-700/90">
+                  Se continuar, eles somem para todo mundo. Só siga se este for mesmo o computador com os dados
+                  mais completos — em caso de dúvida, cancele e clique em “Sincronizar agora” primeiro.
+                </p>
+              </div>
+            ) : (
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Este computador tem tudo que está na nuvem. Nada será perdido.
+              </p>
+            )}
+
+            <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Coleção</th>
+                    <th className="px-3 py-2 text-right font-medium">Aqui</th>
+                    <th className="px-3 py-2 text-right font-medium">Na nuvem</th>
+                    <th className="px-3 py-2 text-right font-medium">Some</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {previa.linhas.map((l) => (
+                    <tr key={l.colecao} className={l.some > 0 ? "bg-red-50/40" : undefined}>
+                      <td className="px-3 py-1.5 text-slate-700">{l.colecao}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{l.aqui}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{l.naNuvem}</td>
+                      <td className={`px-3 py-1.5 text-right font-medium tabular-nums ${l.some > 0 ? "text-red-600" : "text-slate-300"}`}>
+                        {l.some || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              A contagem da nuvem inclui registros já excluídos (as “lápides” que impedem dado apagado de voltar),
+              então a diferença pode aparecer um pouco maior que a real.
+            </p>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

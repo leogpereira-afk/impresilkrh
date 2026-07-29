@@ -25,6 +25,9 @@ import { Badge } from "@/components/ui/badge";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useColecao } from "@/lib/store";
 import { comprimirImagem } from "@/lib/imagem";
+import { vinculosDoColaborador, resumirVinculos } from "@/lib/vinculos";
+import { diaLocalISO } from "@/lib/format";
+import { HOJE } from "@/data/_gen";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { idsDaEquipe, ehRH } from "@/lib/rbac";
@@ -50,6 +53,7 @@ export default function Organograma() {
   const d = useDominio();
   const toast = useToast();
   const { criar, atualizar, remover } = useColecao("colaboradores");
+  const { criar: criarMov } = useColecao("movimentacoes");
   const podeEditar = ehRH(sessao);
 
   const [colapsados, setColapsados] = useState<Set<string>>(new Set());
@@ -115,17 +119,47 @@ export default function Organograma() {
   // Recolher tudo: colapsa todos os nós que possuem subordinados.
   const recolherTudo = () => setColapsados(new Set(filhosPorGestor.keys()));
 
-  // Remove uma pessoa do organograma: os subordinados diretos são reposicionados
-  // sob o gestor da pessoa removida (reparent) e, em seguida, o registro é excluído.
+  // Vínculos da pessoa apontada para exclusão (folha, documentos, férias...).
+  // É o que decide se dá para apagar de verdade ou se o certo é desligar.
+  const vinculosAlvo = useMemo(
+    () => (removerAlvo ? vinculosDoColaborador(removerAlvo.id) : null),
+    [removerAlvo, d.colaboradores],
+  );
+
+  // Tira a pessoa do organograma.
+  //
+  // ANTES isto APAGAVA a pessoa inteira — e o aviso só dizia "remover do
+  // organograma". A folha, os documentos, as férias e as avaliações dela
+  // continuavam no sistema apontando para um id inexistente (registros órfãos,
+  // invisíveis nas telas mas ainda somando nos totais).
+  //
+  // Agora: quem tem histórico é DESLIGADO (sai do quadro, o histórico fica
+  // inteiro e pode ser reativado). Só some de vez quem não tem nada pendurado
+  // — o caso do cadastro criado por engano.
   const removerDoOrganograma = (c: Colaborador) => {
+    const v = vinculosDoColaborador(c.id);
+    // Subordinados passam a se reportar ao gestor de quem saiu (nos dois casos).
     const filhos = d.colaboradores.filter((x) => x.gestorId === c.id);
     for (const f of filhos) atualizar(f.id, { gestorId: c.gestorId ?? null });
-    remover(c.id);
-    toast(
-      filhos.length > 0
-        ? `${c.nome} removido(a) do organograma. ${filhos.length} subordinado(s) reposicionado(s).`
-        : `${c.nome} removido(a) do organograma.`,
-    );
+    const reposicionados = filhos.length > 0 ? ` ${filhos.length} subordinado(s) reposicionado(s).` : "";
+
+    if (v.total > 0) {
+      atualizar(c.id, { statusId: "inativo", dataDesligamento: c.dataDesligamento ?? diaLocalISO(HOJE) });
+      criarMov({
+        colaboradorId: c.id,
+        tipo: "Afastamento",
+        data: diaLocalISO(HOJE),
+        descricao: "Saída registrada pelo organograma.",
+        registradoPor: "RH",
+      });
+      toast(`${c.nome} saiu do quadro. O histórico foi preservado.${reposicionados}`);
+    } else {
+      // Sem histórico: some de vez, mas antes limpa quem apontava para ela.
+      for (const x of d.colaboradores.filter((p) => p.padrinhoId === c.id)) atualizar(x.id, { padrinhoId: null });
+      remover(c.id);
+      toast(`${c.nome} foi excluído(a) do cadastro.${reposicionados}`);
+    }
+    setRemoverAlvo(null);
   };
 
   // Upload de foto (≤ 1 MB) → data URL → atualiza o colaborador.
@@ -421,11 +455,25 @@ export default function Organograma() {
               aberto
               onFechar={() => setRemoverAlvo(null)}
               onConfirmar={() => removerDoOrganograma(removerAlvo)}
-              titulo="Remover do organograma"
-              textoConfirmar="Remover"
+              titulo={vinculosAlvo?.total ? "Tirar do quadro" : "Excluir do cadastro"}
+              textoConfirmar={vinculosAlvo?.total ? "Tirar do quadro" : "Excluir"}
               mensagem={
                 <>
-                  Remover <strong>{removerAlvo.nome}</strong> do organograma?
+                  {vinculosAlvo?.total ? (
+                    <>
+                      <strong>{removerAlvo.nome}</strong> tem histórico no sistema:{" "}
+                      {resumirVinculos(vinculosAlvo)}.
+                      <br />
+                      <br />
+                      Por isso ela <strong>não será apagada</strong>: passa a Inativo e sai do quadro,
+                      guardando tudo. Se voltar, é só reativar na ficha.
+                    </>
+                  ) : (
+                    <>
+                      <strong>{removerAlvo.nome}</strong> não tem nenhum registro no sistema, então será{" "}
+                      <strong>excluída do cadastro</strong>. Isso não tem volta.
+                    </>
+                  )}
                   {(filhosPorGestor.get(removerAlvo.id)?.length ?? 0) > 0 && (
                     <>
                       {" "}Os {filhosPorGestor.get(removerAlvo.id)!.length} subordinado(s) direto(s)

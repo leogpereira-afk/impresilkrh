@@ -24,6 +24,11 @@ function cpfValido(cpf: string): boolean {
   return dv(n.slice(0, 9), 10) === Number(n[9]) && dv(n.slice(0, 10), 11) === Number(n[10]);
 }
 const emailValido = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+// Comparação de identidade: CPF só pelos dígitos; nome sem acento, sem caixa e
+// sem espaço sobrando (senão "José  Silva" e "Jose Silva" viram duas pessoas).
+const soDigitos = (v?: string | null) => (v ?? "").replace(/\D/g, "");
+const normalizarNome = (v?: string | null) =>
+  (v ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 export function ColaboradorForm({
   aberto,
@@ -81,6 +86,31 @@ export function ColaboradorForm({
     }
     if (form.email?.trim() && !emailValido(form.email)) {
       toast("E-mail inválido. Use o formato nome@dominio.com.", "erro");
+      return;
+    }
+    // Cadastro repetido: era assim que a mesma pessoa acabava com 2 ou 3 fichas
+    // (e a folha dela dividida entre elas). O CPF é único por lei, então bloqueia
+    // direto; quem saiu e voltou deve ser REATIVADO, não recadastrado.
+    const cpfNovo = soDigitos(form.cpf);
+    if (cpfNovo) {
+      const dono = d.colaboradores.find((c) => c.id !== editar?.id && soDigitos(c.cpf) === cpfNovo);
+      if (dono) {
+        toast(
+          `Este CPF já está no cadastro de "${dono.nome}". Se for a mesma pessoa voltando, abra a ficha dela e mude o status para ativo.`,
+          "erro",
+        );
+        return;
+      }
+    }
+    // Nome igual só passa quando dá para distinguir pelo CPF — senão vira ficha
+    // duplicada. Xarás legítimos são aceitos assim que os dois têm CPF.
+    const nomeNovo = normalizarNome(form.nome);
+    const xara = d.colaboradores.find((c) => c.id !== editar?.id && normalizarNome(c.nome) === nomeNovo);
+    if (xara && (!cpfNovo || !soDigitos(xara.cpf))) {
+      toast(
+        `Já existe "${xara.nome}" no cadastro. Se for outra pessoa, informe o CPF das duas para diferenciar; se for a mesma, edite a ficha existente.`,
+        "erro",
+      );
       return;
     }
     if (form.salario != null && form.salario < 0) {
