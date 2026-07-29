@@ -239,7 +239,7 @@ function AbaAdvertencias({
                         onClick={() => abrirDrill(a.colaboradorId)}
                         className="flex items-center gap-3 text-left"
                       >
-                        <Avatar nome={d.nomeColab(a.colaboradorId)} size="sm" />
+                        <Avatar nome={d.nomeColab(a.colaboradorId)} foto={d.fotoColab(a.colaboradorId)} size="sm" />
                         <span className="font-medium text-slate-800 hover:text-brand">{d.nomeColab(a.colaboradorId)}</span>
                       </button>
                     </td>
@@ -622,7 +622,7 @@ function AbaAbsenteismo({
                       >
                         {i + 1}º
                       </span>
-                      <Avatar nome={r.nome} size="sm" />
+                      <Avatar nome={r.nome} foto={d.fotoColab(r.id)} size="sm" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-800">{r.nome}</p>
                         <p className="text-xs text-slate-500">
@@ -685,7 +685,7 @@ function AbaAbsenteismo({
                   <tr key={a.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
                       <div className="flex items-center gap-3">
-                        <Avatar nome={d.nomeColab(a.colaboradorId)} size="sm" />
+                        <Avatar nome={d.nomeColab(a.colaboradorId)} foto={d.fotoColab(a.colaboradorId)} size="sm" />
                         <span className="font-medium text-slate-800">{d.nomeColab(a.colaboradorId)}</span>
                       </div>
                     </td>

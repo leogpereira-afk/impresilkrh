@@ -91,7 +91,7 @@ export function AppShell() {
 
   if (!sessao) return null;
   const colab = colabById.get(sessao.colaboradorId);
-  const user = { nome: colab?.nome ?? "Usuário", perfil: sessao.perfil };
+  const user = { nome: colab?.nome ?? "Usuário", perfil: sessao.perfil, foto: colab?.fotoDataUrl ?? null };
   // Permissões por módulo (Painel de Controle): além do perfil, respeita o que o
   // RH liberou para cada usuário. null = sem restrição extra.
   const liberados = modulosLiberados(sessao, usuarios);
@@ -149,7 +149,7 @@ export function AppShell() {
   const Rodape = () => (
     <div className="space-y-2 border-t border-white/10 p-3">
       <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
-        <Avatar nome={user.nome} size="sm" />
+        <Avatar nome={user.nome} foto={user.foto} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{user.nome}</p>
           <p className="truncate text-xs text-slate-400">{PERFIL_LABEL[user.perfil]}</p>
@@ -219,7 +219,7 @@ export function AppShell() {
                 {tema === "escuro" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
               </button>
               {sessao.perfil === "ADMIN_RH" && <SyncButton />}
-              <Avatar nome={user.nome} size="sm" />
+              <Avatar nome={user.nome} foto={user.foto} size="sm" />
               <button
                 onClick={() => { logoutAuth(); navigate("/login"); }}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-[0.97]"

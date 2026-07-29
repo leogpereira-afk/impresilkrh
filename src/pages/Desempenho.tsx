@@ -527,7 +527,7 @@ function NoveBox({
                               className="flex items-center gap-2 rounded-lg bg-white/80 px-2 py-1 ring-1 ring-inset ring-slate-200/70"
                               title={`${c.nome} · ${d.nomeCargo(c)}`}
                             >
-                              <Avatar nome={c.nome} size="sm" />
+                              <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                               <span className="truncate text-xs font-medium text-slate-700">{c.nome}</span>
                             </div>
                           ))
@@ -665,7 +665,7 @@ function RetencaoLinha({
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2 ring-1 ring-inset ring-slate-200/70">
       <div className="flex min-w-0 items-center gap-2">
-        <Avatar nome={c.nome} size="sm" />
+        <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-slate-700">{c.nome}</p>
           <p className="truncate text-xs text-slate-400">{d.nomeCargo(c)}</p>
@@ -857,7 +857,7 @@ function AbaAvaliacoes({
                   <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                     <td className="td">
                       <div className="flex items-center gap-2">
-                        <Avatar nome={c.nome} size="sm" />
+                        <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-700">{c.nome}</p>
                           <p className="truncate text-xs text-slate-400">
@@ -1467,7 +1467,7 @@ function AbaFeedbacks({
               <div key={f.id} className="rounded-xl border border-slate-100 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Avatar nome={d.nomeColab(f.colaboradorId)} size="sm" />
+                    <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
                     <div>
                       <p className="text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
                       <p className="text-xs text-slate-400">

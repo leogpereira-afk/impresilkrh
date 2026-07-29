@@ -191,11 +191,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
         <CardBody className="flex flex-wrap items-center gap-4">
           <div className="flex w-full min-w-0 items-center gap-4 sm:w-auto sm:min-w-[20rem] sm:flex-1">
           <div className="relative shrink-0">
-            {c.fotoDataUrl ? (
-              <img src={c.fotoDataUrl} alt={c.nome} className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
-            ) : (
-              <Avatar nome={c.nome} size="lg" />
-            )}
+            <Avatar nome={c.nome} foto={c.fotoDataUrl} size="lg" />
             {podeEditar && (
               <>
                 <input

@@ -311,7 +311,7 @@ export function ViagensPainel() {
                       >
                         {i + 1}º
                       </span>
-                      <Avatar nome={r.nome} size="sm" />
+                      <Avatar nome={r.nome} foto={d.fotoColab(r.id)} size="sm" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-800">{r.nome}</p>
                         <p className="text-xs text-slate-500">
@@ -381,7 +381,7 @@ export function ViagensPainel() {
                   <tr key={v.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
                       <div className="flex items-center gap-3">
-                        <Avatar nome={d.nomeColab(v.colaboradorId)} size="sm" />
+                        <Avatar nome={d.nomeColab(v.colaboradorId)} foto={d.fotoColab(v.colaboradorId)} size="sm" />
                         <span className="font-medium text-slate-800">{d.nomeColab(v.colaboradorId)}</span>
                       </div>
                     </td>

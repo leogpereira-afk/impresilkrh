@@ -600,11 +600,7 @@ function PessoaItem({
         className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-brand-200 hover:bg-brand-50/40"
         title={`Abrir ficha de ${pessoa.nome}`}
       >
-        {pessoa.fotoDataUrl ? (
-          <img src={pessoa.fotoDataUrl} alt={pessoa.nome} className="h-8 w-8 shrink-0 rounded-full object-cover" />
-        ) : (
-          <Avatar nome={pessoa.nome} size="sm" />
-        )}
+        <Avatar nome={pessoa.nome} foto={pessoa.fotoDataUrl} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-slate-700 group-hover:text-brand">{pessoa.nome}</p>
           <p className="truncate text-xs text-slate-400">{tempoDeCasa(pessoa.dataInicioCargo)} no cargo</p>

@@ -298,7 +298,7 @@ function AbaCertificacoesNR() {
                     return (
                       <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                         <div className="flex min-w-0 items-center gap-3">
-                          <Avatar nome={d.nomeColab(c.colaboradorId)} size="sm" />
+                          <Avatar nome={d.nomeColab(c.colaboradorId)} foto={d.fotoColab(c.colaboradorId)} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(c.colaboradorId)}</p>
                             <p className="text-xs text-slate-400">

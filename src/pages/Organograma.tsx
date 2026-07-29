@@ -193,17 +193,8 @@ export default function Organograma() {
             aria-hidden
           />
 
-          {/* Foto / avatar */}
-          {c.fotoDataUrl ? (
-            <img
-              src={c.fotoDataUrl}
-              alt={c.nome}
-              title={c.nome}
-              className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
-            />
-          ) : (
-            <Avatar nome={c.nome} size="sm" className="ring-1 ring-slate-200" />
-          )}
+          {/* Foto (cai nas iniciais quando não há) */}
+          <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="ring-1 ring-slate-200" />
 
           {/* Nome + cargo (clicar navega para a ficha) */}
           <Link
@@ -286,11 +277,7 @@ export default function Organograma() {
     return (
       <div className="group flex items-center gap-2 rounded-lg border border-slate-100 p-2 transition hover:bg-slate-50">
         <span className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)} title={cor.rotulo} aria-hidden />
-        {c.fotoDataUrl ? (
-          <img src={c.fotoDataUrl} alt={c.nome} className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200" />
-        ) : (
-          <Avatar nome={c.nome} size="sm" className="ring-1 ring-slate-200" />
-        )}
+        <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="ring-1 ring-slate-200" />
         <Link to={`/colaboradores/${c.id}`} className="min-w-0 flex-1" title={`Abrir ficha de ${c.nome}`}>
           <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">{c.nome}</p>
           <p className="truncate text-[11px] text-slate-400">{d.nomeCargo(c)}{visao === "area" && c.empresa ? ` · ${c.empresa}` : ""}{visao === "empresa" ? ` · ${d.nomeArea(c.areaId)}` : ""}</p>

@@ -60,6 +60,9 @@ export function useDominio() {
       c.cargoLivre ?? (c.cargoId ? cargoById.get(c.cargoId)?.nome ?? "—" : "—");
     const nomeNivel = (id?: string | null) => (id ? nivelById.get(id)?.codigo ?? "—" : "—");
     const nomeColab = (id?: string | null) => (id ? colabById.get(id)?.nome ?? "—" : "—");
+    // Foto da pessoa pelo id — as telas que só guardam o colaboradorId (férias,
+    // ponto, treinamento, SST...) usam isto para alimentar o <Avatar>.
+    const fotoColab = (id?: string | null) => (id ? colabById.get(id)?.fotoDataUrl ?? null : null);
     const corStatus = (id?: string | null) => (id ? statusById.get(id)?.cor ?? "#64748b" : "#64748b");
     const nomeStatus = (id?: string | null) => (id ? statusById.get(id)?.nome ?? "—" : "—");
 
@@ -109,7 +112,7 @@ export function useDominio() {
     return {
       areas, cargos, niveis, status, colaboradores,
       areaById, cargoById, nivelById, statusById, colabById,
-      nomeArea, nomeCargo, nomeNivel, nomeColab, corStatus, nomeStatus,
+      nomeArea, nomeCargo, nomeNivel, nomeColab, fotoColab, corStatus, nomeStatus,
       ativos, faixaColab, enquadrarColab, subareaDe,
     };
   }, [areas, cargos, niveis, status, colaboradores]);

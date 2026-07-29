@@ -302,7 +302,7 @@ export default function Colaboradores() {
                   <tr key={c.id} className="group transition hover:bg-slate-50/60">
                     <td className="td">
                       <Link to={`/colaboradores/${c.id}`} className="flex items-center gap-3">
-                        <Avatar nome={c.nome} size="sm" />
+                        <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-800">{c.nome}</p>
                           <p className="truncate text-xs text-slate-500">{d.nomeCargo(c)}</p>
@@ -378,11 +378,7 @@ export default function Colaboradores() {
                                   to={`/colaboradores/${c.id}`}
                                   className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-brand/40 hover:bg-slate-50/80 hover:shadow-sm"
                                 >
-                                  {c.fotoDataUrl ? (
-                                    <img src={c.fotoDataUrl} alt={c.nome} className="h-9 w-9 shrink-0 rounded-full object-cover" />
-                                  ) : (
-                                    <Avatar nome={c.nome} size="sm" />
-                                  )}
+                                  <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="h-9 w-9" />
                                   <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm font-medium text-slate-800">{c.nome}</p>
                                     <p className="truncate text-xs text-slate-500">{d.nomeCargo(c)}</p>

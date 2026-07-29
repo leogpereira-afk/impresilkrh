@@ -254,7 +254,7 @@ export default function Treinamento() {
                   <tr key={t.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
                       <Link to={`/colaboradores/${t.colaboradorId}`} className="flex items-center gap-3 text-left">
-                        <Avatar nome={d.nomeColab(t.colaboradorId)} size="sm" />
+                        <Avatar nome={d.nomeColab(t.colaboradorId)} foto={d.fotoColab(t.colaboradorId)} size="sm" />
                         <span className="font-medium text-slate-800 hover:text-brand">{d.nomeColab(t.colaboradorId)}</span>
                       </Link>
                     </td>

@@ -719,7 +719,7 @@ function CardChecklist({
       <CardHeader
         title={
           <div className="flex items-center gap-3">
-            <Avatar nome={colab?.nome ?? "—"} size="sm" />
+            <Avatar nome={colab?.nome ?? "—"} foto={colab?.fotoDataUrl} size="sm" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-800">
                 {colab?.nome ?? "Colaborador"}
@@ -808,7 +808,7 @@ function CardChecklist({
               </div>
               {colab?.padrinhoId ? (
                 <div className="flex items-center gap-2">
-                  <Avatar nome={d.nomeColab(colab.padrinhoId)} size="sm" />
+                  <Avatar nome={d.nomeColab(colab.padrinhoId)} foto={d.fotoColab(colab.padrinhoId)} size="sm" />
                   <span className="text-sm font-medium text-slate-700">
                     {d.nomeColab(colab.padrinhoId)}
                   </span>

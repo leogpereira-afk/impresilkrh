@@ -63,7 +63,7 @@ export function DrillModal({
                 <tr key={c.id} className="hover:bg-slate-50/60">
                   <td className="td">
                     <Link to={`/colaboradores/${c.id}`} onClick={onFechar} className="flex items-center gap-2.5">
-                      <Avatar nome={c.nome} size="sm" />
+                      <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                       <span className="font-medium text-slate-800">{c.nome}</span>
                     </Link>
                   </td>

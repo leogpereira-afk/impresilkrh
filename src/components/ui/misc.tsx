@@ -1,27 +1,51 @@
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { iniciais } from "@/lib/format";
 
+// Foto da pessoa, com as iniciais como reserva.
+//
+// Antes este componente SÓ desenhava iniciais — não tinha como receber a foto.
+// Como quase toda tela usa ele (lista de colaboradores, férias, ponto, SST,
+// treinamento, viagens, desempenho, integração, topo da tela...), a foto só
+// aparecia nos 4 lugares que montavam o <img> na mão. Agora basta passar `foto`
+// e ela aparece em todo lugar.
 export function Avatar({
   nome,
+  foto,
   size = "md",
   className,
 }: {
   nome: string;
+  /** Foto do colaborador (`fotoDataUrl`). Sem ela, mostra as iniciais. */
+  foto?: string | null;
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
+  // Foto corrompida/ilegível não pode virar ícone de imagem quebrada na tela:
+  // ao falhar, cai nas iniciais como se não houvesse foto.
+  const [falhou, setFalhou] = useState(false);
   const tamanhos = {
     sm: "h-8 w-8 text-xs",
     md: "h-10 w-10 text-sm",
     lg: "h-16 w-16 text-xl",
   };
+  const base = cn("shrink-0 rounded-full", tamanhos[size], className);
+
+  if (foto && !falhou) {
+    return (
+      <img
+        src={foto}
+        alt={nome}
+        title={nome}
+        loading="lazy"
+        onError={() => setFalhou(true)}
+        className={cn(base, "object-cover ring-1 ring-slate-200")}
+      />
+    );
+  }
   return (
     <div
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-brand-100 font-semibold text-brand",
-        tamanhos[size],
-        className,
-      )}
+      className={cn(base, "flex items-center justify-center bg-brand-100 font-semibold text-brand")}
       title={nome}
     >
       {iniciais(nome)}

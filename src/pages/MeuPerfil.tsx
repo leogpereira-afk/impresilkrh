@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   IdCard, Briefcase, FileText, Palmtree, Target, FileSignature,
-  ExternalLink, UserCircle, Wallet, KeyRound,
+  ExternalLink, UserCircle, Wallet, KeyRound, Camera,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -13,6 +13,7 @@ import { MeusTermos } from "./Aceites";
 import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
 import { getBlob, putBlob } from "@/lib/blobstore";
+import { comprimirImagem } from "@/lib/imagem";
 import { buscarArquivoNuvem } from "@/lib/sync";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -57,7 +58,7 @@ export default function MeuPerfil() {
     <div>
       <Card className="mb-6">
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <Avatar nome={c.nome} size="lg" />
+          <MinhaFoto c={c} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold text-brand-ink">{c.nome}</h1>
@@ -87,6 +88,48 @@ export default function MeuPerfil() {
           { id: "termos", label: "Termos e aceites", icon: <FileSignature className="h-4 w-4" />, conteudo: <MeusTermos c={c} /> },
         ]}
       />
+    </div>
+  );
+}
+
+// A própria pessoa põe a sua foto, sem depender do RH. Até agora só o RH podia
+// (na ficha e no organograma) — por isso quase ninguém tinha foto. O servidor já
+// permite: cada um só escreve o PRÓPRIO cadastro.
+function MinhaFoto({ c }: { c: Colaborador }) {
+  const toast = useToast();
+  const { atualizar } = useColecao("colaboradores");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const enviar = async (f: File) => {
+    if (!f.type.startsWith("image/")) return toast("Selecione um arquivo de imagem.", "erro");
+    if (f.size > 8 * 1024 * 1024) return toast("Imagem muito grande. Escolha uma de até 8 MB.", "erro");
+    try {
+      atualizar(c.id, { fotoDataUrl: await comprimirImagem(f) });
+      toast("Foto atualizada. Ela aparece para a equipe assim que sincronizar.");
+    } catch {
+      toast("Não foi possível processar a imagem.", "erro");
+    }
+  };
+
+  return (
+    <div className="relative shrink-0">
+      <Avatar nome={c.nome} foto={c.fotoDataUrl} size="lg" />
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => { if (e.target.files?.[0]) void enviar(e.target.files[0]); e.target.value = ""; }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        title={c.fotoDataUrl ? "Trocar minha foto" : "Enviar minha foto"}
+        aria-label="Enviar minha foto"
+        className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:text-brand"
+      >
+        <Camera className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

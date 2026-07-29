@@ -261,7 +261,7 @@ export default function Ferias() {
               deFeriasAgora.map((f) => (
                 <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-3">
-                    <Avatar nome={d.nomeColab(f.colaboradorId)} size="sm" />
+                    <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
                       <p className="truncate text-xs text-slate-400">Desde {formatDate(f.dataInicio)}</p>
@@ -371,7 +371,7 @@ export default function Ferias() {
                     <tr key={f.id} className="transition hover:bg-slate-50/60">
                       <td className="td">
                         <div className="flex items-center gap-3">
-                          <Avatar nome={d.nomeColab(f.colaboradorId)} size="sm" />
+                          <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
                           <span className="font-medium text-slate-800">{d.nomeColab(f.colaboradorId)}</span>
                         </div>
                       </td>
