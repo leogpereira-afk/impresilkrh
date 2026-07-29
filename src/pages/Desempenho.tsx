@@ -19,7 +19,7 @@ import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, indiceNivel } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate } from "@/lib/format";
+import { formatDate, diaLocalISO } from "@/lib/format";
 import {
   COR_POTENCIAL_DESEMPENHO, COR_RISCO, STATUS_DESEMPENHO, TIPOS_FEEDBACK,
   STATUS_META, STATUS_PDI, faixaMotivacao,
@@ -1578,7 +1578,7 @@ function AbaPesquisas() {
   const [resultados, setResultados] = useState<Pesquisa | null>(null);
   const nRespostas = (pid: string) => respostas.filter((r) => r.pesquisaId === pid).length;
   const enviarResposta = (p: Pesquisa, vals: { perguntaId: string; valor: string | number }[]) => {
-    criarResposta({ pesquisaId: p.id, colaboradorId: p.anonima ? null : (sessao?.colaboradorId ?? null), respostas: vals, criadoEm: new Date().toISOString().slice(0, 10) });
+    criarResposta({ pesquisaId: p.id, colaboradorId: p.anonima ? null : (sessao?.colaboradorId ?? null), respostas: vals, criadoEm: diaLocalISO() });
     toast("Resposta registrada. Obrigado!");
     setResponder(null);
   };

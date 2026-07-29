@@ -18,7 +18,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, formatNumber, formatPercent } from "@/lib/format";
+import { formatDate, formatNumber, formatPercent, diaLocalISO } from "@/lib/format";
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
 import { GlossarioComportamental } from "@/components/comportamental/glossario";
 import { Link } from "react-router-dom";
@@ -27,7 +27,7 @@ import type { Colaborador } from "@/data/types";
 
 // As datas de advertências/ausências são guardadas como "YYYY-MM-DD" — a comparação
 // lexicográfica funciona como comparação cronológica.
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => diaLocalISO(d); // dia LOCAL (não UTC) — não pula de dia à noite
 const diaData = (data?: string | null) => (data ? formatDate(`${String(data).slice(0, 10)}T12:00:00`) : "—");
 
 const COR_TIPO_ADV: Record<string, "neutral" | "warning" | "danger"> = {

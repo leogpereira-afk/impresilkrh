@@ -4,9 +4,10 @@ Aplicação web **leve, rápida e fluida** para centralizar a gestão de Recurso
 **Impresilk Comunicação Visual** (empresa com 40+ anos de mercado, ~30 colaboradores,
 Montes Claros/MG). Substitui o controle disperso em planilhas por uma plataforma única.
 
-> **Sem banco de dados.** Todos os dados reais já vêm embutidos no app; as edições ficam no
-> **navegador** (`localStorage`). É publicável como **site estático** (Netlify) — sem servidor,
-> sem variáveis de ambiente, sem "cold start". Interface 100% em **português do Brasil**.
+> **Offline-first.** Todos os dados reais já vêm embutidos no app; as edições ficam no
+> **navegador** (`localStorage`) e sincronizam com o **Supabase** (Postgres + Auth + Storage +
+> Edge Functions) quando há internet. Publicado como **site estático** no **GitHub Pages** — sem
+> servidor próprio para manter. Interface 100% em **português do Brasil**.
 
 Identidade visual executiva e sóbria (marinho `#16334f` + dourado `#c2a14d`), responsiva para
 desktop e celular, tipografia Inter.
@@ -18,15 +19,19 @@ desktop e celular, tipografia Inter.
 - **Vite + React + TypeScript** (SPA) com **React Router** (navegação client-side).
 - **Tailwind CSS** para o estilo; **Recharts** (gráficos) e **lucide-react** (ícones).
 - **Dados embutidos** em `src/data/*` (módulos TypeScript) com todos os dados reais da empresa.
-- **Persistência** via `localStorage` numa camada única: `src/lib/store.ts` expõe o hook
+- **Persistência local** via `localStorage` numa camada única: `src/lib/store.ts` expõe o hook
   `useColecao(nome)` (carrega o default na 1ª vez, salva edições, CRUD completo).
+- **Nuvem (Supabase)**: Postgres (tabela genérica `registros`, espelhando o modelo local),
+  Auth (login por nome+senha), Storage (fotos/anexos) e duas Edge Functions (`sync`,
+  `admin-users`) — ver `SINCRONIZACAO.md` e `LOGIN.md`.
 - **Backup/portabilidade**: botões **Exportar** e **Importar** (.json) para salvar, restaurar e
   transferir tudo entre navegadores. Há também **Restaurar padrão**.
-- **RBAC e mascaramento LGPD** 100% client-side (`src/lib/rbac.ts`).
+- **RBAC e mascaramento LGPD**: aplicado tanto no cliente (`src/lib/rbac.ts`) quanto na Edge
+  Function `sync` (defesa em profundidade — o navegador nunca é a única barreira).
 
 ## Perfis de acesso
 
-Login por **seleção de perfil + senha única de demonstração**: `Impresilk@2026`.
+Login real por **nome + senha**, verificado no Supabase Auth (ver `LOGIN.md`).
 
 - **ADMIN_RH** — acesso total, incluindo o **Painel de Controle**.
 - **GESTOR** — vê e gerencia apenas a sua equipe (hierarquia recursiva).
@@ -49,44 +54,50 @@ Registros de Acesso (LGPD) · **Painel de Controle** (edição de todo o conteú
 
 ```bash
 npm install
+cp .env.example .env   # opcional: preencha para testar a nuvem em dev
 npm run dev      # ambiente de desenvolvimento
 npm run build    # gera a pasta estática dist/
 npm run preview  # pré-visualiza o build
 ```
 
-## Publicar no Netlify
+Sem `.env` (ou sem as duas variáveis `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`
+preenchidas), o app funciona 100% local, sem sincronização.
 
-1. `npm run build` gera `dist/`.
-2. Faça **drag-and-drop** da pasta `dist/` no Netlify **ou** conecte o repositório
-   (o `netlify.toml` já define `command = npm run build`, `publish = dist` e o redirect SPA).
+## Publicar (GitHub Pages + Supabase)
 
-Nenhuma variável de ambiente é necessária.
+O deploy é automático via `.github/workflows/deploy.yml` a cada push na branch
+configurada — builda com `npm run build` e publica `dist/` no GitHub Pages.
+Passo a passo completo (schema do banco, Edge Functions, variáveis do Actions,
+domínio próprio) em **`SINCRONIZACAO.md`**.
 
 ## Armazenamento de arquivos (uploads)
 
-Como o sistema é **estático e sem servidor**, todos os anexos (documentos do
-colaborador, advertências, fotos do organograma, arquivos do repositório
-institucional) são lidos no navegador e guardados como **data URL** dentro do
-`localStorage`, junto com os demais dados. Implicações:
+Os anexos (documentos do colaborador, advertências, fotos do organograma,
+arquivos do repositório institucional) são lidos no navegador; localmente
+ficam em **IndexedDB** (cota bem maior que o localStorage) e, com a
+sincronização ligada, sobem para o **Supabase Storage** (bucket `arquivos`),
+disponíveis em qualquer computador logado.
 
 - **Limite:** ~2 MB por arquivo (1 MB para fotos do organograma) — o app avisa
-  ao ultrapassar. O `localStorage` tem cota total (~5–10 MB por navegador), então
-  os anexos devem ser usados com parcimônia.
-- **Onde fica:** somente **no navegador** em que o upload foi feito. Para
-  transferir/!fazer backup, use **Exportar dados (.json)** — os anexos vão junto.
-- **Abertura:** ao clicar em um documento, ele **abre em nova aba** (o próprio
-  arquivo, via data URL).
-- **Evolução para nuvem:** caso uma versão futura passe a ter backend, os uploads
-  poderiam migrar para **AWS S3** ou **Google Cloud Storage** (guardando apenas a
-  URL do objeto no registro), com política de backup do bucket. Hoje isso não é
-  necessário — não há servidor.
+  ao ultrapassar.
+- **Backup local:** **Exportar dados (.json)** continua funcionando para levar
+  tudo (dados + anexos) de um navegador para outro, com ou sem nuvem.
+- **Abertura:** ao clicar em um documento, ele **abre em nova aba**.
 
 ## Estrutura
 
 ```
 src/
   data/        # dados reais embutidos (áreas, cargos, colaboradores, POPs, etc.)
-  lib/         # store (localStorage), sessão, RBAC, domínio, formatação
+  lib/         # store (localStorage), sync, auth (Supabase), RBAC, domínio, formatação
   components/  # UI kit, layout, gráficos, formulários
   pages/       # uma página por módulo
+supabase/
+  migrations/  # schema do Postgres (registros, config_global, meta, perfis) + RLS
+  functions/   # Edge Functions: sync (dados) e admin-users (contas)
+scripts/
+  migrate-from-netlify.mjs  # migração única dos dados do site antigo
+.github/workflows/
+  deploy.yml                    # build + deploy do site no GitHub Pages
+  deploy-supabase-functions.yml # publica as Edge Functions (sync, admin-users)
 ```

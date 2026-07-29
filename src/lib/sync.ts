@@ -1,55 +1,28 @@
 // ============================================================================
 // Sincronização offline-first (cliente). Escreve local na hora; enfileira a
-// ação; tenta sincronizar com a nuvem (Netlify Function) quando online.
+// ação; tenta sincronizar com a nuvem (Supabase Edge Function) quando online.
 // Reconcilia por timestamp (atualizadoEm). Backend trocável (contrato estável).
 //
-// AUTOMÁTICA, SEM SENHA: o token vem embutido no build (env SYNC_TOKEN do
-// Netlify). Todo computador que abre o app já sincroniza sozinho. Se o site
-// ainda não foi configurado (token vazio), tudo funciona 100% local, como antes.
+// Exige login real (Supabase Auth) — não há mais token compartilhado embutido
+// no build. Sem sessão válida, a sincronização fica desligada e o app funciona
+// 100% local (como antes).
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
 import { obter, definirColecao, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, salvarConfig } from "@/lib/store";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
+import { FN_SYNC } from "@/lib/supabase";
 
 const temWindow = typeof window !== "undefined";
 const NS = "impresilk.sync";
 const K_FILA = `${NS}.fila`;
 const K_CFG = `${NS}.cfg`;
-const ENDPOINT_PADRAO = "/.netlify/functions/sync";
 const MAX_TENTATIVAS = 25; // descarta a ação após N falhas permanentes
 const LOTE_PUSH = 100; // registros por chamada no envio em massa
 
-// Dois modos de acesso à nuvem:
-//  • LOGIN REAL (MODO_JWT): cada chamada vai com o crachá do usuário logado
-//    (Authorization: Bearer <jwt>). Mais seguro — sem chave exposta no app.
-//  • AUTOMÁTICO (sem login): usa o token embutido no build (SYNC_TOKEN), enviado
-//    no header x-token. Conveniente, porém o token fica visível no app.
-declare const __SYNC_TOKEN__: string;
-const TOKEN_BUILD = typeof __SYNC_TOKEN__ === "string" ? __SYNC_TOKEN__ : "";
-const K_TOKEN_MANUAL = `${NS}.token`;
-
-// Token compartilhado = o embutido no build (env SYNC_TOKEN) OU um colado no app
-// (override por computador, sem refazer o deploy). É o modelo "automático" do
-// guia: todo computador que tem o token sincroniza — SEM depender de login.
-function tokenManual(): string { if (!temWindow) return ""; try { return localStorage.getItem(K_TOKEN_MANUAL) || ""; } catch { return ""; } }
-function tokenCompartilhado(): string { return tokenManual() || TOKEN_BUILD; }
-export function temTokenManual(): boolean { return !!tokenManual(); }
-export function tokenEmbutidoPresente(): boolean { return !!TOKEN_BUILD; }
-export function definirTokenSync(token: string): void {
-  if (temWindow) { try { localStorage.setItem(K_TOKEN_MANUAL, token.trim()); } catch { /* ignora */ } }
-  recalcStatus();
-  if (syncHabilitado()) void sincronizarAgora();
-}
-
-// Cabeçalho de autorização: SEMPRE manda o token compartilhado (x-token) quando
-// existe — assim sincroniza sem depender de login. Se houver crachá (JWT) válido,
-// manda também; o servidor aceita qualquer um dos dois.
+// Cabeçalho de autorização: o crachá (JWT) da sessão do Supabase Auth.
 function cabecalhoAuth(): Record<string, string> {
-  const h: Record<string, string> = {};
-  const tok = tokenCompartilhado();
-  if (tok) h["x-token"] = tok;
-  if (MODO_JWT) { const t = tokenAtual(); if (t) h["authorization"] = `Bearer ${t}`; }
-  return h;
+  const t = tokenAtual();
+  return t ? { authorization: `Bearer ${t}` } : {};
 }
 
 type Tipo = "upsert" | "delete";
@@ -59,26 +32,22 @@ type Reg = { id: string; atualizadoEm?: string } & Record<string, unknown>;
 export type StatusSync = "off" | "ok" | "pending" | "offline" | "syncing" | "conflito" | "erro";
 
 // ---------------------------- configuração ----------------------------------
-// Sem senha: o token vem do build. O usuário só pode (opcionalmente) DESLIGAR a
-// sincronização neste computador, ou ajustar o endpoint (avançado).
-interface CfgSync { endpoint: string; desligado: boolean }
+// O usuário só pode (opcionalmente) DESLIGAR a sincronização neste computador.
+interface CfgSync { desligado: boolean }
 function lerCfg(): CfgSync {
-  const base: CfgSync = { endpoint: ENDPOINT_PADRAO, desligado: false };
+  const base: CfgSync = { desligado: false };
   if (!temWindow) return base;
   try { return { ...base, ...JSON.parse(localStorage.getItem(K_CFG) || "{}") }; } catch { return base; }
 }
 function gravarCfg(patch: Partial<CfgSync>) { if (temWindow) localStorage.setItem(K_CFG, JSON.stringify({ ...lerCfg(), ...patch })); }
-// A nuvem está configurada? Basta ter um token compartilhado (build ou colado no
-// app). No modo JWT também conta como configurado (login real fala com a função).
-export function syncConfigurado(): boolean { return !!tokenCompartilhado() || MODO_JWT; }
-export function configSync(): CfgSync & { configurado: boolean; modoJwt: boolean; temToken: boolean; tokenManual: boolean } {
-  return { ...lerCfg(), configurado: syncConfigurado(), modoJwt: MODO_JWT, temToken: !!tokenCompartilhado(), tokenManual: temTokenManual() };
+// A nuvem está configurada? Basta o Supabase estar presente no build (login real).
+export function syncConfigurado(): boolean { return MODO_JWT; }
+export function configSync(): CfgSync & { configurado: boolean; modoJwt: boolean } {
+  return { ...lerCfg(), configurado: syncConfigurado(), modoJwt: MODO_JWT };
 }
-// Habilitado para sincronizar agora? Com token compartilhado, sincroniza
-// automaticamente (modelo do guia). Sem token, só no modo JWT com crachá válido.
+// Habilitado para sincronizar agora? Só com login real (crachá válido).
 export function syncHabilitado(): boolean {
   if (lerCfg().desligado) return false;
-  if (tokenCompartilhado()) return true;
   return MODO_JWT ? !!tokenAtual() : false;
 }
 export function ligarSync(): void { gravarCfg({ desligado: false }); recalcStatus(); if (syncHabilitado()) { void trySync(); void pull(); } }
@@ -134,8 +103,7 @@ function enfileirar(colecao: string, tipo: Tipo, id: string) {
 // ------------------------------- HTTP ---------------------------------------
 class ErroHttp extends Error { constructor(public status: number, msg: string) { super(msg); } }
 async function chamar(action: string, payload: Record<string, unknown> = {}): Promise<any> {
-  const { endpoint } = lerCfg();
-  const res = await fetch(endpoint, {
+  const res = await fetch(FN_SYNC, {
     method: "POST",
     headers: { "content-type": "application/json", ...cabecalhoAuth() },
     body: JSON.stringify({ action, ...payload }),
@@ -158,15 +126,23 @@ export async function trySync(): Promise<void> {
         if (acao.tipo === "upsert") {
           const registro = (obter(acao.colecao as never) as unknown as Reg[]).find((r) => r.id === acao.id);
           if (!registro) { gravarFila(lerFila().filter((a) => !mesma(a, acao))); continue; } // sumiu local
+          const enviadoTs = registro.atualizadoEm; // versão que estamos mandando
           const resp = await chamar("upsert", { colecao: acao.colecao, registro });
           if (resp?.conflito) {
             gravarFila(lerFila().map((a) => (mesma(a, acao) && a.tipo === "upsert" ? { ...a, conflito: true, servidor: resp.servidor } : a)));
             continue;
           }
+          // Sucesso → tira da fila SÓ se não houve edição durante o envio (atualizadoEm
+          // ainda bate). Se o usuário salvou de novo "em voo", a versão nova permanece
+          // na fila e sobe no próximo ciclo — nenhuma edição se perde.
+          const atual = (obter(acao.colecao as never) as unknown as Reg[]).find((r) => r.id === acao.id);
+          if (!atual || atual.atualizadoEm === enviadoTs) {
+            gravarFila(lerFila().filter((a) => !mesma(a, acao)));
+          }
         } else {
           await chamar("delete", { colecao: acao.colecao, id: acao.id });
+          gravarFila(lerFila().filter((a) => !mesma(a, acao))); // delete é idempotente → remove
         }
-        gravarFila(lerFila().filter((a) => !mesma(a, acao))); // sucesso → remove
       } catch (e) {
         if (eRede(e)) { setStatus("offline"); return; } // para o ciclo; retenta no próximo gatilho
         // falha permanente (token, 4xx/5xx): conta e descarta após o limite
@@ -204,11 +180,23 @@ export async function pull(): Promise<void> {
     try { revAtual = ((await chamar("rev")) as { rev?: number | null })?.rev ?? null; } catch { revAtual = null; }
     if (revAtual !== null && ultimaRev !== null && revAtual === ultimaRev) { recalcStatus(); return; } // nada mudou na nuvem
     const remoto = new Map<string, Envelope>();
-    let offset: number | null = 0;
-    while (offset !== null) {
-      const resp = await chamar("list", { offset });
+    // Paginação por CHAVE (keyset): manda a última chave vista em `after`. Fallback
+    // para offset se o servidor for antigo (só devolve nextOffset). Guard de páginas
+    // evita laço infinito caso um servidor bugado nunca sinalize o fim.
+    let after: string | null = null;
+    let offset = 0;
+    let usaKeyset = true;
+    for (let pag = 0; pag < 500; pag++) {
+      const resp = await chamar("list", usaKeyset ? { after } : { offset });
       for (const env of (resp.registros ?? []) as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
-      offset = resp.nextOffset ?? null;
+      if ("nextAfter" in resp) {
+        if (resp.nextAfter == null) break; // keyset terminou
+        after = String(resp.nextAfter);
+      } else if (resp.nextOffset != null) {
+        usaKeyset = false; offset = Number(resp.nextOffset); // servidor antigo → offset
+      } else {
+        break; // sem próxima página
+      }
     }
     // Houve uma limpeza (apagarColecoes) enquanto líamos a nuvem → este retrato está
     // velho; descarta para não ressuscitar o que foi apagado.
@@ -396,16 +384,14 @@ export function sobrescreverServidor(colecao: string, id: string) {
 }
 
 // --------------------------- ativação / setup -------------------------------
-// Testa a conexão com o endpoint atual (ping) usando o modo de auth vigente.
+// Testa a conexão com a Edge Function (ping) usando a sessão atual.
 export async function testarConexao(): Promise<boolean> {
   if (!syncConfigurado()) return false;
   try {
-    const { endpoint } = lerCfg();
-    const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...cabecalhoAuth() }, body: JSON.stringify({ action: "ping" }) });
+    const res = await fetch(FN_SYNC, { method: "POST", headers: { "content-type": "application/json", ...cabecalhoAuth() }, body: JSON.stringify({ action: "ping" }) });
     return res.ok;
   } catch { return false; }
 }
-export function definirEndpoint(endpoint: string) { gravarCfg({ endpoint: endpoint.trim() || ENDPOINT_PADRAO }); recalcStatus(); if (syncHabilitado()) void sincronizarAgora(); }
 export async function sincronizarAgora(): Promise<void> { await trySync(); await pull(); }
 
 // --------------------- config global (nome/cores da empresa) -----------------
@@ -429,28 +415,25 @@ async function puxarConfig(): Promise<void> {
 
 // --------------------------- diagnóstico ------------------------------------
 // Transforma falha silenciosa em mensagem clara. Roda ping → list → grava/apaga
-// um registro de teste, e descreve o erro exato de cada etapa (token vazio, 401
-// por token diferente, 500 do Blobs, rede). É o que faltava para enxergar por
-// que a sincronização "não funciona" sem mexer no Netlify às cegas.
+// um registro de teste, e descreve o erro exato de cada etapa. É o que faltava
+// para enxergar por que a sincronização "não funciona" sem mexer no Supabase às cegas.
 export interface PassoDiag { etapa: string; ok: boolean; detalhe: string }
 function descreverErro(e: unknown): string {
   if (e instanceof ErroHttp) {
-    if (e.status === 401) return "401 Não autorizado — o token do app é DIFERENTE do SYNC_TOKEN do Netlify (ou faltou login).";
-    if (e.status === 500) return `500 no servidor — provável Netlify Blobs não ativo/sem permissão. (${(e.message || "").slice(0, 140)})`;
-    if (e.status === 404) return "404 — a função /sync não foi publicada (confira o deploy do Netlify).";
+    if (e.status === 401) return "401 Não autorizado — sessão expirada ou sem perfil vinculado. Faça login novamente.";
+    if (e.status === 500) return `500 no servidor — falha na Edge Function/Postgres do Supabase. (${(e.message || "").slice(0, 140)})`;
+    if (e.status === 404) return "404 — a Edge Function \"sync\" não foi publicada (confira o deploy no Supabase).";
     return `HTTP ${e.status} — ${(e.message || "").slice(0, 140)}`;
   }
-  return "Sem resposta do servidor — offline, função fora do ar ou endpoint errado.";
+  return "Sem resposta do servidor — offline, função fora do ar ou endereço do Supabase errado.";
 }
 export async function diagnosticar(): Promise<PassoDiag[]> {
   const out: PassoDiag[] = [];
-  const tok = tokenCompartilhado();
-  out.push({ etapa: "Modo", ok: true, detalhe: MODO_JWT ? (tokenAtual() ? "Login real (JWT) — logado" : "Login real (JWT) — sem crachá; usando token compartilhado") : "Token compartilhado (automático)" });
-  out.push({ etapa: "Token no app", ok: !!tok, detalhe: tok ? `Presente (${temTokenManual() ? "colado no app" : "embutido no build"})` : "VAZIO — defina SYNC_TOKEN no Netlify (e publique) ou cole o token abaixo." });
-  if (!tok && !MODO_JWT) return out; // sem token nem JWT: nada a testar
+  out.push({ etapa: "Modo", ok: MODO_JWT, detalhe: MODO_JWT ? (tokenAtual() ? "Login real — logado" : "Login real — sem crachá (faça login)") : "Supabase não configurado neste build (faltam VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY)." });
+  if (!MODO_JWT || !tokenAtual()) return out;
   try { const r = await chamar("ping"); out.push({ etapa: "Conexão (ping)", ok: !!r?.ok, detalhe: r?.ok ? "Servidor respondeu OK" : JSON.stringify(r).slice(0, 140) }); }
   catch (e) { out.push({ etapa: "Conexão (ping)", ok: false, detalhe: descreverErro(e) }); return out; }
-  try { const r = await chamar("list", { offset: 0 }); out.push({ etapa: "Leitura (list)", ok: true, detalhe: `${r?.total ?? 0} registro(s) na nuvem` }); }
+  try { const r = await chamar("list", {}); out.push({ etapa: "Leitura (list)", ok: true, detalhe: `${r?.total ?? 0} registro(s) na nuvem` }); }
   catch (e) { out.push({ etapa: "Leitura (list)", ok: false, detalhe: descreverErro(e) }); return out; }
   try {
     const id = `diag_${Math.random().toString(36).slice(2, 10)}`;
@@ -468,8 +451,8 @@ export async function diagnosticar(): Promise<PassoDiag[]> {
 //  • RECEBIMENTO é "na hora de olhar" — puxa ao abrir, ao voltar a ficar online,
 //    e principalmente ao FOCAR a janela / a aba ficar visível. Assim, quando você
 //    olha a tela, ela já está atualizada, sem ficar consultando o servidor à toa.
-//  • Um poll leve roda só ENQUANTO a aba está visível (economiza créditos do
-//    Netlify; nada de chamadas com a aba em segundo plano).
+//  • Um poll leve roda só ENQUANTO a aba está visível (economiza chamadas à
+//    Edge Function; nada de requisições com a aba em segundo plano).
 registrarMutacao((colecao, tipo, id) => { if (syncHabilitado()) enfileirar(colecao, tipo, id); });
 // Restaurar um backup (importarDados) grava direto no store, sem passar pelo gancho
 // de mutação — então empurramos cada coleção importada para a nuvem aqui.

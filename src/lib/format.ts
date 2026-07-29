@@ -13,6 +13,13 @@ export function parseData(data: Date | string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// "YYYY-MM-DD" a partir do dia LOCAL (não do UTC). Use SEMPRE isto para obter o
+// dia atual / o dia de uma Date — NUNCA `.toISOString().slice(0,10)`, que devolve
+// o dia em UTC e, à noite no Brasil (21h–24h, UTC-3), pula para o dia seguinte.
+export function diaLocalISO(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function formatBRL(valor: number | null | undefined): string {
   if (valor === null || valor === undefined) return "—";
   return new Intl.NumberFormat("pt-BR", {

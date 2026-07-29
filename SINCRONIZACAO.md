@@ -1,7 +1,8 @@
 # Sincronização entre computadores
 
-Este guia explica como ligar a **sincronização automática** do Sistema de RH da
-Impresilk, para que uma alteração feita em um computador apareça nos outros.
+Este guia explica como a **sincronização automática** do Sistema de RH da
+Impresilk funciona hoje, com o **Supabase** como nuvem (Postgres + Storage +
+Edge Functions) e o app publicado como site estático no **GitHub Pages**.
 
 ---
 
@@ -11,16 +12,13 @@ Impresilk, para que uma alteração feita em um computador apareça nos outros.
   navegador (localStorage) e a tela responde na hora.
 - Cada alteração entra em uma **fila** e é enviada para a nuvem quando há
   internet. Quando o computador volta a ficar online, a fila esvazia sozinha.
-- A nuvem é **uma única função no Netlify** (`/.netlify/functions/sync`) que
-  guarda os dados no **Netlify Blobs** (armazenamento de objetos do Netlify).
+- A nuvem é a Edge Function **`sync`** do Supabase, que guarda os dados na
+  tabela `registros` do Postgres (1 linha por `colecao`+`id`, o mesmo modelo
+  que antes era 1 blob por registro).
 - Conflitos (a mesma ficha editada em dois lugares) são detectados por
   **data/hora** (`atualizadoEm`) e você decide qual versão manter.
-- **Sem senha:** a chave de acesso (`SYNC_TOKEN`) é **embutida no app no momento
-  do build**. Assim, **todo computador que abrir o app já sincroniza sozinho** —
-  ninguém precisa digitar nada.
-
-> Enquanto o `SYNC_TOKEN` não existir no Netlify, **nada é enviado** — o sistema
-> funciona 100% local, exatamente como antes.
+- **Exige login** (ver `LOGIN.md`) — não existe mais token embutido no build.
+  Sem sessão válida, a sincronização fica desligada e o app funciona 100% local.
 
 ---
 
@@ -28,145 +26,170 @@ Impresilk, para que uma alteração feita em um computador apareça nos outros.
 
 1. Abra **Sincronizar** (topo da tela) → **Diagnóstico da sincronização**. Ele
    testa a nuvem e diz o problema exato:
-   - **"Token no app: VAZIO"** → o `SYNC_TOKEN` não foi embutido no build. Crie a
-     variável no Netlify e refaça o deploy (passo a passo abaixo) **ou**, para
-     ligar na hora, **cole o token** no próprio painel de Sincronização (vale
-     para aquele computador, sem refazer deploy).
-   - **"401 — token diferente"** → o token do app não bate com o `SYNC_TOKEN` do
-     Netlify. Use o mesmo valor nos dois.
-   - **"500 — Blobs"** → ative o **Netlify Blobs** no site.
-   - **"404 — função não publicada"** → confira o deploy (publish `dist`,
-     funções em `netlify/functions`).
-2. **Importante (modo login real / JWT):** se você tem `JWT_SECRET` no Netlify, o
-   app exige **estar logado pelo servidor** para sincronizar. Se alguém usa o
-   login local, fica **sem sincronizar**. Agora o app também aceita o **token
-   compartilhado** — então basta ter o `SYNC_TOKEN` (no build ou colado no app)
-   que **todo computador sincroniza, com ou sem login**.
-3. No computador com os **dados mais completos**, rode **Sincronizar → Enviar
+   - **"Modo: Supabase não configurado neste build"** → faltam
+     `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` no deploy (ver seção
+     "GitHub Pages" abaixo).
+   - **"Login real — sem crachá"** → a pessoa não está logada; faça login.
+   - **"401"** → sessão expirada ou a conta não tem linha em `perfis`
+     (fale com o RH para reprovisionar).
+   - **"500"** → falha na Edge Function ou no Postgres (confira os logs no
+     Supabase Dashboard → Edge Functions → sync → Logs).
+   - **"404"** → a Edge Function `sync` não foi publicada.
+2. No computador com os **dados mais completos**, rode **Sincronizar → Enviar
    tudo (oficial)** uma vez para semear a nuvem. Os outros recebem ao abrir.
 
 ---
 
-## Passo a passo de configuração no painel do Netlify
+## Configuração do Supabase (uma vez só)
 
-> Faça uma vez só, na conta do Netlify onde o site está publicado.
+1. **Schema**: se o projeto já está conectado ao repositório no GitHub
+   (Project Settings → Integrations → GitHub), o Supabase aplica sozinho o
+   arquivo [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
+   a cada push na branch configurada — cria as tabelas `registros`,
+   `config_global`, `meta`, `perfis`, o RLS e o bucket de Storage `arquivos`.
+   Sem essa integração, rode o arquivo manualmente no SQL Editor do projeto.
+2. **Edge Functions**: publicadas automaticamente pelo workflow
+   [`.github/workflows/deploy-supabase-functions.yml`](.github/workflows/deploy-supabase-functions.yml)
+   a cada push que mude algo em `supabase/functions/`. Só precisa de duas
+   *secrets* no repositório (**Settings → Secrets and variables → Actions →
+   Secrets**, aba *Secrets*, não *Variables* — estas sim são sensíveis):
+   - `SUPABASE_ACCESS_TOKEN` — gere em
+     [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens).
+   - `SUPABASE_PROJECT_REF` — o ID do projeto (está na Project URL:
+     `https://<PROJECT_REF>.supabase.co`, ou em Settings → General).
 
-1. **Conecte o repositório** (se ainda não estiver):
-   - Netlify → **Add new site → Import an existing project** → GitHub →
-     repositório `leogpereira-afk/impresilkrh`.
-   - **Branch to deploy:** `main`.
-   - **Build command:** `npm run build`
-   - **Publish directory:** `dist`
-   - As funções são detectadas automaticamente em `netlify/functions`
-     (já configurado no `netlify.toml`). Não precisa mexer.
+   Sem essas duas secrets (ou sem instalar a CLI localmente), dá para publicar
+   à mão pela primeira vez colando o conteúdo de cada `index.ts` direto no
+   editor de Functions do Dashboard.
+3. **Bootstrap da primeira conta**: veja "Bootstrap da primeira conta ADMIN_RH"
+   em `LOGIN.md` — precisa ser feito manualmente uma vez (é a única conta que
+   não dá pra criar via app, porque ainda não existe nenhum ADMIN_RH).
+4. **Chaves do projeto** (Settings → API): guarde a **Project URL** e a
+   **anon key** — são as duas variáveis que o build do app precisa
+   (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`, ver seção GitHub Pages
+   abaixo).
 
-2. **Crie a variável `SYNC_TOKEN`** (a chave de acesso):
-   - Site → **Site configuration → Environment variables → Add a variable**.
-   - **Key:** `SYNC_TOKEN`
-   - **Value:** uma senha forte à sua escolha (ex.: 20+ caracteres aleatórios).
-   - Salve e clique em **Deploy / Trigger deploy**.
-   - Importante: esse valor é **embutido no app durante o build** (é o que
-     dispensa digitar senha). Se você **trocar** o `SYNC_TOKEN` depois, refaça o
-     deploy para o app novo pegar a chave nova.
+## GitHub Pages (deploy do site)
 
-3. **Ative o Netlify Blobs:**
-   - Em geral já vem habilitado para o site. Se o painel pedir, ative
-     **Blobs** em **Site configuration → Blobs**. Nenhuma outra configuração
-     é necessária — a função usa o contexto automático do Netlify.
+1. No repositório → **Settings → Pages**: em "Build and deployment", escolha
+   **Source: GitHub Actions** (uma vez só).
+2. **Settings → Secrets and variables → Actions → Variables** (aba
+   *Variables*, não *Secrets* — a anon key é pública por design): crie
+   `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com os valores do passo
+   anterior.
+3. Dê push na branch configurada no workflow (`.github/workflows/deploy.yml`,
+   hoje `main`) ou rode o workflow manualmente (aba **Actions**). Isso builda e
+   publica `dist/` no Pages, disponível em
+   `https://SEU-USUARIO.github.io/impresilkrh/`.
 
-4. **Pronto — já é automático:**
-   - Cada computador que **abrir o app** passa a sincronizar sozinho: puxa o que
-     mudou em outras máquinas ao abrir, ao voltar a ficar online e a cada minuto.
-   - Ninguém digita senha. Se quiser conferir, abra **Sincronizar** (no topo) e
-     use **Testar conexão**.
+> **Domínio final (`impresilk.com.br/rh`):** o plano combinado é ter um
+> repositório "hub" que builda este app (e os demais sistemas da Impresilk —
+> PCP, Produção etc.) e publica todos juntos em `impresilk.com.br`, cada um no
+> seu caminho. Esse hub é um projeto à parte, ainda não construído. Este repo
+> já sai pronto para ser encaixado nele: `vite.config.ts` lê `BASE_PATH` do
+> ambiente (o hub builda este app com `BASE_PATH=/rh/`); sem essa variável, o
+> build usa `/impresilkrh/` (a própria URL do GitHub Pages deste repo).
 
-5. **Defina o computador “oficial” (uma vez):**
-   - No computador que tem os **dados mais completos**, abra **Sincronizar →
-     Enviar tudo (oficial)**. Isso sobe tudo para a nuvem como versão base.
-   - Os demais recebem sozinhos ao abrir (ou use **Sincronizar agora**).
+## Migrar os dados do site antigo (Netlify)
 
-> A cada deploy que mude o “casco” do app, suba o número da versão do cache em
-> `public/sw.js` (constante `CACHE`, ex.: `impresilk-rh-v1` → `v2`). Isso força
+Rode uma vez, com o site antigo ainda no ar:
+
+```bash
+NETLIFY_SITE_URL=https://impresilkrh.netlify.app \
+NETLIFY_ADMIN_USUARIO="leonardo goncalves" \
+NETLIFY_ADMIN_SENHA="senha-do-master-no-site-antigo" \
+SUPABASE_URL=https://SEU-PROJETO.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key \
+node scripts/migrate-from-netlify.mjs
+```
+
+Isso copia todos os registros e a config global para o Supabase e lista as
+contas atuais — as **senhas em si não são migráveis** (o Supabase guarda o
+hash de um jeito diferente), então recrie cada conta em **Painel de Controle
+› Usuários** depois do deploy.
+
+> A cada deploy que mude o "casco" do app, suba o número da versão do cache em
+> `public/sw.js` (constante `CACHE`, ex.: `impresilk-rh-v6` → `v7`). Isso força
 > os navegadores a baixarem a versão nova sem ficar presos a uma antiga.
 
 ---
 
-## ⚠️ Aviso de segurança (importante)
+## ⚠️ O que mudou de segurança em relação ao modelo antigo
 
-Para a sincronização ser **automática (sem senha)**, o `SYNC_TOKEN` é **embutido
-no app** durante o build. Ou seja, ele é **entregue a qualquer pessoa que abra o
-site** e fica **visível nas ferramentas de desenvolvedor (DevTools)**.
-
-- Serve para **barrar acesso casual e robôs** que achem a URL da função.
-- **NÃO é segurança forte.** Quem conseguir abrir o site consegue ler a chave e,
-  com ela, chamar a função diretamente.
-- Como o sistema guarda dados sensíveis (CPF, salários, retiradas), o ideal para
-  proteção real é o **login de verdade** (usuário e senha por pessoa, com **token
-  JWT** emitido pelo servidor e verificado a cada requisição). **Isso já está
-  pronto** — veja **`LOGIN.md`**. Ao ligá-lo e remover o `SYNC_TOKEN`, esta
-  exposição da chave deixa de existir.
-
-Enquanto isso, mantenha o **endereço do site restrito à equipe**, os computadores
-**protegidos por senha do sistema operacional** e troque o `SYNC_TOKEN` (e
-refaça o deploy) se desconfiar de vazamento.
+O modelo anterior (Netlify) tinha um `SYNC_TOKEN` **embutido no app**, visível
+no DevTools de qualquer pessoa que abrisse o site — servia só para barrar
+acesso casual. Esse modelo **não existe mais**: hoje **toda** sincronização
+exige uma sessão de login válida (Supabase Auth), e o único segredo com poder
+de escrita irrestrita (a **service_role key**) nunca sai do Supabase.
 
 ---
 
-## Comandos de verificação (após o deploy)
+## Comandos de verificação (após configurar)
 
-Troque `SEU-SITE` pelo domínio do Netlify e `SUA-SENHA` pela `SYNC_TOKEN`.
+Troque `SEU-PROJETO` e `TOKEN` pelo access_token de uma sessão logada (ver
+`LOGIN.md` para como obter um).
 
 ```bash
 # 1) O site responde (200) na raiz:
-curl -I https://SEU-SITE.netlify.app/ | head -n 1
+curl -I https://SEU-DOMINIO/ | head -n 1
 # Esperado: HTTP/2 200
 
 # 2) O Service Worker está publicado e mostra a versão do cache:
-curl -s https://SEU-SITE.netlify.app/sw.js | grep "const CACHE"
-# Esperado: const CACHE = "impresilk-rh-v1";  (ou a versão atual)
+curl -s https://SEU-DOMINIO/sw.js | grep "const CACHE"
+# Esperado: const CACHE = "impresilk-rh-v6";  (ou a versão atual)
 
-# 3) A função de sincronização responde ao "ping":
-curl -s -X POST https://SEU-SITE.netlify.app/.netlify/functions/sync \
-  -H "content-type: application/json" \
-  -H "x-token: SUA-SENHA" \
+# 3) A Edge Function de sincronização responde ao "ping":
+curl -s -X POST "https://SEU-PROJETO.supabase.co/functions/v1/sync" \
+  -H "content-type: application/json" -H "authorization: Bearer TOKEN" \
   -d '{"action":"ping"}'
 # Esperado: {"ok":true,"ts":"...."}
 
-# 4) Token errado deve ser recusado (401):
+# 4) Sem crachá deve ser recusado (401):
 curl -s -o /dev/null -w "%{http_code}\n" -X POST \
-  https://SEU-SITE.netlify.app/.netlify/functions/sync \
-  -H "content-type: application/json" -H "x-token: errado" \
-  -d '{"action":"ping"}'
+  "https://SEU-PROJETO.supabase.co/functions/v1/sync" \
+  -H "content-type: application/json" -d '{"action":"ping"}'
 # Esperado: 401
 ```
 
 ### Se algo der errado
 
-- **404 na função:** confira se a pasta de funções é `netlify/functions` e se o
-  deploy terminou. O diretório de publicação deve ser `dist`.
-- **401 (Token inválido):** a `SYNC_TOKEN` do Netlify e a senha digitada no app
-  estão diferentes. Refaça a variável e o deploy, e reconecte no app.
-- **500 (SYNC_TOKEN não configurado):** a variável de ambiente não existe ou o
-  deploy não rodou depois de criá-la.
+- **404 na função:** confira se `supabase functions deploy sync` foi
+  publicado (Dashboard → Edge Functions).
+- **401:** sessão expirada, ou a conta não tem linha em `perfis` — refaça o
+  login ou reprovisione em Painel de Controle › Usuários.
+- **500:** veja os logs da função no Dashboard — geralmente é uma tabela/RLS
+  que ainda não foi criada (rode a migration) ou uma variável de ambiente
+  ausente (`SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` são
+  injetadas automaticamente pelo Supabase em toda Edge Function — não precisa
+  configurar à mão).
 
 ---
 
 ## Contrato da função (referência técnica)
 
-`POST /.netlify/functions/sync` com header `x-token: <SYNC_TOKEN>` e corpo JSON
-`{ "action": "...", ... }`:
+`POST https://SEU-PROJETO.supabase.co/functions/v1/sync` com header
+`authorization: Bearer <access_token>` e corpo JSON `{ "action": "...", ... }`:
 
-| action       | payload                          | resposta                                  |
-|--------------|----------------------------------|-------------------------------------------|
-| `ping`       | —                                | `{ ok, ts }`                              |
-| `list`       | `{ offset }`                     | `{ registros, nextOffset, total }`        |
-| `upsert`     | `{ colecao, registro }`          | `{ ok }` ou `{ conflito, servidor }`      |
-| `bulkUpsert` | `{ registros: [...] }`           | `{ ok, gravados }`                        |
-| `delete`     | `{ colecao, id }`                | `{ ok }`                                  |
-| `getCfg`     | —                                | `{ config }`                              |
-| `setCfg`     | `{ config }`                     | `{ ok }`                                  |
-| `putPhoto`   | `{ id, dataUrl }`                | `{ ok }`                                  |
-| `getPhoto`   | `{ id }`                         | `{ dataUrl }`                             |
+| action       | payload                          | resposta                                       |
+|--------------|-----------------------------------|-------------------------------------------------|
+| `ping`       | —                                | `{ ok, ts }`                                    |
+| `rev`        | —                                | `{ rev }`                                       |
+| `list`       | `{ after }` (ou `{ offset }`)    | `{ registros, nextAfter, nextOffset, total }`   |
+| `upsert`     | `{ colecao, registro }`          | `{ ok }` ou `{ conflito, servidor }`            |
+| `bulkUpsert` | `{ registros: [...] }`           | `{ ok, gravados }`                              |
+| `delete`     | `{ colecao, id }`                | `{ ok }`                                        |
+| `limparColecao` | `{ colecao }`                | `{ ok, apagados }`                              |
+| `getCfg`     | —                                | `{ config }`                                    |
+| `setCfg`     | `{ config }`                     | `{ ok }`                                        |
+| `putPhoto`   | `{ id, dataUrl }`                | `{ ok }`                                        |
+| `getPhoto`   | `{ id }`                         | `{ dataUrl }`                                   |
 
-O contrato é estável: o backend (Netlify Blobs) pode ser trocado depois sem
+`POST https://SEU-PROJETO.supabase.co/functions/v1/admin-users` (só ADMIN_RH):
+
+| action           | payload                                                          | resposta   |
+|------------------|-------------------------------------------------------------------|------------|
+| `provisionar`    | `{ usuario, colaboradorId, perfil, nome?, senha }`                | `{ ok }`   |
+| `removerAcesso`  | `{ usuario }`                                                      | `{ ok }`   |
+
+O contrato é estável: o backend (hoje Supabase) pode ser trocado depois sem
 mudar o cliente.

@@ -455,40 +455,38 @@ function MarcaSecao() {
 }
 
 // Passo a passo do login real, na própria tela (recolhível). O conteúdo muda
-// conforme o login real esteja DESLIGADO (como ativar) ou LIGADO (como migrar
-// as senhas e fechar a brecha antiga). Detalhes completos em LOGIN.md.
+// conforme o Supabase esteja configurado neste build ou não. Detalhes completos
+// em LOGIN.md.
 function GuiaLoginReal() {
   return (
     <details className="group border-b border-slate-100 bg-slate-50/40 px-5 py-2.5">
       <summary className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-800">
         <KeyRound className="h-4 w-4 shrink-0 text-brand" />
         {MODO_JWT
-          ? "Login real: passo a passo (migrar senhas e fechar a brecha antiga)"
-          : "Quer mais segurança? Ative o login com senha verificada no servidor (passo a passo)"}
+          ? "Login real (Supabase): passo a passo para provisionar contas"
+          : "Falta configurar o Supabase para o login real funcionar (passo a passo)"}
         <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
       </summary>
 
       {MODO_JWT ? (
         <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
-          <li>Para cada pessoa, defina a <strong>Senha de acesso</strong> no formulário e salve — a senha é ativada no servidor na hora.</li>
+          <li>Para cada pessoa, defina a <strong>Senha de acesso</strong> no formulário e salve — a conta é criada/atualizada no Supabase Auth na hora.</li>
           <li>Ou clique em <strong>“Migrar senhas”</strong> (acima) para enviar de uma vez as senhas já cadastradas dos usuários ativos.</li>
-          <li>Quando <strong>todos</strong> já tiverem senha, remova a variável <code className="rounded bg-slate-100 px-1">SYNC_TOKEN</code> no Netlify e republique — aí a nuvem passa a aceitar <strong>só</strong> o login real (some a chave que ficava visível no DevTools).</li>
-          <li>O diretor master entra sempre pela variável <code className="rounded bg-slate-100 px-1">AUTH_MASTER_SENHA</code>.</li>
+          <li>O login continua sendo por <strong>nome</strong> (não e-mail) — por trás, cada conta usa um e-mail interno só para o Supabase Auth reconhecer.</li>
           <li className="text-slate-400">Detalhes e comandos de verificação no arquivo <code className="rounded bg-slate-100 px-1">LOGIN.md</code>.</li>
         </ol>
       ) : (
         <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
-          <li>No <strong>Netlify</strong> → Configurações do site → <strong>Variáveis de ambiente</strong>, crie:
+          <li>No <strong>GitHub</strong> → Settings do repositório → <strong>Secrets and variables › Actions</strong>, crie:
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
-              <li><code className="rounded bg-slate-100 px-1">JWT_SECRET</code> — um segredo forte e aleatório (40+ caracteres). Fica <strong>só no servidor</strong>.</li>
-              <li><code className="rounded bg-slate-100 px-1">AUTH_MASTER_SENHA</code> — a senha do diretor master (Leonardo).</li>
-              <li><span className="text-slate-400">(opcional)</span> <code className="rounded bg-slate-100 px-1">AUTH_MASTER_USUARIO</code> — padrão <code className="rounded bg-slate-100 px-1">leonardo</code>.</li>
+              <li><code className="rounded bg-slate-100 px-1">VITE_SUPABASE_URL</code> — a Project URL do seu projeto Supabase.</li>
+              <li><code className="rounded bg-slate-100 px-1">VITE_SUPABASE_ANON_KEY</code> — a anon key (pública) do mesmo projeto.</li>
             </ul>
           </li>
-          <li><strong>Republique</strong> o site (Trigger deploy).</li>
+          <li>Rode o workflow de deploy novamente (ou dê push) para publicar o site já com o Supabase embutido.</li>
           <li>Volte aqui e <strong>entre como master</strong>: vai aparecer a faixa verde “Login real ativo”.</li>
-          <li>Defina a senha de cada pessoa (ou use <strong>“Migrar senhas”</strong>) e, ao final, remova o <code className="rounded bg-slate-100 px-1">SYNC_TOKEN</code> e republique.</li>
-          <li className="text-slate-400">Enquanto não fizer isso, <strong>nada muda</strong> — o login e a sincronização atuais seguem normais. Passo a passo completo em <code className="rounded bg-slate-100 px-1">LOGIN.md</code>.</li>
+          <li>Defina a senha de cada pessoa (ou use <strong>“Migrar senhas”</strong>).</li>
+          <li className="text-slate-400">Passo a passo completo (incluindo o schema SQL e as Edge Functions) no arquivo <code className="rounded bg-slate-100 px-1">LOGIN.md</code>.</li>
         </ol>
       )}
     </details>
