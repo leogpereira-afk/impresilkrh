@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,13 +13,48 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
-import { tempoDeCasa } from "@/lib/format";
+import { tempoDeCasa, parseData } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
 
 const varianteEnq: Record<string, "danger" | "warning" | "success" | "info"> = {
   Crítico: "danger", Abaixo: "warning", Dentro: "success", Acima: "info",
 };
+
+// Ordenação da lista. A tabela vinha SEMPRE em ordem alfabética, sem como trocar:
+// para achar quem está há mais tempo de casa ou quem está com salário crítico,
+// era preciso ler linha por linha. Agora cada coluna ordena ao ser clicada.
+type CampoOrdem = "nome" | "area" | "nivel" | "tempo" | "enquadramento" | "status";
+interface Ordem { campo: CampoOrdem; asc: boolean }
+const ORDEM_ENQUADRAMENTO: Record<string, number> = { Crítico: 0, Abaixo: 1, Dentro: 2, Acima: 3 };
+
+function ThOrdenavel({
+  campo, ordem, setOrdem, className, children,
+}: {
+  campo: CampoOrdem;
+  ordem: Ordem;
+  setOrdem: (o: Ordem) => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const ativo = ordem.campo === campo;
+  return (
+    <th className={cn("th", className)}>
+      <button
+        type="button"
+        // Clicar de novo na mesma coluna inverte; em outra, começa crescente.
+        onClick={() => setOrdem(ativo ? { campo, asc: !ordem.asc } : { campo, asc: true })}
+        className={cn("inline-flex items-center gap-1 transition hover:text-brand", ativo && "text-brand")}
+        title={`Ordenar por ${String(children)}`}
+      >
+        {children}
+        {ativo
+          ? <ArrowDownAZ className={cn("h-3.5 w-3.5", !ordem.asc && "rotate-180")} />
+          : <ArrowDownAZ className="h-3.5 w-3.5 opacity-0 transition group-hover:opacity-40" />}
+      </button>
+    </th>
+  );
+}
 
 export default function Colaboradores() {
   const sessao = useSessao();
@@ -36,6 +71,7 @@ export default function Colaboradores() {
 
   // Visão padrão: agrupada por setor. Chips de área para navegação rápida.
   const [visao, setVisao] = useState<"setor" | "lista">("setor");
+  const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
   const [chips, setChips] = useState<Set<string>>(() => new Set());
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
   const [areasAbertas, setAreasAbertas] = useState<Set<string>>(
@@ -90,6 +126,34 @@ export default function Colaboradores() {
     URL.revokeObjectURL(url);
   };
 
+  // Comparador da coluna escolhida. Nome é o desempate em tudo, para a lista
+  // nunca "dançar" entre pessoas com o mesmo valor.
+  const comparar = useCallback(
+    (a: Colaborador, b: Colaborador) => {
+      const porNome = a.nome.localeCompare(b.nome, "pt-BR");
+      const sinal = ordem.asc ? 1 : -1;
+      switch (ordem.campo) {
+        case "area": return sinal * (d.nomeArea(a.areaId).localeCompare(d.nomeArea(b.areaId), "pt-BR") || porNome);
+        case "nivel": return sinal * (d.nomeNivel(a.nivelId).localeCompare(d.nomeNivel(b.nivelId), "pt-BR") || porNome);
+        // Tempo de casa: quem entrou ANTES tem mais casa, então compara a data.
+        case "tempo": {
+          const ta = parseData(a.dataAdmissao)?.getTime() ?? Infinity;
+          const tb = parseData(b.dataAdmissao)?.getTime() ?? Infinity;
+          return sinal * ((ta - tb) || porNome);
+        }
+        // Ordem de gravidade (Crítico primeiro), não alfabética.
+        case "enquadramento": {
+          const ea = ORDEM_ENQUADRAMENTO[d.enquadrarColab(a)] ?? 9;
+          const eb = ORDEM_ENQUADRAMENTO[d.enquadrarColab(b)] ?? 9;
+          return sinal * ((ea - eb) || porNome);
+        }
+        case "status": return sinal * (d.nomeStatus(a.statusId).localeCompare(d.nomeStatus(b.statusId), "pt-BR") || porNome);
+        default: return sinal * porNome;
+      }
+    },
+    [ordem, d],
+  );
+
   // Lista filtrada (busca + filtros + chips). Compartilhada pelas duas visões.
   // Por padrão mostra só os ativos; "Incluir inativos" libera os desligados.
   const lista = useMemo(() => {
@@ -108,8 +172,8 @@ export default function Colaboradores() {
             d.nomeArea(c.areaId).toLowerCase().includes(termo)
           : true,
       )
-      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, d]);
+      .sort(comparar);
+  }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, d, comparar]);
 
   // Lista simples de nomes, agrupada por inicial (A, B, C…) — só os nomes, sem
   // cargo/setor. Usa a mesma lista já filtrada e ordenada alfabeticamente.
@@ -288,12 +352,12 @@ export default function Colaboradores() {
             <table className="w-full">
               <thead className="border-b border-slate-100 bg-slate-50/50">
                 <tr>
-                  <th className="th">Colaborador</th>
-                  <th className="th hidden md:table-cell">Área</th>
-                  <th className="th hidden sm:table-cell">Nível</th>
-                  <th className="th hidden lg:table-cell">Tempo de casa</th>
-                  <th className="th">Enquadramento</th>
-                  <th className="th">Status</th>
+                  <ThOrdenavel campo="nome" ordem={ordem} setOrdem={setOrdem}>Colaborador</ThOrdenavel>
+                  <ThOrdenavel campo="area" ordem={ordem} setOrdem={setOrdem} className="hidden md:table-cell">Área</ThOrdenavel>
+                  <ThOrdenavel campo="nivel" ordem={ordem} setOrdem={setOrdem} className="hidden sm:table-cell">Nível</ThOrdenavel>
+                  <ThOrdenavel campo="tempo" ordem={ordem} setOrdem={setOrdem} className="hidden lg:table-cell">Tempo de casa</ThOrdenavel>
+                  <ThOrdenavel campo="enquadramento" ordem={ordem} setOrdem={setOrdem}>Enquadramento</ThOrdenavel>
+                  <ThOrdenavel campo="status" ordem={ordem} setOrdem={setOrdem}>Status</ThOrdenavel>
                   <th className="th" />
                 </tr>
               </thead>

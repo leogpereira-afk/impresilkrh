@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, FileWarning, Award, ClipboardCheck, Palmtree, Cake, Check } from "lucide-react";
+import { Bell, FileWarning, Award, ClipboardCheck, Palmtree, Cake, Check, CalendarClock } from "lucide-react";
 import { useNotificacoes, type CategoriaNotif, type SeveridadeNotif, type Notificacao } from "@/lib/notificacoes";
 import { cn } from "@/lib/cn";
 
 const ICONE: Record<CategoriaNotif, typeof Bell> = {
-  documento: FileWarning, nr: Award, avaliacao: ClipboardCheck, ferias: Palmtree, aniversario: Cake,
+  documento: FileWarning, nr: Award, avaliacao: ClipboardCheck, ferias: Palmtree,
+  experiencia: CalendarClock, aniversario: Cake,
 };
 const COR: Record<SeveridadeNotif, string> = { alta: "text-red-600", media: "text-amber-600", baixa: "text-slate-400" };
 

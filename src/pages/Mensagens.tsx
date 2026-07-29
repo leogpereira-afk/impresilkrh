@@ -33,6 +33,19 @@ function aplicarPlaceholders(corpo: string, nome: string): string {
   return corpo.replace(/\{\{\s*nome\s*\}\}/gi, nome);
 }
 
+// Número no formato que o WhatsApp aceita: só dígitos, com o país na frente.
+// O cadastro guarda "(38) 99999-9999"; o link precisa de "5538999999999".
+function telefoneWhats(tel?: string | null): string | null {
+  const n = (tel ?? "").replace(/\D/g, "");
+  if (n.length < 10) return null; // sem DDD não dá para montar o link
+  if (n.startsWith("55") && n.length >= 12) return n;
+  return `55${n}`;
+}
+/** Abre a conversa no WhatsApp com o texto já escrito (Web ou app, o SO decide). */
+function abrirWhatsApp(tel: string, texto: string) {
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
+}
+
 export default function Mensagens() {
   const sessao = useSessao();
   const podeEditar = podeGerir(sessao);
@@ -46,7 +59,8 @@ export default function Mensagens() {
 
       <p className="mb-6 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2 text-xs text-slate-500">
         <Info className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-        Os envios ficam numa fila local. O disparo real por WhatsApp/SMS depende de integração com um serviço de mensageria.
+        Use o botão do WhatsApp em cada contato para enviar já, com o texto do modelo pronto. O disparo automático em massa
+        (sem abrir o WhatsApp) depende de contratar um serviço de mensageria.
       </p>
 
       <Tabs
@@ -57,6 +71,66 @@ export default function Mensagens() {
         ]}
       />
     </div>
+  );
+}
+
+/* ===================== Envio assistido (WhatsApp) ======================= */
+// A tela dizia que o disparo "depende de integração com mensageria" — ou seja,
+// não dava para enviar nada. Enquanto isso não existe, este caminho resolve o
+// dia a dia: escolhe o modelo, já troca o {{nome}} pelo da pessoa, deixa editar
+// e abre a conversa no WhatsApp com o texto pronto. Quem aperta "enviar" é o
+// usuário, no próprio WhatsApp — nada sai daqui sozinho.
+function ModalEnvio({ contato, onFechar }: { contato: Contato; onFechar: () => void }) {
+  const toast = useToast();
+  const { items: templates } = useColecao("templatesMensagem");
+  const [templateId, setTemplateId] = useState("");
+  const [texto, setTexto] = useState("");
+
+  const escolher = (id: string) => {
+    setTemplateId(id);
+    const t = templates.find((x) => x.id === id);
+    if (t) setTexto(aplicarPlaceholders(t.corpo, contato.nome));
+  };
+
+  const enviar = () => {
+    const tel = telefoneWhats(contato.telefone);
+    if (!tel) return toast("Telefone sem DDD — corrija o cadastro do contato.", "erro");
+    if (!texto.trim()) return toast("Escreva a mensagem ou escolha um modelo.", "erro");
+    abrirWhatsApp(tel, texto);
+    onFechar();
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={`Enviar para ${contato.nome}`}
+      descricao={`WhatsApp ${contato.telefone ?? ""} — o texto abre já escrito; você confere e envia por lá.`}
+      largura="max-w-lg"
+      rodape={
+        <>
+          <button className="btn-outline" onClick={onFechar}>Cancelar</button>
+          <button className="btn-primary" onClick={enviar}><Send className="h-4 w-4" /> Abrir WhatsApp</button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <Campo label="Modelo" hint={templates.length ? "Escolher preenche o texto abaixo; dá para editar." : "Nenhum modelo cadastrado — escreva à mão ou crie um na aba Templates."}>
+          <Select value={templateId} onChange={(e) => escolher(e.target.value)}>
+            <option value="">— escrever do zero —</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.titulo}</option>)}
+          </Select>
+        </Campo>
+        <Campo label="Mensagem">
+          <textarea
+            className="input min-h-[9rem] resize-y"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder={`Olá ${contato.nome.split(" ")[0]}, ...`}
+          />
+        </Campo>
+      </div>
+    </Modal>
   );
 }
 
@@ -79,6 +153,7 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
   const [editando, setEditando] = useState<Contato | null>(null);
   const [form, setForm] = useState<FormContato>(CONTATO_VAZIO);
   const [excluir, setExcluir] = useState<Contato | null>(null);
+  const [enviarPara, setEnviarPara] = useState<Contato | null>(null);
 
   const setCampo = (campo: keyof FormContato, valor: string) => setForm((f) => ({ ...f, [campo]: valor }));
 
@@ -243,6 +318,16 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
                     {podeEditar && (
                       <td className="td text-right">
                         <div className="inline-flex items-center gap-1">
+                          {/* Envio assistido: monta a mensagem e abre o WhatsApp */}
+                          <button
+                            className="btn-ghost p-1.5 text-emerald-600 hover:bg-emerald-50 disabled:opacity-30"
+                            onClick={() => setEnviarPara(c)}
+                            disabled={!telefoneWhats(c.telefone)}
+                            title={telefoneWhats(c.telefone) ? `Enviar mensagem para ${c.nome}` : "Sem telefone válido (precisa de DDD)"}
+                            aria-label={`Enviar mensagem para ${c.nome}`}
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
                           <button
                             className="btn-ghost p-1.5"
                             onClick={() => abrirEdicao(c)}
@@ -296,6 +381,8 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
           </div>
         </Modal>
       )}
+
+      {enviarPara && <ModalEnvio contato={enviarPara} onFechar={() => setEnviarPara(null)} />}
 
       <ConfirmDialog
         aberto={!!excluir}

@@ -10,9 +10,10 @@ import { colaboradoresVisiveis } from "@/lib/rbac";
 import { parseData } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import { JANELA_ALERTA_DIAS } from "@/lib/constants";
+import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
 
 export type SeveridadeNotif = "alta" | "media" | "baixa";
-export type CategoriaNotif = "documento" | "nr" | "avaliacao" | "ferias" | "aniversario";
+export type CategoriaNotif = "documento" | "nr" | "avaliacao" | "ferias" | "experiencia" | "aniversario";
 export interface Notificacao {
   id: string;
   categoria: CategoriaNotif;
@@ -101,6 +102,55 @@ export function useNotificacoes(): Notificacao[] {
         if (!isNaN(dd) && dd >= 0 && dd <= 7) {
           out.push({ id: `fer-${f.id}`, categoria: "ferias", severidade: "baixa", titulo: `Férias de ${nome(f.colaboradorId)}`, descricao: dd === 0 ? "Começa hoje" : `Começa em ${dd} dia(s)`, href: "/ferias" });
         }
+      }
+    }
+
+    // FÉRIAS VENCENDO (CLT art. 134/137) — o prazo que custa dinheiro.
+    // A empresa tem 12 meses depois do direito nascer para conceder; passou
+    // disso, as férias são pagas EM DOBRO. Ninguém via esse relógio antes.
+    if (sessao.perfil === "ADMIN_RH" || sessao.perfil === "GESTOR") {
+      const feriasPorPessoa = new Map<string, typeof ferias>();
+      for (const f of ferias) {
+        const arr = feriasPorPessoa.get(f.colaboradorId) ?? [];
+        arr.push(f);
+        feriasPorPessoa.set(f.colaboradorId, arr);
+      }
+      for (const c of ativos) {
+        const s = situacaoFerias(c, feriasPorPessoa.get(c.id) ?? []);
+        if (!s || s.situacao === "em-dia") continue;
+        const venceu = s.situacao === "vencida";
+        out.push({
+          id: `clt-fer-${c.id}`,
+          categoria: "ferias",
+          severidade: venceu ? "alta" : "media",
+          titulo: `Férias ${venceu ? "VENCIDAS" : "a vencer"} · ${c.nome}`,
+          descricao: venceu
+            ? `Passou ${Math.abs(s.diasParaLimite)} dia(s) do limite (${s.limiteConcessao.toLocaleDateString("pt-BR")}). Pagamento em dobro.`
+            : `Conceder até ${s.limiteConcessao.toLocaleDateString("pt-BR")} (${s.diasParaLimite} dia(s)) ou paga em dobro.`,
+          href: "/ferias",
+        });
+      }
+
+      // CONTRATO DE EXPERIÊNCIA (CLT art. 445) — passou dos 90 dias sem decidir,
+      // vira contrato por prazo indeterminado e a saída passa a custar.
+      for (const c of ativos) {
+        const s = situacaoExperiencia(c);
+        if (!s || s.situacao === "primeiro-periodo") continue;
+        const rotulo =
+          s.situacao === "expirou" ? "Experiência EXPIRADA"
+            : s.situacao === "decidir-efetivacao" ? "Efetivar ou desligar"
+              : "Prorrogar experiência?";
+        out.push({
+          id: `clt-exp-${c.id}`,
+          categoria: "experiencia",
+          severidade: s.situacao === "expirou" ? "alta" : "media",
+          titulo: `${rotulo} · ${c.nome}`,
+          descricao:
+            s.situacao === "expirou"
+              ? `Os 90 dias acabaram em ${s.fim.toLocaleDateString("pt-BR")}. O contrato virou por prazo indeterminado.`
+              : `${s.diasDeCasa} dia(s) de casa. Prazo final em ${s.fim.toLocaleDateString("pt-BR")} (${s.diasParaFim} dia(s)).`,
+          href: `/colaboradores/${c.id}`,
+        });
       }
     }
 

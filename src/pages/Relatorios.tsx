@@ -17,6 +17,8 @@ import {
   DoorOpen,
   Info,
   Plane,
+  Download,
+  Printer,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -272,6 +274,40 @@ export default function Relatorios() {
       .filter((x) => x.headcount > 0)
       .sort((a, b) => b.folha - a.folha);
   }, [d.areas, ativos]);
+
+  // Exporta o que está na tela para planilha. Duas seções no mesmo arquivo:
+  // os indicadores gerais e a quebra por área. Separador ";" e BOM para o Excel
+  // em português abrir certo, com acento e sem embolar as colunas.
+  const exportarRelatorioCsv = () => {
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const num = (v: number) => esc(v.toFixed(2).replace(".", ","));
+    const linhas: string[] = [
+      esc(`Relatórios gerenciais · Impresilk · período: ${rotuloPeriodo}`),
+      esc(`Gerado em ${new Date().toLocaleString("pt-BR")}`),
+      "",
+      ["Indicador", "Valor"].map(esc).join(";"),
+      ["Headcount ativo", indicadores.headcount].map(esc).join(";"),
+      `${esc("Folha total (R$)")};${num(indicadores.folha)}`,
+      `${esc("Custo médio (R$)")};${num(indicadores.custoMedio)}`,
+      ["Desligamentos (12 meses)", indicadores.desligamentos12m].map(esc).join(";"),
+      `${esc("Turnover (%)")};${num(indicadores.turnover * 100)}`,
+      "",
+      ["Área", "Headcount", "Folha (R$)", "Custo médio (R$)"].map(esc).join(";"),
+      ...porArea.map((a) => `${esc(a.nome)};${esc(a.headcount)};${num(a.folha)};${num(a.custoMedio)}`),
+      "",
+      ["Movimentação no período", "Quantidade"].map(esc).join(";"),
+      ["Admissões", periodo.admit.length].map(esc).join(";"),
+      ["Desligamentos", periodo.deslig.length].map(esc).join(";"),
+      ["Saldo", periodo.saldo].map(esc).join(";"),
+    ];
+    const blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `impresilk-relatorio-${filtroAno}${filtroMes ? `-${String(filtroMes).padStart(2, "0")}` : ""}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const folhaPorAreaChart = useMemo(
     () => porArea.map((a) => ({ nome: a.nomeCurto, valor: a.folha })),
@@ -553,7 +589,16 @@ export default function Relatorios() {
       <PageHeader
         title="Relatórios gerenciais"
         description="Visão executiva da Impresilk — folha, movimentação e enquadramento."
-      />
+      >
+        {/* Levar o relatório para fora: planilha ou papel/PDF. Antes o número só
+            existia na tela — para mostrar numa reunião, era anotar na mão. */}
+        <button className="btn-outline" onClick={exportarRelatorioCsv} title="Baixar os indicadores em planilha (.csv)">
+          <Download className="h-4 w-4" /> Exportar CSV
+        </button>
+        <button className="btn-outline" onClick={() => window.print()} title="Imprimir ou salvar em PDF">
+          <Printer className="h-4 w-4" /> Imprimir / PDF
+        </button>
+      </PageHeader>
 
       {/* Filtro de período — controla movimentação e turnover */}
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">

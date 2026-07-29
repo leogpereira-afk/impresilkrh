@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
   IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
-  Eye, Ear, Hand, Plane, ChevronLeft, ChevronRight,
+  Eye, Ear, Hand, Plane, ChevronLeft, ChevronRight, LayoutGrid, AlertTriangle,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, SecaoColapsavel } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -29,6 +29,9 @@ import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
+import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
+import { vinculosDoColaborador } from "@/lib/vinculos";
+import type { Colaborador } from "@/data/types";
 
 const diasAte = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
 
@@ -262,6 +265,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
       <Tabs
         idPersistencia="ficha-colaborador"
         abas={[
+          { id: "resumo", label: "Resumo 360º", icon: <LayoutGrid className="h-4 w-4" />, conteudo: <AbaResumo360 c={c} /> },
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} sens={sens} cargo={cargo} /> },
           { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} /> },
@@ -274,6 +278,130 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
 
       {editar && <ColaboradorForm aberto={editar} onFechar={() => setEditar(false)} editar={c} />}
       <DesligarModal aberto={desligar} onFechar={() => setDesligar(false)} c={c} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Resumo 360º — o que estava espalhado por 7 abas, numa tela só.
+// Junta os prazos que custam dinheiro (férias da CLT, contrato de experiência),
+// o que está vencendo (documento, NR) e o volume de cada área da ficha, para o
+// RH bater o olho e saber onde precisa agir.
+// ---------------------------------------------------------------------------
+function AbaResumo360({ c }: { c: Colaborador }) {
+  const d = useDominio();
+  const { items: ferias } = useColecao("ferias");
+  const { items: documentos } = useColecao("documentos");
+  const { items: certificacoesNr } = useColecao("certificacoesNr");
+  const { items: treinamentos } = useColecao("treinamentos");
+  const { items: advertencias } = useColecao("advertencias");
+  const { items: ausencias } = useColecao("ausencias");
+  const { items: movimentacoes } = useColecao("movimentacoes");
+  const { items: avaliacoes } = useColecao("avaliacoes");
+
+  const meus = <T extends { colaboradorId: string }>(arr: T[]) => arr.filter((x) => x.colaboradorId === c.id);
+  const sFerias = situacaoFerias(c, meus(ferias));
+  const sExp = situacaoExperiencia(c);
+  const vinc = vinculosDoColaborador(c.id);
+
+  const diasPara = (v?: string | null) => {
+    const dt = parseData(v);
+    return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN;
+  };
+  const docsVencendo = meus(documentos).filter((x) => { const dd = diasPara(x.dataVencimento); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
+  const nrsVencendo = meus(certificacoesNr).filter((x) => { const dd = diasPara(x.dataValidade); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
+
+  const alertas: { texto: string; grave: boolean }[] = [];
+  if (sFerias && sFerias.situacao !== "em-dia") {
+    alertas.push({
+      grave: sFerias.situacao === "vencida",
+      texto: sFerias.situacao === "vencida"
+        ? `Férias VENCIDAS há ${Math.abs(sFerias.diasParaLimite)} dia(s) — limite era ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Por lei, o pagamento é em dobro.`
+        : `Férias a conceder até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")} (${sFerias.diasParaLimite} dia(s)), senão paga em dobro.`,
+    });
+  }
+  if (sExp && sExp.situacao !== "primeiro-periodo") {
+    alertas.push({
+      grave: sExp.situacao === "expirou",
+      texto: sExp.situacao === "expirou"
+        ? `Contrato de experiência expirou em ${sExp.fim.toLocaleDateString("pt-BR")} — já é por prazo indeterminado.`
+        : `Contrato de experiência termina em ${sExp.fim.toLocaleDateString("pt-BR")} (${sExp.diasParaFim} dia(s)). Decidir efetivação.`,
+    });
+  }
+  for (const x of docsVencendo) {
+    const dd = diasPara(x.dataVencimento);
+    alertas.push({ grave: dd < 0, texto: `Documento "${x.nome}" ${dd < 0 ? `vencido há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.` });
+  }
+  for (const x of nrsVencendo) {
+    const dd = diasPara(x.dataValidade);
+    alertas.push({ grave: dd < 0, texto: `${x.nr} ${dd < 0 ? `vencida há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.` });
+  }
+
+  const blocos = [
+    { rotulo: "Documentos", n: meus(documentos).length },
+    { rotulo: "Períodos de férias", n: meus(ferias).length },
+    { rotulo: "Treinamentos", n: meus(treinamentos).length },
+    { rotulo: "Certificações NR", n: meus(certificacoesNr).length },
+    { rotulo: "Avaliações", n: meus(avaliacoes).length },
+    { rotulo: "Movimentações", n: meus(movimentacoes).length },
+    { rotulo: "Faltas/ausências", n: meus(ausencias).length },
+    { rotulo: "Advertências", n: meus(advertencias).length },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader title="Precisa de atenção" subtitle="Prazos legais e vencimentos desta pessoa" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
+        <CardBody>
+          {alertas.length === 0 ? (
+            <p className="text-sm text-emerald-700">Nada pendente: prazos e vencimentos em dia.</p>
+          ) : (
+            <ul className="space-y-2">
+              {alertas.map((a, i) => (
+                <li key={i} className={`flex gap-2 rounded-lg border p-2.5 text-sm ${a.grave ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {a.texto}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Situação de férias (CLT)" icon={<Palmtree className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            {sFerias ? (
+              <dl className="grid grid-cols-2 gap-4">
+                <Field label="Direito adquirido em" value={sFerias.direitoDesde.toLocaleDateString("pt-BR")} />
+                <Field label="Conceder até" value={sFerias.limiteConcessao.toLocaleDateString("pt-BR")} />
+                <Field label="Já gozou no período" value={sFerias.jaGozou ? "Sim" : "Não"} />
+                <Field label="Situação" value={<Badge variant={sFerias.situacao === "vencida" ? "danger" : sFerias.situacao === "a-vencer" ? "warning" : "success"}>{sFerias.situacao === "vencida" ? "Vencida" : sFerias.situacao === "a-vencer" ? "A vencer" : "Em dia"}</Badge>} />
+              </dl>
+            ) : (
+              <p className="text-sm text-slate-500">Ainda não completou 12 meses de casa — o direito a férias nasce no primeiro aniversário de admissão.</p>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader title="O que existe na ficha" icon={<LayoutGrid className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+              {blocos.map((b) => (
+                <div key={b.rotulo} className="flex items-baseline justify-between border-b border-slate-100 py-1">
+                  <span className="text-sm text-slate-600">{b.rotulo}</span>
+                  <span className={`text-sm font-semibold tabular-nums ${b.n ? "text-brand-ink" : "text-slate-300"}`}>{b.n}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-slate-400">
+              {vinc.total} registro(s) no total ligados a esta pessoa
+              {vinc.subordinados > 0 && ` · ${vinc.subordinados} subordinado(s) diretos`}.
+            </p>
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }
