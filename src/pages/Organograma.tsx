@@ -121,10 +121,9 @@ export default function Organograma() {
 
   // Vínculos da pessoa apontada para exclusão (folha, documentos, férias...).
   // É o que decide se dá para apagar de verdade ou se o certo é desligar.
-  const vinculosAlvo = useMemo(
-    () => (removerAlvo ? vinculosDoColaborador(removerAlvo.id) : null),
-    [removerAlvo, d.colaboradores],
-  );
+  // Sem memo de propósito: só roda quando o aviso está aberto (uma pessoa por vez)
+  // e precisa refletir o estado do momento em que a decisão é tomada.
+  const vinculosAlvo = removerAlvo ? vinculosDoColaborador(removerAlvo.id) : null;
 
   // Tira a pessoa do organograma.
   //

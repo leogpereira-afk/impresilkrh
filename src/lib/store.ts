@@ -171,6 +171,35 @@ export function definirColecao<K extends NomeColecao>(nome: K, itens: ColecaoMap
   gravar(nome, itens);
 }
 
+// ---- API por nome DINÂMICO (sincronização e migrações) ----
+// A sincronização e as migrações percorrem as coleções em laço, então o nome é
+// uma string comum — e o TypeScript exige um nome literal. A saída usada até
+// aqui era `definirColecao(nome as never, itens as never)`, que desliga a
+// checagem dos DOIS lados: um erro de nome ou um registro sem `id` passava
+// batido (foi assim que o plano de contas ficou meses sem subir).
+//
+// Estas duas funções assumem a natureza dinâmica de forma honesta: o nome é
+// conferido em tempo de execução e os registros têm o contrato mínimo (`id`).
+export type RegistroGenerico = { id: string } & Record<string, unknown>;
+
+const NOMES_VALIDOS = new Set<string>(NOMES_COLECOES);
+/** O nome é mesmo de uma coleção conhecida? */
+export function ehNomeColecao(nome: string): nome is NomeColecao {
+  return NOMES_VALIDOS.has(nome);
+}
+
+/** Lê uma coleção pelo nome em tempo de execução. Nome inválido → lista vazia. */
+export function obterDinamico(nome: string): RegistroGenerico[] {
+  if (!ehNomeColecao(nome)) return [];
+  return ler(nome) as unknown as RegistroGenerico[];
+}
+
+/** Grava uma coleção pelo nome em tempo de execução. Nome inválido → não faz nada. */
+export function definirColecaoDinamica(nome: string, itens: RegistroGenerico[]): void {
+  if (!ehNomeColecao(nome)) return;
+  gravar(nome, itens as never);
+}
+
 // ---- Hook reativo ----
 export function useColecao<K extends NomeColecao>(nome: K) {
   const subscribe = useCallback(

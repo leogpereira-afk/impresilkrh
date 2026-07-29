@@ -8,7 +8,8 @@
 // ainda não foi configurado (token vazio), tudo funciona 100% local, como antes.
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecao, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, salvarConfig } from "@/lib/store";
+import { obter, definirColecao, obterDinamico, definirColecaoDinamica, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, salvarConfig, type RegistroGenerico } from "@/lib/store";
+import type { Config } from "@/data/types";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { obterSessao } from "@/lib/session";
 
@@ -202,7 +203,7 @@ export async function trySync(): Promise<void> {
     for (const acao of lerFila().filter((a) => !a.conflito)) {
       try {
         if (acao.tipo === "upsert") {
-          const registro = (obter(acao.colecao as never) as unknown as Reg[]).find((r) => r.id === acao.id);
+          const registro = (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
           if (!registro) { gravarFila(lerFila().filter((a) => !mesma(a, acao))); continue; } // sumiu local
           const enviadoTs = registro.atualizadoEm; // versão que estamos mandando
           const resp = await chamar("upsert", { colecao: acao.colecao, registro });
@@ -213,7 +214,7 @@ export async function trySync(): Promise<void> {
           // Sucesso → tira da fila SÓ se não houve edição durante o envio (atualizadoEm
           // ainda bate). Se o usuário salvou de novo "em voo", a versão nova permanece
           // na fila e sobe no próximo ciclo — nenhuma edição se perde.
-          const atual = (obter(acao.colecao as never) as unknown as Reg[]).find((r) => r.id === acao.id);
+          const atual = (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
           if (!atual || atual.atualizadoEm === enviadoTs) {
             gravarFila(lerFila().filter((a) => !mesma(a, acao)));
           }
@@ -357,7 +358,7 @@ export async function pull(): Promise<void> {
           }
         }
         for (const rem of remMap.values()) if (!rem._apagado) merged.push(rem); // novos do servidor (ignora lápides)
-        definirColecao(nome as never, merged as never);
+        definirColecaoDinamica(nome, merged as RegistroGenerico[]);
       }
     });
     // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
@@ -419,7 +420,7 @@ export async function enviarTudo(): Promise<void> {
     aplicarSemSync(() => {
       for (const nome of NOMES_COLECOES) {
         const carimbados = (obter(nome) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
-        definirColecao(nome as never, carimbados as never); // grava o carimbo local também
+        definirColecaoDinamica(nome, carimbados as RegistroGenerico[]); // grava o carimbo local também
         porColecao.set(nome, carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r })));
       }
     });
@@ -449,8 +450,8 @@ export async function enviarColecao(nome: string): Promise<boolean> {
     const agora = new Date().toISOString();
     let lote: Envelope[] = [];
     aplicarSemSync(() => {
-      const carimbados = (obter(nome as never) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
-      definirColecao(nome as never, carimbados as never);
+      const carimbados = (obterDinamico(nome) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
+      definirColecaoDinamica(nome, carimbados as RegistroGenerico[]);
       lote = carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r }));
     });
     for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
@@ -502,7 +503,7 @@ export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; a
   try {
     for (const nome of nomes) {
       // 1) zera local (sem disparar push)
-      aplicarSemSync(() => definirColecao(nome as never, [] as never));
+      aplicarSemSync(() => definirColecaoDinamica(nome, [] as RegistroGenerico[]));
       // 2) descarta pendências locais dessa coleção
       gravarFila(lerFila().filter((a) => a.colecao !== nome));
       // 3) zera na nuvem (apaga todos os blobs da coleção de uma vez)
@@ -526,13 +527,13 @@ export function aceitarServidor(colecao: string, id: string) {
   const env = acao?.servidor;
   if (env?.registro) {
     aplicarSemSync(() => {
-      const arr = obter(colecao as never) as unknown as Reg[];
+      const arr = obterDinamico(colecao) as unknown as Reg[];
       if (env.registro._apagado) {
-        definirColecao(colecao as never, arr.filter((r) => r.id !== id) as never); // servidor apagou → some local
+        definirColecaoDinamica(colecao, arr.filter((r) => r.id !== id) as RegistroGenerico[]); // servidor apagou → some local
         return;
       }
       const existe = arr.some((r) => r.id === id);
-      definirColecao(colecao as never, (existe ? arr.map((r) => (r.id === id ? env.registro : r)) : [env.registro, ...arr]) as never);
+      definirColecaoDinamica(colecao, (existe ? arr.map((r) => (r.id === id ? env.registro : r)) : [env.registro, ...arr]) as RegistroGenerico[]);
     });
   }
   gravarFila(lerFila().filter((a) => !mesma(a, { colecao, id })));
@@ -540,7 +541,7 @@ export function aceitarServidor(colecao: string, id: string) {
 }
 export function sobrescreverServidor(colecao: string, id: string) {
   aplicarSemSync(() => {
-    definirColecao(colecao as never, (obter(colecao as never) as unknown as Reg[]).map((r) => (r.id === id ? { ...r, atualizadoEm: new Date().toISOString() } : r)) as never);
+    definirColecaoDinamica(colecao, (obterDinamico(colecao) as unknown as Reg[]).map((r) => (r.id === id ? { ...r, atualizadoEm: new Date().toISOString() } : r)) as RegistroGenerico[]);
   });
   gravarFila(lerFila().map((a) => (mesma(a, { colecao, id }) ? { tipo: "upsert" as Tipo, colecao, id } : a)));
   void trySync();
@@ -574,7 +575,7 @@ async function puxarConfig(): Promise<void> {
   try {
     const r = (await chamar("getCfg")) as { config?: { config?: Record<string, unknown> } | Record<string, unknown> | null };
     const c = ((r?.config as { config?: Record<string, unknown> })?.config ?? r?.config) as Record<string, unknown> | null;
-    if (c && typeof c === "object" && !Array.isArray(c)) salvarConfig(c as never);
+    if (c && typeof c === "object" && !Array.isArray(c)) salvarConfig(c as Partial<Config>);
   } catch { /* offline ou sem config remota — segue com a local */ }
 }
 

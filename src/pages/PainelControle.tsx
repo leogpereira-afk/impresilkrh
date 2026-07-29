@@ -642,8 +642,8 @@ function UsuariosSecao() {
                 campos.senhaHash = await criarHash(digitada);
                 campos.senha = undefined; // apaga qualquer texto puro que restasse
               }
-              if (edit) atualizar(edit.id, campos as never);
-              else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...campos } as never);
+              if (edit) atualizar(edit.id, campos);
+              else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...campos });
               if (digitada) await provisionarNoServidor({ ...resto, senha: digitada }); // login real: ativa a senha no servidor
               toast("Usuário salvo."); setNovo(false); setEdit(null);
             })();

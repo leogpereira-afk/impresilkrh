@@ -214,7 +214,8 @@ function Repositorio() {
     }
     const ordem = [
       ...CATEGORIAS_REPOSITORIO,
-      ...[...mapa.keys()].filter((k) => !CATEGORIAS_REPOSITORIO.includes(k as never)),
+      // Categorias que nao estao na lista padrao entram depois, em ordem de chegada.
+      ...[...mapa.keys()].filter((k) => !(CATEGORIAS_REPOSITORIO as readonly string[]).includes(k)),
     ];
     return ordem
       .filter((cat) => mapa.has(cat))

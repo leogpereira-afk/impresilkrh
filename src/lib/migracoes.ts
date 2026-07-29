@@ -11,7 +11,7 @@
 // e empurramos a coleção para a nuvem.
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecao } from "@/lib/store";
+import { obter, definirColecaoDinamica, type RegistroGenerico } from "@/lib/store";
 import { idConta } from "@/data/planoContas";
 import { enviarColecao } from "@/lib/sync";
 import { criarHash, ehHash, podeHashear } from "@/lib/senha";
@@ -37,7 +37,7 @@ export function rodarMigracoes(): void {
       vistos.add(id);
       return r?.id === id ? r : { ...r, id };
     });
-    definirColecao(nome as never, corrigidos as never);
+    definirColecaoDinamica(nome, corrigidos as RegistroGenerico[]);
     void enviarColecao(nome); // sobe já (ou entra na fila de retentativa se estiver offline)
   }
   aplicarPacoteConteudoRH();
@@ -67,7 +67,7 @@ async function migrarSenhasParaHash(): Promise<void> {
       } catch { return u; }
     }),
   );
-  definirColecao("usuarios" as never, convertidos as never);
+  definirColecaoDinamica("usuarios", convertidos as RegistroGenerico[]);
   void enviarColecao("usuarios"); // apaga o texto puro também na nuvem
 }
 
@@ -101,7 +101,7 @@ function aplicarPacoteConteudoRH(): void {
   const tplNovos = TEMPLATES_RH.filter((n) => !tpls.some((t) => t.id === n.id || t.titulo === n.titulo));
   if (tplNovos.length) {
     const agora = new Date().toISOString();
-    definirColecao("templatesMensagem" as never, [...tpls, ...tplNovos.map((n) => ({ ...n, criadoEm: agora }))] as never);
+    definirColecaoDinamica("templatesMensagem", [...tpls, ...tplNovos.map((n) => ({ ...n, criadoEm: agora }))] as RegistroGenerico[]);
     void enviarColecao("templatesMensagem");
   }
 
@@ -117,7 +117,7 @@ function aplicarPacoteConteudoRH(): void {
     return { ...m, itens: [...atuais, ...faltam] };
   });
   if (mudou) {
-    definirColecao("modelosChecklist" as never, atualizados as never);
+    definirColecaoDinamica("modelosChecklist", atualizados as RegistroGenerico[]);
     void enviarColecao("modelosChecklist");
   }
 

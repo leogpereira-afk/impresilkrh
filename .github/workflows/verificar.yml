@@ -1,0 +1,41 @@
+# Confere o código a cada envio para o GitHub, ANTES de o Netlify publicar.
+#
+# Por que: já aconteceu de a publicação quebrar por erro de tipo ou por o
+# package-lock ficar inconsistente — e só se descobria com o site fora do ar.
+# Aqui o erro aparece no GitHub, com o app no ar intacto.
+name: Verificar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # permite rodar na mão pelo site do GitHub
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # `npm ci` falha de propósito se o package-lock não bater com o
+      # package.json — é exatamente a inconsistência que já quebrou o build.
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Padrão de código (lint)
+        run: npm run lint
+
+      - name: Tipos (typecheck)
+        run: npm run typecheck
+
+      - name: Testes
+        run: npm test
+
+      # Build completo: garante que o que o Netlify vai fazer funciona aqui.
+      - name: Build de produção
+        run: npm run build

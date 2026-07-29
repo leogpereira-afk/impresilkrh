@@ -54,23 +54,41 @@ export function situacaoFerias(c: Colaborador, feriasDaPessoa: Ferias[], hoje = 
   const mesesDeCasa = Math.floor(dias(adm, hoje) / 30.44);
   if (mesesDeCasa < 12) return null; // ainda no primeiro período aquisitivo
 
-  // Períodos aquisitivos completos: 1 a cada 12 meses. Pegamos o mais recente.
-  const ciclosCompletos = Math.floor(mesesDeCasa / 12);
-  const aquisitivoInicio = somaMeses(adm, (ciclosCompletos - 1) * 12);
-  const direitoDesde = somaMeses(adm, ciclosCompletos * 12);
-  const limiteConcessao = somaMeses(direitoDesde, 12);
-  const diasParaLimite = dias(hoje, limiteConcessao);
+  const inicios = feriasDaPessoa
+    .filter((f) => f.status !== "Cancelada")
+    .map((f) => parseData(f.dataInicio))
+    .filter((d): d is Date => !!d);
 
-  // Gozou dentro da janela? Basta um período de férias iniciado depois que o
-  // direito nasceu (e que não tenha sido cancelado).
-  const jaGozou = feriasDaPessoa.some((f) => {
-    if (f.status === "Cancelada") return false;
-    const ini = parseData(f.dataInicio);
-    return !!ini && ini.getTime() >= direitoDesde.getTime();
-  });
-
-  const situacao = jaGozou ? "em-dia" : diasParaLimite < 0 ? "vencida" : diasParaLimite <= 90 ? "a-vencer" : "em-dia";
-  return { aquisitivoInicio, direitoDesde, limiteConcessao, diasParaLimite, jaGozou, situacao };
+  // Percorre TODOS os períodos aquisitivos já completos, do mais antigo para o
+  // mais novo, e reporta o PRIMEIRO que ainda não foi gozado — é ele que corre
+  // risco de vencer. Olhar só o período mais recente escondia justamente o caso
+  // grave: quem acumulou um período antigo nunca tirado (o que paga em dobro).
+  const ciclos = Math.floor(mesesDeCasa / 12);
+  let ultimo: SituacaoFerias | null = null;
+  for (let i = 1; i <= ciclos; i++) {
+    const direitoDesde = somaMeses(adm, i * 12);
+    const limiteConcessao = somaMeses(direitoDesde, 12);
+    // Gozou este período? Basta umas férias começadas dentro da janela de
+    // concessão dele (férias partidas em 15+15 caem na mesma janela).
+    const jaGozou = inicios.some(
+      (d) => d.getTime() >= direitoDesde.getTime() && d.getTime() < limiteConcessao.getTime(),
+    );
+    const diasParaLimite = dias(hoje, limiteConcessao);
+    const situacao: SituacaoFerias["situacao"] = jaGozou
+      ? "em-dia"
+      : diasParaLimite < 0 ? "vencida" : diasParaLimite <= 90 ? "a-vencer" : "em-dia";
+    const atual: SituacaoFerias = {
+      aquisitivoInicio: somaMeses(adm, (i - 1) * 12),
+      direitoDesde,
+      limiteConcessao,
+      diasParaLimite,
+      jaGozou,
+      situacao,
+    };
+    if (!jaGozou) return atual; // o mais antigo em aberto é o que importa
+    ultimo = atual;
+  }
+  return ultimo; // todos gozados: devolve o último, marcado como em dia
 }
 
 // -------------------------- contrato de experiência --------------------------

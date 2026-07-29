@@ -32,6 +32,7 @@ import { BarrasVerticais } from "@/components/charts/charts";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
+import { calcularEncargos, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
@@ -62,16 +63,6 @@ import type {
 
 // Classes disponíveis no editor (confidencial fica fora — societárias só do master).
 const CLASSES_EDITAVEIS: ClasseCusto[] = ["individual", "rateio", "encargo", "ignorar"];
-
-// Base dos encargos: só Salário + Adiantamento (= 1 salário). Os demais tipos
-// (Limpeza/Faxina, Horas Extras, Comissão etc.) entram no TOTAL PAGO à pessoa —
-// pra saber quanto a Impresilk pagou no mês —, mas NÃO geram FGTS/13º/férias aqui.
-const TIPOS_BASE_ENCARGOS = ["Salário", "Adiantamento"];
-
-// Encargos sobre o bruto — custo real do colaborador.
-const FGTS_PCT = 0.08;
-const PROVISAO_13 = 1 / 12;
-const PROVISAO_FERIAS = (1 / 12) * 1.3333;
 
 export default function Custos() {
   const sessao = useSessao();
@@ -282,15 +273,9 @@ export default function Custos() {
 
   // Bruto = base dos encargos (Salário + Adiantamento), independente do toggle de
   // adiantamento. Faxina/extras entram no total pago, mas não nesta base.
-  const bruto = useMemo(
-    () => linhasColab.filter((l) => TIPOS_BASE_ENCARGOS.includes(l.tipo)).reduce((s, l) => s + l.valor, 0),
-    [linhasColab],
-  );
-  const fgts = bruto * FGTS_PCT;
-  const prov13 = bruto * PROVISAO_13;
-  const provFerias = bruto * PROVISAO_FERIAS;
-  // Encargos = estimados (8% + 13º + férias) + FGTS real lançado (rescisão etc.).
-  const encargos = fgts + prov13 + provFerias + fgtsLancado;
+  // Regras de encargo vivem em lib/encargos.ts (com testes) — aqui só o uso.
+  const enc = useMemo(() => calcularEncargos(linhasColab, fgtsLancado), [linhasColab, fgtsLancado]);
+  const { bruto, fgts, decimoTerceiro: prov13, ferias: provFerias, total: encargos } = enc;
   const custoReal = custoPago + encargos;
   const custoTotalColab = comEncargos ? custoReal : custoPago;
   const colabSel = d.colabById.get(colabId);
@@ -1349,7 +1334,6 @@ export default function Custos() {
 // Confraternização, etc.). É a MESMA base que o DRE usa, então o total bate.
 // Diferente da "Folha real" (que soma o pago por pessoa), aqui é a visão contábil
 // global, incluindo os custos coletivos (alimentação, confraternização, FGTS mensal).
-const PREFIXO_FUNCIONARIOS = "2.1.";
 function CustoGlobalFuncionarios() {
   const { items: plano } = useColecao("planoContas");
   const { items: pagamentos } = useColecao("pagamentos");
