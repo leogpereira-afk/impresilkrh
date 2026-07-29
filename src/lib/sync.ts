@@ -253,7 +253,22 @@ let epocaDados = 0;
 // Versão dos dados vista no último pull completo. O servidor incrementa a cada
 // escrita; se não mudou, o pull pula o download completo (1 chamada leve em vez
 // de baixar TODOS os registros a cada ciclo — economia grande de créditos).
-let ultimaRev: number | null = null;
+//
+// GUARDADO NO NAVEGADOR: antes isto era só uma variável em memória, então TODA
+// vez que a página abria (ou era recarregada) o app baixava os ~3.300 registros
+// de novo, mesmo sem nada ter mudado. Agora ele lembra entre as sessões.
+const K_REV = `${NS}.rev`;
+interface RevGravada { rev: number | null; porColecao: Record<string, number> }
+function lerRev(): RevGravada {
+  if (!temWindow) return { rev: null, porColecao: {} };
+  try {
+    const r = JSON.parse(localStorage.getItem(K_REV) || "{}");
+    return { rev: typeof r.rev === "number" ? r.rev : null, porColecao: r.porColecao ?? {} };
+  } catch { return { rev: null, porColecao: {} }; }
+}
+function gravarRev(r: RevGravada) { guardar(K_REV, JSON.stringify(r)); }
+/** Esquece o que já foi baixado — o próximo pull traz tudo de novo. */
+function zerarRev() { if (temWindow) { try { localStorage.removeItem(K_REV); } catch { /* ignora */ } } }
 
 export async function pull(): Promise<void> {
   if (!syncHabilitado()) return;
@@ -265,11 +280,31 @@ export async function pull(): Promise<void> {
   // digitar nada. Agora, deslogado, ele traz só `usuarios` — o mínimo para
   // conferir a senha num computador novo (e lá só existe o hash, não a senha).
   const restrito = !obterSessao();
+  const conhecida = lerRev();
   try {
     let revAtual: number | null = null;
+    let revPorColecao: Record<string, number> | null = null;
+    // Quais coleções pedir. `null` = todas (primeiro pull, ou servidor antigo
+    // que ainda não manda o mapa por coleção).
+    let pedir: string[] | null = restrito ? [...COLECOES_PRE_LOGIN] : null;
     if (!restrito) {
-      try { revAtual = ((await chamar("rev")) as { rev?: number | null })?.rev ?? null; } catch { revAtual = null; }
-      if (revAtual !== null && ultimaRev !== null && revAtual === ultimaRev) { recalcStatus(); return; } // nada mudou na nuvem
+      try {
+        const r = (await chamar("rev")) as { rev?: number | null; porColecao?: Record<string, number> | null };
+        revAtual = r?.rev ?? null;
+        revPorColecao = r?.porColecao ?? null;
+      } catch { revAtual = null; }
+      if (revAtual !== null && conhecida.rev !== null && revAtual === conhecida.rev) { recalcStatus(); return; } // nada mudou
+      // Baixa SÓ as coleções cujo contador mudou. Antes qualquer alteração —
+      // até um log de acesso — obrigava a rebaixar a base inteira.
+      if (revPorColecao && conhecida.rev !== null) {
+        pedir = NOMES_COLECOES.filter((n) => (revPorColecao![n] ?? 0) > (conhecida.porColecao[n] ?? 0));
+        if (pedir.length === 0) {
+          // Nada de dados mudou (só o contador geral): apenas anota e sai.
+          gravarRev({ rev: revAtual, porColecao: { ...conhecida.porColecao, ...revPorColecao } });
+          recalcStatus();
+          return;
+        }
+      }
     }
     const remoto = new Map<string, Envelope>();
     // Paginação por CHAVE (keyset): manda a última chave vista em `after`. Fallback
@@ -279,7 +314,7 @@ export async function pull(): Promise<void> {
     let offset = 0;
     let usaKeyset = true;
     for (let pag = 0; pag < 500; pag++) {
-      const resp = await chamar("list", { ...(usaKeyset ? { after } : { offset }), ...(restrito ? { colecoes: COLECOES_PRE_LOGIN } : {}) });
+      const resp = await chamar("list", { ...(usaKeyset ? { after } : { offset }), ...(pedir ? { colecoes: pedir } : {}) });
       for (const env of (resp.registros ?? []) as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
       if ("nextAfter" in resp) {
         if (resp.nextAfter == null) break; // keyset terminou
@@ -327,7 +362,12 @@ export async function pull(): Promise<void> {
     });
     // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
     // (deslogado) faria o app achar que já tem tudo e nunca baixar o resto.
-    if (!restrito) ultimaRev = revAtual;
+    if (!restrito) {
+      const marcos = { ...conhecida.porColecao };
+      // Marca como em dia apenas as coleções que ESTE pull trouxe.
+      for (const n of pedir ?? NOMES_COLECOES) if (revPorColecao?.[n] != null) marcos[n] = revPorColecao[n];
+      gravarRev({ rev: revAtual, porColecao: marcos });
+    }
     recalcStatus();
   } catch (e) {
     // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga
@@ -352,6 +392,16 @@ export async function previaEnviarTudo(): Promise<{ linhas: LinhaOficial[]; some
     if (aqui || naNuvem) linhas.push({ colecao: nome, aqui, naNuvem, some: Math.max(0, naNuvem - aqui) });
   }
   return { linhas: linhas.sort((a, b) => b.some - a.some), someTotal: linhas.reduce((s, l) => s + l.some, 0) };
+}
+
+/**
+ * Faxina das lápides antigas na nuvem (marcadores de exclusão que nunca saíam).
+ * `simular` só conta, sem apagar nada.
+ */
+export async function limparLapides(dias = 180, simular = false): Promise<number> {
+  if (!syncHabilitado()) throw new Error("Configure a sincronização primeiro.");
+  const r = (await chamar("limparLapides", { dias, simular })) as { encontradas?: number; removidas?: number };
+  return r?.removidas ?? r?.encontradas ?? 0;
 }
 
 // ----------------- envio em massa (computador "oficial") --------------------
@@ -447,6 +497,7 @@ export async function buscarArquivoNuvem(id: string): Promise<string | null> {
 export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; apagadosNuvem: number; erroNuvem: boolean }[]> {
   const resultado: { nome: string; apagadosNuvem: number; erroNuvem: boolean }[] = [];
   epocaDados++; // invalida qualquer pull em voo (não deixa o apagado voltar)
+  zerarRev(); // o retrato que o app tinha ficou obsoleto: próximo pull vem completo
   setStatus("syncing");
   try {
     for (const nome of nomes) {
@@ -588,7 +639,7 @@ if (temWindow) {
   window.addEventListener("offline", () => recalcStatus());
   // Logou → baixa a base completa. Zera a revisão memorizada, senão o pull
   // restrito de antes do login faria o app achar que já está em dia.
-  window.addEventListener("impresilk:autenticado", () => { ultimaRev = null; recalcStatus(); ciclo(); });
+  window.addEventListener("impresilk:autenticado", () => { zerarRev(); recalcStatus(); ciclo(); });
   window.addEventListener("focus", () => { if (ativo()) void pull(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ciclo(); });
   // Poll leve só com a aba visível (≈ a cada 20s) — sensação de tempo real sem gastar créditos à toa.

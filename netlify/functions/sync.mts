@@ -121,7 +121,25 @@ export default async (req: Request) => {
   // número (1 leitura) e pula o download completo quando nada mudou — em vez de
   // baixar todos os registros a cada ciclo. Best-effort: se falhar, o pior caso
   // é o app baixar tudo como antes.
-  const marcarMudanca = () => meta.setJSON("rev", { rev: Date.now() }).catch(() => {});
+  // Marca que algo mudou. Além do contador geral, guarda um contador POR COLEÇÃO:
+  // antes, mexer num único registro (até um log de acesso) invalidava tudo e o app
+  // rebaixava as ~3.300 linhas inteiras. Com o contador por coleção, ele baixa só
+  // as coleções que realmente mudaram.
+  const marcarMudanca = async (...colecoes: string[]) => {
+    const agora = Date.now();
+    try {
+      const atual = ((await meta.get("rev", { type: "json" }).catch(() => null)) as
+        | { rev?: number; porColecao?: Record<string, number> }
+        | null) ?? {};
+      const porColecao = { ...(atual.porColecao ?? {}) };
+      for (const c of colecoes) if (c) porColecao[c] = agora;
+      await meta.setJSON("rev", { rev: agora, porColecao });
+    } catch {
+      // Não deixa a marcação derrubar a escrita que já foi feita: no pior caso o
+      // app baixa a mais, nunca a menos.
+      await meta.setJSON("rev", { rev: agora }).catch(() => {});
+    }
+  };
 
   try {
     switch (action) {
@@ -130,8 +148,45 @@ export default async (req: Request) => {
         return json({ ok: true, ts: new Date().toISOString() });
 
       // ---- versão dos dados (pull econômico) ----
-      case "rev":
-        return json({ rev: ((await meta.get("rev", { type: "json" }).catch(() => null)) as { rev?: number } | null)?.rev ?? null });
+      case "rev": {
+        const m = (await meta.get("rev", { type: "json" }).catch(() => null)) as
+          | { rev?: number; porColecao?: Record<string, number> }
+          | null;
+        return json({ rev: m?.rev ?? null, porColecao: m?.porColecao ?? null });
+      }
+
+      // ---- faxina das lápides antigas ----
+      // Cada exclusão deixa uma "lápide" para sempre, para o pull dos outros
+      // computadores enxergar que o registro sumiu. Elas nunca eram removidas:
+      // vão se acumulando e todo pull completo carrega esse peso morto. Depois de
+      // um tempo longo, todo computador em uso já viu a exclusão e a lápide pode
+      // sair. `dias` é a carência (padrão 180) — só some lápide mais velha que
+      // isso, para não ressuscitar dado num computador que ficou meses parado.
+      case "limparLapides": {
+        if (!ehAdmin) return json({ erro: "Restrito ao RH." }, 403);
+        const dias = Math.max(30, Number(body.dias ?? 180) | 0); // nunca menos de 30 dias
+        const simular = body.simular === true;
+        const limite = new Date(Date.now() - dias * 86_400_000).toISOString();
+        const { blobs } = await registros.list();
+        const alvos: string[] = [];
+        // Lê em blocos para não estourar o tempo da função com milhares de itens.
+        for (let i = 0; i < blobs.length; i += 100) {
+          const fatia = blobs.slice(i, i + 100);
+          const itens = await Promise.all(
+            fatia.map((b) => registros.get(b.key, { type: "json" }).catch(() => null)),
+          );
+          itens.forEach((it, j) => {
+            const r = (it as any)?.registro;
+            if (r?._apagado && typeof r.atualizadoEm === "string" && r.atualizadoEm < limite) {
+              alvos.push(fatia[j].key);
+            }
+          });
+        }
+        if (simular) return json({ ok: true, simulacao: true, encontradas: alvos.length, dias });
+        await Promise.all(alvos.map((k) => registros.delete(k).catch(() => {})));
+        if (alvos.length) await marcarMudanca(...new Set(alvos.map((k) => k.split("::")[0])));
+        return json({ ok: true, removidas: alvos.length, dias });
+      }
 
       // ---- quantos itens existem por coleção (sem baixar nada) ----
       // Serve para o app avisar o que SUMIRIA da nuvem antes de sobrescrevê-la
@@ -209,7 +264,7 @@ export default async (req: Request) => {
           return json({ conflito: true, servidor: atual });
         }
         await registros.setJSON(k, { colecao, registro });
-        await marcarMudanca();
+        await marcarMudanca(colecao);
         return json({ ok: true, atualizadoEm: enviadoTs ?? null });
       }
 
@@ -222,7 +277,7 @@ export default async (req: Request) => {
             .filter((x) => x?.colecao && x?.registro?.id)
             .map((x) => registros.setJSON(chave(x.colecao, x.registro.id), { colecao: x.colecao, registro: x.registro })),
         );
-        await marcarMudanca();
+        await marcarMudanca(...new Set(lote.map((x) => x?.colecao).filter(Boolean)));
         return json({ ok: true, gravados: lote.length });
       }
 
@@ -249,7 +304,7 @@ export default async (req: Request) => {
         await registros.setJSON(chave(colecao, id), { colecao, registro: { id, _apagado: true, atualizadoEm: new Date().toISOString() } });
         // limpeza best-effort de arquivos ligados ao registro (foto, anexo, currículo)
         await Promise.all([id, `doc:${id}`, `cv:${id}`].map((k) => fotos.delete(k).catch(() => {})));
-        await marcarMudanca();
+        await marcarMudanca(colecao);
         return json({ ok: true });
       }
 
@@ -262,7 +317,7 @@ export default async (req: Request) => {
         if (!colecao) return json({ erro: "colecao obrigatória." }, 400);
         const { blobs } = await registros.list({ prefix: `${colecao}::` });
         await Promise.all(blobs.map((b) => registros.delete(b.key)));
-        await marcarMudanca();
+        await marcarMudanca(colecao);
         return json({ ok: true, apagados: blobs.length });
       }
 

@@ -10,7 +10,7 @@ import {
   statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
   conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
   enviarTudo, aceitarServidor, sobrescreverServidor, definirTokenSync, diagnosticar,
-  apagarColecoes, falhasSync, retentarFalhas, limparFalhas, previaEnviarTudo,
+  apagarColecoes, falhasSync, retentarFalhas, limparFalhas, previaEnviarTudo, limparLapides,
   type StatusSync, type PassoDiag, type LinhaOficial,
 } from "@/lib/sync";
 import { Stethoscope, KeyRound } from "lucide-react";
@@ -113,6 +113,23 @@ export function SyncButton() {
         toast(`Folha e plano apagados. ${tot} registro(s) removidos da nuvem. Agora importe o arquivo corrigido e clique em "Enviar tudo".`);
       }
     } catch (e) { toast(e instanceof Error ? e.message : "Falha ao apagar.", "erro"); }
+    finally { setOcupado(false); recarregar(); }
+  };
+  // Faxina das lápides: conta primeiro, confirma, e só então remove.
+  const faxinaLapides = async () => {
+    setOcupado(true);
+    try {
+      const achadas = await limparLapides(180, true);
+      if (achadas === 0) { toast("Nada a limpar: não há marcadores de exclusão com mais de 180 dias."); return; }
+      if (!confirm(
+        `Remover ${achadas} marcador(es) de exclusão com mais de 180 dias?\n\n` +
+        "Eles servem para avisar os outros computadores de que um registro foi apagado. " +
+        "Depois de 180 dias todo computador em uso já viu o aviso, então dá para removê-los e aliviar a nuvem.\n\n" +
+        "Nenhum dado ativo é tocado.",
+      )) return;
+      const n = await limparLapides(180);
+      toast(`${n} marcador(es) antigos removidos da nuvem.`);
+    } catch (e) { toast(e instanceof Error ? e.message : "Falha na faxina.", "erro"); }
     finally { setOcupado(false); recarregar(); }
   };
   const alternarLigado = () => {
@@ -291,6 +308,10 @@ export function SyncButton() {
               {/* Recomeçar do zero: apaga folha + plano (local e nuvem). Não toca no cadastro. */}
               <button onClick={apagarLancamentos} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50">
                 {ocupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Apagar folha e plano (recomeçar)
+              </button>
+              {/* Faxina: tira da nuvem os marcadores de exclusão já antigos */}
+              <button onClick={() => void faxinaLapides()} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">
+                {ocupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Limpar marcadores antigos (aliviar a nuvem)
               </button>
               {/* Token deste computador (cola/troca sem refazer o deploy) */}
               <div className="flex gap-2">
