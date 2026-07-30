@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Clock, CalendarX2, Lock, ShieldCheck,
+  Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Lock, ShieldCheck,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -15,9 +15,8 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
-import { minParaHora } from "@/lib/pontoImport";
 import { slug } from "@/data/_gen";
-import type { Colaborador, Lancamento, TipoLancamento, Ponto } from "@/data/types";
+import type { Colaborador, Lancamento, TipoLancamento } from "@/data/types";
 
 const TIPOS: { tipo: TipoLancamento; label: string }[] = [
   { tipo: "hora_extra", label: "Hora extra (avulsa)" },
@@ -48,7 +47,6 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   const toast = useToast();
   const podeEditar = podeGerir(sessao);
   const { items: lancamentos, criar, remover } = useColecao("lancamentos");
-  const { items: pontos } = useColecao("pontos");
   const { items: fechamentos, criar: criarFech, atualizar: atualizarFech } = useColecao("fechamentos");
 
   const [competencia, setCompetencia] = useState(compAtual());
@@ -63,7 +61,6 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
 
   const lancDe = (colId: string) => lancamentos.filter((l) => l.colaboradorId === colId && l.competencia === competencia);
   const totalDe = (colId: string) => lancDe(colId).reduce((s, l) => s + (Number(l.valor) || 0), 0);
-  const pontoDe = (colId: string): Ponto | undefined => pontos.find((p) => p.colaboradorId === colId && p.competencia === competencia);
   const fechDe = (colId: string) => fechamentos.find((f) => f.id === `${competencia}::${colId}`);
 
   const totalGeral = escopo.reduce((s, c) => s + totalDe(c.id), 0);
@@ -108,8 +105,6 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
               <thead className="border-b border-slate-100 text-xs text-slate-500">
                 <tr>
                   <th className="th">Colaborador</th>
-                  <th className="th text-right">Extras (ponto)</th>
-                  <th className="th text-right">Faltas (ponto)</th>
                   <th className="th text-right">Verbas do mês</th>
                   <th className="th text-center">Status</th>
                   <th className="th" />
@@ -117,14 +112,11 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {escopo.map((c) => {
-                  const pt = pontoDe(c.id);
                   const fe = fechDe(c.id);
                   const tot = totalDe(c.id);
                   return (
                     <tr key={c.id} className="hover:bg-slate-50/50">
                       <td className="td font-medium text-slate-700">{c.nome}</td>
-                      <td className="td text-right tabular-nums text-brand">{pt ? minParaHora(pt.extrasMin) : "—"}</td>
-                      <td className={`td text-right tabular-nums ${pt && pt.faltasMin > 0 ? "text-red-600" : "text-slate-400"}`}>{pt ? minParaHora(pt.faltasMin) : "—"}</td>
                       <td className="td text-right tabular-nums font-medium text-slate-700">{tot > 0 ? formatBRL(tot) : "—"}</td>
                       <td className="td text-center">
                         {fe?.aprovado ? <Badge variant="success">Aprovado</Badge> : <Badge variant="neutral">Pendente</Badge>}
@@ -147,7 +139,6 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
           competencia={competencia}
           config={config}
           lancamentos={lancDe(aberto.id)}
-          ponto={pontoDe(aberto.id)}
           fechamento={fechDe(aberto.id)}
           cargoNome={d.nomeCargo(aberto) ?? aberto.cargoLivre ?? ""}
           onFechar={() => setAberto(null)}
@@ -169,14 +160,13 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
 
 // ============================================================================
 function DetalheColaborador({
-  colaborador, competencia, config, lancamentos, ponto, fechamento, cargoNome,
+  colaborador, competencia, config, lancamentos, fechamento, cargoNome,
   onFechar, onCriar, onRemover, onAprovar, toast,
 }: {
   colaborador: Colaborador;
   competencia: string;
   config: { empresaNome?: string };
   lancamentos: Lancamento[];
-  ponto: Ponto | undefined;
   fechamento: { aprovado: boolean; aprovadoEm?: string | null } | undefined;
   cargoNome: string;
   onFechar: () => void;
@@ -211,23 +201,11 @@ function DetalheColaborador({
     toast("Lançamento adicionado.");
   };
 
-  const dadosRel = { colaborador, competencia, config, lancamentos, ponto, fechamento, cargoNome, totalPorTipo, total };
+  const dadosRel = { colaborador, competencia, config, lancamentos, fechamento, cargoNome, totalPorTipo, total };
 
   return (
     <Modal aberto onFechar={onFechar} titulo={`Folha variável — ${colaborador.nome}`} descricao={`${labelMes(competencia)}${cargoNome ? ` · ${cargoNome}` : ""}`} largura="max-w-3xl">
       <div className="space-y-4">
-        {/* Ponto do mês */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
-            <Clock className="h-5 w-5 text-brand" />
-            <div><p className="text-xs text-slate-500">Horas extras (ponto)</p><p className="text-lg font-semibold tabular-nums text-brand-ink">{ponto ? minParaHora(ponto.extrasMin) : "—"}</p></div>
-          </div>
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
-            <CalendarX2 className="h-5 w-5 text-red-500" />
-            <div><p className="text-xs text-slate-500">Faltas (ponto)</p><p className="text-lg font-semibold tabular-nums text-brand-ink">{ponto ? minParaHora(ponto.faltasMin) : "—"}</p></div>
-          </div>
-        </div>
-
         {/* Adicionar lançamento */}
         <Card>
           <CardHeader title="Lançar verba" subtitle="A assistente lança aqui durante o mês." icon={<Plus className="h-[18px] w-[18px]" />} />
@@ -295,7 +273,6 @@ interface DadosRel {
   competencia: string;
   config: { empresaNome?: string };
   lancamentos: Lancamento[];
-  ponto: Ponto | undefined;
   fechamento: { aprovado: boolean; aprovadoEm?: string | null } | undefined;
   cargoNome: string;
   totalPorTipo: Map<TipoLancamento, number>;
@@ -324,11 +301,9 @@ async function exportarPdf(r: DadosRel) {
   doc.text(`Folha Variável — ${labelMes(r.competencia)}`, 14, 26);
   doc.setFontSize(11); doc.setTextColor(20);
   doc.text(`${r.colaborador.nome}${r.cargoNome ? ` · ${r.cargoNome}` : ""}`, 14, 34);
-  doc.setFontSize(10); doc.setTextColor(90);
-  doc.text(`Ponto do mês:  Horas extras ${r.ponto ? minParaHora(r.ponto.extrasMin) : "—"}   ·   Faltas ${r.ponto ? minParaHora(r.ponto.faltasMin) : "—"}`, 14, 41);
 
   autoTable(doc, {
-    startY: 46,
+    startY: 42,
     head: [["Dia", "Tipo", "Descrição", "Valor (R$)"]],
     body: r.lancamentos.map((l) => [diaBR(l.data), labelTipo(l.tipo), l.descricao || "", formatBRL(l.valor)]),
     foot: [["", "", "TOTAL", formatBRL(r.total)]],
@@ -352,7 +327,6 @@ function exportarExcel(r: DadosRel) {
 <table border="1">
 <tr><td colspan="4" style="font-weight:bold;font-size:14px">${r.config.empresaNome || "Impresilk"} — Folha Variável — ${labelMes(r.competencia)}</td></tr>
 <tr><td colspan="4">${r.colaborador.nome}${r.cargoNome ? " · " + r.cargoNome : ""}</td></tr>
-<tr><td colspan="4">Ponto: extras ${r.ponto ? minParaHora(r.ponto.extrasMin) : "-"} · faltas ${r.ponto ? minParaHora(r.ponto.faltasMin) : "-"}</td></tr>
 <tr></tr>
 <tr style="background:#16334f;color:#fff;font-weight:bold"><td>Dia</td><td>Tipo</td><td>Descrição</td><td>Valor (R$)</td></tr>
 ${linhas || '<tr><td colspan="4">Sem lançamentos</td></tr>'}

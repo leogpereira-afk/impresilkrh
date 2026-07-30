@@ -117,6 +117,7 @@ export interface Colaborador {
   // Acesso / hierarquia institucional
   perfil?: Perfil; // perfil de login (quando aplicável)
   ehDirecao?: boolean; // fundadores/diretor/assessorias — não contam como headcount
+  naoBatePonto?: boolean; // não registra ponto (comissão/externo) — fica fora da conferência do ponto
   cargoLivre?: string; // rótulo de cargo p/ Direção (sem cargoId)
   padrinhoId?: string | null; // mentor/padrinho (onboarding)
   fotoDataUrl?: string | null; // foto do colaborador (upload no navegador)

@@ -2,7 +2,7 @@ import { Fragment, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2, Pencil,
   Upload, ExternalLink, CalendarRange, CalendarX2, Clock, CheckCircle2, Trophy, BarChart3, Brain,
-  ChevronDown, ChevronRight, Stethoscope, Coins, Info, ListChecks, Copy, FileDown, FileSpreadsheet,
+  ChevronDown, ChevronRight, Stethoscope, Coins, Info, ListChecks, Copy, FileDown, FileSpreadsheet, Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -274,6 +274,28 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     } catch { toast("Não consegui copiar aqui. Baixe o PDF.", "erro"); }
   };
 
+  // Quem não bate ponto (comissão/externo/direção): fica fora da conferência.
+  const { atualizar: atualizarColab } = useColecao("colaboradores");
+  const [gerNaoBate, setGerNaoBate] = useState(false);
+  const naoBatem = useMemo(() => d.colaboradores.filter((c) => c.naoBatePonto), [d.colaboradores]);
+
+  // Conferência: quem do cadastro (ativo, não-direção, que bate ponto) NÃO veio no PDF.
+  const presentesIds = useMemo(
+    () => new Set(doMes.map((p) => p.colaboradorId).filter((x): x is string => !!x)),
+    [doMes],
+  );
+  const faltandoNoPonto = useMemo(
+    () => d.colaboradores
+      .filter((c) => !c.ehDirecao && !c.naoBatePonto && c.statusId !== "inativo" && !presentesIds.has(c.id))
+      .sort((a, b) => a.nome.localeCompare(b.nome)),
+    [d.colaboradores, presentesIds],
+  );
+
+  // Expandir/recolher todos os extratos (modo Tudo) — para varrer o mês inteiro.
+  const idsExpansiveis = useMemo(() => doMes.filter((p) => (p.dias?.length ?? 0) > 0).map((p) => p.id), [doMes]);
+  const todosAbertos = idsExpansiveis.length > 0 && idsExpansiveis.every((id) => expandido.has(id));
+  const alternarTodos = () => setExpandido(todosAbertos ? new Set() : new Set(idsExpansiveis));
+
   if (!podeEditar) {
     return <EmptyState icon={<Clock className="h-6 w-6" />} title="Sem permissão" description="O import de ponto é restrito ao RH/gestão." />;
   }
@@ -359,12 +381,17 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
             subtitle="Horas extras e faltas do mês, por colaborador. Estes números somam no custo mensal de cada um."
             icon={<Clock className="h-[18px] w-[18px]" />}
             action={
-              comps.length > 0 ? (
-                <Select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="text-sm">
-                  {!comps.includes(competencia) && <option value="">Escolha o mês…</option>}
-                  {comps.map((c) => <option key={c} value={c}>{labelMes(c)}</option>)}
-                </Select>
-              ) : undefined
+              <div className="flex items-center gap-2">
+                <button className="btn-outline h-9 px-3 py-0 text-xs" onClick={() => setGerNaoBate(true)} title="Marque quem não registra ponto — fica fora da conferência">
+                  <Users className="h-3.5 w-3.5" /> Não batem ponto{naoBatem.length ? ` (${naoBatem.length})` : ""}
+                </button>
+                {comps.length > 0 && (
+                  <Select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="text-sm">
+                    {!comps.includes(competencia) && <option value="">Escolha o mês…</option>}
+                    {comps.map((c) => <option key={c} value={c}>{labelMes(c)}</option>)}
+                  </Select>
+                )}
+              </div>
             }
           />
           <CardBody>
@@ -376,8 +403,8 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <StatCard label="Horas extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} hint={`${agg.comExtra} dia(s) com extra`} />
                   <StatCard label="Horas de falta" value={minParaHora(totFaltas)} icon={<CalendarX2 className="h-4 w-4" />} hint="descontam na folha" />
-                  <StatCard label="Faltas" value={String(agg.faltas)} icon={<AlertTriangle className="h-4 w-4" />} hint="dias não justificados" />
-                  <StatCard label="Atestados" value={String(agg.atestados)} icon={<Stethoscope className="h-4 w-4" />} hint={agg.abonos ? `+ ${agg.abonos} abono(s)` : "dias abonados"} />
+                  <StatCard label="Faltas" value={String(agg.faltas)} icon={<AlertTriangle className="h-4 w-4" />} hint="dias de falta (dia cheio)" />
+                  <StatCard label="Atestados" value={String(agg.atestados)} icon={<Stethoscope className="h-4 w-4" />} hint={agg.abonos ? `+ ${agg.abonos} abono(s)` : "dias com atestado"} />
                 </div>
 
                 {/* Seletor de visão: Tudo (extrato completo) ou Resumo (p/ enviar) */}
@@ -394,9 +421,24 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
                 {modo === "tudo" ? (
                 <>
-                <p className="mb-2 text-xs text-slate-400">
-                  {doMes.length} funcionário(s){doMes.filter((p) => !p.colaboradorId).length ? ` · ${doMes.filter((p) => !p.colaboradorId).length} não vinculado(s)` : ""} · clique no nome para ver o extrato dia a dia.
-                </p>
+                {/* Conferência: quem do cadastro não apareceu no ponto (fora os que não batem) */}
+                {faltandoNoPonto.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800"><AlertTriangle className="h-4 w-4" /> {faltandoNoPonto.length} do cadastro não apareceram neste ponto</p>
+                    <p className="mt-1 text-xs text-amber-700">{faltandoNoPonto.map((c) => c.nome).join(", ")}</p>
+                    <p className="mt-1 text-[11px] text-amber-600/80">Quem não bate ponto (comissão/externo) já ficou fora desta lista — ajuste em "Não batem ponto".</p>
+                  </div>
+                )}
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs text-slate-400">
+                    {doMes.length} funcionário(s){doMes.filter((p) => !p.colaboradorId).length ? ` · ${doMes.filter((p) => !p.colaboradorId).length} não vinculado(s)` : ""} · clique no nome para o extrato diário.
+                  </p>
+                  {idsExpansiveis.length > 0 && (
+                    <button className="btn-ghost shrink-0 px-2 py-1 text-xs text-slate-500 hover:text-brand" onClick={alternarTodos}>
+                      {todosAbertos ? "Recolher todos" : "Expandir todos"}
+                    </button>
+                  )}
+                </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -553,7 +595,58 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         titulo="Remover ponto do mês?"
         mensagem="O ponto importado deste colaborador nesta competência será apagado. Para recuperar, é preciso reimportar o PDF do mês."
       />
+
+      {gerNaoBate && (
+        <NaoBatePontoModal
+          colaboradores={d.colaboradores}
+          onToggle={(id, valor) => atualizarColab(id, { naoBatePonto: valor })}
+          onFechar={() => setGerNaoBate(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// Modal para marcar quem NÃO bate ponto (comissão/externo/direção) — fica fora da
+// conferência do ponto. Grava o flag no cadastro do colaborador.
+function NaoBatePontoModal({
+  colaboradores, onToggle, onFechar,
+}: {
+  colaboradores: Colaborador[];
+  onToggle: (id: string, valor: boolean) => void;
+  onFechar: () => void;
+}) {
+  const [busca, setBusca] = useState("");
+  const lista = useMemo(() => {
+    const t = busca.trim().toLowerCase();
+    return colaboradores
+      .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
+      .filter((c) => (t ? c.nome.toLowerCase().includes(t) : true))
+      .sort((a, b) => Number(!!b.naoBatePonto) - Number(!!a.naoBatePonto) || a.nome.localeCompare(b.nome));
+  }, [colaboradores, busca]);
+  const marcados = colaboradores.filter((c) => c.naoBatePonto).length;
+
+  return (
+    <Modal aberto onFechar={onFechar} titulo="Quem não bate ponto" descricao="Marque quem não registra ponto (comissão, externo, direção). Fica fora da conferência do ponto do mês." largura="max-w-lg">
+      <div className="space-y-3">
+        <Input placeholder="Buscar colaborador…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <p className="text-xs text-slate-500">{marcados} marcado(s) como “não bate ponto”.</p>
+        <div className="max-h-[55vh] space-y-0.5 overflow-y-auto pr-1">
+          {lista.map((c) => (
+            <label key={c.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={!!c.naoBatePonto}
+                onChange={(e) => onToggle(c.id, e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+              />
+              <span className="text-sm text-slate-700">{c.nome}</span>
+            </label>
+          ))}
+          {lista.length === 0 && <p className="px-2 py-4 text-center text-sm text-slate-400">Ninguém encontrado.</p>}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
