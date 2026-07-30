@@ -1,15 +1,11 @@
 name: Deploy (GitHub Pages)
 
-# Publica o build da SPA no GitHub Pages. O backend é o Supabase (Auth +
-# Postgres + Storage + Edge Functions), acessado direto pelo navegador com a
-# anon key (pública por design — protegida por RLS).
-#
-# Dispara na `nuvem-supabase` durante a validação (assim o site novo sobe SEM
-# tocar na `main`, que o Netlify ainda reconstrói) e também na `main`, para
-# quando for feita a virada final (sair do Netlify).
+# Publica o build da SPA no GitHub Pages (único host — o Netlify foi desativado).
+# O backend é o Supabase (Auth + Postgres + Storage + Edge Functions), acessado
+# direto pelo navegador com a anon key (pública por design — protegida por RLS).
 on:
   push:
-    branches: [main, nuvem-supabase]
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
@@ -39,9 +35,9 @@ jobs:
       # jeito). Nenhuma variável precisa ser configurada no GitHub.
       - run: npm run build
 
-      # SPA no GitHub Pages: não existe rewrite de servidor (o [[redirects]] do
-      # Netlify não tem equivalente aqui). Copiar o index.html para 404.html faz
-      # o Pages servir o app em QUALQUER caminho, e o React Router assume dali.
+      # SPA no GitHub Pages: não há rewrite de servidor. Copiar o index.html para
+      # 404.html faz o Pages servir o app em QUALQUER caminho (refresh/bookmark de
+      # subpágina), e o React Router (com basename) assume dali.
       - run: cp dist/index.html dist/404.html
 
       - uses: actions/configure-pages@v5

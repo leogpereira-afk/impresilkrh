@@ -4,6 +4,13 @@ Este guia explica como a **sincronização automática** do Sistema de RH da
 Impresilk funciona hoje, com o **Supabase** como nuvem (Postgres + Storage +
 Edge Functions) e o app publicado como site estático no **GitHub Pages**.
 
+> **Estado atual (no ar):** o sistema roda em
+> **`https://leogpereira-afk.github.io/impresilkrh/`**, com o projeto Supabase
+> `heveemylixartyijxewh` (banco, RLS, Storage e as Edge Functions `sync` e
+> `admin-users` publicados). Os dados foram migrados e a conta ADMIN_RH do
+> diretor já existe. **O Netlify foi desativado** (site apagado) — o histórico
+> abaixo sobre o Netlify fica só como referência do que foi feito.
+
 ---
 
 ## Como funciona (resumo)
