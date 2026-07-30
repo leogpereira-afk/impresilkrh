@@ -42,8 +42,8 @@ export function minParaHora(min: number): string {
   return `${neg ? "-" : ""}${Math.floor(a / 60).toString().padStart(2, "0")}:${(a % 60).toString().padStart(2, "0")}`;
 }
 
-// Rótulos do template que NUNCA são o nome da pessoa.
-const ROTULOS = ["IMPRESILK", "CARTAO", "CARTÃO", "PONTO", "SECULLUM", "TOTAIS", "NORMAIS", "FALTAS", "EXTRAS", "BTOTAL", "DEPARTAMENTO", "FUNCAO", "FUNÇÃO", "EMPRESA", "HORARIO", "FOLGA", "FERIADO"];
+// Rótulos/textos do template que NUNCA são o nome da pessoa.
+const ROTULOS = ["IMPRESILK", "CARTAO", "CARTÃO", "PONTO", "SECULLUM", "TOTAIS", "NORMAIS", "FALTAS", "EXTRAS", "BTOTAL", "DEPARTAMENTO", "FUNCAO", "FUNÇÃO", "EMPRESA", "HORARIO", "FOLGA", "FERIADO", "SISTEMA", "REGIDO", "CLT", "EMITIDO", "PAGINA", "PÁGINA", "INSCRICAO", "ADMISSAO", "TRABALHO"];
 
 let workerConfigurado = false;
 
@@ -103,14 +103,24 @@ export async function lerPontoPdf(
       }
     }
 
-    // Nome cru do PDF (para exibir, sobretudo os não casados): item do topo com
-    // >=2 palavras, só letras (sem dígitos) e que não é rótulo do template.
+    // Nome cru do PDF (para exibir, sobretudo os não casados): entre os itens do
+    // cabeçalho que parecem nome (>=2 palavras, só letras, não é rótulo), escolhe
+    // o que tem MAIOR sobreposição de tokens com algum colaborador — assim mostra
+    // o nome real mesmo quando não casou 100% (ex.: grafia/acento diferente).
     let nomePdf = colNome || "";
     if (!nomePdf) {
-      const cand = topo
-        .map((it) => it.str.trim())
-        .find((s) => s.split(/\s+/).length >= 2 && /^[A-Za-zÀ-ÿ' ]+$/.test(s) && !ROTULOS.some((r) => norm(s).includes(r)));
-      nomePdf = cand || `Página ${p}`;
+      let melhor = "";
+      let melhorInter = -1;
+      for (const it of topo) {
+        const s = it.str.trim();
+        if (s.split(/\s+/).length < 2 || !/^[A-Za-zÀ-ÿ' .]+$/.test(s)) continue;
+        if (ROTULOS.some((r) => norm(s).includes(r))) continue;
+        const itoks = new Set(norm(s).split(/\s+/).filter(Boolean));
+        let inter = 0;
+        for (const c of idx) { const n = c.toks.filter((t) => itoks.has(t)).length; if (n > inter) inter = n; }
+        if (inter > melhorInter) { melhorInter = inter; melhor = s; }
+      }
+      nomePdf = melhor || `Página ${p}`;
     }
 
     // TOTAIS do mês: os 3 primeiros HH:MM à direita do rótulo "TOTAIS", mesma linha.
