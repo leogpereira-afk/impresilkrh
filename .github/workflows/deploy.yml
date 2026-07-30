@@ -34,13 +34,10 @@ jobs:
 
       - run: npm ci
 
+      # As chaves PÚBLICAS do Supabase (URL + publishable/anon) já vêm de
+      # .env.production (versionado — são valores que vão no navegador de todo
+      # jeito). Nenhuma variável precisa ser configurada no GitHub.
       - run: npm run build
-        env:
-          # Repository variables (Settings › Secrets and variables › Actions ›
-          # Variables) — não são segredo: a anon key só funciona com RLS ligado
-          # no banco, é para ir no bundle do navegador.
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       # SPA no GitHub Pages: não existe rewrite de servidor (o [[redirects]] do
       # Netlify não tem equivalente aqui). Copiar o index.html para 404.html faz

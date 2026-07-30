@@ -15,7 +15,6 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { json, preflight } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const DOMINIO_SINTETICO = "rh.impresilk.local";
 
@@ -32,8 +31,7 @@ async function ehAdminRH(req: Request): Promise<boolean> {
   const auth = req.headers.get("authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (!m) return false;
-  const semRls = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } } });
-  const { data, error } = await semRls.auth.getUser(m[1]);
+  const { data, error } = await admin.auth.getUser(m[1]); // valida o JWT do usuário
   if (error || !data?.user) return false;
   const { data: perfil } = await admin.from("perfis").select("perfil").eq("user_id", data.user.id).maybeSingle();
   return perfil?.perfil === "ADMIN_RH";
