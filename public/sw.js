@@ -11,10 +11,15 @@
  * forçar a limpeza do cache antigo. (Assets do Vite têm hash no nome, então o
  * essencial é versionar o casco/HTML.)
  * ======================================================================== */
-const CACHE = "impresilk-rh-v7";
+const CACHE = "impresilk-rh-v8";
+
+// Caminho onde o app é servido = a pasta do próprio SW ("/impresilkrh/" no
+// GitHub Pages, "/" num domínio próprio). Tudo abaixo é relativo a isto — senão
+// no GitHub Pages o SW cacheava "/" (a raiz do github.io, fora do app).
+const BASE = new URL("./", self.location).pathname;
 
 // "Casco" do app: o mínimo para abrir a interface mesmo offline.
-const CASCO = ["/", "/index.html", "/favicon.png", "/apple-touch-icon.png"];
+const CASCO = [BASE, BASE + "index.html", BASE + "favicon.png", BASE + "apple-touch-icon.png"];
 
 // ----- instalação: pré-carrega o casco -----
 self.addEventListener("install", (event) => {
@@ -64,7 +69,7 @@ self.addEventListener("fetch", (event) => {
         const cacheado = await caches.match(req);
         if (cacheado) return cacheado;
         if (req.mode === "navigate") {
-          const casco = await caches.match("/index.html");
+          const casco = await caches.match(BASE + "index.html");
           if (casco) return casco;
         }
         return Response.error();

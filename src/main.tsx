@@ -14,18 +14,25 @@ import "@/lib/sync";
 import { rodarMigracoes } from "@/lib/migracoes";
 rodarMigracoes();
 
+// basename = o caminho onde o app é servido (BASE_URL vem do `base` do Vite:
+// "/impresilkrh/" no GitHub Pages, "/" num domínio próprio). Sem isto, o React
+// Router usa caminhos da RAIZ e um refresh numa subpágina do GitHub Pages cai
+// fora do app (tela branca/404). Tira a barra final que o React Router não quer.
+const BASENAME = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={BASENAME}>
       <App />
     </BrowserRouter>
   </React.StrictMode>,
 );
 
 // PWA: registra o Service Worker (abre rápido, funciona offline). Só em produção
-// com HTTPS/localhost; falhas são silenciosas (o app funciona sem ele).
+// com HTTPS/localhost; falhas são silenciosas (o app funciona sem ele). O SW mora
+// no MESMO caminho do app (BASE_URL) — no GitHub Pages é /impresilkrh/sw.js.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
   });
 }
