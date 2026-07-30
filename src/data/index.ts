@@ -7,7 +7,7 @@ import type {
   Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Aceite, Config,
   Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
   Treinamento, EtapaEvolucao, Usuario, Pagamento, ContaPlano, ClassificacaoConta, EventoCalendario,
-  CertificacaoNR, Pesquisa, RespostaPesquisa, Vaga, Candidato,
+  CertificacaoNR, Pesquisa, RespostaPesquisa, Vaga, Candidato, Ponto,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -90,6 +90,7 @@ export interface ColecaoMap {
   respostasPesquisa: RespostaPesquisa;
   vagas: Vaga;
   candidatos: Candidato;
+  pontos: Ponto;
 }
 
 export type NomeColecao = keyof ColecaoMap;
@@ -138,6 +139,7 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     respostasPesquisa: [],
     vagas: VAGAS,
     candidatos: CANDIDATOS,
+    pontos: [],
   });
 }
 

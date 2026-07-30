@@ -592,3 +592,21 @@ export interface Candidato {
   observacao?: string;
   criadoEm: string;
 }
+
+// Ponto mensal por colaborador, importado do Cartão Ponto (Secullum). Guarda os
+// totais JÁ calculados pelo sistema de ponto (regido pela CLT) em MINUTOS, para
+// somar na folha/custo do mês. `colaboradorId` nulo = página que não casou com
+// o cadastro (o RH reconcilia). id sugerido: "<competencia>::<colaboradorId>".
+export interface Ponto {
+  id: string;
+  competencia: string;          // "YYYY-MM"
+  colaboradorId: string | null;
+  nomePdf: string;              // nome como veio no cabeçalho do PDF
+  normaisMin: number;
+  faltasMin: number;
+  extrasMin: number;
+  periodoInicio?: string | null; // "YYYY-MM-DD"
+  periodoFim?: string | null;
+  importadoEm: string;          // ISO
+  atualizadoEm: string;         // ISO (sincronização)
+}

@@ -22,8 +22,15 @@ import { formatDate, formatNumber, formatPercent, diaLocalISO } from "@/lib/form
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
 import { GlossarioComportamental } from "@/components/comportamental/glossario";
 import { Link } from "react-router-dom";
-import { HOJE } from "@/data/_gen";
+import { HOJE, slug } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
+import { lerPontoPdf, minParaHora, type PontoImportado } from "@/lib/pontoImport";
+
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const labelMes = (comp: string) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(comp || "");
+  return m ? `${MESES[+m[2] - 1]}/${m[1]}` : (comp || "—");
+};
 
 // As datas de advertências/ausências são guardadas como "YYYY-MM-DD" — a comparação
 // lexicográfica funciona como comparação cronológica.
@@ -85,6 +92,12 @@ export default function Ponto() {
             conteudo: <AbaAbsenteismo escopo={escopo} idsEscopo={idsEscopo} drill={drill} podeEditar={podeEditar} />,
           },
           {
+            id: "ponto",
+            label: "Ponto do mês",
+            icon: <Clock className="h-4 w-4" />,
+            conteudo: <AbaPontoMes podeEditar={podeEditar} />,
+          },
+          {
             id: "comportamental",
             label: "Guia comportamental",
             icon: <Brain className="h-4 w-4" />,
@@ -111,6 +124,215 @@ export default function Ponto() {
 }
 
 type Drill = ReturnType<typeof useDrill>;
+
+// =====================================================================================
+// ABA — PONTO DO MÊS (importa o Cartão Ponto do Secullum em PDF)
+// =====================================================================================
+function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
+  const d = useDominio();
+  const toast = useToast();
+  const { items: pontos, criar, atualizar, remover } = useColecao("pontos");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [previa, setPrevia] = useState<PontoImportado | null>(null);
+  const [competencia, setCompetencia] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+
+  const colOpts = useMemo(() => d.colaboradores.map((c) => ({ id: c.id, nome: c.nome })), [d.colaboradores]);
+  const nomeColab = (id: string | null | undefined) => (id ? (d.colaboradores.find((c) => c.id === id)?.nome ?? id) : null);
+
+  const onArquivo = async (file: File) => {
+    setOcupado(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const r = await lerPontoPdf(buf, colOpts);
+      if (!r.linhas.length) { toast("Não encontrei funcionários neste PDF. É o Cartão Ponto do Secullum?", "erro"); return; }
+      setPrevia(r);
+      setCompetencia(r.competencia || competencia);
+      const casados = r.linhas.filter((l) => l.colaboradorId).length;
+      toast(`Lido: ${r.linhas.length} funcionário(s), ${casados} casaram com o cadastro.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Não consegui ler este PDF.", "erro");
+    } finally { setOcupado(false); }
+  };
+
+  const definirColab = (i: number, colId: string) => {
+    if (!previa) return;
+    setPrevia({ ...previa, linhas: previa.linhas.map((l, j) => (j === i ? { ...l, colaboradorId: colId || null, colaboradorNome: nomeColab(colId) } : l)) });
+  };
+
+  const importar = () => {
+    if (!previa) return;
+    if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano).", "erro"); return; }
+    const agora = new Date().toISOString();
+    let n = 0;
+    for (const l of previa.linhas) {
+      const chave = l.colaboradorId || `pdf-${slug(l.nomePdf)}`;
+      const id = `${competencia}::${chave}`;
+      const rec = {
+        id, competencia, colaboradorId: l.colaboradorId, nomePdf: l.nomePdf,
+        normaisMin: l.normaisMin, faltasMin: l.faltasMin, extrasMin: l.extrasMin,
+        periodoInicio: previa.periodoInicio ?? null, periodoFim: previa.periodoFim ?? null,
+        importadoEm: agora, atualizadoEm: agora,
+      };
+      if (pontos.some((p) => p.id === id)) atualizar(id, rec); else criar(rec);
+      n++;
+    }
+    toast(`${n} ponto(s) importados para ${labelMes(competencia)}. Vão somar no custo mensal.`);
+    setPrevia(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const doMes = useMemo(
+    () => pontos.filter((p) => p.competencia === competencia)
+      .sort((a, b) => (nomeColab(a.colaboradorId) || a.nomePdf).localeCompare(nomeColab(b.colaboradorId) || b.nomePdf)),
+    [pontos, competencia], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const totExtras = doMes.reduce((s, p) => s + (p.extrasMin || 0), 0);
+  const totFaltas = doMes.reduce((s, p) => s + (p.faltasMin || 0), 0);
+  const comps = useMemo(() => [...new Set(pontos.map((p) => p.competencia))].sort().reverse(), [pontos]);
+
+  if (!podeEditar) {
+    return <EmptyState icon={<Clock className="h-6 w-6" />} title="Sem permissão" description="O import de ponto é restrito ao RH/gestão." />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Upload */}
+      <Card>
+        <CardHeader title="Importar Cartão Ponto (Secullum)" subtitle="Suba o PDF do mês. As horas extras e faltas já vêm calculadas — só extraio e cruzo com o cadastro." icon={<Upload className="h-[18px] w-[18px]" />} />
+        <CardBody>
+          <input ref={fileRef} type="file" accept="application/pdf" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void onArquivo(f); }} />
+          <button onClick={() => fileRef.current?.click()} disabled={ocupado} className="btn-primary disabled:opacity-50">
+            {ocupado ? <Clock className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {ocupado ? "Lendo o PDF…" : "Escolher o PDF do ponto"}
+          </button>
+          <p className="mt-2 text-xs text-slate-400">Nada é enviado para fora: o PDF é lido aqui no seu navegador.</p>
+        </CardBody>
+      </Card>
+
+      {/* Prévia da importação */}
+      {previa && (
+        <Card>
+          <CardHeader
+            title="Confira antes de importar"
+            subtitle={`${previa.linhas.length} funcionário(s)${previa.periodoInicio ? ` · período ${diaData(previa.periodoInicio)} a ${diaData(previa.periodoFim)}` : ""}`}
+            icon={<CheckCircle2 className="h-[18px] w-[18px]" />}
+            action={
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-500">Competência</label>
+                <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
+              </div>
+            }
+          />
+          <CardBody>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-slate-100 text-xs text-slate-500">
+                  <tr>
+                    <th className="th">Funcionário (PDF)</th>
+                    <th className="th">Cadastro</th>
+                    <th className="th text-right">Normais</th>
+                    <th className="th text-right">Faltas</th>
+                    <th className="th text-right">Extras</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {previa.linhas.map((l, i) => (
+                    <tr key={i} className={l.colaboradorId ? "" : "bg-amber-50/50"}>
+                      <td className="td text-slate-700">{l.nomePdf}</td>
+                      <td className="td">
+                        {l.colaboradorId ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700"><CheckCircle2 className="h-3.5 w-3.5" /> {nomeColab(l.colaboradorId)}</span>
+                        ) : (
+                          <Select value="" onChange={(e) => definirColab(i, e.target.value)} className="min-w-[180px] text-xs">
+                            <option value="">⚠️ Vincular a…</option>
+                            {colOpts.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                          </Select>
+                        )}
+                      </td>
+                      <td className="td text-right tabular-nums text-slate-600">{l.normaisTxt || "—"}</td>
+                      <td className={`td text-right tabular-nums ${l.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-400"}`}>{l.faltasTxt || "—"}</td>
+                      <td className={`td text-right tabular-nums ${l.extrasMin > 0 ? "font-medium text-brand" : "text-slate-400"}`}>{l.extrasTxt || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button onClick={() => { setPrevia(null); if (fileRef.current) fileRef.current.value = ""; }} className="btn-outline">Cancelar</button>
+              <button onClick={importar} className="btn-primary"><CheckCircle2 className="h-4 w-4" /> Importar {previa.linhas.length} para {labelMes(competencia)}</button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Ponto já importado da competência */}
+      {!previa && (
+        <Card>
+          <CardHeader
+            title="Ponto importado"
+            subtitle="Horas extras e faltas do mês, por colaborador. Estes números somam no custo mensal de cada um."
+            icon={<Clock className="h-[18px] w-[18px]" />}
+            action={
+              comps.length > 0 ? (
+                <Select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="text-sm">
+                  {!comps.includes(competencia) && <option value="">Escolha o mês…</option>}
+                  {comps.map((c) => <option key={c} value={c}>{labelMes(c)}</option>)}
+                </Select>
+              ) : undefined
+            }
+          />
+          <CardBody>
+            {doMes.length === 0 ? (
+              <EmptyState icon={<Clock className="h-6 w-6" />} title="Nada importado ainda" description="Suba o PDF do Cartão Ponto acima para começar." />
+            ) : (
+              <>
+                <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatCard label="Funcionários" value={String(doMes.length)} icon={<Clock className="h-4 w-4" />} />
+                  <StatCard label="Total de extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} />
+                  <StatCard label="Total de faltas" value={minParaHora(totFaltas)} icon={<CalendarX2 className="h-4 w-4" />} />
+                  <StatCard label="Não vinculados" value={String(doMes.filter((p) => !p.colaboradorId).length)} icon={<AlertTriangle className="h-4 w-4" />} />
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-slate-100 text-xs text-slate-500">
+                      <tr>
+                        <th className="th">Colaborador</th>
+                        <th className="th text-right">Normais</th>
+                        <th className="th text-right">Faltas</th>
+                        <th className="th text-right">Extras</th>
+                        <th className="th" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {doMes.map((p) => (
+                        <tr key={p.id} className={p.colaboradorId ? "hover:bg-slate-50/50" : "bg-amber-50/40"}>
+                          <td className="td">
+                            {p.colaboradorId
+                              ? <span className="font-medium text-slate-700">{nomeColab(p.colaboradorId)}</span>
+                              : <span className="text-amber-700">{p.nomePdf} <Badge variant="warning">não vinculado</Badge></span>}
+                          </td>
+                          <td className="td text-right tabular-nums text-slate-600">{minParaHora(p.normaisMin)}</td>
+                          <td className={`td text-right tabular-nums ${p.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-400"}`}>{minParaHora(p.faltasMin)}</td>
+                          <td className={`td text-right tabular-nums ${p.extrasMin > 0 ? "font-medium text-brand" : "text-slate-400"}`}>{minParaHora(p.extrasMin)}</td>
+                          <td className="td text-right">
+                            <button className="btn-ghost p-1.5 text-red-500" title="Remover" onClick={() => remover(p.id)}><Trash2 className="h-4 w-4" /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </CardBody>
+        </Card>
+      )}
+    </div>
+  );
+}
 
 // =====================================================================================
 // ABA — ADVERTÊNCIAS
