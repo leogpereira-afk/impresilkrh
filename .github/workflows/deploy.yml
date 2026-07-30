@@ -1,11 +1,15 @@
 name: Deploy (GitHub Pages)
 
-# Publica o build da SPA no GitHub Pages. Não há mais Netlify: o único backend
-# é o Supabase (Auth + Postgres + Storage + Edge Functions), acessado direto
-# pelo navegador com a anon key (pública por design — protegida por RLS).
+# Publica o build da SPA no GitHub Pages. O backend é o Supabase (Auth +
+# Postgres + Storage + Edge Functions), acessado direto pelo navegador com a
+# anon key (pública por design — protegida por RLS).
+#
+# Dispara na `nuvem-supabase` durante a validação (assim o site novo sobe SEM
+# tocar na `main`, que o Netlify ainda reconstrói) e também na `main`, para
+# quando for feita a virada final (sair do Netlify).
 on:
   push:
-    branches: [main]
+    branches: [main, nuvem-supabase]
   workflow_dispatch: {}
 
 permissions:
