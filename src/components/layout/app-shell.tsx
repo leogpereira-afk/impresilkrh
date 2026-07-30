@@ -27,6 +27,7 @@ interface ItemNav {
   perfis: string[];
   grupo: string;
   destaque?: boolean; // item em evidência no menu (cor âmbar/dourada)
+  sub?: boolean; // subitem (indentado sob o item anterior, ex.: sob Colaboradores)
 }
 
 const TODOS = ["ADMIN_RH", "GESTOR", "COLABORADOR"];
@@ -36,21 +37,21 @@ const RH = ["ADMIN_RH"];
 const NAV: ItemNav[] = [
   { href: "/painel", label: "Painel", icon: LayoutDashboard, perfis: TODOS, grupo: "Visão geral" },
   { href: "/calendario", label: "Calendário", icon: CalendarDays, perfis: TODOS, grupo: "Visão geral" },
-  // Pessoas — operações do quadro
+  // Pessoas — operações do quadro. Desempenho e Treinamento ficam aninhados
+  // sob Colaboradores (subitens indentados).
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas", sub: true },
+  { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
-  { href: "/mural-vagas", label: "Mural de Vagas", icon: Trophy, perfis: TODOS, grupo: "Pessoas", destaque: true },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
-  { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Onboarding e Offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
-  // Viagens e Diárias vive dentro de "Custos de Colaboradores" (aba) — só RH.
   // Cargos & Custos — estrutura e dinheiro
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
   { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },
+  { href: "/folha-variavel", label: "Folha Variável", icon: Coins, perfis: GESTAO, grupo: "Cargos & Custos" },
   // Comunicação & Conteúdo — comunicação interna e material de referência
   { href: "/comunicacao", label: "Comunicação Interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
   { href: "/mensagens", label: "Disparo de Mensagens", icon: Send, perfis: GESTAO, grupo: "Comunicação & Conteúdo" },
@@ -123,6 +124,7 @@ export function AppShell() {
                     onClick={() => setAberto(false)}
                     className={cn(
                       "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
+                      item.sub && "!py-1.5 !pl-9 text-[13px]", // subitem aninhado (ex.: sob Colaboradores)
                       // Sidebar navy: item em destaque = pílula dourada; ativo = realce
                       // claro translúcido; inativo = texto claro com hover suave.
                       item.destaque

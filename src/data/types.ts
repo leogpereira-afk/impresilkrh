@@ -597,6 +597,14 @@ export interface Candidato {
 // totais JÁ calculados pelo sistema de ponto (regido pela CLT) em MINUTOS, para
 // somar na folha/custo do mês. `colaboradorId` nulo = página que não casou com
 // o cadastro (o RH reconcilia). id sugerido: "<competencia>::<colaboradorId>".
+// `dias` guarda o detalhe diário (para o relatório listar o dia exato de falta,
+// atestado/abono e os dias com hora extra).
+export interface PontoDia {
+  data: string;                 // "YYYY-MM-DD"
+  situacao: "normal" | "falta" | "abono" | "feriado" | "ferias" | "folga";
+  extrasMin: number;
+  faltasMin: number;
+}
 export interface Ponto {
   id: string;
   competencia: string;          // "YYYY-MM"
@@ -605,8 +613,38 @@ export interface Ponto {
   normaisMin: number;
   faltasMin: number;
   extrasMin: number;
+  dias?: PontoDia[];
   periodoInicio?: string | null; // "YYYY-MM-DD"
   periodoFim?: string | null;
   importadoEm: string;          // ISO
   atualizadoEm: string;         // ISO (sincronização)
+}
+
+// Folha variável: verbas do mês lançadas por colaborador (a assistente lança; o
+// contábil aprova no fim do mês → paga no 1º pagamento). Valores em R$. As horas
+// extras/faltas em si vêm do ponto (acima) — aqui entram as verbas em dinheiro.
+export type TipoLancamento = "hora_extra" | "empreita" | "diaria" | "bonus" | "bonus_viagem" | "comissao" | "limpeza";
+export interface Lancamento {
+  id: string;
+  colaboradorId: string;
+  competencia: string;          // "YYYY-MM"
+  data?: string | null;         // "YYYY-MM-DD" (dia do lançamento, opcional)
+  tipo: TipoLancamento;
+  valor: number;                // R$
+  descricao?: string;
+  criadoPor?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+// Fechamento (aprovação) da folha variável de um colaborador num mês.
+// id: "<competencia>::<colaboradorId>".
+export interface FechamentoFolha {
+  id: string;
+  colaboradorId: string;
+  competencia: string;
+  aprovado: boolean;
+  aprovadoPor?: string;
+  aprovadoEm?: string | null;
+  atualizadoEm: string;
 }

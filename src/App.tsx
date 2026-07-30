@@ -18,7 +18,7 @@ const Carreira = lazy(() => import("@/pages/Carreira"));
 const Desempenho = lazy(() => import("@/pages/Desempenho"));
 const Ferias = lazy(() => import("@/pages/Ferias"));
 const Vagas = lazy(() => import("@/pages/Vagas"));
-const MuralVagas = lazy(() => import("@/pages/MuralVagas"));
+const FolhaVariavel = lazy(() => import("@/pages/FolhaVariavel"));
 const Integracao = lazy(() => import("@/pages/Integracao"));
 const Comunicacao = lazy(() => import("@/pages/Comunicacao"));
 const Pops = lazy(() => import("@/pages/Pops"));
@@ -82,7 +82,7 @@ export default function App() {
             <Route path="/ferias" element={<Restrito perfis={GESTAO}><Ferias /></Restrito>} />
             <Route path="/integracao" element={<Restrito perfis={GESTAO}><Integracao /></Restrito>} />
             <Route path="/vagas" element={<Restrito perfis={RH}><Vagas /></Restrito>} />
-            <Route path="/mural-vagas" element={<MuralVagas />} />
+            <Route path="/folha-variavel" element={<Restrito perfis={GESTAO}><FolhaVariavel /></Restrito>} />
             <Route path="/comunicacao" element={<Comunicacao />} />
           <Route path="/mensagens" element={<Restrito perfis={GESTAO}><Mensagens /></Restrito>} />
             <Route path="/pops" element={<Pops />} />
