@@ -1,80 +1,94 @@
-# Login real (verificado no servidor)
+# Login real (Supabase Auth)
 
-Este é o modo **seguro** de acesso: a senha é conferida **no servidor**, que
-emite um crachá assinado (JWT). A nuvem (dados de RH: CPF, salários, etc.) só
-aceita ler/gravar para quem tem um crachá válido. É a forma correta para a LGPD.
-
-Enquanto o login real **não** estiver ligado, o app usa o login local de sempre
-(a senha é conferida no navegador) — útil, mas não protege os dados na nuvem.
+O login é sempre verificado **no servidor** (Supabase Auth) — não existe mais o
+modo "local" com senha conferida só no navegador nem token compartilhado. A
+nuvem (dados de RH: CPF, salários etc.) só aceita ler/gravar para quem tem uma
+sessão válida.
 
 ---
 
 ## Como funciona
 
-1. A pessoa digita **nome + senha** na tela de entrada (a mesma de hoje).
-2. O app chama a função **`/.netlify/functions/auth`**, que confere a senha
-   (guardada com **hash PBKDF2**, nunca em texto puro) e devolve um **JWT**.
-3. O app guarda o crachá e o envia (`Authorization: Bearer …`) em **toda**
-   conversa com a nuvem. A função de dados **rejeita** quem não tem crachá válido.
-4. O crachá vale **30 dias**: dentro desse prazo, abrir o app **não** exige
-   internet de novo (funciona offline). Depois disso, pede login outra vez.
+1. A pessoa digita **nome + senha** na tela de entrada (igual a sempre — não é
+   e-mail).
+2. O app normaliza o nome (`normalizarUsuario`, em `src/lib/auth.ts`) e chama
+   `supabase.auth.signInWithPassword({ email: "<nome-normalizado>@rh.impresilk.local", password })`.
+   O "e-mail" é só um identificador interno do Supabase Auth — ninguém precisa
+   ter e-mail de verdade cadastrado, e ninguém recebe e-mail nenhum.
+3. Login OK → o app lê o perfil (ADMIN_RH/GESTOR/COLABORADOR) e o
+   `colaboradorId` na tabela `perfis` (Postgres) e guarda a sessão.
+4. Toda chamada com a nuvem (Edge Functions `sync` e `admin-users`) vai com
+   `Authorization: Bearer <access_token>` da sessão do Supabase. Sem sessão
+   válida, a nuvem recusa (401).
+5. A sessão é renovada sozinha pelo `supabase-js` enquanto o navegador ficar
+   aberto; expirando, pede login de novo.
 
-> O **diretor master** entra sempre (variável `AUTH_MASTER_SENHA`), com perfil de
-> RH e acesso total — assim o RH nunca fica trancado para fora.
-
----
-
-## Passo a passo para ligar (no painel do Netlify)
-
-1. **Crie as variáveis de ambiente** (Site configuration → Environment variables):
-   - `JWT_SECRET` — um segredo forte e aleatório (ex.: 40+ caracteres). **Fica só
-     no servidor**; nunca vai para o app. É o que liga o login real.
-   - `AUTH_MASTER_SENHA` — a senha do diretor master (Leonardo).
-   - `AUTH_MASTER_USUARIO` — *(opcional)* nome de usuário do master (padrão `leonardo`).
-2. **Republique** (Trigger deploy). A partir daí o app entra em **modo login real**.
-3. **Entre como master** (nome do master + `AUTH_MASTER_SENHA`).
-4. Vá em **Painel de Controle → Usuários e Permissões**:
-   - Para cada pessoa, defina a senha (campo **Senha de acesso**) e salve — a
-     senha é ativada no servidor automaticamente.
-   - Ou clique em **“Migrar senhas”** para enviar de uma vez todas as senhas já
-     cadastradas dos usuários ativos.
-5. **Feche a brecha antiga:** quando todos já tiverem senha, **remova a variável
-   `SYNC_TOKEN`** do Netlify e republique. Assim a nuvem passa a aceitar **apenas**
-   o crachá do login (some a chave que ficava visível no DevTools).
-
-> Os dois modos convivem na transição: enquanto `SYNC_TOKEN` existir, a
-> sincronização automática continua funcionando; ao removê-lo, vale só o login real.
+> O **acesso fixo do dono** (nome "leonardo"/"leonardo goncalves" + a senha
+> curta cadastrada em `src/pages/Login.tsx`) continua existindo, **fora** do
+> Supabase — é a rede de segurança para o dono nunca ficar trancado para fora,
+> mesmo que o Supabase esteja fora do ar ou mal configurado.
 
 ---
 
-## Comandos de verificação (após o deploy)
+## Provisionar contas (Painel de Controle › Usuários)
 
-Troque `SEU-SITE`, `NOME` e `SENHA`.
+Criar/atualizar a senha de alguém chama a Edge Function `admin-users` (ação
+`provisionar`), que só um usuário com perfil **ADMIN_RH** pode acionar. Ela usa
+a **service_role key** do Supabase (nunca exposta no navegador) para criar ou
+atualizar a conta no Supabase Auth e gravar o vínculo em `perfis`.
+
+- Definir a senha de cada pessoa no formulário ativa a conta na hora.
+- **"Migrar senhas"** envia de uma vez as senhas já cadastradas dos usuários
+  ativos (útil na primeira migração de dados).
+- Excluir um usuário (perfil "Usuários") apaga a conta inteira no Supabase Auth
+  (`admin-users` / `removerAcesso`) — revoga o acesso imediatamente.
+
+## Bootstrap da primeira conta ADMIN_RH
+
+A Edge Function `admin-users` só aceita chamadas de quem **já é** ADMIN_RH —
+então a toda primeira conta precisa ser criada manualmente, uma única vez:
+
+1. Supabase Dashboard → **Authentication → Users → Add user**: e-mail
+   `leonardo.goncalves@rh.impresilk.local` (ajuste ao nome normalizado do
+   master), senha à sua escolha, **Auto Confirm User** marcado.
+2. Copie o `User UID` gerado e rode no **SQL Editor** do Supabase:
+   ```sql
+   insert into public.perfis (user_id, usuario, colaborador_id, nome, perfil)
+   values ('COLE-O-USER-UID-AQUI', 'leonardo goncalves', 'leonardo-goncalves', 'Leonardo Gonçalves', 'ADMIN_RH');
+   ```
+3. Pronto — esse usuário já consegue entrar pelo app e usar "Migrar senhas" /
+   provisionar todo o resto da equipe pela própria tela.
+
+---
+
+## Comandos de verificação (após configurar)
+
+Troque `SEU-PROJETO`, `NOME`, `SENHA` e o e-mail sintético correspondente.
 
 ```bash
-# 1) Login devolve um token (JWT):
-curl -s -X POST https://SEU-SITE.netlify.app/.netlify/functions/auth \
-  -H "content-type: application/json" \
-  -d '{"action":"login","usuario":"NOME","senha":"SENHA"}'
-# Esperado: {"token":"xxxxx.yyyyy.zzzzz","perfil":"...","colaboradorId":"..."}
+# 1) Login devolve uma sessão (access_token):
+curl -s -X POST "https://SEU-PROJETO.supabase.co/auth/v1/token?grant_type=password" \
+  -H "apikey: SUA-ANON-KEY" -H "content-type: application/json" \
+  -d '{"email":"nome.normalizado@rh.impresilk.local","password":"SENHA"}'
+# Esperado: {"access_token":"...", "user": {...}, ...}
 
-# 2) Senha errada é recusada (401):
+# 2) Senha errada é recusada (400):
 curl -s -o /dev/null -w "%{http_code}\n" -X POST \
-  https://SEU-SITE.netlify.app/.netlify/functions/auth \
-  -H "content-type: application/json" \
-  -d '{"action":"login","usuario":"NOME","senha":"errada"}'
-# Esperado: 401
+  "https://SEU-PROJETO.supabase.co/auth/v1/token?grant_type=password" \
+  -H "apikey: SUA-ANON-KEY" -H "content-type: application/json" \
+  -d '{"email":"nome.normalizado@rh.impresilk.local","password":"errada"}'
+# Esperado: 400
 
-# 3) A nuvem aceita o crachá (use o token do passo 1):
-TOKEN="cole-o-token-aqui"
-curl -s -X POST https://SEU-SITE.netlify.app/.netlify/functions/sync \
+# 3) A nuvem aceita o crachá (use o access_token do passo 1):
+TOKEN="cole-o-access-token-aqui"
+curl -s -X POST "https://SEU-PROJETO.supabase.co/functions/v1/sync" \
   -H "content-type: application/json" -H "authorization: Bearer $TOKEN" \
   -d '{"action":"ping"}'
 # Esperado: {"ok":true,"ts":"..."}
 
 # 4) Sem crachá, a nuvem recusa (401):
 curl -s -o /dev/null -w "%{http_code}\n" -X POST \
-  https://SEU-SITE.netlify.app/.netlify/functions/sync \
+  "https://SEU-PROJETO.supabase.co/functions/v1/sync" \
   -H "content-type: application/json" -d '{"action":"ping"}'
 # Esperado: 401
 ```
@@ -83,12 +97,12 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST \
 
 ## Observações de segurança
 
-- As senhas ficam no servidor como **hash PBKDF2-SHA256 com sal** — não dá para
-  “ler” a senha de volta a partir do que está guardado.
-- O `JWT_SECRET` **nunca** é embutido no app (só um booleano indicando que o login
-  real está ligado). Guarde-o bem; se trocá-lo, todos os crachás existentes deixam
-  de valer (todo mundo refaz o login).
-- Para revogar o acesso de alguém: em **Usuários**, exclua o usuário (remove a
-  senha do servidor) ou troque a senha.
-- O primeiro login de cada pessoa precisa de **internet**. Depois, o app abre
-  offline por até 30 dias (validade do crachá).
+- As senhas ficam guardadas pelo próprio Supabase Auth (padrão da indústria,
+  fora do nosso código) — este app nunca vê nem guarda a senha em texto puro.
+- A **service_role key** (usada pelas Edge Functions para criar/apagar contas e
+  ler/gravar os dados) **nunca** sai do Supabase — não vai para o GitHub, não
+  vai para o bundle do app. Só a **anon key** (pública, protegida por RLS) fica
+  no app.
+- Para revogar o acesso de alguém: em **Usuários**, exclua o usuário.
+- O primeiro login de cada pessoa precisa de internet; depois, o
+  `supabase-js` mantém a sessão viva localmente até expirar.

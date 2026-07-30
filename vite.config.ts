@@ -2,25 +2,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
 
-// SPA estática — sem servidor, sem banco. Publicável no Netlify (drag-and-drop ou Git).
+// SPA estática — publicável no GitHub Pages. A nuvem (dados + login) é o
+// Supabase: VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (lidas via
+// import.meta.env) definem se o build sai com sincronização ligada. Sem elas,
+// o app funciona 100% local.
 export default defineConfig({
   plugins: [react()],
-  // Sincronização automática: o token definido no Netlify (variável SYNC_TOKEN)
-  // é embutido no app no momento do build. Assim NÃO há senha para digitar — todo
-  // computador que abre o app já sincroniza sozinho. Se SYNC_TOKEN não existir, o
-  // valor fica vazio e a sincronização permanece desligada (app 100% local).
-  //
-  // __AUTH_JWT__: liga o LOGIN REAL (verificado no servidor). Embute apenas um
-  // booleano — NUNCA o segredo (JWT_SECRET fica só no servidor). Quando true, o
-  // app autentica pela função /auth e usa o crachá (JWT) para falar com a nuvem.
+  // Caminho onde o build é servido. Padrão: a URL de projeto do GitHub Pages
+  // deste repo (https://<usuario>.github.io/impresilkrh/). Quando este app for
+  // remontado no futuro "hub" (impresilk.com.br/rh), o hub builda com
+  // BASE_PATH=/rh/ — sem mudar código.
+  base: process.env.BASE_PATH || "/impresilkrh/",
   // Testes (vitest). `jsdom` porque parte do código toca window/localStorage.
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-  },
-  define: {
-    __SYNC_TOKEN__: JSON.stringify(process.env.SYNC_TOKEN ?? ""),
-    __AUTH_JWT__: JSON.stringify(Boolean(process.env.JWT_SECRET)),
   },
   resolve: {
     alias: {

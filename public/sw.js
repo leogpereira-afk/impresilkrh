@@ -4,8 +4,8 @@
  * Objetivos:
  *  - App abre rápido e funciona offline (cache do "casco" + dos assets já vistos).
  *  - SEMPRE buscar a versão mais nova quando houver rede (evita ver dados velhos).
- *  - NUNCA cachear as chamadas da função de sincronização (/.netlify/functions/*),
- *    senão a sincronização leria respostas congeladas.
+ *  - NUNCA cachear as chamadas da nuvem (Supabase): já ficam de fora porque são
+ *    POST (regra 1) e de outra origem, *.supabase.co (regra 3).
  *
  * Versão do cache: troque CACHE a cada deploy que mude assets do casco para
  * forçar a limpeza do cache antigo. (Assets do Vite têm hash no nome, então o
@@ -42,13 +42,10 @@ self.addEventListener("fetch", (event) => {
   // 1) Só tratamos GET. POST/PUT (inclusive a sincronização) passa direto.
   if (req.method !== "GET") return;
 
-  // 2) NUNCA tocar nas funções serverless: sempre rede, sem cache.
-  if (url.pathname.startsWith("/.netlify/")) return;
-
-  // 3) Só cuidamos do nosso próprio domínio (deixa fontes/CDN externos à parte).
+  // 2) Só cuidamos do nosso próprio domínio (deixa Supabase, fontes/CDN externos à parte).
   if (url.origin !== self.location.origin) return;
 
-  // 4) Network-first: tenta a rede; em sucesso, atualiza o cache; em falha
+  // 3) Network-first: tenta a rede; em sucesso, atualiza o cache; em falha
   //    (offline), entrega do cache. Para navegação (HTML), o fallback é o casco.
   //    Navegação (HTML) busca SEMPRE fresco (cache: "no-store"), ignorando o cache
   //    HTTP do browser — assim todo deploy novo chega no F5, sem hard-refresh.

@@ -1,4 +1,4 @@
-# Confere o código a cada envio para o GitHub, ANTES de o Netlify publicar.
+# Confere o código a cada envio para o GitHub, ANTES de o GitHub Pages publicar.
 #
 # Por que: já aconteceu de a publicação quebrar por erro de tipo ou por o
 # package-lock ficar inconsistente — e só se descobria com o site fora do ar.
@@ -36,6 +36,6 @@ jobs:
       - name: Testes
         run: npm test
 
-      # Build completo: garante que o que o Netlify vai fazer funciona aqui.
+      # Build completo: garante que o que o GitHub Pages vai fazer funciona aqui.
       - name: Build de produção
         run: npm run build
