@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2, Pencil,
   Upload, ExternalLink, CalendarRange, CalendarX2, Clock, CheckCircle2, Trophy, BarChart3, Brain,
+  ChevronDown, ChevronRight, Stethoscope, Coins, Info, ListChecks, Copy, FileDown, FileSpreadsheet,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -14,17 +15,19 @@ import { Avatar, EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais, BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
-import { useColecao } from "@/lib/store";
+import { useColecao, useConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, formatNumber, formatPercent, diaLocalISO } from "@/lib/format";
+import { cn } from "@/lib/cn";
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
 import { GlossarioComportamental } from "@/components/comportamental/glossario";
 import { Link } from "react-router-dom";
 import { HOJE, slug } from "@/data/_gen";
-import type { Colaborador } from "@/data/types";
+import type { Colaborador, Ponto, PontoDia, SituacaoDia } from "@/data/types";
 import { lerPontoPdf, minParaHora, type PontoImportado } from "@/lib/pontoImport";
+import FolhaVariavel from "@/pages/FolhaVariavel";
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const labelMes = (comp: string) => {
@@ -53,6 +56,41 @@ const COR_TIPO_AUS: Record<string, string> = {
 const TIPOS_AUSENCIA = ["Falta", "Atraso", "Atestado", "Falta justificada", "Saída antecipada"] as const;
 
 const primeiroNome = (nome: string) => nome.split(" ")[0];
+
+// --- Extrato do ponto: rótulos e cores por situação do dia --------------------
+const SIT_LABEL: Record<SituacaoDia, string> = {
+  normal: "Trabalhado", falta: "Falta", atestado: "Atestado", abono: "Abono",
+  feriado: "Feriado", ferias: "Férias", folga: "Folga (DSR)",
+};
+const SIT_BADGE: Record<SituacaoDia, "neutral" | "danger" | "info" | "success" | "warning"> = {
+  normal: "neutral", falta: "danger", atestado: "info", abono: "success",
+  feriado: "warning", ferias: "info", folga: "neutral",
+};
+// Situações que a legenda explica (na ordem em que aparecem).
+const SIT_LEGENDA: { s: SituacaoDia; txt: string }[] = [
+  { s: "normal", txt: "Dia trabalhado normalmente." },
+  { s: "falta", txt: "Falta não justificada — desconta na folha." },
+  { s: "atestado", txt: "Falta coberta por atestado médico (abonada)." },
+  { s: "abono", txt: "Falta abonada pela empresa." },
+  { s: "feriado", txt: "Feriado." },
+  { s: "ferias", txt: "Dia dentro de período de férias." },
+  { s: "folga", txt: "Descanso semanal remunerado (fim de semana)." },
+];
+const diaCurto = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d);
+
+// Contagens do extrato para o dashboard (soma de todos os colaboradores do mês).
+function resumoDias(dias: PontoDia[] | undefined) {
+  const r = { faltas: 0, atestados: 0, abonos: 0, comExtra: 0, extrasMin: 0, faltasMin: 0 };
+  for (const dia of dias ?? []) {
+    if (dia.situacao === "falta") r.faltas++;
+    if (dia.situacao === "atestado") r.atestados++;
+    if (dia.situacao === "abono") r.abonos++;
+    if (dia.extrasMin > 0) r.comExtra++;
+    r.extrasMin += dia.extrasMin;
+    r.faltasMin += dia.faltasMin;
+  }
+  return r;
+}
 
 export default function Ponto() {
   const sessao = useSessao();
@@ -98,6 +136,12 @@ export default function Ponto() {
             conteudo: <AbaPontoMes podeEditar={podeEditar} />,
           },
           {
+            id: "folha-variavel",
+            label: "Folha Variável",
+            icon: <Coins className="h-4 w-4" />,
+            conteudo: <FolhaVariavel embutido />,
+          },
+          {
             id: "comportamental",
             label: "Guia comportamental",
             icon: <Brain className="h-4 w-4" />,
@@ -130,12 +174,18 @@ type Drill = ReturnType<typeof useDrill>;
 // =====================================================================================
 function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const d = useDominio();
+  const config = useConfig();
   const toast = useToast();
   const { items: pontos, criar, atualizar, remover } = useColecao("pontos");
   const fileRef = useRef<HTMLInputElement>(null);
   const [previa, setPrevia] = useState<PontoImportado | null>(null);
   const [competencia, setCompetencia] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [modo, setModo] = useState<"tudo" | "resumo">("tudo");
+  const [excluir, setExcluir] = useState<string | null>(null);
+  const [expandido, setExpandido] = useState<Set<string>>(() => new Set());
+  const toggleExp = (id: string) =>
+    setExpandido((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const colOpts = useMemo(() => d.colaboradores.map((c) => ({ id: c.id, nome: c.nome })), [d.colaboradores]);
   const nomeColab = (id: string | null | undefined) => (id ? (d.colaboradores.find((c) => c.id === id)?.nome ?? id) : null);
@@ -171,6 +221,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       const rec = {
         id, competencia, colaboradorId: l.colaboradorId, nomePdf: l.nomePdf,
         normaisMin: l.normaisMin, faltasMin: l.faltasMin, extrasMin: l.extrasMin,
+        dias: l.dias,
         periodoInicio: previa.periodoInicio ?? null, periodoFim: previa.periodoFim ?? null,
         importadoEm: agora, atualizadoEm: agora,
       };
@@ -190,6 +241,38 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const totExtras = doMes.reduce((s, p) => s + (p.extrasMin || 0), 0);
   const totFaltas = doMes.reduce((s, p) => s + (p.faltasMin || 0), 0);
   const comps = useMemo(() => [...new Set(pontos.map((p) => p.competencia))].sort().reverse(), [pontos]);
+
+  // Dashboard do extrato: soma das contagens diárias de todos os colaboradores.
+  const agg = useMemo(
+    () => doMes.reduce(
+      (r, p) => { const x = resumoDias(p.dias); r.faltas += x.faltas; r.atestados += x.atestados; r.abonos += x.abonos; r.comExtra += x.comExtra; return r; },
+      { faltas: 0, atestados: 0, abonos: 0, comExtra: 0 },
+    ),
+    [doMes],
+  );
+
+  // Resumo p/ enviar: só quem teve hora extra, falta ou atestado no mês.
+  const resumoLinhas = useMemo<LinhaResumo[]>(
+    () => doMes
+      .map((p) => ({ ...ocorrenciasDo(p), nome: nomeColab(p.colaboradorId) || `${p.nomePdf} (não vinculado)` }))
+      .filter(temOcorrencia),
+    [doMes], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // Totais do resumo derivam das PRÓPRIAS linhas exibidas — fecham com o corpo da tabela.
+  const totResumo = useMemo(
+    () => resumoLinhas.reduce(
+      (t, r) => { t.extrasMin += r.extrasMin; t.faltasMin += r.faltasMin; t.atestados += r.atestados.length; return t; },
+      { extrasMin: 0, faltasMin: 0, atestados: 0 },
+    ),
+    [resumoLinhas],
+  );
+  const empresa = config.empresaNome || "Impresilk";
+  const copiarResumo = async () => {
+    try {
+      await navigator.clipboard.writeText(textoResumo(empresa, competencia, resumoLinhas));
+      toast("Resumo copiado — é só colar no WhatsApp.");
+    } catch { toast("Não consegui copiar aqui. Baixe o PDF.", "erro"); }
+  };
 
   if (!podeEditar) {
     return <EmptyState icon={<Clock className="h-6 w-6" />} title="Sem permissão" description="O import de ponto é restrito ao RH/gestão." />;
@@ -289,12 +372,32 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
               <EmptyState icon={<Clock className="h-6 w-6" />} title="Nada importado ainda" description="Suba o PDF do Cartão Ponto acima para começar." />
             ) : (
               <>
-                <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <StatCard label="Funcionários" value={String(doMes.length)} icon={<Clock className="h-4 w-4" />} />
-                  <StatCard label="Total de extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} />
-                  <StatCard label="Total de faltas" value={minParaHora(totFaltas)} icon={<CalendarX2 className="h-4 w-4" />} />
-                  <StatCard label="Não vinculados" value={String(doMes.filter((p) => !p.colaboradorId).length)} icon={<AlertTriangle className="h-4 w-4" />} />
+                {/* Dashboard: resumo do mês */}
+                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatCard label="Horas extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} hint={`${agg.comExtra} dia(s) com extra`} />
+                  <StatCard label="Horas de falta" value={minParaHora(totFaltas)} icon={<CalendarX2 className="h-4 w-4" />} hint="descontam na folha" />
+                  <StatCard label="Faltas" value={String(agg.faltas)} icon={<AlertTriangle className="h-4 w-4" />} hint="dias não justificados" />
+                  <StatCard label="Atestados" value={String(agg.atestados)} icon={<Stethoscope className="h-4 w-4" />} hint={agg.abonos ? `+ ${agg.abonos} abono(s)` : "dias abonados"} />
                 </div>
+
+                {/* Seletor de visão: Tudo (extrato completo) ou Resumo (p/ enviar) */}
+                <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                  <button type="button" onClick={() => setModo("tudo")}
+                    className={cn("inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", modo === "tudo" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+                    <CalendarRange className="h-3.5 w-3.5" /> Tudo
+                  </button>
+                  <button type="button" onClick={() => setModo("resumo")}
+                    className={cn("inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", modo === "resumo" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+                    <ListChecks className="h-3.5 w-3.5" /> Resumo p/ enviar
+                  </button>
+                </div>
+
+                {modo === "tudo" ? (
+                <>
+                <p className="mb-2 text-xs text-slate-400">
+                  {doMes.length} funcionário(s){doMes.filter((p) => !p.colaboradorId).length ? ` · ${doMes.filter((p) => !p.colaboradorId).length} não vinculado(s)` : ""} · clique no nome para ver o extrato dia a dia.
+                </p>
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b border-slate-100 text-xs text-slate-500">
@@ -307,31 +410,302 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {doMes.map((p) => (
-                        <tr key={p.id} className={p.colaboradorId ? "hover:bg-slate-50/50" : "bg-amber-50/40"}>
-                          <td className="td">
-                            {p.colaboradorId
-                              ? <span className="font-medium text-slate-700">{nomeColab(p.colaboradorId)}</span>
-                              : <span className="text-amber-700">{p.nomePdf} <Badge variant="warning">não vinculado</Badge></span>}
-                          </td>
-                          <td className="td text-right tabular-nums text-slate-600">{minParaHora(p.normaisMin)}</td>
-                          <td className={`td text-right tabular-nums ${p.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-400"}`}>{minParaHora(p.faltasMin)}</td>
-                          <td className={`td text-right tabular-nums ${p.extrasMin > 0 ? "font-medium text-brand" : "text-slate-400"}`}>{minParaHora(p.extrasMin)}</td>
-                          <td className="td text-right">
-                            <button className="btn-ghost p-1.5 text-red-500" title="Remover" onClick={() => remover(p.id)}><Trash2 className="h-4 w-4" /></button>
-                          </td>
-                        </tr>
-                      ))}
+                      {doMes.map((p) => {
+                        const rd = resumoDias(p.dias);
+                        const temDias = (p.dias?.length ?? 0) > 0;
+                        const aberto = expandido.has(p.id);
+                        return (
+                          <Fragment key={p.id}>
+                            <tr className={cn(!p.colaboradorId && "bg-amber-50/40", temDias && "cursor-pointer hover:bg-slate-50/50")} onClick={() => temDias && toggleExp(p.id)}>
+                              <td className="td">
+                                <div className="flex items-center gap-2">
+                                  {temDias
+                                    ? (aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />)
+                                    : <span className="w-4 shrink-0" />}
+                                  <div className="min-w-0">
+                                    {p.colaboradorId
+                                      ? <span className="font-medium text-slate-700">{nomeColab(p.colaboradorId)}</span>
+                                      : <span className="text-amber-700">{p.nomePdf} <Badge variant="warning">não vinculado</Badge></span>}
+                                    {temDias && (rd.faltas > 0 || rd.atestados > 0 || rd.comExtra > 0) && (
+                                      <p className="mt-0.5 text-[11px] text-slate-400">
+                                        {[rd.comExtra && `${rd.comExtra} dia(s) c/ extra`, rd.faltas && `${rd.faltas} falta(s)`, rd.atestados && `${rd.atestados} atestado(s)`].filter(Boolean).join(" · ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="td text-right tabular-nums text-slate-600">{minParaHora(p.normaisMin)}</td>
+                              <td className={`td text-right tabular-nums ${p.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-400"}`}>{minParaHora(p.faltasMin)}</td>
+                              <td className={`td text-right tabular-nums ${p.extrasMin > 0 ? "font-medium text-brand" : "text-slate-400"}`}>{minParaHora(p.extrasMin)}</td>
+                              <td className="td text-right">
+                                <button className="btn-ghost p-1.5 text-red-500" title="Remover" onClick={(e) => { e.stopPropagation(); setExcluir(p.id); }}><Trash2 className="h-4 w-4" /></button>
+                              </td>
+                            </tr>
+                            {aberto && temDias && (
+                              <tr>
+                                <td colSpan={5} className="bg-slate-50/50 p-0">
+                                  <ExtratoDiario dias={p.dias!} />
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+                </>
+                ) : (
+                  resumoLinhas.length === 0 ? (
+                    <EmptyState icon={<CheckCircle2 className="h-6 w-6" />} title="Sem ocorrências no mês" description="Ninguém teve hora extra, falta ou atestado nesta competência." />
+                  ) : (
+                    <>
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-slate-500">{resumoLinhas.length} colaborador(es) com ocorrências em {labelMes(competencia)} · pronto para enviar.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button className="btn-outline" onClick={copiarResumo}><Copy className="h-4 w-4" /> Copiar p/ WhatsApp</button>
+                          <button className="btn-outline" onClick={() => void exportarResumoPdf(empresa, competencia, resumoLinhas)}><FileDown className="h-4 w-4" /> PDF</button>
+                          <button className="btn-outline" onClick={() => exportarResumoExcel(empresa, competencia, resumoLinhas)}><FileSpreadsheet className="h-4 w-4" /> Excel</button>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="border-b border-slate-100 text-xs text-slate-500">
+                            <tr>
+                              <th className="th">Colaborador</th>
+                              <th className="th text-right">Horas extras</th>
+                              <th className="th text-right">Faltas</th>
+                              <th className="th text-right">Atestados</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {resumoLinhas.map((r, i) => (
+                              <tr key={`${r.nome}-${i}`} className="hover:bg-slate-50/50">
+                                <td className="td align-top font-medium text-slate-700">{r.nome}</td>
+                                <td className="td align-top text-right">
+                                  {r.extrasMin > 0 ? (
+                                    <>
+                                      <div className="font-medium tabular-nums text-brand">{minParaHora(r.extrasMin)}</div>
+                                      {r.extras.length > 0 && <div className="text-[11px] text-slate-400">{r.extras.map((x) => `${diaCurto(x.data)} (${minParaHora(x.extrasMin)})`).join(", ")}</div>}
+                                    </>
+                                  ) : <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="td align-top text-right">
+                                  {r.faltasMin > 0 ? (
+                                    <>
+                                      <div className="font-medium tabular-nums text-red-600">{minParaHora(r.faltasMin)}{r.faltasDias.length ? ` · ${r.faltasDias.length}d` : ""}</div>
+                                      <div className="text-[11px] text-slate-400">{faltasDetalhe(r)}</div>
+                                    </>
+                                  ) : <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="td align-top text-right">
+                                  {r.atestados.length ? (
+                                    <>
+                                      <div className="font-medium tabular-nums text-blue-600">{r.atestados.length}d</div>
+                                      <div className="text-[11px] text-slate-400">{r.atestados.map((x) => diaCurto(x.data)).join(", ")}</div>
+                                    </>
+                                  ) : <span className="text-slate-300">—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="border-t border-slate-200 text-sm">
+                            <tr>
+                              <td className="td font-semibold text-slate-700">Total do mês</td>
+                              <td className="td text-right font-bold tabular-nums text-brand">{minParaHora(totResumo.extrasMin)}</td>
+                              <td className="td text-right font-bold tabular-nums text-red-600">{minParaHora(totResumo.faltasMin)}</td>
+                              <td className="td text-right font-bold tabular-nums text-blue-600">{totResumo.atestados}d</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </>
+                  )
+                )}
+
+                {/* Legenda / explicação — só no modo Tudo (o resumo não usa os selos de situação) */}
+                {modo === "tudo" && (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Info className="h-3.5 w-3.5" /> Como ler o extrato</p>
+                  <div className="grid gap-x-6 gap-y-1.5 text-xs text-slate-500 sm:grid-cols-2">
+                    {SIT_LEGENDA.map(({ s, txt }) => (
+                      <div key={s} className="flex items-center gap-2">
+                        <span className="shrink-0"><Badge variant={SIT_BADGE[s]}>{SIT_LABEL[s]}</Badge></span>
+                        <span>{txt}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+                    As horas <b>Normais</b>, <b>Faltas</b> e <b>Extras</b> já vêm calculadas pelo Secullum (regras da CLT) — não recalculamos, para não divergir da folha legal. A soma dos dias confere exatamente com o total do mês.
+                  </p>
+                </div>
+                )}
               </>
             )}
           </CardBody>
         </Card>
       )}
+
+      <ConfirmDialog
+        aberto={excluir != null}
+        onFechar={() => setExcluir(null)}
+        onConfirmar={() => { if (excluir) { remover(excluir); toast("Ponto removido."); } setExcluir(null); }}
+        titulo="Remover ponto do mês?"
+        mensagem="O ponto importado deste colaborador nesta competência será apagado. Para recuperar, é preciso reimportar o PDF do mês."
+      />
     </div>
   );
+}
+
+// Extrato diário de um colaborador — segue o layout da folha de ponto do Secullum.
+function ExtratoDiario({ dias }: { dias: PontoDia[] }) {
+  return (
+    <div className="px-3 py-3 sm:px-4">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="th">Dia</th>
+              <th className="th">Batidas</th>
+              <th className="th text-right">Normais</th>
+              <th className="th text-right">Faltas</th>
+              <th className="th text-right">Extras</th>
+              <th className="th">Situação</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {dias.map((dia) => {
+              const batidas = (dia.marcacoes ?? []).filter((m) => /^\d{1,2}:\d{2}$/.test(m));
+              return (
+              <tr
+                key={dia.data}
+                className={cn(
+                  dia.extrasMin > 0 && "bg-brand/[0.04]",
+                  dia.situacao === "falta" && "bg-red-50/60",
+                  dia.situacao === "atestado" && "bg-blue-50/40",
+                )}
+              >
+                <td className="td whitespace-nowrap">
+                  <span className="font-medium tabular-nums text-slate-700">{diaCurto(dia.data)}</span>
+                  {dia.diaSemana && <span className="ml-1 text-slate-400">{dia.diaSemana}</span>}
+                </td>
+                <td className="td tabular-nums text-slate-500">{batidas.length ? batidas.join(" · ") : "—"}</td>
+                <td className="td text-right tabular-nums text-slate-500">{dia.normaisMin ? minParaHora(dia.normaisMin) : "—"}</td>
+                <td className={cn("td text-right tabular-nums", dia.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-300")}>{dia.faltasMin ? minParaHora(dia.faltasMin) : "—"}</td>
+                <td className={cn("td text-right tabular-nums", dia.extrasMin > 0 ? "font-medium text-brand" : "text-slate-300")}>{dia.extrasMin ? minParaHora(dia.extrasMin) : "—"}</td>
+                <td className="td">{dia.situacao !== "normal" && <Badge variant={SIT_BADGE[dia.situacao]}>{SIT_LABEL[dia.situacao]}</Badge>}</td>
+              </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// --- Resumo do mês (só extras/faltas/atestados) — visão condensada p/ enviar ----------
+interface LinhaResumo {
+  nome: string;
+  extrasMin: number;
+  extras: PontoDia[];       // dias com hora extra
+  faltasMin: number;
+  faltasDias: PontoDia[];   // dias de falta cheia (situação "falta")
+  atrasosMin: number;       // faltasMin que NÃO são de falta cheia (atrasos/parciais)
+  atestados: PontoDia[];    // dias com atestado
+  temDetalhe: boolean;      // false = registro legado sem detalhe diário
+}
+
+// Extrai as ocorrências de um ponto (o que interessa no resumo).
+function ocorrenciasDo(p: Ponto): LinhaResumo {
+  const dias = p.dias ?? [];
+  const faltasDias = dias.filter((x) => x.situacao === "falta");
+  const faltasMin = p.faltasMin ?? 0;
+  const faltaCheiaMin = faltasDias.reduce((s, x) => s + (x.faltasMin || 0), 0);
+  return {
+    nome: p.colaboradorId ? "" : p.nomePdf, // nome real é preenchido por quem chama (tem o cadastro)
+    extrasMin: p.extrasMin ?? 0,
+    extras: dias.filter((x) => x.extrasMin > 0),
+    faltasMin,
+    faltasDias,
+    atrasosMin: Math.max(0, faltasMin - faltaCheiaMin), // sobra = atrasos/parciais em dias normais
+    atestados: dias.filter((x) => x.situacao === "atestado"),
+    temDetalhe: (p.dias?.length ?? 0) > 0,
+  };
+}
+// Extras gateiam pelo TOTAL (extrasMin), não pela contagem de dias — assim registros
+// antigos sem detalhe diário (dias=undefined) também entram no resumo (simétrico a faltas).
+const temOcorrencia = (r: LinhaResumo) => r.extrasMin > 0 || r.faltasMin > 0 || r.atestados.length > 0;
+
+// Detalhe das faltas: datas das faltas cheias + a sobra de atrasos, para o total FECHAR
+// com as datas. Sem detalhe diário (registro legado) não afirma a natureza da ausência.
+function faltasDetalhe(r: LinhaResumo): string {
+  if (!r.temDetalhe) return "sem detalhe diário";
+  const partes: string[] = [];
+  if (r.faltasDias.length) partes.push(r.faltasDias.map((x) => diaCurto(x.data)).join(", "));
+  if (r.atrasosMin > 0) partes.push(`+ ${minParaHora(r.atrasosMin)} em atrasos`);
+  return partes.join(" ") || "—";
+}
+
+// Texto pronto para colar no WhatsApp.
+function textoResumo(empresa: string, comp: string, linhas: LinhaResumo[]): string {
+  const corpo = linhas.map((r) => {
+    const partes: string[] = [];
+    if (r.extrasMin > 0) partes.push(`Extras ${minParaHora(r.extrasMin)}${r.extras.length ? ` (${r.extras.map((x) => diaCurto(x.data)).join(", ")})` : ""}`);
+    if (r.faltasMin > 0) partes.push(`Faltas ${minParaHora(r.faltasMin)}${r.faltasDias.length ? ` · ${r.faltasDias.length}d` : ""} (${faltasDetalhe(r)})`);
+    if (r.atestados.length) partes.push(`Atestado ${r.atestados.length}d (${r.atestados.map((x) => diaCurto(x.data)).join(", ")})`);
+    return `• ${r.nome} — ${partes.join(" | ")}`;
+  }).join("\n");
+  return `*${empresa} — Resumo do ponto — ${labelMes(comp)}*\n\n${corpo}`;
+}
+
+function baixarBlob(nome: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoga só depois: em Safari/Firefox o fetch do blob pode ser assíncrono.
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function exportarResumoPdf(empresa: string, comp: string, linhas: LinhaResumo[]) {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+  const doc = new jsPDF();
+  const marinho: [number, number, number] = [22, 51, 79];
+  doc.setFontSize(15); doc.setTextColor(...marinho); doc.text(empresa || "Impresilk", 14, 16);
+  doc.setFontSize(12); doc.setTextColor(60); doc.text(`Resumo do ponto — ${labelMes(comp)}`, 14, 24);
+  doc.setFontSize(9); doc.setTextColor(120);
+  doc.text("Horas extras, faltas e atestados por colaborador — já calculados pelo Secullum (CLT).", 14, 30);
+  autoTable(doc, {
+    startY: 35,
+    head: [["Colaborador", "Horas extras", "Faltas", "Atestados"]],
+    body: linhas.map((r) => [
+      r.nome,
+      r.extrasMin > 0 ? `${minParaHora(r.extrasMin)}${r.extras.length ? `\n${r.extras.map((x) => diaCurto(x.data)).join(", ")}` : ""}` : "—",
+      r.faltasMin > 0 ? `${minParaHora(r.faltasMin)}${r.faltasDias.length ? ` · ${r.faltasDias.length}d` : ""}\n${faltasDetalhe(r)}` : "—",
+      r.atestados.length ? `${r.atestados.length}d\n${r.atestados.map((x) => diaCurto(x.data)).join(", ")}` : "—",
+    ]),
+    headStyles: { fillColor: marinho },
+    styles: { fontSize: 8, cellPadding: 2, valign: "top" },
+    columnStyles: { 0: { cellWidth: 55, fontStyle: "bold" }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+  });
+  baixarBlob(`resumo-ponto-${comp}.pdf`, doc.output("blob"));
+}
+
+function exportarResumoExcel(empresa: string, comp: string, linhas: LinhaResumo[]) {
+  const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const faltasCel = (r: LinhaResumo) => r.faltasDias.map((x) => diaCurto(x.data)).join(", ") + (r.atrasosMin > 0 ? ` (+ ${minParaHora(r.atrasosMin)} atrasos)` : "");
+  const corpo = linhas.map((r) => `<tr><td>${esc(r.nome)}</td><td>${r.extrasMin > 0 ? minParaHora(r.extrasMin) : ""}</td><td>${esc(r.extras.map((x) => diaCurto(x.data)).join(", "))}</td><td>${r.faltasMin > 0 ? minParaHora(r.faltasMin) : ""}</td><td>${esc(faltasCel(r))}</td><td>${r.atestados.length || ""}</td><td>${esc(r.atestados.map((x) => diaCurto(x.data)).join(", "))}</td></tr>`).join("");
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>
+<table border="1">
+<tr><td colspan="7" style="font-weight:bold;font-size:14px">${esc(empresa)} — Resumo do ponto — ${labelMes(comp)}</td></tr>
+<tr style="background:#16334f;color:#fff;font-weight:bold"><td>Colaborador</td><td>Horas extras</td><td>Dias c/ extra</td><td>Horas de falta</td><td>Dias de falta</td><td>Atestados (dias)</td><td>Datas do atestado</td></tr>
+${corpo || '<tr><td colspan="7">Sem ocorrências</td></tr>'}
+</table></body></html>`;
+  baixarBlob(`resumo-ponto-${comp}.xls`, new Blob(["﻿" + html], { type: "application/vnd.ms-excel" }));
 }
 
 // =====================================================================================

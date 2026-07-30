@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
-  Sun, Moon, Trophy,
+  Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -48,10 +48,10 @@ const NAV: ItemNav[] = [
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/integracao", label: "Onboarding e Offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
-  // Cargos & Custos — estrutura e dinheiro
+  // Cargos & Custos — estrutura e dinheiro. (A Folha Variável virou aba dentro de
+  // "Frequência e Advertências", junto do Ponto do mês.)
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
   { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },
-  { href: "/folha-variavel", label: "Folha Variável", icon: Coins, perfis: GESTAO, grupo: "Cargos & Custos" },
   // Comunicação & Conteúdo — comunicação interna e material de referência
   { href: "/comunicacao", label: "Comunicação Interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
   { href: "/mensagens", label: "Disparo de Mensagens", icon: Send, perfis: GESTAO, grupo: "Comunicação & Conteúdo" },

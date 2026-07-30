@@ -8,6 +8,8 @@
 // quem nunca usa o import de ponto.
 // ============================================================================
 
+import type { PontoDia, SituacaoDia } from "@/data/types";
+
 export interface PontoLinha {
   nomePdf: string;                 // nome como veio no cabeçalho do PDF
   colaboradorId: string | null;    // casado no cadastro (null = não encontrado)
@@ -18,6 +20,7 @@ export interface PontoLinha {
   normaisTxt: string;              // "158:24" (como no PDF)
   faltasTxt: string;
   extrasTxt: string;
+  dias: PontoDia[];                // detalhe diário (extrato do mês)
 }
 
 export interface PontoImportado {
@@ -40,6 +43,77 @@ export function horaParaMin(hhmm: string): number {
 export function minParaHora(min: number): string {
   const neg = min < 0; const a = Math.abs(Math.round(min));
   return `${neg ? "-" : ""}${Math.floor(a / 60).toString().padStart(2, "0")}:${(a % 60).toString().padStart(2, "0")}`;
+}
+
+// --- Extrato diário -----------------------------------------------------------
+// A tabela do Secullum tem colunas fixas por posição-x (em pontos de PDF).
+// Validado: a soma dos dias bate EXATAMENTE com os TOTAIS do mês (26/26 páginas).
+//   data<100 · batidas 100–265 · NORMAIS 265–300 · FALTAS 300–335 · EXTRAS 335–375
+function colunaDia(x: number): "data" | "marc" | "norm" | "falt" | "extra" | "resto" {
+  if (x < 100) return "data";
+  if (x < 265) return "marc";
+  if (x < 300) return "norm";
+  if (x < 335) return "falt";
+  if (x < 375) return "extra";
+  return "resto";
+}
+
+// Situação do dia a partir dos marcadores que o Secullum imprime na área das
+// batidas ("Feriado", "Folga", "Falta", "Atestado", "Abono", "Férias").
+function situacaoDia(marcadores: string): SituacaoDia {
+  const t = norm(marcadores);
+  if (t.includes("FERIADO")) return "feriado";
+  if (t.includes("ATESTAD")) return "atestado";
+  if (t.includes("ABONO")) return "abono";
+  if (t.includes("FERIAS")) return "ferias";
+  if (t.includes("FALTA")) return "falta";
+  if (t.includes("FOLGA") || t.includes("DSR") || t.includes("DESCANSO")) return "folga";
+  return "normal";
+}
+
+// Lê as linhas diárias de uma página. Cada linha começa por uma data DD/MM/AA
+// na 1ª coluna; as demais colunas saem pela posição-x.
+function lerDiasDaPagina(items: { str: string; x: number; y: number }[]): PontoDia[] {
+  const porLinha = new Map<number, { str: string; x: number }[]>();
+  for (const it of items) {
+    const k = Math.round(it.y); // itens da mesma linha compartilham a baseline
+    const arr = porLinha.get(k) ?? [];
+    arr.push({ str: it.str, x: it.x });
+    porLinha.set(k, arr);
+  }
+
+  const dias: PontoDia[] = [];
+  for (const linha0 of porLinha.values()) {
+    const linha = linha0.sort((a, b) => a.x - b.x);
+    const dataItem = linha.find((w) => w.x < 100 && /^\d{2}\/\d{2}\/\d{2}$/.test(w.str.trim()));
+    if (!dataItem) continue; // não é uma linha de dia (cabeçalho, TOTAIS, etc.)
+    const [dd, mm, yy] = dataItem.str.trim().split("/");
+    const data = `20${yy}-${mm}-${dd}`;
+
+    const marc: string[] = [];
+    let diaSemana: string | undefined;
+    let normaisMin = 0, faltasMin = 0, extrasMin = 0;
+    for (const w of linha) {
+      const s = w.str.trim();
+      switch (colunaDia(w.x)) {
+        case "data":
+          // dia da semana (seg, ter…) — qualquer token alfabético que não seja a data
+          if (/[A-Za-zÀ-ÿ]/.test(s) && !/\d/.test(s)) diaSemana = s.replace(/\.$/, "").toLowerCase();
+          break;
+        case "marc": {
+          const limpo = s.replace(/\*/g, "").trim(); // "07:30*" → "07:30"
+          if (/^\d{1,2}:\d{2}$/.test(limpo)) marc.push(limpo);
+          else if (/[A-Za-zÀ-ÿ]/.test(limpo)) marc.push(limpo); // marcador (Feriado, Falta…)
+          break;
+        }
+        case "norm": if (ehHora(s)) normaisMin = horaParaMin(s); break;
+        case "falt": if (ehHora(s)) faltasMin = horaParaMin(s); break;
+        case "extra": if (ehHora(s)) extrasMin = horaParaMin(s); break;
+      }
+    }
+    dias.push({ data, diaSemana, situacao: situacaoDia(marc.join(" ")), marcacoes: marc, normaisMin, extrasMin, faltasMin });
+  }
+  return dias.sort((a, b) => a.data.localeCompare(b.data));
 }
 
 // Rótulos/textos do template que NUNCA são o nome da pessoa.
@@ -143,6 +217,7 @@ export async function lerPontoPdf(
       faltasMin: horaParaMin(faltasTxt),
       extrasMin: horaParaMin(extrasTxt),
       normaisTxt, faltasTxt, extrasTxt,
+      dias: lerDiasDaPagina(items),
     });
   }
 

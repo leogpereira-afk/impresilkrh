@@ -599,9 +599,13 @@ export interface Candidato {
 // o cadastro (o RH reconcilia). id sugerido: "<competencia>::<colaboradorId>".
 // `dias` guarda o detalhe diário (para o relatório listar o dia exato de falta,
 // atestado/abono e os dias com hora extra).
+export type SituacaoDia = "normal" | "falta" | "atestado" | "abono" | "feriado" | "ferias" | "folga";
 export interface PontoDia {
   data: string;                 // "YYYY-MM-DD"
-  situacao: "normal" | "falta" | "abono" | "feriado" | "ferias" | "folga";
+  diaSemana?: string;           // "seg", "ter"… (como no PDF)
+  situacao: SituacaoDia;
+  marcacoes?: string[];         // ["07:24","11:30","13:10","18:00"] — batidas do dia
+  normaisMin: number;
   extrasMin: number;
   faltasMin: number;
 }

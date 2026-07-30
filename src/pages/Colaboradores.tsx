@@ -69,8 +69,11 @@ export default function Colaboradores() {
   // Áreas/setores navegáveis (sem a Direção).
   const areasNav = useMemo(() => d.areas.filter((a) => a.id !== "direcao"), [d.areas]);
 
-  // Visão padrão: agrupada por setor. Chips de área para navegação rápida.
-  const [visao, setVisao] = useState<"setor" | "lista">("setor");
+  // Visão padrão: LISTA (abre direto a tabela). Chips de área e o alternador
+  // "Por setor" continuam para quem quiser navegar por setor.
+  const [visao, setVisao] = useState<"setor" | "lista">("lista");
+  // Card de resumo clicado (filtro rápido): ativos / em férias / desligados.
+  const [foco, setFoco] = useState<"ativos" | "ferias" | "desligados" | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
   const [chips, setChips] = useState<Set<string>>(() => new Set());
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
@@ -85,19 +88,22 @@ export default function Colaboradores() {
   // Inativo = desligado (data de desligamento) ou status "inativo".
   const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
 
+  // Quem está em férias agora (usado nos cards e no filtro rápido).
+  const emFerias = useMemo(
+    () => new Set(ferias.filter((f) => f.status === "Em andamento").map((f) => f.colaboradorId)),
+    [ferias],
+  );
+
   // Cards de resumo — sobre o escopo de acesso, sem a Direção (mesma base da lista).
   const resumo = useMemo(() => {
     const base = escopo.filter((c) => !c.ehDirecao);
-    const emFerias = new Set(
-      ferias.filter((f) => f.status === "Em andamento").map((f) => f.colaboradorId),
-    );
     return {
       total: base.length,
       ativos: base.filter((c) => !ehInativo(c)).length,
       ferias: base.filter((c) => emFerias.has(c.id) && !ehInativo(c)).length,
       desligados: base.filter((c) => ehInativo(c)).length,
     };
-  }, [escopo, ferias]);
+  }, [escopo, emFerias]);
 
   // Exporta a lista filtrada atual para CSV (Excel-friendly, separador ;).
   const exportarCsv = () => {
@@ -160,7 +166,13 @@ export default function Colaboradores() {
     const termo = busca.trim().toLowerCase();
     return escopo
       .filter((c) => !c.ehDirecao)
-      .filter((c) => mostrarInativos || !ehInativo(c))
+      // Card clicado tem prioridade sobre o checkbox "incluir inativos".
+      .filter((c) => {
+        if (foco === "desligados") return ehInativo(c);
+        if (foco === "ativos") return !ehInativo(c);
+        if (foco === "ferias") return !ehInativo(c) && emFerias.has(c.id);
+        return mostrarInativos || !ehInativo(c);
+      })
       .filter((c) => (fArea ? c.areaId === fArea : true))
       .filter((c) => (chips.size ? !!c.areaId && chips.has(c.areaId) : true))
       .filter((c) => (fStatus ? c.statusId === fStatus : true))
@@ -173,7 +185,7 @@ export default function Colaboradores() {
           : true,
       )
       .sort(comparar);
-  }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, d, comparar]);
+  }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, foco, emFerias, d, comparar]);
 
   // Lista simples de nomes, agrupada por inicial (A, B, C…) — só os nomes, sem
   // cargo/setor. Usa a mesma lista já filtrada e ordenada alfabeticamente.
@@ -242,23 +254,36 @@ export default function Colaboradores() {
         )}
       </PageHeader>
 
-      {/* Cards de resumo do quadro */}
+      {/* Cards de resumo do quadro — clicáveis: filtram a lista abaixo */}
       <div className="mb-4 grid grid-cols-3 gap-3">
-        {[
-          { label: "Ativos", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Em férias", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Desligados", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
-        ].map(({ label, valor, icon: Icon, cor, bg }) => (
-          <Card key={label} className="flex items-center gap-3 p-4">
-            <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", bg)}>
-              <Icon className={cn("h-5 w-5", cor)} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-2xl font-bold leading-none text-slate-800">{valor}</p>
-              <p className="mt-1 truncate text-xs text-slate-500">{label}</p>
-            </div>
-          </Card>
-        ))}
+        {([
+          { key: "ativos", label: "Ativos", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
+          { key: "ferias", label: "Em férias", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
+          { key: "desligados", label: "Desligados", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
+        ] as const).map(({ key, label, valor, icon: Icon, cor, bg }) => {
+          const ativoCard = foco === key;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setFoco(ativoCard ? null : key)}
+              aria-pressed={ativoCard}
+              title={ativoCard ? "Clique para limpar o filtro" : `Filtrar por ${label.toLowerCase()}`}
+              className={cn(
+                "flex items-center gap-3 rounded-2xl border bg-white p-4 text-left shadow-soft transition",
+                ativoCard ? "border-brand ring-1 ring-brand/40" : "border-slate-200/70 hover:border-slate-300 hover:shadow-md",
+              )}
+            >
+              <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", bg)}>
+                <Icon className={cn("h-5 w-5", cor)} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-2xl font-bold leading-none text-slate-800">{valor}</p>
+                <p className="mt-1 truncate text-xs text-slate-500">{label}{ativoCard && " · filtrando"}</p>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Chips de área (multi-seleção) */}
@@ -309,12 +334,16 @@ export default function Colaboradores() {
             <option value="">Todos os status</option>
             {d.status.filter((s) => s.id !== "direcao" && s.id !== "externo").map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
           </Select>
-          <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 text-sm text-slate-600" title="Por padrão a lista mostra só os colaboradores ativos">
+          <label
+            className={cn("inline-flex shrink-0 items-center gap-2 text-sm text-slate-600", foco ? "cursor-not-allowed opacity-40" : "cursor-pointer")}
+            title={foco ? "O card selecionado acima já define este filtro. Clique nele de novo para liberar." : "Por padrão a lista mostra só os colaboradores ativos"}
+          >
             <input
               type="checkbox"
               checked={mostrarInativos}
+              disabled={!!foco}
               onChange={(e) => setMostrarInativos(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+              className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand disabled:cursor-not-allowed"
             />
             Incluir inativos
           </label>

@@ -41,7 +41,7 @@ const compAtual = () => {
 };
 const diaBR = (d?: string | null) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split("-").reverse().join("/") : "—");
 
-export default function FolhaVariavel() {
+export default function FolhaVariavel({ embutido = false }: { embutido?: boolean } = {}) {
   const sessao = useSessao();
   const d = useDominio();
   const config = useConfig();
@@ -72,7 +72,7 @@ export default function FolhaVariavel() {
   if (!podeEditar) {
     return (
       <div>
-        <PageHeader title="Folha Variável" description="Verbas do mês por colaborador." />
+        {!embutido && <PageHeader title="Folha Variável" description="Verbas do mês por colaborador." />}
         <EmptyState icon={<Lock className="h-6 w-6" />} title="Sem permissão" description="A folha variável é restrita ao RH/gestão." />
       </div>
     );
@@ -80,10 +80,12 @@ export default function FolhaVariavel() {
 
   return (
     <div>
-      <PageHeader
-        title="Folha Variável"
-        description="Verbas do mês por colaborador — hora extra, empreita, diária, bônus, comissão e limpeza. Some ao ponto e sai em PDF/Excel para a contabilidade."
-      />
+      {!embutido && (
+        <PageHeader
+          title="Folha Variável"
+          description="Verbas do mês por colaborador — hora extra, empreita, diária, bônus, comissão e limpeza. Some ao ponto e sai em PDF/Excel para a contabilidade."
+        />
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -303,8 +305,12 @@ interface DadosRel {
 function baixar(nome: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = nome; a.click();
-  URL.revokeObjectURL(url);
+  a.href = url; a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoga só depois: em Safari/Firefox o fetch do blob pode ser assíncrono.
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 async function exportarPdf(r: DadosRel) {
