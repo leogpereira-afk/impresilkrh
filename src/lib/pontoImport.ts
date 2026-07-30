@@ -60,7 +60,14 @@ function colunaDia(x: number): "data" | "marc" | "norm" | "falt" | "extra" | "re
 
 // Situação do dia a partir dos marcadores que o Secullum imprime na área das
 // batidas ("Feriado", "Folga", "Falta", "Atestado", "Abono", "Férias").
-function situacaoDia(marcadores: string): SituacaoDia {
+//
+// ATENÇÃO (caso real, julho/2026): o Secullum NEM SEMPRE escreve "falta" no dia.
+// Há páginas em que o dia faltado vem em branco, só com as horas na coluna
+// FALTAS (ex.: Paulo Alves — 8 dias sem marcador, 08:48 cada). Por isso, quando
+// não há marcador nem NENHUMA batida e ainda assim há horas de falta, o dia é
+// falta de dia cheio. Com batidas + horas de falta é atraso/saída antecipada,
+// que continua sendo dia "normal".
+function situacaoDia(marcadores: string, temBatida: boolean, faltasMin: number): SituacaoDia {
   const t = norm(marcadores);
   if (t.includes("FERIADO")) return "feriado";
   if (t.includes("ATESTAD")) return "atestado";
@@ -68,6 +75,7 @@ function situacaoDia(marcadores: string): SituacaoDia {
   if (t.includes("FERIAS")) return "ferias";
   if (t.includes("FALTA")) return "falta";
   if (t.includes("FOLGA") || t.includes("DSR") || t.includes("DESCANSO")) return "folga";
+  if (!temBatida && faltasMin > 0) return "falta";
   return "normal";
 }
 
@@ -111,7 +119,12 @@ function lerDiasDaPagina(items: { str: string; x: number; y: number }[]): PontoD
         case "extra": if (ehHora(s)) extrasMin = horaParaMin(s); break;
       }
     }
-    dias.push({ data, diaSemana, situacao: situacaoDia(marc.join(" ")), marcacoes: marc, normaisMin, extrasMin, faltasMin });
+    const temBatida = marc.some((x) => /^\d{1,2}:\d{2}$/.test(x));
+    dias.push({
+      data, diaSemana,
+      situacao: situacaoDia(marc.join(" "), temBatida, faltasMin),
+      marcacoes: marc, normaisMin, extrasMin, faltasMin,
+    });
   }
   return dias.sort((a, b) => a.data.localeCompare(b.data));
 }

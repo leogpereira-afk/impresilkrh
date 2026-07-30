@@ -619,10 +619,18 @@ export default function Relatorios() {
         </span>
       </div>
 
+      {/* Cards do topo: não há uma lista única nesta tela para filtrar, então
+          cada número abre o detalhe de QUEM o compõe (drill-down). O onClick vai
+          direto no StatCard — o <button> que embrulhava virava botão dentro de
+          botão agora que o próprio card é um <button>. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <button
-          type="button"
-          className="text-left w-full"
+        <StatCard
+          label="Headcount ativo"
+          value={indicadores.headcount}
+          icon={<Users className="h-5 w-5" />}
+          accent="brand"
+          hint="Colaboradores que contam no quadro"
+          title="Ver os colaboradores do quadro ativo"
           onClick={() =>
             drill.abrir(
               "Headcount ativo",
@@ -630,18 +638,14 @@ export default function Relatorios() {
               `${ativos.length} colaborador(es) no quadro`,
             )
           }
-        >
-          <StatCard
-            label="Headcount ativo"
-            value={indicadores.headcount}
-            icon={<Users className="h-5 w-5" />}
-            accent="brand"
-            hint="Colaboradores que contam no quadro"
-          />
-        </button>
-        <button
-          type="button"
-          className="text-left w-full"
+        />
+        <StatCard
+          label="Folha total"
+          value={<span className="text-xl">{formatBRL(indicadores.folha)}</span>}
+          icon={<Wallet className="h-5 w-5" />}
+          accent="gold"
+          hint="Soma dos salários ativos"
+          title="Ver quem entra na folha total"
           onClick={() =>
             drill.abrir(
               "Folha total",
@@ -649,18 +653,16 @@ export default function Relatorios() {
               `${formatBRL(indicadores.folha)} em folha mensal`,
             )
           }
-        >
-          <StatCard
-            label="Folha total"
-            value={<span className="text-xl">{formatBRL(indicadores.folha)}</span>}
-            icon={<Wallet className="h-5 w-5" />}
-            accent="gold"
-            hint="Soma dos salários ativos"
-          />
-        </button>
-        <button
-          type="button"
-          className="text-left w-full"
+        />
+        <StatCard
+          label="Custo médio"
+          value={
+            <span className="text-xl">{formatBRL(indicadores.custoMedio)}</span>
+          }
+          icon={<Coins className="h-5 w-5" />}
+          accent="blue"
+          hint="Salário médio por colaborador"
+          title="Ver os colaboradores que entram na média"
           onClick={() =>
             drill.abrir(
               "Custo médio",
@@ -668,20 +670,14 @@ export default function Relatorios() {
               `${formatBRL(indicadores.custoMedio)} por colaborador`,
             )
           }
-        >
-          <StatCard
-            label="Custo médio"
-            value={
-              <span className="text-xl">{formatBRL(indicadores.custoMedio)}</span>
-            }
-            icon={<Coins className="h-5 w-5" />}
-            accent="blue"
-            hint="Salário médio por colaborador"
-          />
-        </button>
-        <button
-          type="button"
-          className="text-left w-full"
+        />
+        <StatCard
+          label={`Turnover · ${rotuloPeriodo}`}
+          value={formatPercent(periodo.turnover)}
+          icon={<TrendingDown className="h-5 w-5" />}
+          accent="amber"
+          hint={`${periodo.deslig.length} deslig. · ${periodo.admit.length} adm. no período`}
+          title="Ver quem foi desligado no período"
           onClick={() =>
             drill.abrir(
               `Desligamentos · ${rotuloPeriodo}`,
@@ -689,15 +685,7 @@ export default function Relatorios() {
               `${periodo.deslig.length} desligamento(s) · ${periodo.admit.length} admissão(ões) no período`,
             )
           }
-        >
-          <StatCard
-            label={`Turnover · ${rotuloPeriodo}`}
-            value={formatPercent(periodo.turnover)}
-            icon={<TrendingDown className="h-5 w-5" />}
-            accent="amber"
-            hint={`${periodo.deslig.length} deslig. · ${periodo.admit.length} adm. no período`}
-          />
-        </button>
+        />
       </div>
 
       <div className="mt-6">

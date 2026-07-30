@@ -319,29 +319,44 @@ export default function Desempenho() {
         description={`9-Box, avaliações, metas, PDI, feedbacks, pesquisas e dinâmicas — ${ciclo?.nome ?? "ciclo atual"}.`}
       />
 
+      {/* O próprio StatCard é o botão (o wrapper virava botão dentro de botão). */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <button
-          type="button"
-          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+        <StatCard
+          label="Avaliados"
+          value={comNota.length}
+          hint={`de ${escopo.length} no escopo`}
+          icon={<Users className="h-5 w-5" />}
+          accent="brand"
+          title="Ver quem já tem nota lançada"
           onClick={() => drill.abrir("Colaboradores avaliados", avaliadosColabs, `${avaliadosColabs.length} com nota lançada · de ${escopo.length} no escopo`)}
-        >
-          <StatCard label="Avaliados" value={comNota.length} hint={`de ${escopo.length} no escopo`} icon={<Users className="h-5 w-5" />} accent="brand" />
-        </button>
-        <StatCard label="Nota média" value={notaMedia != null ? notaMedia.toFixed(1) : "—"} hint={comNota.length ? `Média de ${comNota.length} avaliado(s)` : "Sem notas lançadas"} icon={<Gauge className="h-5 w-5" />} accent="gold" />
-        <button
-          type="button"
-          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+        />
+        <StatCard
+          label="Nota média"
+          value={notaMedia != null ? notaMedia.toFixed(1) : "—"}
+          hint={comNota.length ? `Média de ${comNota.length} avaliado(s)` : "Sem notas lançadas"}
+          icon={<Gauge className="h-5 w-5" />}
+          accent="gold"
+          title={comNota.length ? "Ver quem entra na média" : undefined}
+          onClick={comNota.length ? () => drill.abrir("Nota média do ciclo", avaliadosColabs, `Média ${notaMedia?.toFixed(1)} · ${comNota.length} avaliado(s)`) : undefined}
+        />
+        <StatCard
+          label="Elegíveis a promoção"
+          value={elegiveis}
+          hint={ciclo ? `Nota mín. ${ciclo.notaMinPromocao}` : undefined}
+          icon={<Award className="h-5 w-5" />}
+          accent="green"
+          title="Ver os elegíveis"
           onClick={() => drill.abrir("Elegíveis a promoção", elegiveisColabs, ciclo ? `${elegiveisColabs.length} colaborador(es) · nota mín. ${ciclo.notaMinPromocao}` : `${elegiveisColabs.length} colaborador(es)`)}
-        >
-          <StatCard label="Elegíveis a promoção" value={elegiveis} hint={ciclo ? `Nota mín. ${ciclo.notaMinPromocao}` : undefined} icon={<Award className="h-5 w-5" />} accent="green" />
-        </button>
-        <button
-          type="button"
-          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+        />
+        <StatCard
+          label="Risco de saída alto"
+          value={riscoAlto}
+          hint="Atenção à retenção"
+          icon={<AlertTriangle className="h-5 w-5" />}
+          accent="red"
+          title="Ver quem está em risco de saída"
           onClick={() => drill.abrir("Risco de saída alto", riscoAltoColabs, `${riscoAltoColabs.length} colaborador(es) · atenção à retenção`)}
-        >
-          <StatCard label="Risco de saída alto" value={riscoAlto} hint="Atenção à retenção" icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
-        </button>
+        />
       </div>
 
       <div className="mt-6">
@@ -1576,6 +1591,8 @@ function AbaPesquisas() {
   const [novo, setNovo] = useState(false);
   const [responder, setResponder] = useState<Pesquisa | null>(null);
   const [resultados, setResultados] = useState<Pesquisa | null>(null);
+  // Filtro da tela pelos cards do topo (clicar de novo limpa).
+  const [foco, setFoco] = useState<"Pesquisa" | "Dinâmica" | "Ativa" | null>(null);
   const nRespostas = (pid: string) => respostas.filter((r) => r.pesquisaId === pid).length;
   const enviarResposta = (p: Pesquisa, vals: { perguntaId: string; valor: string | number }[]) => {
     criarResposta({ pesquisaId: p.id, colaboradorId: p.anonima ? null : (sessao?.colaboradorId ?? null), respostas: vals, criadoEm: diaLocalISO() });
@@ -1587,6 +1604,10 @@ function AbaPesquisas() {
   const surveys = pesquisas.filter((p) => p.tipo === "Pesquisa");
   const dinamicas = pesquisas.filter((p) => p.tipo === "Dinâmica");
   const ativas = pesquisas.filter((p) => p.status === "Ativa").length;
+  const alternarFoco = (f: "Pesquisa" | "Dinâmica" | "Ativa") => setFoco((atual) => (atual === f ? null : f));
+  const soAtivas = (lista: Pesquisa[]) => (foco === "Ativa" ? lista.filter((p) => p.status === "Ativa") : lista);
+  const surveysVisiveis = soAtivas(surveys);
+  const dinamicasVisiveis = soAtivas(dinamicas);
   // eNPS consolidado: junta todas as respostas de perguntas tipo NPS (0–10).
   const enpsGeral = useMemo(() => {
     const notas: number[] = [];
@@ -1621,13 +1642,18 @@ function AbaPesquisas() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Pesquisas" value={surveys.length} icon={<ClipboardList className="h-5 w-5" />} accent="brand" />
-        <StatCard label="Dinâmicas" value={dinamicas.length} icon={<Sparkles className="h-5 w-5" />} accent="gold" />
-        <StatCard label="Ativas" value={ativas} icon={<ClipboardCheck className="h-5 w-5" />} accent="green" />
-        <StatCard label="Total" value={pesquisas.length} icon={<MessageSquare className="h-5 w-5" />} accent="blue" />
+        <StatCard label="Pesquisas" value={surveys.length} icon={<ClipboardList className="h-5 w-5" />} accent="brand"
+          title="Mostrar só as pesquisas" ativo={foco === "Pesquisa"} onClick={() => alternarFoco("Pesquisa")} />
+        <StatCard label="Dinâmicas" value={dinamicas.length} icon={<Sparkles className="h-5 w-5" />} accent="gold"
+          title="Mostrar só as dinâmicas" ativo={foco === "Dinâmica"} onClick={() => alternarFoco("Dinâmica")} />
+        <StatCard label="Ativas" value={ativas} icon={<ClipboardCheck className="h-5 w-5" />} accent="green"
+          title="Mostrar só o que está ativo" ativo={foco === "Ativa"} onClick={() => alternarFoco("Ativa")} />
+        <StatCard label="Total" value={pesquisas.length} icon={<MessageSquare className="h-5 w-5" />} accent="blue"
+          title="Ver tudo (limpar o filtro)" onClick={() => setFoco(null)} />
         <StatCard label="eNPS" value={enpsGeral ? `${enpsGeral.score > 0 ? "+" : ""}${enpsGeral.score}` : "—"} hint={enpsGeral ? `${enpsGeral.total} resposta(s)` : "sem respostas"} icon={<Gauge className="h-5 w-5" />} accent={enpsGeral ? (enpsGeral.score >= 0 ? "green" : "red") : "blue"} />
       </div>
 
+      {foco !== "Dinâmica" && (
       <Card>
         <CardHeader
           title="Banco de pesquisas"
@@ -1636,18 +1662,20 @@ function AbaPesquisas() {
           action={gere ? <button className="btn-outline" onClick={() => { setEditar(null); setNovo(true); }}><Plus className="h-4 w-4" /> Nova pesquisa</button> : undefined}
         />
         <CardBody>
-          {surveys.length === 0 ? (
+          {surveysVisiveis.length === 0 ? (
             <EmptyState title="Nenhuma pesquisa" description="Crie pesquisas de clima, eNPS e pulse com suas perguntas." icon={<ClipboardList className="h-8 w-8" />} />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
-              {surveys.map((p) => (
+              {surveysVisiveis.map((p) => (
                 <CardPesquisa key={p.id} p={p} gere={gere} nResp={nRespostas(p.id)} onResponder={() => setResponder(p)} onResultados={() => setResultados(p)} onEdit={() => { setNovo(false); setEditar(p); }} onCiclo={() => ciclarStatus(p)} onDel={() => excluir(p)} />
               ))}
             </div>
           )}
         </CardBody>
       </Card>
+      )}
 
+      {foco !== "Pesquisa" && (
       <Card>
         <CardHeader
           title="Dinâmicas de equipe"
@@ -1656,17 +1684,18 @@ function AbaPesquisas() {
           action={gere ? <button className="btn-outline" onClick={() => { setNovo(false); setEditar({ id: "", titulo: "", tipo: "Dinâmica", status: "Rascunho", perguntas: [], criadoEm: "" } as Pesquisa); }}><Plus className="h-4 w-4" /> Nova dinâmica</button> : undefined}
         />
         <CardBody>
-          {dinamicas.length === 0 ? (
+          {dinamicasVisiveis.length === 0 ? (
             <EmptyState title="Nenhuma dinâmica" description="Cadastre dinâmicas com o roteiro da atividade." icon={<Sparkles className="h-8 w-8" />} />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
-              {dinamicas.map((p) => (
+              {dinamicasVisiveis.map((p) => (
                 <CardPesquisa key={p.id} p={p} gere={gere} onEdit={() => { setNovo(false); setEditar(p); }} onCiclo={() => ciclarStatus(p)} onDel={() => excluir(p)} />
               ))}
             </div>
           )}
         </CardBody>
       </Card>
+      )}
 
       {gere && aberto && (
         <PesquisaEditor

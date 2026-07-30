@@ -82,10 +82,24 @@ export function ViagensPainel() {
     [viagens, idsEscopo],
   );
 
+  // Foco dos cards do topo: filtra a tabela de viagens (clicar de novo limpa).
+  // "mes" atende os dois cards do mês — são o mesmo conjunto de viagens, um
+  // mostra a quantidade e o outro o quanto elas custaram.
+  const [foco, setFoco] = useState<"mes" | "Em andamento" | "Planejada" | null>(null);
+  const alternarFoco = (f: "mes" | "Em andamento" | "Planejada") =>
+    setFoco((atual) => (atual === f ? null : f));
+
   const doMes = useMemo(() => lista.filter((v) => noMesAtual(v.dataInicio)), [lista]);
   const gastoMes = useMemo(() => doMes.reduce((acc, v) => acc + (v.valorTotal ?? 0), 0), [doMes]);
   const emAndamento = useMemo(() => lista.filter((v) => v.status === "Em andamento").length, [lista]);
   const planejadas = useMemo(() => lista.filter((v) => v.status === "Planejada").length, [lista]);
+
+  // Só a tabela do fim segue o foco; gráficos e ranking continuam vendo tudo.
+  const listaFiltrada = useMemo(() => {
+    if (!foco) return lista;
+    if (foco === "mes") return doMes;
+    return lista.filter((v) => v.status === foco);
+  }, [lista, doMes, foco]);
 
   // Gasto por colaborador (desconsidera viagens canceladas).
   const gastoPorColab = useMemo(() => {
@@ -240,7 +254,9 @@ export function ViagensPainel() {
     resetForm();
   };
 
-  const totalGeral = lista.reduce((acc, v) => acc + (v.valorTotal ?? 0), 0);
+  // O subtítulo descreve a tabela, então acompanha o filtro — senão diria
+  // "12 viagens" com 3 linhas na tela.
+  const totalGeral = listaFiltrada.reduce((acc, v) => acc + (v.valorTotal ?? 0), 0);
 
   return (
     <div>
@@ -254,10 +270,10 @@ export function ViagensPainel() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Viagens no mês" value={doMes.length} icon={<Plane className="h-5 w-5" />} accent="brand" hint="Iniciadas neste mês" />
-        <StatCard label="Gasto no mês" value={formatBRL(gastoMes)} icon={<Wallet className="h-5 w-5" />} accent="gold" hint="Soma das diárias" />
-        <StatCard label="Em andamento" value={emAndamento} icon={<MapPin className="h-5 w-5" />} accent="amber" hint="Equipe em campo" />
-        <StatCard label="Planejadas" value={planejadas} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Aguardando início" />
+        <StatCard label="Viagens no mês" value={doMes.length} icon={<Plane className="h-5 w-5" />} accent="brand" hint="Iniciadas neste mês" onClick={() => alternarFoco("mes")} ativo={foco === "mes"} title="Ver na tabela só as viagens iniciadas neste mês" />
+        <StatCard label="Gasto no mês" value={formatBRL(gastoMes)} icon={<Wallet className="h-5 w-5" />} accent="gold" hint="Soma das diárias" onClick={() => alternarFoco("mes")} ativo={foco === "mes"} title="Ver na tabela as viagens que formam o gasto do mês" />
+        <StatCard label="Em andamento" value={emAndamento} icon={<MapPin className="h-5 w-5" />} accent="amber" hint="Equipe em campo" onClick={() => alternarFoco("Em andamento")} ativo={foco === "Em andamento"} title="Ver na tabela só quem está em campo" />
+        <StatCard label="Planejadas" value={planejadas} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Aguardando início" onClick={() => alternarFoco("Planejada")} ativo={foco === "Planejada"} title="Ver na tabela só as viagens planejadas" />
       </div>
 
       <Card className="mt-6">
@@ -334,7 +350,7 @@ export function ViagensPainel() {
       <Card className="mt-6 overflow-hidden">
         <CardHeader
           title="Viagens e diárias"
-          subtitle={`${lista.length} viagem(ns) · ${formatBRL(totalGeral)} no total`}
+          subtitle={`${listaFiltrada.length} viagem(ns) · ${formatBRL(totalGeral)} no total`}
           icon={<Plane className="h-[18px] w-[18px]" />}
           action={
             podeEditar ? (
@@ -357,9 +373,15 @@ export function ViagensPainel() {
             ) : undefined
           }
         />
-        {lista.length === 0 ? (
+        {listaFiltrada.length === 0 ? (
           <CardBody>
-            <EmptyState title="Sem viagens registradas" description="Nenhuma viagem no seu escopo de acesso." icon={<Plane className="h-8 w-8" />} />
+            <EmptyState
+              title="Sem viagens registradas"
+              /* Com filtro ligado o vazio é do filtro, não do escopo — avisar
+                 evita o susto de achar que os dados sumiram. */
+              description={foco ? "Nenhuma viagem neste filtro — clique no card de novo para ver todas." : "Nenhuma viagem no seu escopo de acesso."}
+              icon={<Plane className="h-8 w-8" />}
+            />
           </CardBody>
         ) : (
           <div className="overflow-x-auto">
@@ -377,7 +399,7 @@ export function ViagensPainel() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {lista.map((v) => (
+                {listaFiltrada.map((v) => (
                   <tr key={v.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
                       <div className="flex items-center gap-3">

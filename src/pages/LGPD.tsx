@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Lock, ShieldCheck, Eye, FileSearch, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -26,9 +26,25 @@ export default function LGPD() {
   const { items: acessos } = useColecao("acessos");
   const { items: consentimentos } = useColecao("consentimentos");
 
+  // Cada card do topo é um filtro das tabelas abaixo — os hooks ficam antes do
+  // early return de permissão para não quebrar a ordem dos hooks.
+  const [focoAcesso, setFocoAcesso] = useState<"sensiveis" | null>(null);
+  const [soConsentidos, setSoConsentidos] = useState(false);
+
   const ordenados = useMemo(
     () => [...acessos].sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime()),
     [acessos],
+  );
+
+  const trilha = useMemo(
+    () => (focoAcesso === "sensiveis" ? ordenados.filter((a) => a.acao.includes("SENSIVEIS")) : ordenados),
+    [ordenados, focoAcesso],
+  );
+
+  // O card conta só os consentidos; o filtro deixa a tabela bater com o número.
+  const consentVisiveis = useMemo(
+    () => (soConsentidos ? consentimentos.filter((c) => c.consentido) : consentimentos),
+    [consentimentos, soConsentidos],
   );
 
   if (!ehRH(sessao)) {
@@ -52,9 +68,9 @@ export default function LGPD() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Total de acessos" value={acessos.length} icon={<Eye className="h-5 w-5" />} accent="brand" />
-        <StatCard label="Acessos a dados sensíveis" value={totalSensiveis} icon={<FileSearch className="h-5 w-5" />} accent={totalSensiveis ? "amber" : "green"} hint="Visualizações de CPF, salário e dados familiares" />
-        <StatCard label="Consentimentos registrados" value={totalConsentidos} icon={<ShieldCheck className="h-5 w-5" />} accent="green" />
+        <StatCard label="Total de acessos" value={acessos.length} icon={<Eye className="h-5 w-5" />} accent="brand" onClick={() => setFocoAcesso(null)} ativo={focoAcesso === null} title="Mostrar todos os acessos na trilha" />
+        <StatCard label="Acessos a dados sensíveis" value={totalSensiveis} icon={<FileSearch className="h-5 w-5" />} accent={totalSensiveis ? "amber" : "green"} hint="Visualizações de CPF, salário e dados familiares" onClick={() => setFocoAcesso((f) => (f === "sensiveis" ? null : "sensiveis"))} ativo={focoAcesso === "sensiveis"} title="Ver na trilha só os acessos a dados sensíveis" />
+        <StatCard label="Consentimentos registrados" value={totalConsentidos} icon={<ShieldCheck className="h-5 w-5" />} accent="green" onClick={() => setSoConsentidos((v) => !v)} ativo={soConsentidos} title="Ver só quem consentiu (clique de novo para mostrar todos)" />
       </div>
 
       <Card className="mt-6">
@@ -64,7 +80,7 @@ export default function LGPD() {
           icon={<Eye className="h-[18px] w-[18px]" />}
         />
         <CardBody>
-          {ordenados.length === 0 ? (
+          {trilha.length === 0 ? (
             <EmptyState
               title="Nenhum acesso registrado"
               description="Os registros são criados automaticamente quando o RH ou um gestor abre a ficha de um colaborador e visualiza dados sensíveis."
@@ -84,7 +100,7 @@ export default function LGPD() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ordenados.map((a) => (
+                  {trilha.map((a) => (
                     <tr key={a.id} className="border-t border-slate-100">
                       <td className="td whitespace-nowrap text-slate-500">{dataHora(a.criadoEm)}</td>
                       <td className="td font-medium text-slate-700">{a.usuarioNome}</td>
@@ -110,7 +126,7 @@ export default function LGPD() {
           icon={<ShieldCheck className="h-[18px] w-[18px]" />}
         />
         <CardBody>
-          {consentimentos.length === 0 ? (
+          {consentVisiveis.length === 0 ? (
             <EmptyState title="Nenhum consentimento registrado" />
           ) : (
             <div className="overflow-x-auto">
@@ -124,7 +140,7 @@ export default function LGPD() {
                   </tr>
                 </thead>
                 <tbody>
-                  {consentimentos.map((co) => (
+                  {consentVisiveis.map((co) => (
                     <tr key={co.id} className="border-t border-slate-100">
                       <td className="td font-medium text-slate-700">{d.nomeColab(co.colaboradorId)}</td>
                       <td className="td text-slate-500">{co.finalidade}</td>

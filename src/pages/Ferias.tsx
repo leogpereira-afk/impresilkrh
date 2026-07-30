@@ -123,11 +123,17 @@ export default function Ferias() {
 
   const alertasCLT = useMemo(() => lista.filter((f) => alertaCLT(f) !== null), [lista]);
 
-  const tabela = useMemo(
-    () =>
-      [...lista].sort((a, b) => d.nomeColab(a.colaboradorId).localeCompare(d.nomeColab(b.colaboradorId))),
-    [lista, d],
-  );
+  // Os 4 indicadores são recortes da tabela "Controle de férias", então clicar filtra a tabela.
+  const [foco, setFoco] = useState<string | null>(null);
+  const alternarFoco = (f: string) => setFoco((atual) => (atual === f ? null : f));
+
+  const tabela = useMemo(() => {
+    const base =
+      foco === "alertas" ? lista.filter((f) => alertaCLT(f) !== null)
+      : foco ? lista.filter((f) => f.status === foco)
+      : lista;
+    return [...base].sort((a, b) => d.nomeColab(a.colaboradorId).localeCompare(d.nomeColab(b.colaboradorId)));
+  }, [lista, d, foco]);
 
   // ---- Quadro de Comando: distribuição por status (gráfico clicável) ----
   const porStatus = useMemo(
@@ -245,10 +251,10 @@ export default function Ferias() {
       </PageHeader>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="De férias agora" value={deFeriasAgora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Em andamento" />
-        <StatCard label="Agendadas" value={agendadas.length} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Gozo programado" />
-        <StatCard label="Em aberto" value={emAberto.length} icon={<CalendarPlus className="h-5 w-5" />} accent="amber" hint="Saldo a programar" />
-        <StatCard label="Alertas CLT" value={alertasCLT.length} icon={<ShieldAlert className="h-5 w-5" />} accent={alertasCLT.length ? "red" : "green"} hint="Períodos a vencer/vencidos" />
+        <StatCard label="De férias agora" value={deFeriasAgora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Em andamento" onClick={() => alternarFoco("Em andamento")} ativo={foco === "Em andamento"} title="Filtrar o controle de férias por quem está de férias agora" />
+        <StatCard label="Agendadas" value={agendadas.length} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Gozo programado" onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Filtrar o controle de férias pelas agendadas" />
+        <StatCard label="Em aberto" value={emAberto.length} icon={<CalendarPlus className="h-5 w-5" />} accent="amber" hint="Saldo a programar" onClick={() => alternarFoco("Em aberto")} ativo={foco === "Em aberto"} title="Filtrar o controle de férias pelas em aberto" />
+        <StatCard label="Alertas CLT" value={alertasCLT.length} icon={<ShieldAlert className="h-5 w-5" />} accent={alertasCLT.length ? "red" : "green"} hint="Períodos a vencer/vencidos" onClick={() => alternarFoco("alertas")} ativo={foco === "alertas"} title="Filtrar o controle de férias pelos períodos vencidos/a vencer" />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

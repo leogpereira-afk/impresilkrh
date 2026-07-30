@@ -25,6 +25,7 @@ import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState, Progress } from "@/components/ui/misc";
+import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { Select, Campo, Input } from "@/components/ui/form";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -57,6 +58,7 @@ import { enviarColecao, apagarRegistrosNuvem } from "@/lib/sync";
 import type {
   ClassificacaoConta,
   ClasseCusto,
+  Colaborador,
   ContaPlano,
   Pagamento,
 } from "@/data/types";
@@ -68,6 +70,7 @@ export default function Custos() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
+  const drill = useDrill();
 
   const planoColecao = useColecao("planoContas");
   const classifColecao = useColecao("classificacaoCustos");
@@ -260,6 +263,15 @@ export default function Custos() {
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
   const totalMes = useMemo(() => linhasMes.reduce((s, l) => s + l.valor, 0), [linhasMes]);
   const pessoasNoMes = useMemo(() => new Set(pagsDoMes.map((p) => p.colaboradorId)).size, [pagsDoMes]);
+  // Só para o drill-down dos cards: quem são as pessoas por trás da folha do mês.
+  const colabsPagosNoMes = useMemo(
+    () =>
+      [...new Set(pagsDoMes.map((p: Pagamento) => p.colaboradorId))]
+        .map((id) => d.colabById.get(id))
+        .filter((c): c is Colaborador => !!c)
+        .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    [pagsDoMes, d.colabById],
+  );
   // No modo "Só Salário" excluímos o tipo "Adiantamento" (a soma não duplica).
   const linhasConsideradas = useMemo(
     () => (comAdiantamento ? linhasColab : linhasColab.filter((l) => l.tipo !== "Adiantamento")),
@@ -782,8 +794,24 @@ export default function Custos() {
                     {/* Destaques do mês */}
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                       <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
-                      <StatCard label="Colaboradores pagos" value={pessoasNoMes} accent="blue" icon={<Users className="h-4 w-4" />} hint="Com lançamento no mês" />
-                      <StatCard label="Média por colaborador" value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)} accent="gold" icon={<Coins className="h-4 w-4" />} hint="Total ÷ pagos" />
+                      <StatCard
+                        label="Colaboradores pagos"
+                        value={pessoasNoMes}
+                        accent="blue"
+                        icon={<Users className="h-4 w-4" />}
+                        hint="Com lançamento no mês"
+                        title="Ver quem recebeu neste mês"
+                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard
+                        label="Média por colaborador"
+                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
+                        accent="gold"
+                        icon={<Coins className="h-4 w-4" />}
+                        hint="Total ÷ pagos"
+                        title="Ver quem entra no divisor da média"
+                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
+                      />
                       <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
                     </div>
                   </div>
@@ -920,8 +948,27 @@ export default function Custos() {
                     {/* Cálculo de custo real */}
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
-                        <StatCard label="Custo pago" value={formatBRL(custoPago)} accent="blue" icon={<Coins className="h-4 w-4" />} hint={comAdiantamento ? "Salário + adiantamento" : "Só salário"} />
-                        <StatCard label="Custo real" value={formatBRL(custoReal)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint="Pago + encargos" />
+                        {/* Os dois cards escolhem qual número o total do colaborador exibe (mesmo estado do toggle). */}
+                        <StatCard
+                          label="Custo pago"
+                          value={formatBRL(custoPago)}
+                          accent="blue"
+                          icon={<Coins className="h-4 w-4" />}
+                          hint={comAdiantamento ? "Salário + adiantamento" : "Só salário"}
+                          title="Usar o custo pago (sem encargos) no total do colaborador"
+                          ativo={!comEncargos}
+                          onClick={() => setComEncargos(false)}
+                        />
+                        <StatCard
+                          label="Custo real"
+                          value={formatBRL(custoReal)}
+                          accent="brand"
+                          icon={<Wallet className="h-4 w-4" />}
+                          hint="Pago + encargos"
+                          title="Usar o custo real (com encargos) no total do colaborador"
+                          ativo={comEncargos}
+                          onClick={() => setComEncargos(true)}
+                        />
                       </div>
                       <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -1065,6 +1112,8 @@ export default function Custos() {
                     hint={`Individual ÷ ${nColab} ativos`}
                     accent="brand"
                     icon={<Users className="h-4 w-4" />}
+                    title="Ver os ativos que entram no divisor"
+                    onClick={() => drill.abrir("Colaboradores ativos", ativosOrdenados, `Individual ${formatBRL(totais.individual)} ÷ ${nColab} ativo(s)`)}
                   />
                   <StatCard
                     label="Total custos de colaboradores"
@@ -1073,12 +1122,16 @@ export default function Custos() {
                     accent="gold"
                     icon={<Wallet className="h-4 w-4" />}
                   />
+                  {/* Clicar troca a tabela de contas de rateio para a visão por pessoa (clicar de novo volta). */}
                   <StatCard
                     label="Rateio por colaborador"
                     value={formatBRL(totais.rateioPorColab)}
                     hint={`Rateio ÷ ${nColab} ativos`}
                     accent="green"
                     icon={<Coins className="h-4 w-4" />}
+                    title="Mostrar as contas de rateio por colaborador"
+                    ativo={rateioPorPessoa}
+                    onClick={() => setRateioPorPessoa((v) => !v)}
                   />
                 </div>
 
@@ -1324,6 +1377,8 @@ export default function Custos() {
           },
         ]}
       />
+
+      <DrillModal {...drill.props} />
     </div>
   );
 }
@@ -1339,9 +1394,12 @@ function CustoGlobalFuncionarios() {
   const { items: pagamentos } = useColecao("pagamentos");
   const competencias = useMemo(() => competenciasPlano(plano), [plano]);
   const [comp, setComp] = useState<string>("");
+  // Conta em foco pelos cards: filtra a tabela de contas de pessoal (null = todas).
+  const [contaFoco, setContaFoco] = useState<string | null>(null);
   const compAtiva = comp && competencias.includes(comp) ? comp : (competencias[competencias.length - 1] ?? "");
   const idx = competencias.indexOf(compAtiva);
-  const irMes = (d: number) => { const n = competencias[idx + d]; if (n) setComp(n); };
+  // Trocar de mês limpa o foco — a conta filtrada pode nem existir na outra competência.
+  const irMes = (d: number) => { const n = competencias[idx + d]; if (n) { setComp(n); setContaFoco(null); } };
 
   // Folha real por pessoa (soma dos pagamentos do mês) — para comparar lado a lado.
   const folhaReal = useMemo(
@@ -1386,7 +1444,7 @@ function CustoGlobalFuncionarios() {
               <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
+              <Select value={compAtiva} onChange={(e) => { setComp(e.target.value); setContaFoco(null); }} className="h-9 w-auto py-0 text-sm">
                 {competencias.map((c) => <option key={c} value={c}>{compLabelLongo(c)}</option>)}
               </Select>
               <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
@@ -1423,9 +1481,27 @@ function CustoGlobalFuncionarios() {
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Custos extras (coletivos) — não vão para a folha por pessoa</p>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {extras.map((x) => (
-                    <StatCard key={x.label} label={x.label} value={formatBRL(x.c!.valor)} accent={x.accent} icon={<ReceiptText className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
+                    <StatCard
+                      key={x.label}
+                      label={x.label}
+                      value={formatBRL(x.c!.valor)}
+                      accent={x.accent}
+                      icon={<ReceiptText className="h-4 w-4" />}
+                      hint={compLabelLongo(compAtiva)}
+                      title={`Isolar ${x.label} na tabela abaixo`}
+                      ativo={contaFoco === x.c!.cod}
+                      onClick={() => setContaFoco((atual) => (atual === x.c!.cod ? null : x.c!.cod))}
+                    />
                   ))}
-                  <StatCard label="Categorias no mês" value={grupos.length} accent="blue" icon={<Layers className="h-4 w-4" />} hint="Contas de pessoal" />
+                  <StatCard
+                    label="Categorias no mês"
+                    value={grupos.length}
+                    accent="blue"
+                    icon={<Layers className="h-4 w-4" />}
+                    hint="Contas de pessoal"
+                    title="Ver todas as categorias na tabela"
+                    onClick={() => setContaFoco(null)}
+                  />
                 </div>
               </div>
             );
@@ -1444,7 +1520,7 @@ function CustoGlobalFuncionarios() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {grupos.map((g) => (
+                  {grupos.filter((g) => !contaFoco || g.cod === contaFoco).map((g) => (
                     <tr key={g.cod} className="transition hover:bg-slate-50/60">
                       <td className="td font-medium text-slate-800">{g.nome}</td>
                       <td className="td hidden sm:table-cell text-slate-400">{g.cod}</td>

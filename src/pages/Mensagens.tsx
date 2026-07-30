@@ -626,6 +626,11 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   const agendadas = useMemo(() => agendamentos.filter((a) => a.status === "Agendada").length, [agendamentos]);
   const enviadas = useMemo(() => agendamentos.filter((a) => a.status === "Enviada").length, [agendamentos]);
 
+  // Os cartões de status filtram a fila abaixo; clicar de novo limpa o filtro.
+  const [foco, setFoco] = useState<"Agendada" | "Enviada" | null>(null);
+  const alternarFoco = (s: "Agendada" | "Enviada") => setFoco((atual) => (atual === s ? null : s));
+  const visiveis = useMemo(() => (foco ? lista.filter((a) => a.status === foco) : lista), [lista, foco]);
+
   const abrirNovo = () => {
     setForm({ ...AGENDAMENTO_VAZIO, quando: HOJE.toISOString().slice(0, 16) });
     setModal(true);
@@ -701,8 +706,12 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   return (
     <div>
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <StatCard label="Agendadas" value={agendadas} icon={<Clock className="h-5 w-5" />} accent="blue" hint="Na fila de envio" />
-        <StatCard label="Enviadas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados" />
+        <StatCard label="Agendadas" value={agendadas} icon={<Clock className="h-5 w-5" />} accent="blue" hint="Na fila de envio"
+          onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Ver só os envios ainda na fila" />
+        <StatCard label="Enviadas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados"
+          onClick={() => alternarFoco("Enviada")} ativo={foco === "Enviada"} title="Ver só os envios já disparados" />
+        {/* Sem clique: os contatos não estão nesta aba e a aba de Contatos não pode
+            ser aberta de fora — o número aqui é só referência da base. */}
         <StatCard label="Total de contatos" value={contatos.length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Base disponível" />
       </div>
 
@@ -714,10 +723,10 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
         )}
       </div>
 
-      {lista.length === 0 ? (
+      {visiveis.length === 0 ? (
         <EmptyState
-          title="Nenhum envio agendado"
-          description="A fila de envios está vazia. Agende um disparo para começar."
+          title={foco ? "Nenhum envio neste filtro" : "Nenhum envio agendado"}
+          description={foco ? "Clique de novo no cartão para ver a fila inteira." : "A fila de envios está vazia. Agende um disparo para começar."}
           icon={<Clock className="h-8 w-8" />}
         />
       ) : (
@@ -735,7 +744,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {lista.map((a) => {
+                {visiveis.map((a) => {
                   const n = contar(a.grupoAlvo);
                   return (
                     <tr key={a.id} className="transition hover:bg-slate-50/60">

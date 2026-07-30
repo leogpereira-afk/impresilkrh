@@ -29,6 +29,10 @@ const corEtapa = (e: EtapaCandidato) =>
 const corNota = (n?: number | null) =>
   n == null ? "text-slate-300" : n >= 8 ? "text-green-600" : n >= 6 ? "text-amber-600" : "text-red-500";
 
+// Filtros acionados pelos cartões do topo.
+type FocoVagas = "abertas" | "comCandidatos" | "entrevista";
+const emEntrevistaOuTeste = (c: Candidato) => c.etapa === "Entrevista" || c.etapa === "Teste";
+
 export default function Vagas() {
   const { items: vagas, criar: criarVaga, atualizar: atualizarVaga, remover: removerVaga } = useColecao("vagas");
   const { items: candidatos, criar: criarCand, atualizar: atualizarCand, remover: removerCand } = useColecao("candidatos");
@@ -60,7 +64,25 @@ export default function Vagas() {
   }, [vagas]);
 
   const nAbertas = vagas.filter((v) => v.status === "Aberta" || v.status === "Em triagem").length;
-  const emEntrevista = candidatos.filter((c) => c.etapa === "Entrevista" || c.etapa === "Teste").length;
+  const emEntrevista = candidatos.filter(emEntrevistaOuTeste).length;
+
+  const [foco, setFoco] = useState<FocoVagas | null>(null);
+  const combinaFoco = (v: Vaga, f: FocoVagas) => {
+    const lista = candPorVaga.get(v.id) ?? [];
+    if (f === "abertas") return v.status === "Aberta" || v.status === "Em triagem";
+    if (f === "comCandidatos") return lista.length > 0;
+    return lista.some(emEntrevistaOuTeste);
+  };
+  // Os números de candidatos só aparecem dentro da vaga expandida — ao filtrar
+  // por eles, abre as vagas que sobraram para o clique não parecer sem efeito.
+  const alternarFoco = (f: FocoVagas) => {
+    const limpar = foco === f;
+    setFoco(limpar ? null : f);
+    if (!limpar && f !== "abertas") {
+      setAbertas((s) => { const n = new Set(s); for (const v of vagas) if (combinaFoco(v, f)) n.add(v.id); return n; });
+    }
+  };
+  const vagasVisiveis = foco ? vagasOrdenadas.filter((v) => combinaFoco(v, foco)) : vagasOrdenadas;
 
   const toggle = (id: string) => setAbertas((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -94,17 +116,26 @@ export default function Vagas() {
       </PageHeader>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <StatCard label="Vagas abertas" value={nAbertas} icon={<Briefcase className="h-5 w-5" />} accent="brand" />
-        <StatCard label="Candidatos" value={candidatos.length} icon={<Users className="h-5 w-5" />} accent="blue" />
-        <StatCard label="Em entrevista/teste" value={emEntrevista} icon={<Trophy className="h-5 w-5" />} accent="amber" />
+        <StatCard label="Vagas abertas" value={nAbertas} icon={<Briefcase className="h-5 w-5" />} accent="brand"
+          onClick={() => alternarFoco("abertas")} ativo={foco === "abertas"} title="Ver só as vagas abertas e em triagem" />
+        <StatCard label="Candidatos" value={candidatos.length} icon={<Users className="h-5 w-5" />} accent="blue"
+          onClick={() => alternarFoco("comCandidatos")} ativo={foco === "comCandidatos"} title="Ver só as vagas que já têm candidatos" />
+        <StatCard label="Em entrevista/teste" value={emEntrevista} icon={<Trophy className="h-5 w-5" />} accent="amber"
+          onClick={() => alternarFoco("entrevista")} ativo={foco === "entrevista"} title="Ver só quem está em entrevista ou teste" />
       </div>
 
-      {vagasOrdenadas.length === 0 ? (
-        <EmptyState title="Nenhuma vaga cadastrada" description="Crie uma vaga para começar a registrar candidatos e classificá-los." icon={<Briefcase className="h-8 w-8" />} />
+      {vagasVisiveis.length === 0 ? (
+        <EmptyState
+          title={foco ? "Nenhuma vaga neste filtro" : "Nenhuma vaga cadastrada"}
+          description={foco ? "Clique de novo no cartão para ver todas as vagas." : "Crie uma vaga para começar a registrar candidatos e classificá-los."}
+          icon={<Briefcase className="h-8 w-8" />}
+        />
       ) : (
         <div className="space-y-4">
-          {vagasOrdenadas.map((v) => {
+          {vagasVisiveis.map((v) => {
             const lista = candPorVaga.get(v.id) ?? [];
+            // Com o foco em entrevista/teste, a lista da vaga mostra só quem está nessa etapa.
+            const visiveis = foco === "entrevista" ? lista.filter(emEntrevistaOuTeste) : lista;
             const aberta = abertas.has(v.id);
             const media = lista.length ? lista.reduce((s, c) => s + (c.nota ?? 0), 0) / lista.filter((c) => c.nota != null).length : 0;
             return (
@@ -200,7 +231,9 @@ export default function Vagas() {
                       <p className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">Nenhum candidato ainda. Adicione o primeiro currículo.</p>
                     ) : (
                       <div className="space-y-2">
-                        {lista.map((c, i) => (
+                        {visiveis.map((c) => {
+                          const i = lista.indexOf(c); // a classificação continua sendo a da vaga inteira
+                          return (
                           <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500" title={`${i + 1}º classificado`}>{i + 1}º</span>
                             <div className="min-w-0 flex-1">
@@ -229,7 +262,8 @@ export default function Vagas() {
                               <button onClick={() => setCandExcluir(c)} title="Remover candidato" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

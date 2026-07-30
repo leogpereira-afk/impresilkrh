@@ -155,27 +155,22 @@ export default function Treinamento() {
 
       {/* Indicadores — clicáveis (drill nas pessoas) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <button
-          type="button"
-          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+        {/* O próprio StatCard já vira botão acessível — nada de <button> por fora (botão dentro de botão). */}
+        <StatCard
+          label="Em treinamento" value={ativos.length} hint="Treinamentos não concluídos" icon={<GraduationCap className="h-5 w-5" />} accent="brand"
           onClick={() => drillRegs("Em treinamento", ativos, `${pessoasDe(ativos).length} pessoa(s) com treinamento em aberto`)}
-        >
-          <StatCard label="Em treinamento" value={ativos.length} hint="Treinamentos não concluídos" icon={<GraduationCap className="h-5 w-5" />} accent="brand" />
-        </button>
-        <button
-          type="button"
-          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+          title="Ver quem tem treinamento em aberto"
+        />
+        <StatCard
+          label="Concluídos" value={concluidos.length} hint="Capacitações finalizadas" icon={<CheckCircle2 className="h-5 w-5" />} accent="green"
           onClick={() => drillRegs("Treinamentos concluídos", concluidos, `${pessoasDe(concluidos).length} pessoa(s) com treinamento concluído`)}
-        >
-          <StatCard label="Concluídos" value={concluidos.length} hint="Capacitações finalizadas" icon={<CheckCircle2 className="h-5 w-5" />} accent="green" />
-        </button>
-        <button
-          type="button"
-          className="w-full text-left rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+          title="Ver quem já concluiu treinamentos"
+        />
+        <StatCard
+          label="Pendentes" value={pendentes.length} hint="Ainda não iniciados" icon={<Clock className="h-5 w-5" />} accent="amber"
           onClick={() => drillRegs("Treinamentos pendentes", pendentes, `${pessoasDe(pendentes).length} pessoa(s) com pendência`)}
-        >
-          <StatCard label="Pendentes" value={pendentes.length} hint="Ainda não iniciados" icon={<Clock className="h-5 w-5" />} accent="amber" />
-        </button>
+          title="Ver quem tem treinamento pendente"
+        />
         <StatCard label="Progresso médio" value={formatPercent(progressoMedio, 0)} hint="Média de conclusão" icon={<Trophy className="h-5 w-5" />} accent="gold" />
       </div>
 

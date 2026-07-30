@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Lock, ShieldCheck,
+  Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Lock, ShieldCheck, Pencil, Clock,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -15,6 +15,9 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
+import { cn } from "@/lib/cn";
+import { minParaHora } from "@/lib/pontoImport";
+import { calcularHoraExtra, minutosEntre, horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO } from "@/lib/pontoFolha";
 import { slug } from "@/data/_gen";
 import type { Colaborador, Lancamento, TipoLancamento } from "@/data/types";
 
@@ -46,11 +49,16 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   const config = useConfig();
   const toast = useToast();
   const podeEditar = podeGerir(sessao);
-  const { items: lancamentos, criar, remover } = useColecao("lancamentos");
+  const { items: lancamentos, criar, atualizar, remover } = useColecao("lancamentos");
   const { items: fechamentos, criar: criarFech, atualizar: atualizarFech } = useColecao("fechamentos");
 
   const [competencia, setCompetencia] = useState(compAtual());
   const [aberto, setAberto] = useState<Colaborador | null>(null);
+  // Foco dos cards do topo: filtra a lista de colaboradores abaixo
+  // (clicar no mesmo card de novo limpa o filtro).
+  const [foco, setFoco] = useState<"comVerba" | "aprovados" | null>(null);
+  const alternarFoco = (f: "comVerba" | "aprovados") =>
+    setFoco((atual) => (atual === f ? null : f));
 
   const escopo = useMemo(
     () => colaboradoresVisiveis(sessao, d.colaboradores)
@@ -65,6 +73,13 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
 
   const totalGeral = escopo.reduce((s, c) => s + totalDe(c.id), 0);
   const aprovados = escopo.filter((c) => fechDe(c.id)?.aprovado).length;
+
+  // Os cards seguem contando o mês inteiro; só a tabela obedece ao foco.
+  const visiveis = escopo.filter((c) => {
+    if (foco === "comVerba") return totalDe(c.id) > 0;
+    if (foco === "aprovados") return !!fechDe(c.id)?.aprovado;
+    return true;
+  });
 
   if (!podeEditar) {
     return (
@@ -91,9 +106,9 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
             className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
         </label>
         <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Total do mês" value={formatBRL(totalGeral)} icon={<Coins className="h-4 w-4" />} />
-          <StatCard label="Aprovados" value={`${aprovados}/${escopo.length}`} icon={<ShieldCheck className="h-4 w-4" />} />
-          <StatCard label="Colaboradores" value={String(escopo.length)} icon={<CheckCircle2 className="h-4 w-4" />} />
+          <StatCard label="Total do mês" value={formatBRL(totalGeral)} icon={<Coins className="h-4 w-4" />} onClick={() => alternarFoco("comVerba")} ativo={foco === "comVerba"} title="Ver só quem tem verba lançada no mês" />
+          <StatCard label="Aprovados" value={`${aprovados}/${escopo.length}`} icon={<ShieldCheck className="h-4 w-4" />} onClick={() => alternarFoco("aprovados")} ativo={foco === "aprovados"} title="Ver só as folhas já aprovadas" />
+          <StatCard label="Colaboradores" value={String(escopo.length)} icon={<CheckCircle2 className="h-4 w-4" />} onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todos os colaboradores" />
         </div>
       </div>
 
@@ -111,7 +126,10 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {escopo.map((c) => {
+                {visiveis.length === 0 && (
+                  <tr><td colSpan={4} className="td text-center text-slate-400">Nenhum colaborador neste filtro — clique no card de novo para ver todos.</td></tr>
+                )}
+                {visiveis.map((c) => {
                   const fe = fechDe(c.id);
                   const tot = totalDe(c.id);
                   return (
@@ -143,6 +161,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
           cargoNome={d.nomeCargo(aberto) ?? aberto.cargoLivre ?? ""}
           onFechar={() => setAberto(null)}
           onCriar={(rec) => criar(rec)}
+          onAtualizar={(id, patch) => atualizar(id, patch)}
           onRemover={(id) => remover(id)}
           onAprovar={(aprovar) => {
             const id = `${competencia}::${aberto.id}`;
@@ -161,7 +180,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
 // ============================================================================
 function DetalheColaborador({
   colaborador, competencia, config, lancamentos, fechamento, cargoNome,
-  onFechar, onCriar, onRemover, onAprovar, toast,
+  onFechar, onCriar, onAtualizar, onRemover, onAprovar, toast,
 }: {
   colaborador: Colaborador;
   competencia: string;
@@ -171,6 +190,7 @@ function DetalheColaborador({
   cargoNome: string;
   onFechar: () => void;
   onCriar: (rec: Lancamento) => void;
+  onAtualizar: (id: string, patch: Partial<Lancamento>) => void;
   onRemover: (id: string) => void;
   onAprovar: (aprovar: boolean) => void;
   toast: (m: string, t?: "sucesso" | "erro") => void;
@@ -179,6 +199,26 @@ function DetalheColaborador({
   const [valor, setValor] = useState("");
   const [dia, setDia] = useState("");
   const [descricao, setDescricao] = useState("");
+  // Hora extra por relógio: início/fim viram minutos e o valor sai do salário.
+  const [horaInicio, setHoraInicio] = useState("");
+  const [horaFim, setHoraFim] = useState("");
+  const [fatorHE, setFatorHE] = useState<number>(FATOR_HE_PADRAO);
+  const [editando, setEditando] = useState<Lancamento | null>(null); // item 9: editar
+
+  const ehHoraExtra = tipo === "hora_extra";
+  const minutosHE = ehHoraExtra ? minutosEntre(horaInicio, horaFim) : 0;
+  const calcHE = useMemo(
+    () => calcularHoraExtra({ salario: colaborador.salario, minutos: minutosHE, fator: fatorHE }),
+    [colaborador.salario, minutosHE, fatorHE],
+  );
+
+  // Enquanto o RH não digita nada, o valor mostrado é o sugerido pelo cálculo.
+  const valorEfetivo = valor !== "" ? valor : (ehHoraExtra && minutosHE > 0 ? String(calcHE.valor).replace(".", ",") : "");
+
+  const limpar = () => {
+    setValor(""); setDescricao(""); setDia(""); setHoraInicio(""); setHoraFim("");
+    setFatorHE(FATOR_HE_PADRAO); setEditando(null);
+  };
 
   const totalPorTipo = useMemo(() => {
     const m = new Map<TipoLancamento, number>();
@@ -186,19 +226,44 @@ function DetalheColaborador({
     return m;
   }, [lancamentos]);
   const total = lancamentos.reduce((s, l) => s + (Number(l.valor) || 0), 0);
+  const minutosExtrasLancados = lancamentos.reduce((s, l) => s + (l.minutos ?? 0), 0);
 
-  const adicionar = () => {
-    const v = Number(String(valor).replace(/\./g, "").replace(",", "."));
-    if (!v || v <= 0) { toast("Informe um valor válido.", "erro"); return; }
+  const abrirEdicao = (l: Lancamento) => {
+    setEditando(l);
+    setTipo(l.tipo);
+    setValor(String(l.valor).replace(".", ","));
+    setDia(l.data ?? "");
+    setDescricao(l.descricao ?? "");
+    setHoraInicio(l.horaInicio ?? "");
+    setHoraFim(l.horaFim ?? "");
+    setFatorHE(l.fatorHE ?? FATOR_HE_PADRAO);
+  };
+
+  const salvar = () => {
+    const v = Number(String(valorEfetivo).replace(/\./g, "").replace(",", "."));
+    if (!v || v <= 0) {
+      toast(ehHoraExtra && minutosHE === 0 ? "Informe o horário de início e fim (ou o valor)." : "Informe um valor válido.", "erro");
+      return;
+    }
     const agora = new Date().toISOString();
-    onCriar({
-      id: `${competencia}::${colaborador.id}::${slug(tipo)}::${agora}`,
-      colaboradorId: colaborador.id, competencia, tipo, valor: v,
-      data: dia || null, descricao: descricao.trim() || undefined,
-      criadoEm: agora, atualizadoEm: agora,
-    });
-    setValor(""); setDescricao(""); setDia("");
-    toast("Lançamento adicionado.");
+    const extras = ehHoraExtra && minutosHE > 0
+      ? { horaInicio, horaFim, minutos: minutosHE, fatorHE, valorSugerido: calcHE.valor }
+      : { horaInicio: undefined, horaFim: undefined, minutos: undefined, fatorHE: undefined, valorSugerido: undefined };
+
+    if (editando) {
+      onAtualizar(editando.id, { tipo, valor: v, data: dia || null, descricao: descricao.trim() || undefined, ...extras, atualizadoEm: agora });
+      toast("Lançamento atualizado.");
+    } else {
+      onCriar({
+        id: `${competencia}::${colaborador.id}::${slug(tipo)}::${agora}`,
+        colaboradorId: colaborador.id, competencia, tipo, valor: v,
+        data: dia || null, descricao: descricao.trim() || undefined,
+        ...extras,
+        criadoEm: agora, atualizadoEm: agora,
+      });
+      toast("Lançamento adicionado.");
+    }
+    limpar();
   };
 
   const dadosRel = { colaborador, competencia, config, lancamentos, fechamento, cargoNome, totalPorTipo, total };
@@ -206,18 +271,89 @@ function DetalheColaborador({
   return (
     <Modal aberto onFechar={onFechar} titulo={`Folha variável — ${colaborador.nome}`} descricao={`${labelMes(competencia)}${cargoNome ? ` · ${cargoNome}` : ""}`} largura="max-w-3xl">
       <div className="space-y-4">
-        {/* Adicionar lançamento */}
+        {/* Resumo do que a pessoa vai receber (item 6) */}
         <Card>
-          <CardHeader title="Lançar verba" subtitle="A assistente lança aqui durante o mês." icon={<Plus className="h-[18px] w-[18px]" />} />
+          <CardHeader
+            title="Resumo do mês"
+            subtitle={fechamento?.aprovado ? "Aprovado — entra no 1º pagamento do mês." : "Parcial — ainda em aberto."}
+            icon={<Coins className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {lancamentos.length === 0 ? (
+              <p className="text-sm text-slate-400">Nada lançado ainda neste mês.</p>
+            ) : (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {TIPOS.filter((t) => (totalPorTipo.get(t.tipo) ?? 0) > 0).map((t) => (
+                    <div key={t.tipo} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                      <span className="text-sm text-slate-600">{t.label}</span>
+                      <span className="text-sm font-semibold tabular-nums text-slate-800">{formatBRL(totalPorTipo.get(t.tipo) ?? 0)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
+                  <div>
+                    <p className="text-xs text-slate-500">Total {fechamento?.aprovado ? "aprovado" : "parcial"} a receber</p>
+                    {minutosExtrasLancados > 0 && (
+                      <p className="text-[11px] text-slate-400">Inclui {minParaHora(minutosExtrasLancados)} de hora extra lançada por horário</p>
+                    )}
+                  </div>
+                  <p className="text-2xl font-bold tabular-nums text-brand-ink">{formatBRL(total)}</p>
+                </div>
+              </>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* Adicionar/editar lançamento */}
+        <Card>
+          <CardHeader
+            title={editando ? "Editar lançamento" : "Lançar verba"}
+            subtitle={editando ? "Altere e salve — o valor pode ser corrigido à vontade." : "A assistente lança aqui durante o mês."}
+            icon={editando ? <Pencil className="h-[18px] w-[18px]" /> : <Plus className="h-[18px] w-[18px]" />}
+          />
           <CardBody>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Campo label="Tipo"><Select value={tipo} onChange={(e) => setTipo(e.target.value as TipoLancamento)}>{TIPOS.map((t) => <option key={t.tipo} value={t.tipo}>{t.label}</option>)}</Select></Campo>
-              <Campo label="Valor (R$)"><Input inputMode="decimal" placeholder="0,00" value={valor} onChange={(e) => setValor(e.target.value)} /></Campo>
               <Campo label="Dia (opcional)"><Input type="date" value={dia} onChange={(e) => setDia(e.target.value)} /></Campo>
-              <Campo label="Descrição (opcional)"><Input placeholder="Ex.: viagem SP" value={descricao} onChange={(e) => setDescricao(e.target.value)} /></Campo>
+              <Campo label="Descrição (opcional)" className="lg:col-span-2"><Input placeholder="Ex.: viagem SP" value={descricao} onChange={(e) => setDescricao(e.target.value)} /></Campo>
             </div>
-            <div className="mt-3 flex justify-end">
-              <button className="btn-primary" onClick={adicionar}><Plus className="h-4 w-4" /> Adicionar</button>
+
+            {/* Hora extra: início e fim somam as horas e o valor sai do salário */}
+            {ehHoraExtra && (
+              <div className="mt-3 rounded-xl border border-brand/20 bg-brand/5 p-3">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> Horário da hora extra</p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Campo label="Início"><Input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} /></Campo>
+                  <Campo label="Fim"><Input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)} /></Campo>
+                  <Campo label="Adicional">
+                    <Select value={String(fatorHE)} onChange={(e) => setFatorHE(Number(e.target.value))}>
+                      {ADICIONAIS_HE.map((a) => <option key={a.fator} value={a.fator}>{a.label}</option>)}
+                    </Select>
+                  </Campo>
+                </div>
+                {minutosHE > 0 && (
+                  <p className="mt-2 text-xs text-slate-600">
+                    <b>{minParaHora(minutosHE)}</b> de hora extra
+                    {calcHE.semSalario
+                      ? <span className="text-amber-700"> · sem salário no cadastro — digite o valor à mão</span>
+                      : <> · {horasDecimais(minutosHE)} h × {formatBRL(calcHE.valorHoraExtra)} = <b>{formatBRL(calcHE.valor)}</b> <span className="text-slate-400">(hora de {formatBRL(calcHE.valorHoraNormal)})</span></>}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Campo label="Valor (R$)" hint={ehHoraExtra && minutosHE > 0 && !calcHE.semSalario ? "Sugerido pelo cálculo — pode alterar" : undefined}>
+                <Input inputMode="decimal" placeholder="0,00" value={valorEfetivo} onChange={(e) => setValor(e.target.value)} />
+              </Campo>
+            </div>
+
+            <div className="mt-3 flex justify-end gap-2">
+              {editando && <button className="btn-outline" onClick={limpar}>Cancelar edição</button>}
+              <button className="btn-primary" onClick={salvar}>
+                {editando ? <><CheckCircle2 className="h-4 w-4" /> Salvar alteração</> : <><Plus className="h-4 w-4" /> Adicionar</>}
+              </button>
             </div>
           </CardBody>
         </Card>
@@ -232,12 +368,27 @@ function DetalheColaborador({
               {lancamentos.length === 0 ? (
                 <tr><td colSpan={5} className="td text-center text-slate-400">Nenhuma verba lançada neste mês.</td></tr>
               ) : lancamentos.map((l) => (
-                <tr key={l.id}>
+                <tr key={l.id} className={cn(editando?.id === l.id && "bg-brand/5")}>
                   <td className="td tabular-nums text-slate-500">{diaBR(l.data)}</td>
-                  <td className="td text-slate-700">{labelTipo(l.tipo)}</td>
+                  <td className="td text-slate-700">
+                    {labelTipo(l.tipo)}
+                    {/* Hora extra por horário: mostra de onde veio o valor */}
+                    {l.minutos ? (
+                      <p className="text-[11px] text-slate-400">
+                        {l.horaInicio}–{l.horaFim} · {minParaHora(l.minutos)}
+                        {l.fatorHE ? ` · ${ADICIONAIS_HE.find((a) => a.fator === l.fatorHE)?.curto ?? ""}` : ""}
+                        {l.valorSugerido != null && Math.abs(l.valorSugerido - l.valor) > 0.01 ? ` · ajustado (sugerido ${formatBRL(l.valorSugerido)})` : ""}
+                      </p>
+                    ) : null}
+                  </td>
                   <td className="td text-slate-500">{l.descricao || "—"}</td>
                   <td className="td text-right tabular-nums font-medium text-slate-700">{formatBRL(l.valor)}</td>
-                  <td className="td text-right"><button className="btn-ghost p-1.5 text-red-500" onClick={() => onRemover(l.id)}><Trash2 className="h-4 w-4" /></button></td>
+                  <td className="td text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" title="Editar" onClick={() => abrirEdicao(l)}><Pencil className="h-4 w-4" /></button>
+                      <button className="btn-ghost p-1.5 text-red-500" title="Remover" onClick={() => onRemover(l.id)}><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

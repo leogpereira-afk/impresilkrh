@@ -67,6 +67,14 @@ export default function SST() {
   const aVencer = exames.filter((doc) => situacaoDoc(doc.dataVencimento) === "A vencer").length;
   const validos = total - vencidos - aVencer;
 
+  // Os 4 números saem da mesma tabela abaixo, então clicar filtra em vez de abrir outra tela.
+  const [focoExame, setFocoExame] = useState<Situacao | null>(null);
+  const alternarFoco = (s: Situacao) => setFocoExame((atual) => (atual === s ? null : s));
+  const examesVisiveis = useMemo(
+    () => (focoExame ? exames.filter((doc) => situacaoDoc(doc.dataVencimento) === focoExame) : exames),
+    [exames, focoExame],
+  );
+
   const abaProgramas = (
     <div className="space-y-6">
       {programas.length === 0 ? (
@@ -107,10 +115,10 @@ export default function SST() {
   const abaExames = (
     <div>
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total de exames" value={total} icon={<FileText className="h-5 w-5" />} accent="brand" />
-        <StatCard label="Válidos" value={validos} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" />
-        <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" />
-        <StatCard label="Vencidos" value={vencidos} icon={<AlertTriangle className="h-5 w-5" />} accent={vencidos ? "red" : "green"} />
+        <StatCard label="Total de exames" value={total} icon={<FileText className="h-5 w-5" />} accent="brand" onClick={() => setFocoExame(null)} ativo={focoExame === null} title="Mostrar todos os exames" />
+        <StatCard label="Válidos" value={validos} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={focoExame === "Válido"} title="Ver só os exames válidos" />
+        <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={focoExame === "A vencer"} title="Ver só os exames a vencer" />
+        <StatCard label="Vencidos" value={vencidos} icon={<AlertTriangle className="h-5 w-5" />} accent={vencidos ? "red" : "green"} onClick={() => alternarFoco("Vencido")} ativo={focoExame === "Vencido"} title="Ver só os exames vencidos" />
       </div>
 
       <Card className="overflow-hidden">
@@ -119,7 +127,7 @@ export default function SST() {
           subtitle="ASO e exames periódicos por colaborador"
           icon={<Stethoscope className="h-[18px] w-[18px]" />}
         />
-        {exames.length === 0 ? (
+        {examesVisiveis.length === 0 ? (
           <CardBody>
             <EmptyState
               title="Nenhum exame ocupacional encontrado"
@@ -140,7 +148,7 @@ export default function SST() {
                 </tr>
               </thead>
               <tbody>
-                {exames.map((doc) => {
+                {examesVisiveis.map((doc) => {
                   const situacao = situacaoDoc(doc.dataVencimento);
                   return (
                     <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50/50">
@@ -204,16 +212,24 @@ function AbaCertificacoesNR() {
   const aVencer = certs.filter((c) => situacaoDoc(c.dataValidade) === "A vencer").length;
   const validas = total - vencidas - aVencer;
 
+  // Os números vêm da mesma listagem de NRs logo abaixo, então clicar filtra a listagem.
+  const [foco, setFoco] = useState<Situacao | null>(null);
+  const alternarFoco = (s: Situacao) => setFoco((atual) => (atual === s ? null : s));
+  const certsVisiveis = useMemo(
+    () => (foco ? certs.filter((c) => situacaoDoc(c.dataValidade) === foco) : certs),
+    [certs, foco],
+  );
+
   // Agrupa por NR (na ordem do catálogo), do vencimento mais próximo ao mais distante.
   const porNR = useMemo(() => {
     const m = new Map<string, typeof certs>();
-    for (const c of certs) { const arr = m.get(c.nr) ?? []; arr.push(c); m.set(c.nr, arr); }
+    for (const c of certsVisiveis) { const arr = m.get(c.nr) ?? []; arr.push(c); m.set(c.nr, arr); }
     const ord = (s?: string | null) => { const dd = dias(s); return isNaN(dd) ? Number.POSITIVE_INFINITY : dd; };
     return CATALOGO_NR.filter((nr) => m.has(nr.codigo)).map((nr) => ({
       nr,
       itens: (m.get(nr.codigo) ?? []).slice().sort((a, b) => ord(a.dataValidade) - ord(b.dataValidade)),
     }));
-  }, [certs]);
+  }, [certsVisiveis]);
 
   const abrirNovo = () => {
     setEditId(null);
@@ -264,10 +280,10 @@ function AbaCertificacoesNR() {
   return (
     <div>
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Certificações" value={total} icon={<Award className="h-5 w-5" />} accent="brand" />
-        <StatCard label="Válidas" value={validas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" />
-        <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" />
-        <StatCard label="Vencidas" value={vencidas} icon={<AlertTriangle className="h-5 w-5" />} accent={vencidas ? "red" : "green"} />
+        <StatCard label="Certificações" value={total} icon={<Award className="h-5 w-5" />} accent="brand" onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todas as certificações" />
+        <StatCard label="Válidas" value={validas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={foco === "Válido"} title="Ver só as certificações válidas" />
+        <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={foco === "A vencer"} title="Ver só as certificações a vencer" />
+        <StatCard label="Vencidas" value={vencidas} icon={<AlertTriangle className="h-5 w-5" />} accent={vencidas ? "red" : "green"} onClick={() => alternarFoco("Vencido")} ativo={foco === "Vencido"} title="Ver só as certificações vencidas" />
       </div>
 
       <Card className="overflow-hidden">

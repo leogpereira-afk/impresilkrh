@@ -600,7 +600,9 @@ export interface Candidato {
 // o cadastro (o RH reconcilia). id sugerido: "<competencia>::<colaboradorId>".
 // `dias` guarda o detalhe diário (para o relatório listar o dia exato de falta,
 // atestado/abono e os dias com hora extra).
-export type SituacaoDia = "normal" | "falta" | "atestado" | "abono" | "feriado" | "ferias" | "folga";
+// "semRegistro" = dia do período que não veio no PDF (lacuna), para o extrato do
+// mês inteiro mostrar o dia em vez de escondê-lo.
+export type SituacaoDia = "normal" | "falta" | "atestado" | "abono" | "feriado" | "ferias" | "folga" | "semRegistro";
 export interface PontoDia {
   data: string;                 // "YYYY-MM-DD"
   diaSemana?: string;           // "seg", "ter"… (como no PDF)
@@ -635,8 +637,15 @@ export interface Lancamento {
   competencia: string;          // "YYYY-MM"
   data?: string | null;         // "YYYY-MM-DD" (dia do lançamento, opcional)
   tipo: TipoLancamento;
-  valor: number;                // R$
+  valor: number;                // R$ (sugerido pelo cálculo, mas sempre editável)
   descricao?: string;
+  // Hora extra lançada por horário: guarda o relógio para conferência posterior
+  // ("por que esse valor?") e para recalcular se o salário mudar.
+  horaInicio?: string;          // "18:00"
+  horaFim?: string;             // "21:30"
+  minutos?: number;             // 210 (somado do intervalo)
+  fatorHE?: number;             // 1.5 = +50% · 2 = +100%
+  valorSugerido?: number;       // o que o cálculo propôs (para mostrar se foi ajustado)
   criadoPor?: string;
   criadoEm: string;
   atualizadoEm: string;

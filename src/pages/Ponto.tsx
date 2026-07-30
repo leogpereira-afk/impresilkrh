@@ -19,14 +19,15 @@ import { useColecao, useConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, formatNumber, formatPercent, diaLocalISO } from "@/lib/format";
+import { formatDate, formatNumber, formatPercent, formatBRL, diaLocalISO } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { calcularHoraExtra, calcularFalta, horasDecimais } from "@/lib/pontoFolha";
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
 import { GlossarioComportamental } from "@/components/comportamental/glossario";
 import { Link } from "react-router-dom";
 import { HOJE, slug } from "@/data/_gen";
 import type { Colaborador, Ponto, PontoDia, SituacaoDia } from "@/data/types";
-import { lerPontoPdf, minParaHora, type PontoImportado } from "@/lib/pontoImport";
+import { lerPontoPdf, minParaHora, horaParaMin, type PontoImportado } from "@/lib/pontoImport";
 import FolhaVariavel from "@/pages/FolhaVariavel";
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -60,11 +61,11 @@ const primeiroNome = (nome: string) => nome.split(" ")[0];
 // --- Extrato do ponto: rótulos e cores por situação do dia --------------------
 const SIT_LABEL: Record<SituacaoDia, string> = {
   normal: "Trabalhado", falta: "Falta", atestado: "Atestado", abono: "Abono",
-  feriado: "Feriado", ferias: "Férias", folga: "Folga (DSR)",
+  feriado: "Feriado", ferias: "Férias", folga: "Folga (DSR)", semRegistro: "Sem registro",
 };
 const SIT_BADGE: Record<SituacaoDia, "neutral" | "danger" | "info" | "success" | "warning"> = {
   normal: "neutral", falta: "danger", atestado: "info", abono: "success",
-  feriado: "warning", ferias: "info", folga: "neutral",
+  feriado: "warning", ferias: "info", folga: "neutral", semRegistro: "neutral",
 };
 // Situações que a legenda explica (na ordem em que aparecem).
 const SIT_LEGENDA: { s: SituacaoDia; txt: string }[] = [
@@ -77,6 +78,38 @@ const SIT_LEGENDA: { s: SituacaoDia; txt: string }[] = [
   { s: "folga", txt: "Descanso semanal remunerado (fim de semana)." },
 ];
 const diaCurto = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d);
+
+// MÊS INTEIRO do colaborador: o Secullum fecha o ponto por período (ex.: 29/06 a
+// 28/07), não pelo mês civil. Aqui geramos TODOS os dias desse período e casamos
+// com o que veio no PDF — os dias sem registro aparecem como lacuna, em vez de
+// simplesmente sumirem da lista.
+function diasCompletos(p: { dias?: PontoDia[]; periodoInicio?: string | null; periodoFim?: string | null; competencia: string }): PontoDia[] {
+  const existentes = new Map((p.dias ?? []).map((d) => [d.data, d]));
+  let inicio = p.periodoInicio ?? null;
+  let fim = p.periodoFim ?? null;
+  // Sem período gravado (lançamento manual antigo), cai no mês civil da competência.
+  if (!inicio || !fim) {
+    const m = /^(\d{4})-(\d{2})$/.exec(p.competencia || "");
+    if (!m) return (p.dias ?? []).slice().sort((a, b) => a.data.localeCompare(b.data));
+    const ultimo = new Date(+m[1], +m[2], 0).getDate();
+    inicio = `${m[1]}-${m[2]}-01`;
+    fim = `${m[1]}-${m[2]}-${String(ultimo).padStart(2, "0")}`;
+  }
+  const emData = (iso: string) => {
+    const [a, m, d] = iso.split("-").map(Number);
+    return new Date(a, m - 1, d);
+  };
+  const out: PontoDia[] = [];
+  const cursor = emData(inicio);
+  const limite = emData(fim);
+  // Trava de segurança: no máximo 62 dias, para um período torto não travar a tela.
+  for (let i = 0; i < 62 && cursor <= limite; i++) {
+    const iso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+    out.push(existentes.get(iso) ?? { data: iso, situacao: "semRegistro", marcacoes: [], normaisMin: 0, extrasMin: 0, faltasMin: 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
 
 // Contagens do extrato para o dashboard (soma de todos os colaboradores do mês).
 function resumoDias(dias: PontoDia[] | undefined) {
@@ -183,6 +216,12 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const [ocupado, setOcupado] = useState(false);
   const [modo, setModo] = useState<"tudo" | "resumo">("tudo");
   const [excluir, setExcluir] = useState<string | null>(null);
+  const [verMes, setVerMes] = useState<Ponto | null>(null);
+  // Cards do topo filtram a lista abaixo (clicar de novo limpa).
+  const [foco, setFoco] = useState<"extras" | "faltasHoras" | "faltasDias" | "atestados" | null>(null);
+  const alternarFoco = (f: NonNullable<typeof foco>) => setFoco((a) => (a === f ? null : f));
+  // Lançamento manual: null = fechado; objeto = aberto (com quem pré-selecionar).
+  const [manual, setManual] = useState<{ colaboradorId?: string | null; nome?: string; existente?: Ponto | null } | null>(null);
   const [expandido, setExpandido] = useState<Set<string>>(() => new Set());
   const toggleExp = (id: string) =>
     setExpandido((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -292,7 +331,31 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   );
 
   // Expandir/recolher todos os extratos (modo Tudo) — para varrer o mês inteiro.
-  const idsExpansiveis = useMemo(() => doMes.filter((p) => (p.dias?.length ?? 0) > 0).map((p) => p.id), [doMes]);
+  // Apuração do mês: os dados do relatório que vai para a contabilidade.
+  const apuracao = useMemo(
+    () => montarApuracao(
+      doMes,
+      (p) => nomeColab(p.colaboradorId) || p.nomePdf,
+      (p) => (p.colaboradorId ? (d.colabById.get(p.colaboradorId)?.salario ?? null) : null),
+      competencia,
+    ),
+    [doMes, competencia, d.colabById], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // "Novos Funcionários" do rodapé: estão no cadastro mas não têm ponto no mês.
+  const novosFuncionarios = useMemo(() => faltandoNoPonto.map((c) => c.nome), [faltandoNoPonto]);
+
+  // Lista que a tabela mostra: os cards do topo continuam somando o mês inteiro,
+  // só a tabela obedece ao foco.
+  const visiveis = useMemo(() => doMes.filter((p) => {
+    const r = resumoDias(p.dias);
+    if (foco === "extras") return p.extrasMin > 0;
+    if (foco === "faltasHoras") return p.faltasMin > 0;
+    if (foco === "faltasDias") return r.faltas > 0;
+    if (foco === "atestados") return r.atestados > 0;
+    return true;
+  }), [doMes, foco]);
+
+  const idsExpansiveis = useMemo(() => visiveis.filter((p) => (p.dias?.length ?? 0) > 0).map((p) => p.id), [visiveis]);
   const todosAbertos = idsExpansiveis.length > 0 && idsExpansiveis.every((id) => expandido.has(id));
   const alternarTodos = () => setExpandido(todosAbertos ? new Set() : new Set(idsExpansiveis));
 
@@ -382,6 +445,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
             icon={<Clock className="h-[18px] w-[18px]" />}
             action={
               <div className="flex items-center gap-2">
+                <button className="btn-outline h-9 px-3 py-0 text-xs" onClick={() => setManual({})} title="Lançar ponto de alguém que não veio no PDF">
+                  <Plus className="h-3.5 w-3.5" /> Lançar manual
+                </button>
                 <button className="btn-outline h-9 px-3 py-0 text-xs" onClick={() => setGerNaoBate(true)} title="Marque quem não registra ponto — fica fora da conferência">
                   <Users className="h-3.5 w-3.5" /> Não batem ponto{naoBatem.length ? ` (${naoBatem.length})` : ""}
                 </button>
@@ -401,10 +467,14 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
               <>
                 {/* Dashboard: resumo do mês */}
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <StatCard label="Horas extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} hint={`${agg.comExtra} dia(s) com extra`} />
-                  <StatCard label="Horas de falta" value={minParaHora(totFaltas)} icon={<CalendarX2 className="h-4 w-4" />} hint="descontam na folha" />
-                  <StatCard label="Faltas" value={String(agg.faltas)} icon={<AlertTriangle className="h-4 w-4" />} hint="dias de falta (dia cheio)" />
-                  <StatCard label="Atestados" value={String(agg.atestados)} icon={<Stethoscope className="h-4 w-4" />} hint={agg.abonos ? `+ ${agg.abonos} abono(s)` : "dias com atestado"} />
+                  <StatCard label="Horas extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} hint={`${agg.comExtra} dia(s) com extra`}
+                    onClick={() => alternarFoco("extras")} ativo={foco === "extras"} title="Ver só quem fez hora extra" />
+                  <StatCard label="Horas de falta" value={minParaHora(totFaltas)} icon={<CalendarX2 className="h-4 w-4" />} hint="descontam na folha"
+                    onClick={() => alternarFoco("faltasHoras")} ativo={foco === "faltasHoras"} title="Ver só quem tem horas de falta (inclui atrasos)" />
+                  <StatCard label="Faltas" value={String(agg.faltas)} icon={<AlertTriangle className="h-4 w-4" />} hint="dias de falta (dia cheio)"
+                    onClick={() => alternarFoco("faltasDias")} ativo={foco === "faltasDias"} title="Ver só quem faltou dia inteiro" />
+                  <StatCard label="Atestados" value={String(agg.atestados)} icon={<Stethoscope className="h-4 w-4" />} hint={agg.abonos ? `+ ${agg.abonos} abono(s)` : "dias com atestado"}
+                    onClick={() => alternarFoco("atestados")} ativo={foco === "atestados"} title="Ver só quem apresentou atestado" />
                 </div>
 
                 {/* Seletor de visão: Tudo (extrato completo) ou Resumo (p/ enviar) */}
@@ -425,19 +495,38 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                 {faltandoNoPonto.length > 0 && (
                   <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
                     <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800"><AlertTriangle className="h-4 w-4" /> {faltandoNoPonto.length} do cadastro não apareceram neste ponto</p>
-                    <p className="mt-1 text-xs text-amber-700">{faltandoNoPonto.map((c) => c.nome).join(", ")}</p>
-                    <p className="mt-1 text-[11px] text-amber-600/80">Quem não bate ponto (comissão/externo) já ficou fora desta lista — ajuste em "Não batem ponto".</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {faltandoNoPonto.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => setManual({ colaboradorId: c.id, nome: c.nome })}
+                          title={`Lançar o ponto de ${c.nome} manualmente`}
+                          className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-800 transition hover:border-amber-400 hover:bg-amber-50"
+                        >
+                          <Plus className="h-3 w-3" /> {c.nome}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] text-amber-600/80">Clique no nome para lançar o ponto dele à mão. Quem não bate ponto (comissão/externo) já ficou fora desta lista — ajuste em "Não batem ponto".</p>
                   </div>
                 )}
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-xs text-slate-400">
-                    {doMes.length} funcionário(s){doMes.filter((p) => !p.colaboradorId).length ? ` · ${doMes.filter((p) => !p.colaboradorId).length} não vinculado(s)` : ""} · clique no nome para o extrato diário.
+                    {foco ? `${visiveis.length} de ${doMes.length}` : `${doMes.length}`} funcionário(s){doMes.filter((p) => !p.colaboradorId).length ? ` · ${doMes.filter((p) => !p.colaboradorId).length} não vinculado(s)` : ""} · clique no nome para o extrato diário.
                   </p>
-                  {idsExpansiveis.length > 0 && (
-                    <button className="btn-ghost shrink-0 px-2 py-1 text-xs text-slate-500 hover:text-brand" onClick={alternarTodos}>
-                      {todosAbertos ? "Recolher todos" : "Expandir todos"}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {idsExpansiveis.length > 0 && (
+                      <button className="btn-ghost px-2 py-1 text-xs text-slate-500 hover:text-brand" onClick={alternarTodos}>
+                        {todosAbertos ? "Recolher todos" : "Expandir todos"}
+                      </button>
+                    )}
+                    <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => void exportarApuracaoPdf(empresa, competencia, apuracao, novosFuncionarios)} title="Apuração completa, no formato usado pela contabilidade">
+                      <FileDown className="h-3.5 w-3.5" /> Apuração PDF
                     </button>
-                  )}
+                    <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => exportarApuracaoExcel(empresa, competencia, apuracao, novosFuncionarios)}>
+                      <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+                    </button>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -452,22 +541,35 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {doMes.map((p) => {
+                      {visiveis.length === 0 && (
+                        <tr><td colSpan={5} className="td text-center text-slate-400">Ninguém neste filtro — clique no card de novo para ver todos.</td></tr>
+                      )}
+                      {visiveis.map((p) => {
                         const rd = resumoDias(p.dias);
                         const temDias = (p.dias?.length ?? 0) > 0;
                         const aberto = expandido.has(p.id);
                         return (
                           <Fragment key={p.id}>
-                            <tr className={cn(!p.colaboradorId && "bg-amber-50/40", temDias && "cursor-pointer hover:bg-slate-50/50")} onClick={() => temDias && toggleExp(p.id)}>
+                            <tr className={cn(!p.colaboradorId && "bg-amber-50/40", "hover:bg-slate-50/50")}>
                               <td className="td">
                                 <div className="flex items-center gap-2">
                                   {temDias
-                                    ? (aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />)
+                                    ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleExp(p.id)}
+                                        title={aberto ? "Recolher" : "Ver os dias aqui mesmo"}
+                                        className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand"
+                                      >
+                                        {aberto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                      </button>
+                                    )
                                     : <span className="w-4 shrink-0" />}
                                   <div className="min-w-0">
+                                    {/* Clicar no NOME abre o mês inteiro em tela cheia. */}
                                     {p.colaboradorId
-                                      ? <span className="font-medium text-slate-700">{nomeColab(p.colaboradorId)}</span>
-                                      : <span className="text-amber-700">{p.nomePdf} <Badge variant="warning">não vinculado</Badge></span>}
+                                      ? <button type="button" onClick={() => setVerMes(p)} className="text-left font-medium text-slate-700 hover:text-brand hover:underline">{nomeColab(p.colaboradorId)}</button>
+                                      : <button type="button" onClick={() => setVerMes(p)} className="text-left text-amber-700 hover:underline">{p.nomePdf} <Badge variant="warning">não vinculado</Badge></button>}
                                     {temDias && (rd.faltas > 0 || rd.atestados > 0 || rd.comExtra > 0) && (
                                       <p className="mt-0.5 text-[11px] text-slate-400">
                                         {[rd.comExtra && `${rd.comExtra} dia(s) c/ extra`, rd.faltas && `${rd.faltas} falta(s)`, rd.atestados && `${rd.atestados} atestado(s)`].filter(Boolean).join(" · ")}
@@ -603,6 +705,31 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
           onFechar={() => setGerNaoBate(false)}
         />
       )}
+
+      {manual && (
+        <ModalPontoManual
+          competencia={competencia}
+          colaboradores={d.colaboradores.filter((c) => c.statusId !== "inativo")}
+          inicial={manual}
+          existente={manual.existente}
+          onFechar={() => setManual(null)}
+          onSalvar={(rec) => {
+            if (pontos.some((p) => p.id === rec.id)) atualizar(rec.id, rec); else criar(rec);
+            toast(`Ponto de ${rec.nomePdf} salvo em ${labelMes(rec.competencia)}.`);
+          }}
+        />
+      )}
+
+      {verMes && (
+        <ModalMesColaborador
+          ponto={verMes}
+          nome={nomeColab(verMes.colaboradorId) || verMes.nomePdf}
+          salario={verMes.colaboradorId ? (d.colabById.get(verMes.colaboradorId)?.salario ?? null) : null}
+          empresa={empresa}
+          onEditar={() => { setManual({ colaboradorId: verMes.colaboradorId, nome: verMes.nomePdf, existente: verMes }); setVerMes(null); }}
+          onFechar={() => setVerMes(null)}
+        />
+      )}
     </div>
   );
 }
@@ -648,6 +775,417 @@ function NaoBatePontoModal({
       </div>
     </Modal>
   );
+}
+
+// =====================================================================================
+// APURAÇÃO DO MÊS — o relatório que vai para a contabilidade, no mesmo formato da
+// planilha usada hoje (APURACAO_PONTO): horas, o que pagar/descontar em R$, os
+// dias exatos de falta e de atestado, e os novos funcionários no rodapé.
+// =====================================================================================
+
+// "23/07, 24/07 e 27/07" — como se escreve à mão. Vazio vira "0", igual à planilha.
+function listaDatas(dias: PontoDia[]): string {
+  const ds = dias.map((x) => diaCurto(x.data));
+  if (!ds.length) return "0";
+  if (ds.length === 1) return ds[0];
+  return `${ds.slice(0, -1).join(", ")} e ${ds[ds.length - 1]}`;
+}
+
+interface LinhaApuracao {
+  nome: string;
+  faltasTxt: string;   // HH:MM
+  extrasTxt: string;   // HH:MM
+  hePagar: string;     // R$
+  faltaDescontar: string; // R$
+  diasFaltas: string;
+  atestados: string;
+  complementares: string;
+  semSalario: boolean;
+}
+
+function montarApuracao(
+  pontos: Ponto[],
+  nomeDe: (p: Ponto) => string,
+  salarioDe: (p: Ponto) => number | null,
+  competencia: string,
+): LinhaApuracao[] {
+  return pontos.map((p) => {
+    const dias = p.dias ?? [];
+    const faltasDias = dias.filter((x) => x.situacao === "falta");
+    const atestados = dias.filter((x) => x.situacao === "atestado");
+    const ferias = dias.filter((x) => x.situacao === "ferias");
+    const abonos = dias.filter((x) => x.situacao === "abono");
+    const salario = salarioDe(p);
+    const he = calcularHoraExtra({ salario, minutos: p.extrasMin });
+    const fl = calcularFalta({ salario, minutos: p.faltasMin, competencia });
+    const compl: string[] = [];
+    if (ferias.length) compl.push(`Férias: ${listaDatas(ferias)}`);
+    if (abonos.length) compl.push(`Abono: ${listaDatas(abonos)}`);
+    if (!p.colaboradorId) compl.push("Não vinculado ao cadastro");
+    if (he.semSalario && (p.extrasMin > 0 || p.faltasMin > 0)) compl.push("SEM SALÁRIO NO CADASTRO — valores não calculados");
+    // Falta acima de ~1/3 do mês quase sempre é afastamento (INSS, licença), não
+    // falta a descontar: avisa em vez de propor um desconto gigante em silêncio.
+    if (p.faltasMin > 60 * 60) compl.push(`CONFERIR: ${minParaHora(p.faltasMin)} de falta — parece afastamento, não desconto`);
+    return {
+      nome: nomeDe(p),
+      faltasTxt: minParaHora(p.faltasMin),
+      extrasTxt: minParaHora(p.extrasMin),
+      hePagar: he.semSalario ? "—" : formatBRL(he.valor),
+      faltaDescontar: fl.semSalario ? "—" : (fl.total > 0 ? formatBRL(fl.total) : formatBRL(0)),
+      diasFaltas: listaDatas(faltasDias),
+      atestados: listaDatas(atestados),
+      complementares: compl.join(" · "),
+      semSalario: he.semSalario,
+    };
+  });
+}
+
+const CABECALHO_APURACAO = [
+  "COLABORADOR", "HORAS FALTAS", "H.E", "H.E A PAGAR",
+  "HORAS FALTAS A DESCONTAR", "DIAS FALTAS", "ATESTADO", "INFORMAÇÕES COMPLEMENTARES",
+];
+
+async function exportarApuracaoPdf(empresa: string, competencia: string, linhas: LinhaApuracao[], novos: string[]) {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+  const doc = new jsPDF({ orientation: "landscape" }); // 8 colunas não cabem em retrato
+  const marinho: [number, number, number] = [22, 51, 79];
+  doc.setFontSize(15); doc.setTextColor(...marinho); doc.text(empresa, 14, 15);
+  doc.setFontSize(12); doc.setTextColor(60); doc.text(`Apuração de ponto — ${labelMes(competencia)}`, 14, 22);
+  doc.setFontSize(8); doc.setTextColor(120);
+  doc.text("Horas apuradas pelo Secullum (CLT). Valores em R$ calculados pelo salário do cadastro (hora = salário ÷ 220; extra +50%; falta com reflexo de DSR) — conferir antes de pagar.", 14, 27);
+
+  autoTable(doc, {
+    startY: 31,
+    head: [CABECALHO_APURACAO],
+    body: linhas.map((l) => [l.nome, l.faltasTxt, l.extrasTxt, l.hePagar, l.faltaDescontar, l.diasFaltas, l.atestados, l.complementares]),
+    headStyles: { fillColor: marinho, fontSize: 7 },
+    styles: { fontSize: 7.5, cellPadding: 1.5, valign: "middle" },
+    columnStyles: {
+      0: { cellWidth: 52, fontStyle: "bold" },
+      1: { halign: "center", cellWidth: 20 },
+      2: { halign: "center", cellWidth: 18 },
+      3: { halign: "right", cellWidth: 24 },
+      4: { halign: "right", cellWidth: 28 },
+      5: { cellWidth: 45 },
+      6: { cellWidth: 45 },
+    },
+    // Linha de quem está sem salário fica destacada — é pendência, não zero.
+    didParseCell: (data) => {
+      if (data.section === "body" && linhas[data.row.index]?.semSalario) {
+        data.cell.styles.fillColor = [254, 243, 199];
+      }
+    },
+  });
+
+  let y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 60) + 8;
+  if (novos.length) {
+    doc.setFontSize(10); doc.setTextColor(...marinho);
+    doc.text("Novos Funcionários", 14, y);
+    doc.setFontSize(9); doc.setTextColor(60);
+    novos.forEach((n, i) => doc.text(n, 16, y + 6 + i * 5));
+    y += 6 + novos.length * 5;
+  }
+  doc.setFontSize(8); doc.setTextColor(130);
+  doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")}`, 14, y + 6);
+  baixarBlob(`apuracao-ponto-${competencia}.pdf`, doc.output("blob"));
+}
+
+function exportarApuracaoExcel(empresa: string, competencia: string, linhas: LinhaApuracao[], novos: string[]) {
+  const esc = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const corpo = linhas.map((l) =>
+    `<tr${l.semSalario ? ' style="background:#fef3c7"' : ""}><td>${esc(l.nome)}</td><td>${esc(l.faltasTxt)}</td><td>${esc(l.extrasTxt)}</td><td>${esc(l.hePagar)}</td><td>${esc(l.faltaDescontar)}</td><td>${esc(l.diasFaltas)}</td><td>${esc(l.atestados)}</td><td>${esc(l.complementares)}</td></tr>`,
+  ).join("");
+  const rodape = novos.length
+    ? `<tr></tr><tr><td colspan="8" style="font-weight:bold">Novos Funcionários</td></tr>${novos.map((n) => `<tr><td>${esc(n)}</td></tr>`).join("")}`
+    : "";
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>
+<table border="1">
+<tr><td colspan="8" style="font-weight:bold;font-size:14px">${esc(empresa)} — Apuração de ponto — ${labelMes(competencia)}</td></tr>
+<tr style="background:#16334f;color:#fff;font-weight:bold">${CABECALHO_APURACAO.map((h) => `<td>${h}</td>`).join("")}</tr>
+${corpo || '<tr><td colspan="8">Sem dados</td></tr>'}
+${rodape}
+</table></body></html>`;
+  baixarBlob(`apuracao-ponto-${competencia}.xls`, new Blob(["﻿" + html], { type: "application/vnd.ms-excel" }));
+}
+
+// Lançamento MANUAL de ponto: para quem não veio no PDF (contratado no meio do
+// mês, quem esqueceu de bater) ou para corrigir alguém. Aceita os dois jeitos:
+// digitar só os TOTAIS do mês e, se quiser, detalhar DIA A DIA por cima.
+function ModalPontoManual({
+  competencia, colaboradores, inicial, existente, onSalvar, onFechar,
+}: {
+  competencia: string;
+  colaboradores: Colaborador[];
+  inicial?: { colaboradorId?: string | null; nome?: string };
+  existente?: Ponto | null;
+  onSalvar: (rec: Ponto) => void;
+  onFechar: () => void;
+}) {
+  const toast = useToast();
+  const [colaboradorId, setColaboradorId] = useState(inicial?.colaboradorId ?? existente?.colaboradorId ?? "");
+  const [nomeLivre, setNomeLivre] = useState(existente?.nomePdf ?? inicial?.nome ?? "");
+  const [normais, setNormais] = useState(existente ? minParaHora(existente.normaisMin) : "");
+  const [faltas, setFaltas] = useState(existente ? minParaHora(existente.faltasMin) : "");
+  const [extras, setExtras] = useState(existente ? minParaHora(existente.extrasMin) : "");
+  const [dias, setDias] = useState<PontoDia[]>(existente?.dias ? [...existente.dias] : []);
+  const [novoDia, setNovoDia] = useState("");
+  const [novaSit, setNovaSit] = useState<SituacaoDia>("falta");
+  const [novaHora, setNovaHora] = useState("");
+
+  const addDia = () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(novoDia)) { toast("Escolha a data do dia.", "erro"); return; }
+    if (dias.some((x) => x.data === novoDia)) { toast("Esse dia já está na lista.", "erro"); return; }
+    const min = horaParaMin(novaHora);
+    const dia: PontoDia = {
+      data: novoDia,
+      situacao: novaSit,
+      marcacoes: [],
+      normaisMin: 0,
+      // "normal" com hora informada = hora extra do dia; falta/atraso = horas de falta.
+      extrasMin: novaSit === "normal" ? min : 0,
+      faltasMin: novaSit === "falta" ? min : 0,
+    };
+    setDias([...dias, dia].sort((a, b) => a.data.localeCompare(b.data)));
+    setNovoDia(""); setNovaHora("");
+  };
+
+  // Soma dos dias detalhados — serve para conferir/preencher os totais.
+  const somaDias = useMemo(() => ({
+    extras: dias.reduce((s, x) => s + (x.extrasMin || 0), 0),
+    faltas: dias.reduce((s, x) => s + (x.faltasMin || 0), 0),
+  }), [dias]);
+
+  const usarSomaDosDias = () => {
+    setExtras(minParaHora(somaDias.extras));
+    setFaltas(minParaHora(somaDias.faltas));
+    toast("Totais preenchidos com a soma dos dias.");
+  };
+
+  const salvar = () => {
+    const nome = colaboradorId ? (colaboradores.find((c) => c.id === colaboradorId)?.nome ?? "") : nomeLivre.trim();
+    if (!colaboradorId && !nome) { toast("Escolha o colaborador ou digite um nome.", "erro"); return; }
+    if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano) antes.", "erro"); return; }
+    const agora = new Date().toISOString();
+    const chave = colaboradorId || `pdf-${slug(nome)}`;
+    onSalvar({
+      id: existente?.id ?? `${competencia}::${chave}`,
+      competencia,
+      colaboradorId: colaboradorId || null,
+      nomePdf: nome,
+      normaisMin: horaParaMin(normais),
+      faltasMin: horaParaMin(faltas),
+      extrasMin: horaParaMin(extras),
+      dias: dias.length ? dias : undefined,
+      periodoInicio: existente?.periodoInicio ?? null,
+      periodoFim: existente?.periodoFim ?? null,
+      importadoEm: existente?.importadoEm ?? agora,
+      atualizadoEm: agora,
+    });
+    onFechar();
+  };
+
+  const SITS: SituacaoDia[] = ["falta", "atestado", "abono", "normal", "feriado", "ferias", "folga"];
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={existente ? "Editar ponto do mês" : "Lançar ponto manualmente"}
+      descricao={`${labelMes(competencia)} · digite os totais e, se quiser, detalhe os dias`}
+      largura="max-w-3xl"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}><CheckCircle2 className="h-4 w-4" /> Salvar</button></>}
+    >
+      <div className="space-y-4">
+        <Campo label="Colaborador" obrigatorio>
+          <Select value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)} disabled={!!existente?.colaboradorId}>
+            <option value="">— digitar um nome (não está no cadastro) —</option>
+            {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </Select>
+        </Campo>
+        {!colaboradorId && (
+          <Campo label="Nome" hint="Use quando a pessoa ainda não está no cadastro">
+            <Input value={nomeLivre} onChange={(e) => setNomeLivre(e.target.value)} placeholder="Ex.: Guilherme Pereira Dias" />
+          </Campo>
+        )}
+
+        {/* Totais do mês */}
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="mb-2 text-xs font-semibold text-slate-600">Totais do mês (formato horas:minutos)</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Campo label="Horas normais"><Input value={normais} onChange={(e) => setNormais(e.target.value)} placeholder="184:00" /></Campo>
+            <Campo label="Horas de falta"><Input value={faltas} onChange={(e) => setFaltas(e.target.value)} placeholder="00:00" /></Campo>
+            <Campo label="Horas extras"><Input value={extras} onChange={(e) => setExtras(e.target.value)} placeholder="00:00" /></Campo>
+          </div>
+        </div>
+
+        {/* Detalhe dia a dia (opcional) */}
+        <div className="rounded-xl border border-slate-200 p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-600">Dias (opcional) — marque faltas, atestados e dias com extra</p>
+            {dias.length > 0 && (
+              <button className="btn-ghost px-2 py-1 text-[11px] text-slate-500 hover:text-brand" onClick={usarSomaDosDias}>
+                Usar a soma dos dias nos totais (extras {minParaHora(somaDias.extras)} · faltas {minParaHora(somaDias.faltas)})
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <Campo label="Dia" className="w-40"><Input type="date" value={novoDia} onChange={(e) => setNovoDia(e.target.value)} /></Campo>
+            <Campo label="Situação" className="w-40">
+              <Select value={novaSit} onChange={(e) => setNovaSit(e.target.value as SituacaoDia)}>
+                {SITS.map((s) => <option key={s} value={s}>{SIT_LABEL[s]}</option>)}
+              </Select>
+            </Campo>
+            <Campo label={novaSit === "normal" ? "Horas extras" : novaSit === "falta" ? "Horas de falta" : "Horas"} className="w-32">
+              <Input value={novaHora} onChange={(e) => setNovaHora(e.target.value)} placeholder="00:00" />
+            </Campo>
+            <button className="btn-outline mb-0.5" onClick={addDia}><Plus className="h-4 w-4" /> Adicionar</button>
+          </div>
+
+          {dias.length > 0 && (
+            <div className="mt-3 max-h-60 overflow-y-auto rounded-lg border border-slate-100">
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-slate-50">
+                  {dias.map((x) => (
+                    <tr key={x.data}>
+                      <td className="td tabular-nums text-slate-700">{diaCurto(x.data)}</td>
+                      <td className="td"><Badge variant={SIT_BADGE[x.situacao]}>{SIT_LABEL[x.situacao]}</Badge></td>
+                      <td className="td text-right tabular-nums text-slate-500">
+                        {x.extrasMin ? `+${minParaHora(x.extrasMin)}` : x.faltasMin ? `-${minParaHora(x.faltasMin)}` : "—"}
+                      </td>
+                      <td className="td text-right">
+                        <button className="btn-ghost p-1 text-red-500" onClick={() => setDias(dias.filter((y) => y.data !== x.data))}><Trash2 className="h-3.5 w-3.5" /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// MÊS INTEIRO de um colaborador, em tela cheia: todos os dias do período (com as
+// lacunas visíveis), o que isso vale em dinheiro e o extrato completo.
+function ModalMesColaborador({
+  ponto, nome, salario, empresa, onEditar, onFechar,
+}: {
+  ponto: Ponto;
+  nome: string;
+  salario: number | null;
+  empresa: string;
+  onEditar: () => void;
+  onFechar: () => void;
+}) {
+  const dias = useMemo(() => diasCompletos(ponto), [ponto]);
+  const rd = resumoDias(ponto.dias);
+  const he = calcularHoraExtra({ salario, minutos: ponto.extrasMin });
+  const fl = calcularFalta({ salario, minutos: ponto.faltasMin, competencia: ponto.competencia });
+  const semSalario = he.semSalario;
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={nome}
+      descricao={`Ponto de ${labelMes(ponto.competencia)}${ponto.periodoInicio ? ` · período ${diaData(ponto.periodoInicio)} a ${diaData(ponto.periodoFim)}` : ""}`}
+      largura="max-w-5xl"
+    >
+      <div className="space-y-4">
+        {/* Totais do mês */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard label="Horas normais" value={minParaHora(ponto.normaisMin)} icon={<Clock className="h-4 w-4" />} />
+          <StatCard label="Horas extras" value={minParaHora(ponto.extrasMin)} icon={<Trophy className="h-4 w-4" />} accent="brand" hint={`${rd.comExtra} dia(s)`} />
+          <StatCard label="Horas de falta" value={minParaHora(ponto.faltasMin)} icon={<CalendarX2 className="h-4 w-4" />} accent="red" hint={`${rd.faltas} falta(s) de dia cheio`} />
+          <StatCard label="Atestados" value={`${rd.atestados}d`} icon={<Stethoscope className="h-4 w-4" />} accent="blue" hint={rd.abonos ? `+ ${rd.abonos} abono(s)` : "sem desconto"} />
+        </div>
+
+        {/* O que isso vale em dinheiro */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Coins className="h-3.5 w-3.5" /> Reflexo na folha (sugestão — o RH confirma antes de pagar)</p>
+          {semSalario ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+              Sem salário no cadastro deste colaborador — preencha em Colaboradores para o sistema calcular os valores.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <p className="text-xs text-slate-500">Horas extras a pagar</p>
+                <p className="text-lg font-semibold tabular-nums text-brand-ink">{formatBRL(he.valor)}</p>
+                <p className="text-[11px] text-slate-400">{horasDecimais(ponto.extrasMin)} h × {formatBRL(he.valorHoraExtra)} (hora de {formatBRL(he.valorHoraNormal)} +50%)</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <p className="text-xs text-slate-500">Faltas a descontar</p>
+                <p className="text-lg font-semibold tabular-nums text-red-600">{formatBRL(fl.total)}</p>
+                <p className="text-[11px] text-slate-400">{formatBRL(fl.valorHoras)} de horas + {formatBRL(fl.dsr)} de DSR ({fl.diasRepouso} domingo(s) ÷ {fl.diasUteis} dias úteis)</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Mês inteiro, dia a dia */}
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">{dias.length} dia(s) do período · lacunas aparecem como “sem registro”.</p>
+            <div className="flex gap-2">
+              <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={onEditar}>
+                <Pencil className="h-3.5 w-3.5" /> Corrigir
+              </button>
+              <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => void exportarMesPdf(empresa, nome, ponto, dias, he, fl)}>
+                <FileDown className="h-3.5 w-3.5" /> PDF deste colaborador
+              </button>
+            </div>
+          </div>
+          <ExtratoDiario dias={dias} />
+        </div>
+
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          Horas <b>Normais</b>, <b>Faltas</b> e <b>Extras</b> vêm calculadas pelo Secullum (CLT) — não recalculamos, para não divergir da folha legal. Atestado e abono não geram desconto.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+// PDF de um colaborador: o mês inteiro dia a dia + o reflexo em dinheiro.
+async function exportarMesPdf(
+  empresa: string, nome: string, ponto: Ponto, dias: PontoDia[],
+  he: ReturnType<typeof calcularHoraExtra>, fl: ReturnType<typeof calcularFalta>,
+) {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+  const doc = new jsPDF();
+  const marinho: [number, number, number] = [22, 51, 79];
+  doc.setFontSize(15); doc.setTextColor(...marinho); doc.text(empresa, 14, 16);
+  doc.setFontSize(12); doc.setTextColor(60); doc.text(`Cartão ponto — ${labelMes(ponto.competencia)}`, 14, 24);
+  doc.setFontSize(11); doc.setTextColor(20); doc.text(nome, 14, 32);
+  doc.setFontSize(9); doc.setTextColor(110);
+  doc.text(`Normais ${minParaHora(ponto.normaisMin)}  ·  Extras ${minParaHora(ponto.extrasMin)}  ·  Faltas ${minParaHora(ponto.faltasMin)}`, 14, 38);
+  if (!he.semSalario) {
+    doc.text(`H.E a pagar ${formatBRL(he.valor)}  ·  Faltas a descontar ${formatBRL(fl.total)} (inclui DSR ${formatBRL(fl.dsr)})`, 14, 43);
+  } else {
+    doc.text("Sem salário no cadastro — valores em R$ não calculados.", 14, 43);
+  }
+  autoTable(doc, {
+    startY: 48,
+    head: [["Dia", "Batidas", "Normais", "Faltas", "Extras", "Situação"]],
+    body: dias.map((x) => [
+      `${diaCurto(x.data)}${x.diaSemana ? ` ${x.diaSemana}` : ""}`,
+      (x.marcacoes ?? []).filter((mm) => /^\d{1,2}:\d{2}$/.test(mm)).join("  ") || "—",
+      x.normaisMin ? minParaHora(x.normaisMin) : "—",
+      x.faltasMin ? minParaHora(x.faltasMin) : "—",
+      x.extrasMin ? minParaHora(x.extrasMin) : "—",
+      x.situacao === "normal" ? "" : SIT_LABEL[x.situacao],
+    ]),
+    headStyles: { fillColor: marinho },
+    styles: { fontSize: 8, cellPadding: 1.5 },
+    columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+  });
+  baixarBlob(`ponto-${slug(nome)}-${ponto.competencia}.pdf`, doc.output("blob"));
 }
 
 // Extrato diário de um colaborador — segue o layout da folha de ponto do Secullum.
@@ -821,6 +1359,9 @@ function AbaAdvertencias({
   const [novo, setNovo] = useState(false);
   const [editar, setEditar] = useState<(typeof advertencias)[number] | null>(null);
   const [excluir, setExcluir] = useState<string | null>(null);
+  // Cards do topo filtram a tabela de registros por tipo.
+  const [filtroTipo, setFiltroTipo] = useState<string | null>(null);
+  const alternarTipo = (t: string) => setFiltroTipo((a) => (a === t ? null : t));
 
   const lista = useMemo(
     () =>
@@ -837,6 +1378,12 @@ function AbaAdvertencias({
     });
     return c;
   }, [lista]);
+
+  // Os cards seguem contando tudo; só a tabela de registros obedece ao filtro.
+  const listaVisivel = useMemo(
+    () => (filtroTipo ? lista.filter((a) => a.tipo === filtroTipo) : lista),
+    [lista, filtroTipo],
+  );
 
   // Ranking: colaboradores com mais advertências no escopo.
   const ranking = useMemo(() => {
@@ -868,10 +1415,14 @@ function AbaAdvertencias({
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Total de advertências" value={lista.length} icon={<ShieldAlert className="h-5 w-5" />} accent="brand" hint="No seu escopo" />
-        <StatCard label="Verbais" value={porTipo.Verbal} icon={<MessageSquareWarning className="h-5 w-5" />} accent="blue" hint="Orientação registrada" />
-        <StatCard label="Escritas" value={porTipo.Escrita} icon={<FileWarning className="h-5 w-5" />} accent="amber" hint="Advertência formal" />
-        <StatCard label="Suspensões" value={porTipo.Suspensão} icon={<AlertTriangle className="h-5 w-5" />} accent="red" hint="Medida disciplinar" />
+        <StatCard label="Total de advertências" value={lista.length} icon={<ShieldAlert className="h-5 w-5" />} accent="brand" hint="No seu escopo"
+          onClick={() => setFiltroTipo(null)} ativo={filtroTipo === null} title="Mostrar todas" />
+        <StatCard label="Verbais" value={porTipo.Verbal} icon={<MessageSquareWarning className="h-5 w-5" />} accent="blue" hint="Orientação registrada"
+          onClick={() => alternarTipo("Verbal")} ativo={filtroTipo === "Verbal"} title="Ver só as advertências verbais" />
+        <StatCard label="Escritas" value={porTipo.Escrita} icon={<FileWarning className="h-5 w-5" />} accent="amber" hint="Advertência formal"
+          onClick={() => alternarTipo("Escrita")} ativo={filtroTipo === "Escrita"} title="Ver só as advertências escritas" />
+        <StatCard label="Suspensões" value={porTipo.Suspensão} icon={<AlertTriangle className="h-5 w-5" />} accent="red" hint="Medida disciplinar"
+          onClick={() => alternarTipo("Suspensão")} ativo={filtroTipo === "Suspensão"} title="Ver só as suspensões" />
       </div>
 
       <Card className="mt-6">
@@ -899,12 +1450,12 @@ function AbaAdvertencias({
       <Card className="mt-6 overflow-hidden">
         <CardHeader
           title="Registros de advertência"
-          subtitle={`${lista.length} registro(s) no seu escopo de acesso`}
+          subtitle={`${listaVisivel.length}${filtroTipo ? ` de ${lista.length}` : ""} registro(s) no seu escopo de acesso`}
           icon={<ShieldAlert className="h-[18px] w-[18px]" />}
         />
-        {lista.length === 0 ? (
+        {listaVisivel.length === 0 ? (
           <CardBody>
-            <EmptyState title="Sem advertências" description="Nenhuma advertência registrada no seu escopo." icon={<ShieldAlert className="h-8 w-8" />} />
+            <EmptyState title="Sem advertências" description={filtroTipo ? "Nenhuma advertência deste tipo — clique no card de novo para ver todas." : "Nenhuma advertência registrada no seu escopo."} icon={<ShieldAlert className="h-8 w-8" />} />
           </CardBody>
         ) : (
           <div className="overflow-x-auto">
@@ -920,7 +1471,7 @@ function AbaAdvertencias({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {lista.map((a) => (
+                {listaVisivel.map((a) => (
                   <tr key={a.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
                       <button
@@ -1170,6 +1721,9 @@ function AbaAbsenteismo({
 
   const [de, setDe] = useState(() => iso(new Date(HOJE.getTime() - 90 * 86400000)));
   const [ate, setAte] = useState(() => iso(HOJE));
+  // Cards do topo filtram a tabela de registros (clicar de novo limpa).
+  const [foco, setFoco] = useState<"naoJust" | "atrasos" | "justificadas" | null>(null);
+  const alternarFoco = (f: NonNullable<typeof foco>) => setFoco((a) => (a === f ? null : f));
 
   const aplicarRapido = (dias: number) => {
     setDe(iso(new Date(HOJE.getTime() - dias * 86400000)));
@@ -1196,6 +1750,14 @@ function AbaAbsenteismo({
   );
   const atrasos = useMemo(() => lista.filter((a) => a.tipo === "Atraso").length, [lista]);
   const pctJustificadas = total === 0 ? 0 : lista.filter((a) => a.justificada).length / total;
+
+  // Cards e gráficos seguem contando o período inteiro; só a tabela obedece ao foco.
+  const listaVisivel = useMemo(() => {
+    if (foco === "naoJust") return lista.filter((a) => a.tipo === "Falta" && !a.justificada);
+    if (foco === "atrasos") return lista.filter((a) => a.tipo === "Atraso");
+    if (foco === "justificadas") return lista.filter((a) => a.justificada);
+    return lista;
+  }, [lista, foco]);
 
   // Ranking de quem mais falta no período: nº de ausências, faltas e horas de atraso.
   const ranking = useMemo(() => {
@@ -1261,10 +1823,14 @@ function AbaAbsenteismo({
       </Card>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Ausências no período" value={total} icon={<CalendarRange className="h-5 w-5" />} accent="brand" hint={`${diaData(de)} – ${diaData(ate)}`} />
-        <StatCard label="Faltas não justificadas" value={faltasNaoJust} icon={<CalendarX2 className="h-5 w-5" />} accent="red" hint="Sem justificativa" />
-        <StatCard label="Atrasos" value={atrasos} icon={<Clock className="h-5 w-5" />} accent="amber" hint="Registros de atraso" />
-        <StatCard label="% justificadas" value={formatPercent(pctJustificadas)} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Com justificativa" />
+        <StatCard label="Ausências no período" value={total} icon={<CalendarRange className="h-5 w-5" />} accent="brand" hint={`${diaData(de)} – ${diaData(ate)}`}
+          onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todas as ausências do período" />
+        <StatCard label="Faltas não justificadas" value={faltasNaoJust} icon={<CalendarX2 className="h-5 w-5" />} accent="red" hint="Sem justificativa"
+          onClick={() => alternarFoco("naoJust")} ativo={foco === "naoJust"} title="Ver só as faltas sem justificativa" />
+        <StatCard label="Atrasos" value={atrasos} icon={<Clock className="h-5 w-5" />} accent="amber" hint="Registros de atraso"
+          onClick={() => alternarFoco("atrasos")} ativo={foco === "atrasos"} title="Ver só os atrasos" />
+        <StatCard label="% justificadas" value={formatPercent(pctJustificadas)} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Com justificativa"
+          onClick={() => alternarFoco("justificadas")} ativo={foco === "justificadas"} title="Ver só as ausências justificadas" />
       </div>
 
       <Card className="mt-6">
@@ -1349,12 +1915,12 @@ function AbaAbsenteismo({
       <Card className="mt-6 overflow-hidden">
         <CardHeader
           title="Registros de ausência"
-          subtitle={`${lista.length} registro(s) entre ${diaData(de)} e ${diaData(ate)}`}
+          subtitle={`${listaVisivel.length}${foco ? ` de ${lista.length}` : ""} registro(s) entre ${diaData(de)} e ${diaData(ate)}`}
           icon={<CalendarRange className="h-[18px] w-[18px]" />}
         />
-        {lista.length === 0 ? (
+        {listaVisivel.length === 0 ? (
           <CardBody>
-            <EmptyState title="Sem ausências no período" description="Nenhum registro no intervalo e escopo selecionados." icon={<CalendarRange className="h-8 w-8" />} />
+            <EmptyState title="Sem ausências no período" description={foco ? "Nada neste filtro — clique no card de novo para ver tudo." : "Nenhum registro no intervalo e escopo selecionados."} icon={<CalendarRange className="h-8 w-8" />} />
           </CardBody>
         ) : (
           <div className="overflow-x-auto">
@@ -1370,7 +1936,7 @@ function AbaAbsenteismo({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {lista.map((a) => (
+                {listaVisivel.map((a) => (
                   <tr key={a.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
                       <div className="flex items-center gap-3">

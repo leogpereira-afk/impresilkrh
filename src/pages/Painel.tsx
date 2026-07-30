@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree, Cake,
@@ -56,6 +56,19 @@ export default function Painel() {
   // Inativos só aparecem quando explicitamente marcado (padrão DESLIGADO).
   const [incluirInativos, setIncluirInativos] = useState<boolean>(false);
   const [lembreteNr, setLembreteNr] = useState(true); // lembrete automático de NR
+
+  // Foco do card "Alertas e pendências": os indicadores de documentos, NRs e
+  // avaliações filtram essa lista em vez de abrir modal — é a mesma informação,
+  // só que completa (sem o corte de 4/6/3 itens) e com data de vencimento.
+  const [foco, setFoco] = useState<"docs" | "nrs" | "avaliacoes" | null>(null);
+  const refAlertas = useRef<HTMLDivElement>(null);
+  const alternarFoco = (alvo: "docs" | "nrs" | "avaliacoes") => {
+    const proximo = foco === alvo ? null : alvo;
+    setFoco(proximo);
+    // O card de alertas fica bem abaixo dos indicadores: sem rolar até ele o
+    // clique pareceria não ter feito nada.
+    if (proximo) refAlertas.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const escopoBruto = useMemo(
     () => colaboradoresVisiveis(sessao, d.colaboradores),
@@ -126,6 +139,13 @@ export default function Painel() {
   const cicloAvaliados = new Set(avaliacoes.filter((a) => a.tipo === "GESTOR").map((a) => a.colaboradorId));
   const avaliacoesPendentes = ativos.filter((c) => !cicloAvaliados.has(c.id));
   const elegiveis = avaliacoes.filter((a) => a.elegivelPromocao && ids.has(a.colaboradorId));
+
+  // Itens exibidos em "Alertas e pendências". Sem foco, uma amostra de cada tipo;
+  // com foco, a lista inteira do tipo escolhido (é para isso que se filtra).
+  const nrsVisiveis = foco === "nrs" ? nrsAlerta : foco ? [] : nrsAlerta.slice(0, 4);
+  const docsVisiveis = foco === "docs" ? docsAlerta : foco ? [] : docsAlerta.slice(0, 6);
+  const avaliacoesVisiveis = foco === "avaliacoes" ? avaliacoesPendentes : foco ? [] : avaliacoesPendentes.slice(0, 3);
+  const semAlertas = nrsVisiveis.length === 0 && docsVisiveis.length === 0 && avaliacoesVisiveis.length === 0;
 
   // Mês de referência para aniversários: o mês do filtro (ou HOJE quando "Ano inteiro").
   const mesAniversario = filtroMes === 0 ? HOJE.getMonth() + 1 : filtroMes;
@@ -366,6 +386,12 @@ export default function Painel() {
               accent="gold"
               hint={`${totalPessoasFolha} colaborador(es)${cicloIncompleto ? " · ciclo em andamento" : ""}`}
               trend={temAnterior && !anteriorIncompleto && !cicloIncompleto ? { value: `${folhaSubiu ? "+" : "−"}${formatBRL(Math.abs(folhaVariacao))} (${formatPercent(Math.abs(folhaVariacaoPct))}) vs. mês anterior`, positivo: folhaSubiu } : undefined}
+              title="Ver quem recebeu nesta competência"
+              onClick={() => drill.abrir(
+                `Folha paga · ${rotuloPeriodo}`,
+                escopo.filter((c) => porColabMap.has(c.id)),
+                `${totalPessoasFolha} colaborador(es) · ${formatBRL(folhaTotal)}`,
+              )}
             />
             <Card className="lg:col-span-2">
               <CardHeader title="Composição da folha" subtitle="Tudo que foi pago: salário, adiantamento, extras e benefícios" icon={<Wallet className="h-[18px] w-[18px]" />} />
@@ -458,43 +484,70 @@ export default function Painel() {
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Headcount ativo", ativos, "Colaboradores que contam no quadro")}>
-          <StatCard label="Headcount ativo" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Colaboradores que contam no quadro" />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir(`Admissões · ${rotuloPeriodo}`, admitidosPeriodo, `Admitidos em ${rotuloPeriodo}`)}>
-          <StatCard label="Admissões no período" value={admissoesPeriodo} icon={<TrendingUp className="h-5 w-5" />} accent="green" hint={rotuloPeriodo} />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir(`Desligamentos · ${rotuloPeriodo}`, desligadosPeriodo, `Desligados em ${rotuloPeriodo}`)}>
-          <StatCard label="Desligamentos no período" value={desligamentosPeriodo} icon={<TrendingDown className="h-5 w-5" />} accent="red" hint={rotuloPeriodo} />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Turnover 12m", desligados12m, "Desligamentos que compõem o índice")}>
-          <StatCard label="Turnover 12m" value={`${(turnover * 100).toFixed(1)}%`} icon={<TrendingDown className="h-5 w-5" />} accent="amber" hint="Índice móvel · 12 meses" />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Em treinamento", emTreinamento, "Colaboradores com treinamento em aberto")}>
-          <StatCard label="Em treinamento" value={emTreinamento.length} hint={`${treinosAbertos.length} treinamento(s) em aberto`} icon={<GraduationCap className="h-5 w-5" />} accent="blue" />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Documentos a vencer", escopo.filter((c) => docsAlerta.some((doc) => doc.colaboradorId === c.id)), `${docsAlerta.length} documento(s) · ${docsVencidos.length} vencido(s)`)}>
-          <StatCard label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"} />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("NRs a vencer", escopo.filter((c) => nrsAlerta.some((n) => n.colaboradorId === c.id)), `${nrsAlerta.length} certificação(ões) · ${nrsVencidas.length} vencida(s)`)}>
-          <StatCard label="NRs a vencer" value={nrsAlerta.length} hint={`${nrsVencidas.length} vencida(s)`} icon={<Award className="h-5 w-5" />} accent={nrsVencidas.length ? "red" : nrsAlerta.length ? "amber" : "green"} />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Avaliações pendentes", avaliacoesPendentes, `${cicloNome} · ainda sem avaliação do gestor`)}>
-          <StatCard label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue" />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}>
-          <StatCard label="De férias agora" value={feriasAtivas.length} icon={<Palmtree className="h-5 w-5" />} accent="green" />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Com advertência", colabsComAdvertencia, `${advertenciasEscopo.length} advertência(s) registrada(s)`)}>
-          <StatCard label="Advertências" value={advertenciasEscopo.length} hint={`${colabsComAdvertencia.length} colaborador(es)`} icon={<ShieldAlert className="h-5 w-5" />} accent="amber" />
-        </button>
-        <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Risco de saída alto", colabsPorRisco("Risco alto"), "Atenção à retenção de talentos")}>
-          <StatCard label="Risco de saída alto" value={risco.Alto ?? 0} icon={<AlertTriangle className="h-5 w-5" />} accent="red" />
-        </button>
+        <StatCard
+          label="Headcount ativo" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Colaboradores que contam no quadro"
+          title="Ver quem está no quadro"
+          onClick={() => drill.abrir("Headcount ativo", ativos, "Colaboradores que contam no quadro")}
+        />
+        <StatCard
+          label="Admissões no período" value={admissoesPeriodo} icon={<TrendingUp className="h-5 w-5" />} accent="green" hint={rotuloPeriodo}
+          title="Ver quem foi admitido no período"
+          onClick={() => drill.abrir(`Admissões · ${rotuloPeriodo}`, admitidosPeriodo, `Admitidos em ${rotuloPeriodo}`)}
+        />
+        <StatCard
+          label="Desligamentos no período" value={desligamentosPeriodo} icon={<TrendingDown className="h-5 w-5" />} accent="red" hint={rotuloPeriodo}
+          title="Ver quem foi desligado no período"
+          onClick={() => drill.abrir(`Desligamentos · ${rotuloPeriodo}`, desligadosPeriodo, `Desligados em ${rotuloPeriodo}`)}
+        />
+        <StatCard
+          label="Turnover 12m" value={`${(turnover * 100).toFixed(1)}%`} icon={<TrendingDown className="h-5 w-5" />} accent="amber" hint="Índice móvel · 12 meses"
+          title="Ver os desligamentos que formam o índice"
+          onClick={() => drill.abrir("Turnover 12m", desligados12m, "Desligamentos que compõem o índice")}
+        />
+        <StatCard
+          label="Em treinamento" value={emTreinamento.length} hint={`${treinosAbertos.length} treinamento(s) em aberto`} icon={<GraduationCap className="h-5 w-5" />} accent="blue"
+          title="Ver quem está em capacitação"
+          onClick={() => drill.abrir("Em treinamento", emTreinamento, "Colaboradores com treinamento em aberto")}
+        />
+        <StatCard
+          label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"}
+          title="Filtrar alertas por documentos (clique de novo para limpar)"
+          ativo={foco === "docs"}
+          onClick={() => alternarFoco("docs")}
+        />
+        <StatCard
+          label="NRs a vencer" value={nrsAlerta.length} hint={`${nrsVencidas.length} vencida(s)`} icon={<Award className="h-5 w-5" />} accent={nrsVencidas.length ? "red" : nrsAlerta.length ? "amber" : "green"}
+          title="Filtrar alertas por NRs (clique de novo para limpar)"
+          ativo={foco === "nrs"}
+          onClick={() => alternarFoco("nrs")}
+        />
+        <StatCard
+          label="Avaliações pendentes" value={avaliacoesPendentes.length} icon={<ClipboardCheck className="h-5 w-5" />} accent="blue"
+          title="Filtrar alertas por avaliações (clique de novo para limpar)"
+          ativo={foco === "avaliacoes"}
+          onClick={() => alternarFoco("avaliacoes")}
+        />
+        <StatCard
+          label="De férias agora" value={feriasAtivas.length} icon={<Palmtree className="h-5 w-5" />} accent="green"
+          title="Ver quem está de férias"
+          onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}
+        />
+        <StatCard
+          label="Advertências" value={advertenciasEscopo.length} hint={`${colabsComAdvertencia.length} colaborador(es)`} icon={<ShieldAlert className="h-5 w-5" />} accent="amber"
+          title="Ver quem tem advertência registrada"
+          onClick={() => drill.abrir("Com advertência", colabsComAdvertencia, `${advertenciasEscopo.length} advertência(s) registrada(s)`)}
+        />
+        <StatCard
+          label="Risco de saída alto" value={risco.Alto ?? 0} icon={<AlertTriangle className="h-5 w-5" />} accent="red"
+          title="Ver quem está com risco alto"
+          onClick={() => drill.abrir("Risco de saída alto", colabsPorRisco("Risco alto"), "Atenção à retenção de talentos")}
+        />
         {incluirInativos && (
-          <button type="button" className="text-left w-full transition-transform hover:-translate-y-0.5" onClick={() => drill.abrir("Inativos", inativos, "Colaboradores inativos (fora das contagens por padrão)")}>
-            <StatCard label="Inativos" value={inativos.length} hint="Exibidos por inclusão manual" icon={<UserX className="h-5 w-5" />} accent="amber" />
-          </button>
+          <StatCard
+            label="Inativos" value={inativos.length} hint="Exibidos por inclusão manual" icon={<UserX className="h-5 w-5" />} accent="amber"
+            title="Ver os colaboradores inativos"
+            onClick={() => drill.abrir("Inativos", inativos, "Colaboradores inativos (fora das contagens por padrão)")}
+          />
         )}
       </div>
 
@@ -583,15 +636,15 @@ export default function Painel() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 lg:grid-cols-3" ref={refAlertas}>
         <Card className="lg:col-span-2">
           <CardHeader title="Alertas e pendências" subtitle="Conformidade de documentos, NRs e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
-            {docsAlerta.length === 0 && avaliacoesPendentes.length === 0 && nrsAlerta.length === 0 ? (
+            {semAlertas ? (
               <EmptyState title="Tudo em dia" description="Nenhuma pendência crítica no seu escopo." icon={<ClipboardCheck className="h-8 w-8" />} />
             ) : (
               <>
-                {nrsAlerta.slice(0, 4).map((c) => {
+                {nrsVisiveis.map((c) => {
                   const dd = dias(c.dataValidade!);
                   const vencido = dd < 0;
                   return (
@@ -606,7 +659,7 @@ export default function Painel() {
                     </div>
                   );
                 })}
-                {docsAlerta.slice(0, 6).map((doc) => {
+                {docsVisiveis.map((doc) => {
                   const dd = dias(doc.dataVencimento);
                   const vencido = dd < 0;
                   return (
@@ -621,7 +674,7 @@ export default function Painel() {
                     </div>
                   );
                 })}
-                {avaliacoesPendentes.slice(0, 3).map((c) => (
+                {avaliacoesVisiveis.map((c) => (
                   <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
                     <p className="truncate text-sm font-medium text-slate-700">Avaliação pendente · {c.nome}</p>
                     <Badge variant="info">{cicloNome}</Badge>
@@ -725,9 +778,12 @@ export default function Painel() {
       <DrillModal
         {...drill.props}
         colunaExtra={
-          drill.props.titulo.startsWith("Folha · ")
-            ? { titulo: "Folha", render: (c) => formatBRL((c.salario ?? 0) + (c.adicionais ?? 0)) }
-            : undefined
+          // Na folha paga o que importa é o valor REAL da competência, não o salário de cadastro.
+          drill.props.titulo.startsWith("Folha paga · ")
+            ? { titulo: "Recebido", render: (c) => formatBRL(porColabMap.get(c.id) ?? 0) }
+            : drill.props.titulo.startsWith("Folha · ")
+              ? { titulo: "Folha", render: (c) => formatBRL((c.salario ?? 0) + (c.adicionais ?? 0)) }
+              : undefined
         }
       />
     </div>
@@ -784,6 +840,8 @@ function PainelPessoal() {
         );
       })()}
 
+      {/* Estes 4 ficam sem clique de propósito: são dados do próprio usuário — não há
+          lista nesta tela para filtrar nem outras pessoas por trás do número. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Cargo" value={<span className="text-base">{d.nomeCargo(c)}</span>} icon={<Users className="h-5 w-5" />} accent="brand" hint={`Nível ${d.nomeNivel(c.nivelId)}`} />
         <StatCard label="Saldo de férias" value={`${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={feriasAtiva ? feriasAtiva.status : "Em aberto"} />

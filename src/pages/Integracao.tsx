@@ -229,59 +229,34 @@ export default function Integracao() {
         Clique nos cartões e barras para ver os colaboradores.
       </p>
 
+      {/* O próprio StatCard já é o botão — reaproveita o mesmo drill das barras
+          do gráfico para não haver dois caminhos com regras diferentes. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <button
-          className="text-left w-full"
-          onClick={() =>
-            drill.abrir(
-              "Onboardings em andamento",
-              colabsDe(resumo.idsAndamento),
-              "Admissões com itens pendentes",
-            )
-          }
-        >
-          <StatCard
-            label="Onboardings em andamento"
-            value={resumo.onAndamento}
-            icon={<ClipboardList className="h-5 w-5" />}
-            accent="brand"
-            hint="Admissões com itens pendentes"
-          />
-        </button>
-        <button
-          className="text-left w-full"
-          onClick={() =>
-            drill.abrir(
-              "Onboardings concluídos",
-              colabsDe(resumo.idsConcluidos),
-              "Admissões com checklist 100% concluído",
-            )
-          }
-        >
-          <StatCard
-            label="Onboardings concluídos"
-            value={resumo.onConcluidos}
-            icon={<CheckCircle2 className="h-5 w-5" />}
-            accent="green"
-          />
-        </button>
-        <button
-          className="text-left w-full"
-          onClick={() =>
-            drill.abrir(
-              "Offboardings",
-              colabsDe(resumo.idsOff),
-              "Colaboradores em processo de desligamento",
-            )
-          }
-        >
-          <StatCard
-            label="Offboardings"
-            value={resumo.offTotal}
-            icon={<UserMinus className="h-5 w-5" />}
-            accent="amber"
-          />
-        </button>
+        <StatCard
+          label="Onboardings em andamento"
+          value={resumo.onAndamento}
+          icon={<ClipboardList className="h-5 w-5" />}
+          accent="brand"
+          hint="Admissões com itens pendentes"
+          onClick={() => abrirJornada("Onboarding em andamento")}
+          title="Ver quem está com o onboarding em andamento"
+        />
+        <StatCard
+          label="Onboardings concluídos"
+          value={resumo.onConcluidos}
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          accent="green"
+          onClick={() => abrirJornada("Onboarding concluído")}
+          title="Ver quem já concluiu o onboarding"
+        />
+        <StatCard
+          label="Offboardings"
+          value={resumo.offTotal}
+          icon={<UserMinus className="h-5 w-5" />}
+          accent="amber"
+          onClick={() => abrirJornada("Offboarding")}
+          title="Ver quem está em processo de desligamento"
+        />
       </div>
 
       <div className="mt-6">

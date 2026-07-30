@@ -174,6 +174,9 @@ function temAnexo(arq: { arquivoEmBlob?: boolean; arquivoDataUrl?: string | null
   return !!arq.arquivoEmBlob || !!arq.arquivoDataUrl;
 }
 
+// Filtro que os cartões de resumo aplicam à listagem (null = tudo).
+type FocoRepositorio = { tipo: "anexo" } | { tipo: "categoria"; nome: string } | null;
+
 // Dispara o download de um arquivo (data URL) criando um <a> temporário.
 function baixar(dataUrl: string, nome: string) {
   const a = document.createElement("a");
@@ -192,16 +195,18 @@ function Repositorio() {
   const [busca, setBusca] = useState("");
   const [novo, setNovo] = useState(false);
   const [excluir, setExcluir] = useState<ArquivoRepositorio | null>(null);
+  // Filtro acionado pelos cartões do topo — soma-se à busca.
+  const [foco, setFoco] = useState<FocoRepositorio>(null);
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (a) =>
-        a.nome.toLowerCase().includes(q) ||
-        a.categoria.toLowerCase().includes(q),
-    );
-  }, [items, busca]);
+    return items.filter((a) => {
+      if (q && !a.nome.toLowerCase().includes(q) && !a.categoria.toLowerCase().includes(q)) return false;
+      if (foco?.tipo === "anexo") return temAnexo(a);
+      if (foco?.tipo === "categoria") return a.categoria === foco.nome;
+      return true;
+    });
+  }, [items, busca, foco]);
 
   // Agrupa por categoria, preservando a ordem das 5 categorias conhecidas e
   // anexando ao final eventuais categorias fora da lista.
@@ -235,6 +240,11 @@ function Repositorio() {
 
   const totalCategorias = porCategoria.size;
   const comArquivo = items.filter((a) => temAnexo(a)).length;
+  // Categoria mais numerosa — alimenta o cartão e o filtro que ele aciona.
+  const maiorCategoria = useMemo(
+    () => [...porCategoria.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] ?? null,
+    [porCategoria],
+  );
 
   // Resolve o conteúdo do arquivo: IndexedDB (novos), nuvem (outros PCs) ou
   // data URL inline (legado). Aproveita para curar: arquivo local que ainda não
@@ -318,7 +328,12 @@ function Repositorio() {
           value={items.length}
           icon={<FolderOpen className="h-5 w-5" />}
           accent="brand"
+          onClick={() => setFoco(null)}
+          ativo={foco === null}
+          title="Mostrar todos os documentos"
         />
+        {/* Sem clique: "Categorias" conta tipos, não documentos — não há
+            subconjunto único da listagem para filtrar por esse número. */}
         <StatCard
           label="Categorias"
           value={totalCategorias}
@@ -332,21 +347,28 @@ function Repositorio() {
           hint={`${items.length - comArquivo} sem anexo`}
           icon={<Upload className="h-5 w-5" />}
           accent="green"
+          onClick={() => setFoco((atual) => (atual?.tipo === "anexo" ? null : { tipo: "anexo" }))}
+          ativo={foco?.tipo === "anexo"}
+          title="Ver só os documentos que têm arquivo anexado"
         />
         <StatCard
           label="Maior categoria"
-          value={
-            porCategoria.size
-              ? [...porCategoria.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
-              : "—"
-          }
-          hint={
-            porCategoria.size
-              ? `${[...porCategoria.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][1]} documento(s)`
-              : undefined
-          }
+          value={maiorCategoria ? maiorCategoria[0] : "—"}
+          hint={maiorCategoria ? `${maiorCategoria[1]} documento(s)` : undefined}
           icon={<FileText className="h-5 w-5" />}
           accent="blue"
+          onClick={
+            maiorCategoria
+              ? () =>
+                  setFoco((atual) =>
+                    atual?.tipo === "categoria" && atual.nome === maiorCategoria[0]
+                      ? null
+                      : { tipo: "categoria", nome: maiorCategoria[0] },
+                  )
+              : undefined
+          }
+          ativo={foco?.tipo === "categoria" && foco.nome === maiorCategoria?.[0]}
+          title={maiorCategoria ? `Ver só os documentos de ${maiorCategoria[0]}` : undefined}
         />
       </div>
 
@@ -373,11 +395,13 @@ function Repositorio() {
       {/* Listagem por categoria */}
       {grupos.length === 0 ? (
         <EmptyState
-          title={busca ? "Nenhum documento encontrado" : "Repositório vazio"}
+          title={busca || foco ? "Nenhum documento encontrado" : "Repositório vazio"}
           description={
             busca
               ? "Tente ajustar os termos da busca."
-              : "Os documentos institucionais aparecerão aqui."
+              : foco
+                ? "Clique de novo no cartão para ver todos os documentos."
+                : "Os documentos institucionais aparecerão aqui."
           }
           icon={<FolderOpen className="h-8 w-8" />}
         />
