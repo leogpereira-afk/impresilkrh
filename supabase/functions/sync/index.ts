@@ -15,7 +15,6 @@ import { json, preflight } from "../_shared/cors.ts";
 const PAGINA = 150;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // Cliente "de serviço": ignora RLS, é o único que toca em registros/config/meta/storage.
@@ -32,8 +31,7 @@ async function sessaoDoPedido(req: Request): Promise<Perfil | null> {
   const auth = req.headers.get("authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
-  const semRls = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } } });
-  const { data, error } = await semRls.auth.getUser(m[1]);
+  const { data, error } = await admin.auth.getUser(m[1]); // valida o JWT do usuário
   if (error || !data?.user) return null;
   const { data: perfil } = await admin.from("perfis").select("colaborador_id, perfil").eq("user_id", data.user.id).maybeSingle();
   if (!perfil) return null;

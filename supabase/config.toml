@@ -5,6 +5,14 @@ project_id = "impresilkrh"
 
 # Declarar as functions aqui é o que faz a integração Supabase↔GitHub publicá-las
 # sozinha a cada push (sem isso, só as migrations do banco são automáticas).
+#
+# verify_jwt = false: o gateway do Supabase NÃO exige um JWT antes de chamar a
+# função. É necessário porque (a) o navegador manda um preflight CORS (OPTIONS)
+# sem token, que o gateway barraria; e (b) cada função já faz a PRÓPRIA checagem
+# de acesso (valida o crachá do usuário + o perfil) — a segurança é feita dentro
+# do código, não no gateway.
 [functions.sync]
+verify_jwt = false
 
 [functions.admin-users]
+verify_jwt = false
