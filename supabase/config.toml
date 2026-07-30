@@ -1,0 +1,10 @@
+# Configuração do projeto Supabase para este repo. "project_id" aqui é só um
+# apelido local (usado pela CLI/pela integração com o GitHub) — não precisa
+# bater com o Project Ref real do projeto no supabase.com.
+project_id = "impresilkrh"
+
+# Declarar as functions aqui é o que faz a integração Supabase↔GitHub publicá-las
+# sozinha a cada push (sem isso, só as migrations do banco são automáticas).
+[functions.sync]
+
+[functions.admin-users]

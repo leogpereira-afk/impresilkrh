@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Sistema de Gestão de Recursos Humanos da Impresilk Comunicação Visual — SPA leve, sem banco de dados (dados embutidos + localStorage).",
+  "description": "Sistema de Gestão de Recursos Humanos da Impresilk Comunicação Visual — SPA (Vite/React) com Supabase (Auth + Postgres + Storage + Edge Functions) e deploy no GitHub Pages.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -15,7 +15,7 @@
     "verificar": "npm run lint && npm run typecheck && npm run test"
   },
   "dependencies": {
-    "@netlify/blobs": "^8.2.0",
+    "@supabase/supabase-js": "^2.45.4",
     "clsx": "^2.1.1",
     "lucide-react": "^0.456.0",
     "react": "^18.3.1",

@@ -7,13 +7,13 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { exportarDados, importarDados } from "@/lib/store";
 import {
-  statusSync, assinarSync, configSync, syncHabilitado, syncConfigurado, pendentesSync,
-  conflitosSync, ligarSync, desligarSync, definirEndpoint, testarConexao, sincronizarAgora,
-  enviarTudo, aceitarServidor, sobrescreverServidor, definirTokenSync, diagnosticar,
+  statusSync, assinarSync, syncHabilitado, syncConfigurado, pendentesSync,
+  conflitosSync, ligarSync, desligarSync, testarConexao, sincronizarAgora,
+  enviarTudo, aceitarServidor, sobrescreverServidor, diagnosticar,
   apagarColecoes, falhasSync, retentarFalhas, limparFalhas, previaEnviarTudo, limparLapides,
   type StatusSync, type PassoDiag, type LinhaOficial,
 } from "@/lib/sync";
-import { Stethoscope, KeyRound } from "lucide-react";
+import { Stethoscope } from "lucide-react";
 import { MODO_JWT } from "@/lib/auth";
 
 // Aparência do indicador conforme o estado da nuvem.
@@ -41,7 +41,6 @@ export function SyncButton() {
   const fileRef = useRef<HTMLInputElement>(null);
   const recarregar = () => setTick((n) => n + 1);
 
-  const cfg = configSync();
   const configurado = syncConfigurado();
   const ligado = syncHabilitado();
   const pendentes = pendentesSync();
@@ -49,9 +48,7 @@ export function SyncButton() {
   const falhas = falhasSync();
   const vis = VISUAL[status];
 
-  const [endpoint, setEndpoint] = useState(cfg.endpoint);
   const [ocupado, setOcupado] = useState(false);
-  const [token, setToken] = useState("");
   const [diag, setDiag] = useState<PassoDiag[] | null>(null);
   const [previa, setPrevia] = useState<{ linhas: LinhaOficial[]; someTotal: number } | null>(null);
 
@@ -61,13 +58,6 @@ export function SyncButton() {
     try { setDiag(await diagnosticar()); }
     catch { toast("Não foi possível rodar o diagnóstico.", "erro"); }
     finally { setOcupado(false); recarregar(); }
-  };
-  const salvarToken = () => {
-    if (!token.trim()) { toast("Cole o token primeiro.", "erro"); return; }
-    definirTokenSync(token);
-    setToken("");
-    toast("Token salvo neste computador. Sincronizando…");
-    recarregar();
   };
 
   const agora = async () => {
@@ -137,8 +127,6 @@ export function SyncButton() {
     else { ligarSync(); toast("Sincronização ligada neste computador."); }
     recarregar();
   };
-  const salvarEndpoint = () => { definirEndpoint(endpoint); toast("Endereço salvo."); recarregar(); };
-
   const exportar = () => {
     const blob = new Blob([exportarDados()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -191,7 +179,7 @@ export function SyncButton() {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-brand-ink">{vis.rotulo}</p>
               <p className="text-xs text-slate-500">
-                {configurado ? (ligado ? `${pendentes} pendência(s)` : "Desligada neste computador.") : "Falta configurar no Netlify."}
+                {configurado ? (ligado ? `${pendentes} pendência(s)` : "Desligada neste computador.") : "Faça login para sincronizar."}
               </p>
             </div>
             {ligado && (
@@ -242,7 +230,7 @@ export function SyncButton() {
                   </button>
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">Ficaram guardadas em vez de sumir. Se o erro for de permissão ou token, corrija e clique em "Tentar de novo".</p>
+              <p className="text-[11px] text-slate-500">Ficaram guardadas em vez de sumir. Se o erro for de permissão ou sessão expirada, entre de novo e clique em "Tentar de novo".</p>
               <div className="max-h-32 space-y-1 overflow-y-auto">
                 {falhas.slice(0, 20).map((f) => (
                   <div key={`${f.tipo}:${f.colecao}::${f.id}`} className="rounded-lg border border-red-100 bg-white px-3 py-1.5 text-xs">
@@ -250,21 +238,6 @@ export function SyncButton() {
                     <span className="ml-2 text-red-600">{f.erro}</span>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* Falta o token: oferece corrigir AGORA colando o token (sem redeploy) */}
-          {!cfg.temToken && (
-            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-              <p className="flex items-start gap-2 text-xs leading-relaxed text-amber-800">
-                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Falta o token de sincronização. Defina <code className="rounded bg-amber-100 px-1">SYNC_TOKEN</code> no Netlify e publique — <strong>ou</strong> cole aqui o mesmo valor para ligar agora (vale neste computador).
-              </p>
-              <div className="flex gap-2">
-                <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Cole o SYNC_TOKEN"
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
-                <button onClick={salvarToken} className="btn-outline px-3 text-sm"><KeyRound className="h-4 w-4" /> Salvar</button>
               </div>
             </div>
           )}
@@ -313,29 +286,10 @@ export function SyncButton() {
               <button onClick={() => void faxinaLapides()} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">
                 {ocupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Limpar marcadores antigos (aliviar a nuvem)
               </button>
-              {/* Token deste computador (cola/troca sem refazer o deploy) */}
-              <div className="flex gap-2">
-                <input type="password" value={token} onChange={(e) => setToken(e.target.value)}
-                  placeholder={cfg.tokenManual ? "Token colado — trocar" : "Colar token (override do build)"}
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
-                <button onClick={salvarToken} className="btn-outline px-3 text-sm"><KeyRound className="h-4 w-4" /> Token</button>
-              </div>
-              {configurado && (
-                <div className="flex gap-2">
-                  <input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="/.netlify/functions/sync"
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100" />
-                  <button onClick={salvarEndpoint} className="btn-outline px-3 text-sm">Salvar</button>
-                </div>
-              )}
-              {MODO_JWT ? (
+              {MODO_JWT && (
                 <p className="flex items-start gap-2 text-[11px] leading-relaxed text-green-700">
                   <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Login real ativo: os dados na nuvem só são lidos/gravados com o seu crachá de acesso (JWT). As senhas são definidas no Painel de Controle › Usuários.
-                </p>
-              ) : (
-                <p className="flex items-start gap-2 text-[11px] leading-relaxed text-amber-700">
-                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  A chave fica embutida no app (visível no DevTools): barra acesso casual/bots, mas não é segurança forte. Para dados sensíveis, login real com JWT — detalhes em SINCRONIZACAO.md.
+                  Login real ativo (Supabase Auth): os dados na nuvem só são lidos/gravados com o seu crachá de acesso. As contas são definidas no Painel de Controle › Usuários.
                 </p>
               )}
             </div>
