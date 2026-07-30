@@ -59,15 +59,23 @@ create policy "usuario le o proprio perfil" on public.perfis
   using (auth.uid() = user_id);
 
 -- ADMIN_RH lê todos os perfis (tela Painel de Controle › Usuários lista as
--- contas provisionadas). Subquery em vez de recursão direta na mesma linha.
+-- contas provisionadas). Via função SECURITY DEFINER: se a checagem "sou admin?"
+-- consultasse `perfis` direto numa policy DE `perfis`, entraria em RECURSÃO
+-- infinita (erro 500 em toda leitura, login incluído). A função roda como dona
+-- da tabela e ignora o RLS por dentro, quebrando o ciclo.
+create or replace function public.eh_admin_rh()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (select 1 from public.perfis where user_id = auth.uid() and perfil = 'ADMIN_RH');
+$$;
+
 create policy "admin le todos os perfis" on public.perfis
   for select
-  using (
-    exists (
-      select 1 from public.perfis p2
-      where p2.user_id = auth.uid() and p2.perfil = 'ADMIN_RH'
-    )
-  );
+  using (public.eh_admin_rh());
 
 -- ---- Storage: fotos, currículos e anexos (substitui o Blob "impresilk-fotos") ----
 -- Bucket privado: assim como as tabelas acima, só a Edge Function (service_role)

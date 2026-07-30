@@ -25,3 +25,6 @@ yarn-error.log*
 
 # artefatos de deploy
 *.zip
+
+# artefato local da CLI do Supabase
+supabase/.temp/
