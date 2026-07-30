@@ -42,29 +42,27 @@ Edge Functions) e o app publicado como site estático no **GitHub Pages**.
 
 ## Configuração do Supabase (uma vez só)
 
-1. **Schema**: se o projeto já está conectado ao repositório no GitHub
-   (Project Settings → Integrations → GitHub), o Supabase aplica sozinho o
-   arquivo [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
-   a cada push na branch configurada — cria as tabelas `registros`,
-   `config_global`, `meta`, `perfis`, o RLS e o bucket de Storage `arquivos`.
-   Sem essa integração, rode o arquivo manualmente no SQL Editor do projeto.
-2. **Edge Functions**: publicadas automaticamente pelo workflow
-   [`.github/workflows/deploy-supabase-functions.yml`](.github/workflows/deploy-supabase-functions.yml)
-   a cada push que mude algo em `supabase/functions/`. Só precisa de duas
-   *secrets* no repositório (**Settings → Secrets and variables → Actions →
-   Secrets**, aba *Secrets*, não *Variables* — estas sim são sensíveis):
-   - `SUPABASE_ACCESS_TOKEN` — gere em
-     [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens).
-   - `SUPABASE_PROJECT_REF` — o ID do projeto (está na Project URL:
-     `https://<PROJECT_REF>.supabase.co`, ou em Settings → General).
+1. **Schema e Edge Functions**: com o projeto conectado ao repositório no
+   GitHub (Project Settings → Integrations → GitHub — feito), o Supabase
+   aplica sozinho, a cada push:
+   - o arquivo [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
+     — cria as tabelas `registros`, `config_global`, `meta`, `perfis`, o RLS e
+     o bucket de Storage `arquivos`;
+   - as duas Edge Functions, porque estão declaradas em
+     [`supabase/config.toml`](supabase/config.toml) (`[functions.sync]` e
+     `[functions.admin-users]`) — sem essa declaração, a integração aplica só
+     o banco e ignora as functions.
 
-   Sem essas duas secrets (ou sem instalar a CLI localmente), dá para publicar
-   à mão pela primeira vez colando o conteúdo de cada `index.ts` direto no
-   editor de Functions do Dashboard.
-3. **Bootstrap da primeira conta**: veja "Bootstrap da primeira conta ADMIN_RH"
+   Nenhuma secret precisa ser configurada no GitHub pra isso — é tudo feito
+   pela própria integração Supabase↔GitHub. Sem essa integração, rode a
+   migration à mão no SQL Editor e publique as functions com
+   `supabase functions deploy sync` / `supabase functions deploy admin-users`
+   (CLI instalada e logada), ou colando cada `index.ts` no editor de Functions
+   do Dashboard.
+2. **Bootstrap da primeira conta**: veja "Bootstrap da primeira conta ADMIN_RH"
    em `LOGIN.md` — precisa ser feito manualmente uma vez (é a única conta que
    não dá pra criar via app, porque ainda não existe nenhum ADMIN_RH).
-4. **Chaves do projeto** (Settings → API): guarde a **Project URL** e a
+3. **Chaves do projeto** (Settings → API): guarde a **Project URL** e a
    **anon key** — são as duas variáveis que o build do app precisa
    (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`, ver seção GitHub Pages
    abaixo).
