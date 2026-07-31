@@ -4,26 +4,38 @@ import type { Pagamento } from "@/data/types";
 import { MESES_PT } from "@/lib/format";
 
 // Ordem de exibição e cor por tipo de pagamento (do mais estrutural ao eventual).
+// Espelha o plano de contas 2.1.x da Impresilk (conferido com o arquivo do
+// contador em 31/07/2026) — ver DE_PARA em supabase/functions/mubi-pagamentos.
 export const TIPOS_PAGAMENTO: { tipo: string; cor: string }[] = [
   { tipo: "Salário", cor: "#16334f" },
   { tipo: "Adiantamento", cor: "#2563eb" },
+  { tipo: "13º Salário", cor: "#1d4ed8" },
+  { tipo: "Férias", cor: "#16a34a" },
   { tipo: "Horas Extras", cor: "#0891b2" },
+  { tipo: "Diária", cor: "#0e7490" },
   { tipo: "Comissão", cor: "#7c3aed" },
+  { tipo: "Bônus", cor: "#a855f7" },
   { tipo: "Incentivo de Produtividade", cor: "#c2a14d" },
   { tipo: "Incentivo de Viagens", cor: "#d97706" },
-  { tipo: "Férias", cor: "#16a34a" },
   { tipo: "Vale Transporte", cor: "#059669" },
+  { tipo: "Alimentação", cor: "#84cc16" },
   { tipo: "Plano de Saúde", cor: "#db2777" },
+  { tipo: "Farmácia", cor: "#e11d48" },
+  { tipo: "Uniforme", cor: "#0369a1" },
+  { tipo: "Treinamentos", cor: "#4f46e5" },
   { tipo: "Freelancer (Empreita)", cor: "#9333ea" },
   { tipo: "Limpeza/Faxina", cor: "#65a30d" },
   { tipo: "Prestação de Serviços", cor: "#0d9488" },
+  { tipo: "Estágio/Bolsa", cor: "#0891b2" },
+  { tipo: "Confraternização", cor: "#f59e0b" },
   { tipo: "Rescisão", cor: "#dc2626" },
   { tipo: "FGTS", cor: "#b45309" },
+  { tipo: "INSS", cor: "#92400e" },
   { tipo: "Outros", cor: "#64748b" },
 ];
 // Tipos que são ENCARGO da empresa (não pagos à pessoa): entram no custo real,
-// não no "custo pago". FGTS por funcionário (ex.: rescisão) cai aqui.
-export const TIPOS_ENCARGO = ["FGTS"];
+// não no "custo pago". FGTS e INSS por funcionário caem aqui.
+export const TIPOS_ENCARGO = ["FGTS", "INSS"];
 const ORDEM = new Map(TIPOS_PAGAMENTO.map((t, i) => [t.tipo, i]));
 export const corDoTipo = (tipo: string) => TIPOS_PAGAMENTO.find((t) => t.tipo === tipo)?.cor ?? "#64748b";
 export const ordemDoTipo = (tipo: string) => ORDEM.get(tipo) ?? 99;

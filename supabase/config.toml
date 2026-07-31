@@ -19,3 +19,8 @@ verify_jwt = false
 
 [functions.mubi-pagamentos]
 verify_jwt = false
+
+# Backup do Hub: roda sozinho, sem ninguém logado — a entrada é um token de
+# serviço (BACKUP_TOKEN), conferido dentro da própria função.
+[functions.backup-registros]
+verify_jwt = false

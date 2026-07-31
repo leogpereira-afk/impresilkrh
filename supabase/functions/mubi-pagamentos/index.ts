@@ -36,34 +36,66 @@ async function ehGestao(req: Request): Promise<boolean> {
   return perfil?.perfil === "ADMIN_RH" || perfil?.perfil === "GESTOR";
 }
 
-// Plano de contas do Mubisys → tipo de pagamento do RH. O ERP já classifica na
-// origem; aqui só traduzimos os nomes para o vocabulário da tela.
-// "2.1.11.4-Hora Extra" e "2.1.11-Horas Extras" convivem no ERP, por isso a
-// comparação é por PREFIXO, do mais específico para o mais genérico.
+// Plano de contas do Mubisys → tipo de pagamento do RH.
+//
+// CONFERIDO CONTRA O PLANO DE CONTAS REAL da Impresilk (arquivo do contador,
+// 31/07/2026). A versão anterior foi escrita por dedução e tinha três rótulos
+// TROCADOS — 2.1.21 como "Férias" (é Divulgação de vagas), 2.1.17 como
+// "Empreita" (é Treinamentos), 2.1.18 como "Limpeza" (é Minas Brasil, a
+// drogaria) — e deixava Férias, 13º, FGTS, INSS, Empreita e Limpeza caindo
+// todos em "Outros".
+//
+// A ordem importa: a comparação é por PREFIXO e para no primeiro que casar,
+// então o código mais específico (2.1.11.2) vem antes do genérico (2.1.11).
 const DE_PARA: [string, string][] = [
   ["2.1.1-", "Salário"],
   ["2.1.2-", "Adiantamento"],
+  ["2.1.3-", "Férias"],
+  ["2.1.4-", "13º Salário"],
   ["2.1.5-", "Vale Transporte"],
   ["2.1.6-", "Rescisão"],
-  ["2.1.11.1-", "Incentivo de Produtividade"], // Diária
+  ["2.1.7-", "Estágio/Bolsa"],
+  ["2.1.8-", "Uniforme"],
+  ["2.1.9-", "FGTS"],                 // e 2.1.9.1/.2/.3 (regular, empréstimo, rescisão)
+  ["2.1.10-", "INSS"],
+  ["2.1.11.1-", "Diária"],
+  ["2.1.11.2-", "Freelancer (Empreita)"],
+  ["2.1.11.3-", "Limpeza/Faxina"],
   ["2.1.11.4-", "Horas Extras"],
   ["2.1.11-", "Horas Extras"],
-  ["2.1.12.1-", "Comissão"],                   // Comercial
-  ["2.1.12.2-", "Incentivo de Produtividade"], // Bônus
-  ["2.1.12-", "Comissão"],
-  ["2.1.14-", "Outros"],                       // Alimentação
-  ["2.1.15-", "Outros"],
+  ["2.1.12.1-", "Comissão"],          // Comercial
+  ["2.1.12.2-", "Bônus"],
+  ["2.1.12-", "Comissão"],            // Comissão Interna
+  ["2.1.13-", "Incentivo de Produtividade"],
+  ["2.1.14-", "Alimentação"],
+  ["2.1.15-", "Confraternização"],    // e as subcontas (festa junina, aniversário…)
+  ["2.1.16.1-", "Limpeza/Faxina"],
   ["2.1.16-", "Prestação de Serviços"],
-  ["2.1.17-", "Freelancer (Empreita)"],
-  ["2.1.18-", "Limpeza/Faxina"],
+  ["2.1.17-", "Treinamentos"],
+  ["2.1.18-", "Farmácia"],            // "Minas Brasil" = drogaria conveniada
   ["2.1.19-", "Incentivo de Viagens"],
-  ["2.1.20-", "Plano de Saúde"],
-  ["2.1.21-", "Férias"],
+  ["2.1.20-", "Plano de Saúde"],      // e 2.1.20.1 Pró Vida
+  // 2.1.21 (Divulgação de vagas) e 2.1.22 (Advocatícios) são despesas de RH,
+  // não pagamento a colaborador — ficam em "Outros" de propósito.
 ];
 
+/**
+ * Traduz o plano de contas do ERP no tipo de pagamento do RH.
+ *
+ * SUBCONTA HERDA DO PAI: "2.1.9.1-Regular" é FGTS porque 2.1.9 é FGTS; a
+ * comparação sobe a hierarquia até achar (2.1.9.1 → 2.1.9 → 2.1 → 2). Sem isso
+ * toda subconta caía em "Outros" — eram 13 delas, incluindo as três de FGTS e
+ * o Pró Vida do plano de saúde.
+ */
 function tipoDoPlano(plano: string): string {
-  const p = String(plano || "").trim();
-  for (const [prefixo, tipo] of DE_PARA) if (p.startsWith(prefixo)) return tipo;
+  const codigo = String(plano || "").trim().split("-")[0].trim();
+  if (!codigo) return "Outros";
+  const partes = codigo.split(".");
+  for (let n = partes.length; n >= 1; n--) {
+    const alvo = partes.slice(0, n).join(".") + "-";
+    const achou = DE_PARA.find(([prefixo]) => prefixo === alvo);
+    if (achou) return achou[1];
+  }
   return "Outros";
 }
 
