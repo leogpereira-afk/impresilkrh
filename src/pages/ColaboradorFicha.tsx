@@ -10,7 +10,7 @@ import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { HumorIndicador, PerfilComportamentalBadge, MotivacaoRosto, PerfilComportamentalGuia } from "@/components/ui/indicadores";
 import { DESC_PERFIL_COMPORTAMENTAL, COR_PERFIL_COMPORTAMENTAL, ARQUETIPOS } from "@/lib/constants";
 import { Badge, DotBadge } from "@/components/ui/badge";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
@@ -106,6 +106,22 @@ export default function ColaboradorFicha() {
 }
 
 type Colab = import("@/data/types").Colaborador;
+
+// ---------------------------------------------------------------------------
+// Ação disparada por um aviso de "Precisa de atenção".
+//
+// Cada aviso do Resumo 360º é um botão: clicar leva à aba onde o problema se
+// resolve E JÁ ABRE a edição do registro certo. Antes o aviso só informava —
+// quem lia tinha de adivinhar onde agir e caçar a linha na lista.
+// ---------------------------------------------------------------------------
+type AcaoFicha =
+  | { tipo: "ferias"; aquisitivoInicio: string; aquisitivoFim: string }
+  | { tipo: "documento"; id: string }
+  | { tipo: "experiencia" }
+  | { tipo: "nr"; id: string };
+
+const ABAS_FICHA = ["resumo", "dados", "docs", "ferias", "financeiro", "comportamental", "desenv", "hist"];
+
 function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { c: Colab; sens: boolean; verGestao: boolean; podeEditar: boolean; anterior: Colab | null; proximo: Colab | null }) {
   const d = useDominio();
   const navegar = useNavigate();
@@ -114,6 +130,21 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
   const fotoRef = useRef<HTMLInputElement>(null);
   const [editar, setEditar] = useState(false);
   const [desligar, setDesligar] = useState(false);
+  const [aba, setAba] = useAbaAtiva("ficha-colaborador", ABAS_FICHA);
+  const [experiencia, setExperiencia] = useState(false);
+  // Pedido pendente para a aba de destino (ela abre o modal e devolve null).
+  const [pedido, setPedido] = useState<AcaoFicha | null>(null);
+
+  // Leva o clique do aviso até onde se resolve. Documento e férias moram em
+  // abas desta ficha; NR mora na tela de SST (a ficha não tem aba de NR) e vai
+  // por rota, com o id no state para a SST já abrir a renovação.
+  const executar = (a: AcaoFicha) => {
+    if (a.tipo === "experiencia") { setExperiencia(true); return; }
+    if (a.tipo === "nr") { navegar("/sst", { state: { renovarNr: a.id } }); return; }
+    setAba(a.tipo === "ferias" ? "ferias" : "docs");
+    setPedido(a);
+  };
+  const consumir = () => setPedido(null);
   const cargo = c.cargoId ? d.cargoById.get(c.cargoId) : undefined;
   const enq = d.enquadrarColab(c);
   const corEnq = COR_POSICAO_FAIXA[enq];
@@ -264,11 +295,13 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
 
       <Tabs
         idPersistencia="ficha-colaborador"
+        ativa={aba}
+        aoMudar={(id) => { setAba(id); setPedido(null); }}
         abas={[
-          { id: "resumo", label: "Resumo 360º", icon: <LayoutGrid className="h-4 w-4" />, conteudo: <AbaResumo360 c={c} /> },
+          { id: "resumo", label: "Resumo 360º", icon: <LayoutGrid className="h-4 w-4" />, conteudo: <AbaResumo360 c={c} onAgir={podeEditar ? executar : undefined} /> },
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} sens={sens} cargo={cargo} /> },
-          { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} /> },
-          { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} /> },
+          { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} pedido={pedido?.tipo === "documento" ? pedido : null} onConsumir={consumir} /> },
+          { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} pedido={pedido?.tipo === "ferias" ? pedido : null} onConsumir={consumir} /> },
           { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro key={c.id} c={c} sens={sens} /> },
           ...(verGestao ? [{ id: "comportamental", label: "Comportamental", icon: <Brain className="h-4 w-4" />, conteudo: <AbaComportamental c={c} /> }] : []),
           { id: "desenv", label: "Desenvolvimento", icon: <Target className="h-4 w-4" />, conteudo: <AbaDesenvolvimento colaboradorId={c.id} /> },
@@ -278,6 +311,13 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
 
       {editar && <ColaboradorForm aberto={editar} onFechar={() => setEditar(false)} editar={c} />}
       <DesligarModal aberto={desligar} onFechar={() => setDesligar(false)} c={c} />
+      <DecidirExperienciaModal
+        aberto={experiencia}
+        onFechar={() => setExperiencia(false)}
+        c={c}
+        onDesligar={() => { setExperiencia(false); setDesligar(true); }}
+        onAbrirCadastro={() => { setExperiencia(false); setEditar(true); }}
+      />
     </div>
   );
 }
@@ -288,7 +328,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
 // o que está vencendo (documento, NR) e o volume de cada área da ficha, para o
 // RH bater o olho e saber onde precisa agir.
 // ---------------------------------------------------------------------------
-function AbaResumo360({ c }: { c: Colaborador }) {
+function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) => void }) {
   const d = useDominio();
   const { items: ferias } = useColecao("ferias");
   const { items: documentos } = useColecao("documentos");
@@ -311,13 +351,21 @@ function AbaResumo360({ c }: { c: Colaborador }) {
   const docsVencendo = meus(documentos).filter((x) => { const dd = diasPara(x.dataVencimento); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
   const nrsVencendo = meus(certificacoesNr).filter((x) => { const dd = diasPara(x.dataValidade); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
 
-  const alertas: { texto: string; grave: boolean }[] = [];
+  // Cada aviso carrega o que fazer a respeito (`acao`) e o rótulo do botão.
+  // Sem isso o aviso era um beco sem saída: dizia o problema e parava ali.
+  const alertas: { texto: string; grave: boolean; acao?: AcaoFicha; rotulo?: string }[] = [];
   if (sFerias && sFerias.situacao !== "em-dia") {
     alertas.push({
       grave: sFerias.situacao === "vencida",
       texto: sFerias.situacao === "vencida"
         ? `Férias VENCIDAS há ${Math.abs(sFerias.diasParaLimite)} dia(s) — limite era ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Por lei, o pagamento é em dobro.`
         : `Férias a conceder até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")} (${sFerias.diasParaLimite} dia(s)), senão paga em dobro.`,
+      rotulo: "Agendar férias",
+      acao: {
+        tipo: "ferias",
+        aquisitivoInicio: diaLocalISO(sFerias.aquisitivoInicio),
+        aquisitivoFim: diaLocalISO(sFerias.direitoDesde),
+      },
     });
   }
   if (sExp && sExp.situacao !== "primeiro-periodo") {
@@ -326,15 +374,27 @@ function AbaResumo360({ c }: { c: Colaborador }) {
       texto: sExp.situacao === "expirou"
         ? `Contrato de experiência expirou em ${sExp.fim.toLocaleDateString("pt-BR")} — já é por prazo indeterminado.`
         : `Contrato de experiência termina em ${sExp.fim.toLocaleDateString("pt-BR")} (${sExp.diasParaFim} dia(s)). Decidir efetivação.`,
+      rotulo: "Decidir",
+      acao: { tipo: "experiencia" },
     });
   }
   for (const x of docsVencendo) {
     const dd = diasPara(x.dataVencimento);
-    alertas.push({ grave: dd < 0, texto: `Documento "${x.nome}" ${dd < 0 ? `vencido há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.` });
+    alertas.push({
+      grave: dd < 0,
+      texto: `Documento "${x.nome}" ${dd < 0 ? `vencido há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.`,
+      rotulo: "Renovar",
+      acao: { tipo: "documento", id: x.id },
+    });
   }
   for (const x of nrsVencendo) {
     const dd = diasPara(x.dataValidade);
-    alertas.push({ grave: dd < 0, texto: `${x.nr} ${dd < 0 ? `vencida há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.` });
+    alertas.push({
+      grave: dd < 0,
+      texto: `${x.nr} ${dd < 0 ? `vencida há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.`,
+      rotulo: "Renovar em SST",
+      acao: { tipo: "nr", id: x.id },
+    });
   }
 
   const blocos = [
@@ -357,11 +417,36 @@ function AbaResumo360({ c }: { c: Colaborador }) {
             <p className="text-sm text-emerald-700">Nada pendente: prazos e vencimentos em dia.</p>
           ) : (
             <ul className="space-y-2">
-              {alertas.map((a, i) => (
-                <li key={i} className={`flex gap-2 rounded-lg border p-2.5 text-sm ${a.grave ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {a.texto}
-                </li>
-              ))}
+              {alertas.map((a, i) => {
+                const cor = a.grave ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800";
+                const conteudo = (
+                  <>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="flex-1">{a.texto}</span>
+                  </>
+                );
+                // Só vira botão quem tem para onde ir E quem pode agir (o próprio
+                // colaborador vê o aviso, mas não edita o próprio cadastro).
+                if (!a.acao || !onAgir) {
+                  return <li key={i} className={`flex gap-2 rounded-lg border p-2.5 text-sm ${cor}`}>{conteudo}</li>;
+                }
+                const acao = a.acao;
+                return (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => onAgir(acao)}
+                      title={`${a.rotulo}: ir para onde isto se resolve`}
+                      className={`flex w-full items-start gap-2 rounded-lg border p-2.5 text-left text-sm transition hover:brightness-95 ${cor}`}
+                    >
+                      {conteudo}
+                      <span className="ml-auto inline-flex shrink-0 items-center gap-1 self-center rounded-md border border-black/10 bg-white/70 px-2 py-1 text-xs font-semibold">
+                        {a.rotulo} <ChevronRight className="h-3.5 w-3.5" />
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardBody>
@@ -869,12 +954,23 @@ function enqVar(e: string): "danger" | "warning" | "success" | "info" {
   return e === "Crítico" ? "danger" : e === "Abaixo" ? "warning" : e === "Acima" ? "info" : "success";
 }
 
-function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; podeEditar: boolean }) {
+function AbaDocumentos({ colaboradorId, podeEditar, pedido, onConsumir }: { colaboradorId: string; podeEditar: boolean; pedido?: { id: string } | null; onConsumir?: () => void }) {
   const toast = useToast();
   const { items, criar, atualizar, remover } = useColecao("documentos");
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
   const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState<import("@/data/types").Documento | null>(null);
   const [excluir, setExcluir] = useState<import("@/data/types").Documento | null>(null);
+
+  // Chegou pelo aviso de "documento vencido": abre direto a edição daquele
+  // documento, sem obrigar a procurar a linha na lista.
+  useEffect(() => {
+    if (!pedido || !podeEditar) return;
+    const alvo = items.find((doc) => doc.id === pedido.id);
+    if (alvo) setEditar(alvo);
+    onConsumir?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido?.id]);
 
   // Anexa: metadados no localStorage, conteúdo do arquivo no IndexedDB (cota maior)
   // E na nuvem (mesmo canal dos currículos) — assim o anexo abre em qualquer PC.
@@ -959,7 +1055,10 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
                       </Badge>
                     )}
                     {podeEditar && (
-                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(doc)} aria-label={`Excluir ${doc.nome}`}><Trash2 className="h-4 w-4" /></button>
+                      <>
+                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => setEditar(doc)} aria-label={`Editar ${doc.nome}`} title="Corrigir dados / renovar vencimento"><Pencil className="h-4 w-4" /></button>
+                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(doc)} aria-label={`Excluir ${doc.nome}`}><Trash2 className="h-4 w-4" /></button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -969,6 +1068,13 @@ function AbaDocumentos({ colaboradorId, podeEditar }: { colaboradorId: string; p
         )}
       </SecaoColapsavel>
       {novo && <NovoDocumentoModal aberto={novo} onFechar={() => setNovo(false)} colaboradorId={colaboradorId} onCriar={adicionar} />}
+      {editar && (
+        <EditarDocumentoModal
+          doc={editar}
+          onFechar={() => setEditar(null)}
+          onSalvar={(patch) => { atualizar(editar.id, patch); toast(`"${patch.nome || editar.nome}" atualizado.`); setEditar(null); }}
+        />
+      )}
       {/* Exclusão de documento é irreversível (apaga o anexo da nuvem também):
           nunca no clique seco da lixeira — sempre confirmando o que vai sumir. */}
       <ConfirmDialog
@@ -1064,30 +1170,226 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
   );
 }
 
-function AbaFerias({ colaboradorId, podeEditar }: { colaboradorId: string; podeEditar: boolean }) {
+/**
+ * Corrigir um documento já anexado (inclusive RENOVAR o vencimento).
+ *
+ * A lista só sabia anexar e excluir: para dar um novo prazo a um ASO vencido a
+ * única saída era apagar e anexar de novo — perdendo o histórico e o arquivo.
+ * O anexo não é tocado aqui; para trocar o arquivo, anexe um novo documento.
+ */
+function EditarDocumentoModal({ doc, onFechar, onSalvar }: { doc: import("@/data/types").Documento; onFechar: () => void; onSalvar: (patch: Partial<import("@/data/types").Documento>) => void }) {
   const toast = useToast();
-  const { items, criar } = useColecao("ferias");
-  const lista = items.filter((f) => f.colaboradorId === colaboradorId);
-  const adicionar = () => {
-    criar({ colaboradorId, periodoAquisitivoInicio: "2025-06-01", periodoAquisitivoFim: "2026-05-31", diasGozados: 0, saldoDias: 30, status: "Em aberto" });
-    toast("Período de férias adicionado.");
+  const [nome, setNome] = useState(doc.nome ?? "");
+  const [categoria, setCategoria] = useState(doc.categoria || "Contrato");
+  const [emissao, setEmissao] = useState(doc.dataEmissao ?? "");
+  const [vencimento, setVencimento] = useState(doc.dataVencimento ?? "");
+  const [observacao, setObservacao] = useState(doc.observacao ?? "");
+  const dd = diasAte(vencimento || null);
+
+  const salvar = () => {
+    if (!nome.trim()) return toast("Informe o nome do documento.", "erro");
+    if (emissao && vencimento && vencimento < emissao) return toast("O vencimento não pode ser anterior à emissão.", "erro");
+    onSalvar({
+      nome: nome.trim(), categoria,
+      dataEmissao: emissao || null, dataVencimento: vencimento || null,
+      observacao: observacao.trim() || null,
+    });
   };
+
   return (
-    <SecaoColapsavel title="Férias" subtitle="Períodos aquisitivos, saldo e status" action={podeEditar ? <button className="btn-outline" onClick={adicionar}><Plus className="h-4 w-4" /> Novo período</button> : undefined}>
-        {lista.length === 0 ? <EmptyState title="Sem registros de férias" /> : (
+    <Modal aberto onFechar={onFechar} titulo="Corrigir documento"
+      descricao="Renove o vencimento ou ajuste os dados. O arquivo anexado não muda."
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Salvar</button></>}>
+      <div className="space-y-3">
+        <Campo label="Nome do documento" obrigatorio><Input value={nome} onChange={(e) => setNome(e.target.value)} /></Campo>
+        <Campo label="Categoria">
+          <Select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+            {CATEGORIAS_DOCUMENTO.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+          </Select>
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Emissão"><Input type="date" value={emissao} onChange={(e) => setEmissao(e.target.value)} /></Campo>
+          <Campo label="Vencimento" hint={!isNaN(dd) ? (dd < 0 ? `Vencido há ${Math.abs(dd)} dia(s)` : `Vence em ${dd} dia(s)`) : undefined}>
+            <Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
+          </Campo>
+        </div>
+        <Campo label="Observação"><Input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Ex.: ASO renovado na clínica X" /></Campo>
+        {doc.arquivoNome && <p className="text-xs text-slate-400">Anexo atual: {doc.arquivoNome}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+const STATUS_FERIAS_FICHA = ["Em aberto", "Agendada", "Em andamento", "Concluída", "Cancelada"];
+const somaDiasISO = (iso: string, n: number) => {
+  const d = parseData(iso);
+  if (!d) return "";
+  return diaLocalISO(new Date(d.getTime() + n * 86400000));
+};
+
+function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colaboradorId: string; podeEditar: boolean; pedido?: { aquisitivoInicio: string; aquisitivoFim: string } | null; onConsumir?: () => void }) {
+  const toast = useToast();
+  const d = useDominio();
+  const { items, criar, atualizar, remover } = useColecao("ferias");
+  const lista = items.filter((f) => f.colaboradorId === colaboradorId);
+  const [edit, setEdit] = useState<import("@/data/types").Ferias | null>(null);
+  const [novoPeriodo, setNovoPeriodo] = useState<{ inicio: string; fim: string } | null>(null);
+  const [excluir, setExcluir] = useState<import("@/data/types").Ferias | null>(null);
+
+  // Período aquisitivo em aberto, calculado da data de admissão. Antes o botão
+  // "Novo período" gravava 2025-06-01 → 2026-05-31 CHUMBADO no código: todo
+  // mundo recebia o mesmo período, errado para quase todos.
+  const colab = d.colabById.get(colaboradorId);
+  const sit = colab ? situacaoFerias(colab, lista) : null;
+  const sugestao = (() => {
+    if (sit) return { inicio: diaLocalISO(sit.aquisitivoInicio), fim: diaLocalISO(sit.direitoDesde) };
+    // Menos de 12 meses de casa: o primeiro aquisitivo é o ano a partir da admissão.
+    const adm = parseData(colab?.dataAdmissao);
+    if (!adm) return { inicio: "", fim: "" };
+    const fim = new Date(adm.getTime());
+    fim.setFullYear(fim.getFullYear() + 1);
+    return { inicio: diaLocalISO(adm), fim: diaLocalISO(fim) };
+  })();
+
+  // Chegou pelo aviso de férias vencendo: se já existe o registro daquele
+  // período aquisitivo, abre a edição dele; senão, abre um novo já preenchido.
+  useEffect(() => {
+    if (!pedido || !podeEditar) return;
+    const existente = lista.find((f) => (f.periodoAquisitivoFim ?? "") === pedido.aquisitivoFim);
+    if (existente) setEdit(existente);
+    else setNovoPeriodo({ inicio: pedido.aquisitivoInicio, fim: pedido.aquisitivoFim });
+    onConsumir?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido?.aquisitivoFim]);
+
+  return (
+    <>
+      <SecaoColapsavel
+        title="Férias"
+        subtitle="Períodos aquisitivos, saldo e status — clique para editar ou agendar o gozo"
+        action={podeEditar ? <button className="btn-outline" onClick={() => setNovoPeriodo(sugestao)}><Plus className="h-4 w-4" /> Novo período</button> : undefined}
+      >
+        {lista.length === 0 ? <EmptyState title="Sem registros de férias" description={podeEditar ? "Use 'Novo período' para lançar o período aquisitivo e agendar o gozo." : undefined} /> : (
           <div className="space-y-3">
-            {lista.map((f) => (
-              <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Período {formatDate(f.periodoAquisitivoInicio)} – {formatDate(f.periodoAquisitivoFim)}</p>
-                  <p className="text-xs text-slate-400">{f.dataInicio ? `Gozo: ${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "Sem gozo agendado"} · Saldo {f.saldoDias} dias</p>
+            {lista.map((f) => {
+              const linha = (
+                <>
+                  <div className="min-w-0 text-left">
+                    <p className="text-sm font-medium text-slate-700">Período {formatDate(f.periodoAquisitivoInicio)} – {formatDate(f.periodoAquisitivoFim)}</p>
+                    <p className="text-xs text-slate-400">{f.dataInicio ? `Gozo: ${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "Sem gozo agendado"} · Saldo {f.saldoDias} dias</p>
+                  </div>
+                  <Badge variant={f.status === "Concluída" ? "neutral" : f.status === "Em andamento" ? "success" : f.status === "Agendada" ? "info" : f.status === "Cancelada" ? "neutral" : "warning"}>{f.status}</Badge>
+                </>
+              );
+              if (!podeEditar) {
+                return <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">{linha}</div>;
+              }
+              return (
+                <div key={f.id} className="flex items-center gap-2">
+                  <button type="button" onClick={() => setEdit(f)} title="Editar este período / agendar o gozo"
+                    className="flex flex-1 items-center justify-between gap-3 rounded-lg border border-slate-100 px-4 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50/40">
+                    {linha}
+                  </button>
+                  <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(f)} aria-label="Excluir período de férias"><Trash2 className="h-4 w-4" /></button>
                 </div>
-                <Badge variant={f.status === "Concluída" ? "neutral" : f.status === "Em andamento" ? "success" : f.status === "Agendada" ? "info" : "warning"}>{f.status}</Badge>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </SecaoColapsavel>
+
+      {(edit || novoPeriodo) && (
+        <PeriodoFeriasModal
+          registro={edit}
+          inicial={novoPeriodo}
+          onFechar={() => { setEdit(null); setNovoPeriodo(null); }}
+          onSalvar={(dados) => {
+            if (edit) { atualizar(edit.id, dados); toast("Período de férias atualizado."); }
+            else { criar({ colaboradorId, ...dados }); toast("Período de férias lançado."); }
+            setEdit(null); setNovoPeriodo(null);
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        onFechar={() => setExcluir(null)}
+        onConfirmar={() => { if (excluir) { remover(excluir.id); toast("Período de férias removido."); } setExcluir(null); }}
+        titulo="Excluir período de férias"
+        textoConfirmar="Excluir"
+        mensagem={excluir ? <>Excluir o período {formatDate(excluir.periodoAquisitivoInicio)} – {formatDate(excluir.periodoAquisitivoFim)}? Isso muda o cálculo de férias vencidas desta pessoa.</> : ""}
+      />
+    </>
+  );
+}
+
+/** Lança/edita um período aquisitivo e o gozo. O retorno acompanha o início. */
+function PeriodoFeriasModal({ registro, inicial, onFechar, onSalvar }: {
+  registro: import("@/data/types").Ferias | null;
+  inicial: { inicio: string; fim: string } | null;
+  onFechar: () => void;
+  onSalvar: (dados: Partial<import("@/data/types").Ferias>) => void;
+}) {
+  const toast = useToast();
+  const [aqIni, setAqIni] = useState(registro?.periodoAquisitivoInicio ?? inicial?.inicio ?? "");
+  const [aqFim, setAqFim] = useState(registro?.periodoAquisitivoFim ?? inicial?.fim ?? "");
+  const [inicio, setInicio] = useState(registro?.dataInicio ?? "");
+  const [retorno, setRetorno] = useState(registro?.dataRetorno ?? "");
+  const [dias, setDias] = useState(String(registro?.diasGozados ?? 0));
+  const [saldo, setSaldo] = useState(String(registro?.saldoDias ?? 30));
+  const [status, setStatus] = useState(registro?.status ?? (inicial ? "Agendada" : "Em aberto"));
+  const [obs, setObs] = useState(registro?.observacao ?? "");
+
+  // Marcar o início já preenche o retorno e o saldo — o caso comum são 30 dias
+  // corridos, e digitar as três coisas à mão só cria divergência.
+  const mudarInicio = (v: string) => {
+    setInicio(v);
+    if (v) {
+      const n = Number(dias) > 0 ? Number(dias) : 30;
+      if (!retorno || registro?.dataInicio !== v) setRetorno(somaDiasISO(v, n));
+      if (Number(dias) === 0) { setDias("30"); setSaldo("0"); }
+      if (status === "Em aberto") setStatus("Agendada");
+    }
+  };
+
+  const salvar = () => {
+    if (!aqIni || !aqFim) return toast("Informe o período aquisitivo.", "erro");
+    if (aqFim < aqIni) return toast("O fim do período aquisitivo não pode vir antes do início.", "erro");
+    if (inicio && retorno && retorno < inicio) return toast("O retorno não pode ser anterior ao início do gozo.", "erro");
+    if (status === "Agendada" && !inicio) return toast("Para agendar, informe a data de início do gozo.", "erro");
+    onSalvar({
+      periodoAquisitivoInicio: aqIni, periodoAquisitivoFim: aqFim,
+      dataInicio: inicio || null, dataRetorno: retorno || null,
+      diasGozados: Number(dias) || 0, saldoDias: Number(saldo) || 0,
+      status, observacao: obs.trim() || null,
+    });
+  };
+
+  return (
+    <Modal aberto onFechar={onFechar} titulo={registro ? "Editar período de férias" : "Lançar período de férias"}
+      descricao="O período aquisitivo é o ano trabalhado; o gozo é quando a pessoa sai."
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Salvar</button></>}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Aquisitivo — início" obrigatorio><Input type="date" value={aqIni} onChange={(e) => setAqIni(e.target.value)} /></Campo>
+          <Campo label="Aquisitivo — fim" obrigatorio><Input type="date" value={aqFim} onChange={(e) => setAqFim(e.target.value)} /></Campo>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Início do gozo" hint="Preenche o retorno em 30 dias"><Input type="date" value={inicio} onChange={(e) => mudarInicio(e.target.value)} /></Campo>
+          <Campo label="Retorno"><Input type="date" value={retorno} onChange={(e) => setRetorno(e.target.value)} /></Campo>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Dias gozados"><Input type="number" min={0} max={30} value={dias} onChange={(e) => setDias(e.target.value)} /></Campo>
+          <Campo label="Saldo de dias"><Input type="number" min={0} max={30} value={saldo} onChange={(e) => setSaldo(e.target.value)} /></Campo>
+        </div>
+        <Campo label="Status">
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {STATUS_FERIAS_FICHA.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
+        </Campo>
+        <Campo label="Observação"><Input value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex.: 15 dias + abono pecuniário" /></Campo>
+      </div>
+    </Modal>
   );
 }
 
@@ -1162,6 +1464,57 @@ function AbaHistorico({ colaboradorId }: { colaboradorId: string }) {
           </ol>
         )}
       </SecaoColapsavel>
+  );
+}
+
+/**
+ * Decidir o contrato de experiência (CLT art. 445) direto do aviso.
+ *
+ * O aviso dizia "decidir efetivação" e parava aí. A decisão tem três saídas
+ * reais — efetivar, desligar antes do prazo, ou corrigir a data de admissão —
+ * e todas ficam a um clique daqui. Efetivar troca o status e deixa registro no
+ * histórico: sem a movimentação, ninguém sabe depois quando a decisão foi tomada.
+ */
+function DecidirExperienciaModal({ aberto, onFechar, c, onDesligar, onAbrirCadastro }: {
+  aberto: boolean; onFechar: () => void; c: import("@/data/types").Colaborador;
+  onDesligar: () => void; onAbrirCadastro: () => void;
+}) {
+  const toast = useToast();
+  const { atualizar } = useColecao("colaboradores");
+  const { criar: criarMov } = useColecao("movimentacoes");
+  const s = situacaoExperiencia(c);
+
+  const efetivar = () => {
+    atualizar(c.id, { statusId: "ativo" });
+    criarMov({
+      colaboradorId: c.id, tipo: "Efetivação", data: diaLocalISO(HOJE),
+      descricao: `Contrato de experiência encerrado; efetivado(a) por prazo indeterminado.`, registradoPor: "RH",
+    });
+    toast(`${c.nome} efetivado(a).`);
+    onFechar();
+  };
+
+  return (
+    <Modal aberto={aberto} onFechar={onFechar} titulo="Contrato de experiência" descricao={c.nome} largura="max-w-lg"
+      rodape={<button className="btn-outline" onClick={onFechar}>Fechar</button>}>
+      <div className="space-y-3">
+        {s && (
+          <div className={`rounded-lg border p-3 text-sm ${s.situacao === "expirou" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+            {s.situacao === "expirou"
+              ? <>Os 90 dias acabaram em <strong>{s.fim.toLocaleDateString("pt-BR")}</strong>. Sem decisão, o contrato já é por prazo <strong>indeterminado</strong> — desligar agora custa aviso prévio e multa do FGTS.</>
+              : <>{s.diasDeCasa} dia(s) de casa. O prazo termina em <strong>{s.fim.toLocaleDateString("pt-BR")}</strong> ({s.diasParaFim} dia(s)).</>}
+          </div>
+        )}
+        <p className="text-sm text-slate-600">Status atual: <strong>{c.statusId === "experiencia" ? "Em experiência" : c.statusId}</strong>. Escolha o que fazer:</p>
+        <div className="grid gap-2">
+          <button className="btn-primary justify-start" onClick={efetivar}>Efetivar — passa para Ativo e registra no histórico</button>
+          <button className="btn-outline justify-start" onClick={onAbrirCadastro}><Pencil className="h-4 w-4" /> Abrir cadastro (corrigir admissão ou status)</button>
+          {!c.dataDesligamento && !c.ehDirecao && (
+            <button className="btn-ghost justify-start text-red-600" onClick={onDesligar}><UserMinus className="h-4 w-4" /> Desligar antes de efetivar</button>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

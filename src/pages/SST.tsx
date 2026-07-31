@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -388,6 +389,20 @@ function AbaCertificacoesNR() {
   };
 
   const validadePrevista = form.dataTreinamento ? calcularValidadeNR(form.dataTreinamento, form.nr) : null;
+
+  // Veio do aviso "NR vencida" na ficha do colaborador (navigate com state):
+  // abre direto a renovação daquela certificação em vez de largar o usuário na
+  // lista para procurar a linha.
+  const { state } = useLocation() as { state?: { renovarNr?: string } };
+  const pedidoNr = state?.renovarNr;
+  useEffect(() => {
+    if (!pedidoNr || !gere) return;
+    const alvo = items.find((x) => x.id === pedidoNr);
+    if (alvo) abrirEdicao(alvo);
+    // Limpa o state para um F5 não reabrir o modal.
+    window.history.replaceState({}, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoNr]);
 
   return (
     <div>
