@@ -218,10 +218,14 @@ export default function Relatorios() {
         return (dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia) === key;
       };
       const ids = new Set(pagamentos.filter((p) => idsFolha.has(p.colaboradorId) && noMes(p)).map((p) => p.colaboradorId));
-      const lista = ativos.filter((c) => ids.has(c.id));
+      // Lista a partir de TODO o quadro, não só dos ativos: a folha soma quem
+      // está afastado (o dinheiro saiu), mas `d.ativos` exclui esse pessoal. O
+      // resultado era um total cheio ao lado de uma lista curta — o afastado
+      // pago sumia da conferência, e foi assim que R$ 49 mil já "sumiram" antes.
+      const lista = d.colaboradores.filter((c) => ids.has(c.id));
       drill.abrir(`Folha real (${baseFolha}) — ${nomeMes}/${filtroAno}`, lista, `${formatBRL(folhaReal[baseFolha].mapa.get(key) ?? 0)} · ${lista.length} colaborador(es)`);
     },
-    [pagamentos, idsFolha, ativos, filtroAno, baseFolha, folhaReal, drill],
+    [pagamentos, idsFolha, d.colaboradores, filtroAno, baseFolha, folhaReal, drill],
   );
 
   // -- Indicadores de cabeçalho --

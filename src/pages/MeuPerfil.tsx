@@ -15,6 +15,7 @@ import { useCicloAtivo } from "@/lib/ciclo";
 import { getBlob, putBlob } from "@/lib/blobstore";
 import { comprimirImagem } from "@/lib/imagem";
 import { buscarArquivoNuvem } from "@/lib/sync";
+import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { logadoNoServidor, trocarMinhaSenha } from "@/lib/auth";
@@ -234,20 +235,23 @@ function CartaoSenha({ nome }: { nome: string }) {
 }
 
 function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
+  const toast = useToast();
   const { items } = useColecao("documentos");
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
 
-  const abrir = async (doc: import("@/data/types").Documento) => {
-    let dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
-    if (!dataUrl && doc.arquivoEmBlob) {
-      // Anexado em outro computador (RH): baixa da nuvem e guarda cópia local.
-      dataUrl = await buscarArquivoNuvem(`doc:${doc.id}`);
-      if (dataUrl) void putBlob(`doc:${doc.id}`, dataUrl);
-    }
-    if (!dataUrl) return;
-    const w = window.open();
-    if (w) w.document.write(`<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`);
-  };
+  // A janela abre no clique e o arquivo entra nela depois (ver lib/abrirArquivo).
+  // Antes o `return` mudo da última linha era o fim do caminho: quem clicava no
+  // próprio contrato e não tinha o arquivo nesta máquina não via nada acontecer.
+  const abrir = (doc: import("@/data/types").Documento) =>
+    abrirAnexoEmNovaAba(async () => {
+      let dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl ?? null;
+      if (!dataUrl && doc.arquivoEmBlob) {
+        // Anexado em outro computador (RH): baixa da nuvem e guarda cópia local.
+        dataUrl = await buscarArquivoNuvem(`doc:${doc.id}`);
+        if (dataUrl) void putBlob(`doc:${doc.id}`, dataUrl);
+      }
+      return dataUrl;
+    }, (m: string) => toast(m, "erro"), doc.nome);
 
   return (
     <Card>
@@ -267,6 +271,7 @@ function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
                   <button
                     onClick={() => abrir(doc)}
                     disabled={!doc.arquivoEmBlob && !doc.arquivoDataUrl}
+                    title={!doc.arquivoEmBlob && !doc.arquivoDataUrl ? "Este registro não tem arquivo anexado — fale com o RH." : "Abrir o documento"}
                     className="flex min-w-0 items-center gap-3 text-left disabled:cursor-default"
                   >
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand">

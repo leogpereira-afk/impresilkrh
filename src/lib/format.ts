@@ -16,6 +16,24 @@ export function parseData(data: Date | string | null | undefined): Date | null {
 // "YYYY-MM-DD" a partir do dia LOCAL (não do UTC). Use SEMPRE isto para obter o
 // dia atual / o dia de uma Date — NUNCA `.toISOString().slice(0,10)`, que devolve
 // o dia em UTC e, à noite no Brasil (21h–24h, UTC-3), pula para o dia seguinte.
+/**
+ * Diferença em DIAS DE CALENDÁRIO entre hoje e uma data (negativo = passado).
+ *
+ * Por que não subtrair os instantes: `parseData("2026-08-05")` devolve
+ * MEIA-NOITE local e `new Date()` carrega a hora atual. Depois do meio-dia a
+ * diferença passava de -0,4 para -0,6 dia e o arredondamento virava -1: um
+ * documento que vence HOJE aparecia como "vencido há 1 dia" a partir das 12h,
+ * e quem lê às 9h e às 15h via números diferentes para o mesmo dado.
+ * Ancorando os dois no início do dia, "vence hoje" dá 0 o dia inteiro.
+ */
+export function diasDeCalendario(ate: Date | string | null | undefined, de: Date = new Date()): number {
+  const d = parseData(ate);
+  if (!d) return NaN;
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const b = new Date(de.getFullYear(), de.getMonth(), de.getDate()).getTime();
+  return Math.round((a - b) / 86_400_000);
+}
+
 export function diaLocalISO(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

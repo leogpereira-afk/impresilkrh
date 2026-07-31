@@ -94,9 +94,19 @@ export default function Integracao() {
   );
   const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
 
+  // As TAREFAS seguem um escopo mais largo, com os inativos dentro. Offboarding
+  // é justamente o que se faz DEPOIS do último dia — homologação, exame
+  // demissional, verbas rescisórias. Filtrar por "não inativo" fazia o checklist
+  // sumir da tela no instante em que a pessoa era desligada: um desligamento
+  // pela metade virava invisível, sem nenhum outro lugar no sistema para
+  // terminá-lo (a ficha do colaborador não tem seção de tarefas).
+  const idsComInativos = useMemo(
+    () => new Set(colaboradoresVisiveis(sessao, d.colaboradores).map((c) => c.id)),
+    [sessao, d.colaboradores],
+  );
   const tarefasEscopo = useMemo(
-    () => tarefas.filter((t) => idsEscopo.has(t.colaboradorId)),
-    [tarefas, idsEscopo],
+    () => tarefas.filter((t) => idsComInativos.has(t.colaboradorId)),
+    [tarefas, idsComInativos],
   );
 
   // Estatísticas de cabeçalho — mantém também os conjuntos de colaboradorIds

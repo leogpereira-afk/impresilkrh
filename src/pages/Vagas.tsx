@@ -16,8 +16,9 @@ import { useToast } from "@/components/ui/toast";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
+import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { cn } from "@/lib/cn";
-import { tempoDeCasa } from "@/lib/format";
+import { tempoDeCasa, diaLocalISO } from "@/lib/format";
 import type { Vaga, Candidato, StatusVaga, EtapaCandidato } from "@/data/types";
 
 const STATUS_VAGA: StatusVaga[] = ["Aberta", "Em triagem", "Fechada", "Cancelada"];
@@ -90,10 +91,14 @@ export default function Vagas() {
   const verCurriculo = async (c: Candidato) => {
     if (c.linkCurriculo) { window.open(c.linkCurriculo, "_blank", "noopener"); return; }
     if (c.curriculoArquivo) {
-      let dataUrl = await getBlob(`cv:${c.id}`); // cache local
-      if (!dataUrl) { dataUrl = await buscarArquivoNuvem(`cv:${c.id}`); if (dataUrl) void putBlob(`cv:${c.id}`, dataUrl); } // busca na nuvem e cacheia
-      if (dataUrl) { const w = window.open(); if (w) w.document.write(`<iframe src="${dataUrl}" style="width:100%;height:100%;border:0"></iframe>`); }
-      else toast("Currículo não encontrado (sem rede para baixar da nuvem?).", "erro");
+      // A janela tem de abrir DENTRO do clique: buscar o PDF na nuvem primeiro
+      // (são megabytes) estourava a ativação do gesto e o navegador bloqueava a
+      // aba — o botão não fazia nada e não dizia por quê.
+      await abrirAnexoEmNovaAba(async () => {
+        let dataUrl = await getBlob(`cv:${c.id}`); // cache local
+        if (!dataUrl) { dataUrl = await buscarArquivoNuvem(`cv:${c.id}`); if (dataUrl) void putBlob(`cv:${c.id}`, dataUrl); }
+        return dataUrl;
+      }, (m) => toast(m, "erro"), `Currículo — ${c.nome}`);
     }
   };
 
@@ -305,7 +310,9 @@ export default function Vagas() {
                 criarMov({
                   colaboradorId: anterior.colaboradorId,
                   tipo: "Promoção",
-                  data: new Date().toISOString().slice(0, 10),
+                  // Dia LOCAL: toISOString() às 21h (UTC-3) já devolve o dia
+                  // seguinte, e a promoção entrava no histórico datada de amanhã.
+                  data: diaLocalISO(new Date()),
                   descricao: `Venceu a disputa interna da vaga "${vaga?.titulo ?? ""}" (Mural de Vagas).`,
                   cargoAnterior: colab ? d.nomeCargo(colab) : null,
                   cargoNovo: vaga?.cargoId ? d.cargoById.get(vaga.cargoId)?.nome ?? null : null,

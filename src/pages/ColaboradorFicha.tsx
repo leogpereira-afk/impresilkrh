@@ -23,20 +23,22 @@ import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
 import { removerSenhaUsuario } from "@/lib/auth";
-import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData, diaLocalISO } from "@/lib/format";
-import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
+import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData, diaLocalISO, diasDeCalendario } from "@/lib/format";
+import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo, TIPOS_ENCARGO } from "@/lib/folha";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { comprimirImagem } from "@/lib/imagem";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
+import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { STATUS_FERIAS, CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
 import { vinculosDoColaborador } from "@/lib/vinculos";
+import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import type { Colaborador } from "@/data/types";
 
-const diasAte = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
+const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 
 // Confere os dois dígitos verificadores do CPF (mesma regra do cadastro
 // completo — a edição no lugar não pode ser a porta de entrada de CPF inválido).
@@ -379,10 +381,7 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
   const sExp = situacaoExperiencia(c);
   const vinc = vinculosDoColaborador(c.id);
 
-  const diasPara = (v?: string | null) => {
-    const dt = parseData(v);
-    return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN;
-  };
+  const diasPara = (v?: string | null) => diasDeCalendario(v, HOJE);
   const docsVencendo = meus(documentos).filter((x) => { const dd = diasPara(x.dataVencimento); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
   const nrsVencendo = meus(certificacoesNr).filter((x) => { const dd = diasPara(x.dataValidade); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
 
@@ -534,6 +533,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
   const d = useDominio();
   const toast = useToast();
   const { atualizar } = useColecao("colaboradores");
+  const { criar: criarMov } = useColecao("movimentacoes");
   const faixa = d.faixaColab(c);
 
   // ---------------------------------------------------------------------
@@ -558,6 +558,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
         enquadramento: cargoNovo && depois.salario != null ? enquadrar(depois.salario, cargoNovo.faixas) : null,
       }
       : patch);
+    if (mexeuNoDinheiro) registrarMovimentacaoDeCarreira(c, depois, d, criarMov);
   };
 
   // Edita quem é RH; os campos sensíveis exigem também poder VER o dado — não
@@ -915,7 +916,14 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const { items: viagens } = useColecao("viagens");
   const d = useDominio();
   const toast = useToast();
-  const meus = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id), [pagamentos, c.id]);
+  // FGTS e INSS existem por pessoa (o import e o Mubi criam um título para
+  // cada), mas são ENCARGO DA EMPRESA — a pessoa nunca viu esse dinheiro.
+  // Somados aqui, o "total recebido" do mês de uma rescisão inflava milhares de
+  // reais e o demonstrativo do colaborador ficava errado. Ficam de fora da
+  // conta e aparecem à parte, rotulados.
+  const todos = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id), [pagamentos, c.id]);
+  const meus = useMemo(() => todos.filter((p) => !TIPOS_ENCARGO.includes(p.tipo)), [todos]);
+  const encargos = useMemo(() => todos.filter((p) => TIPOS_ENCARGO.includes(p.tipo)), [todos]);
   // Competências disponíveis, da mais recente para a mais antiga.
   const comps = useMemo(() => competenciasDisponiveis(meus).slice().reverse(), [meus]);
   const [comp, setComp] = useState<string>("");
@@ -940,10 +948,12 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const anoSel = ano || anos[0] || String(HOJE.getFullYear());
   const doAno = useMemo(() => meus.filter((p) => p.competencia.startsWith(anoSel)), [meus, anoSel]);
   const porTipoAno = useMemo(() => somaPorTipo(doAno), [doAno]);
-  // Diárias de viagem do ano — também compõem o que o colaborador recebe.
+  // Diárias de viagem do ano — só as JÁ REALIZADAS. Excluir apenas as
+  // canceladas fazia uma viagem "Planejada" para dezembro entrar hoje no total
+  // recebido: dinheiro que ainda não saiu aparecia como pago.
   const diariasAno = useMemo(
     () => viagens
-      .filter((v) => v.colaboradorId === c.id && v.status !== "Cancelada" && parseData(v.dataInicio)?.getFullYear() === Number(anoSel))
+      .filter((v) => v.colaboradorId === c.id && (v.status === "Concluída" || v.status === "Em andamento") && parseData(v.dataInicio)?.getFullYear() === Number(anoSel))
       .reduce((a, v) => a + (v.valorTotal ?? 0), 0),
     [viagens, c.id, anoSel],
   );
@@ -952,7 +962,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
     return <EmptyState title="Informação restrita" description="Os dados financeiros do colaborador são visíveis apenas para o RH e para o próprio colaborador (LGPD)." icon={<Lock className="h-8 w-8" />} />;
   }
 
-  const salarioRef = c.salario ?? 0;
+  const salarioRef = c.salario ?? null; // sem "?? 0": não preenchido vira "—", não R$ 0,00
   if (meus.length === 0) {
     return (
       <div className="space-y-4">
@@ -974,7 +984,12 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
     ? meus.filter((p) => p.tipo === "Salário" || p.tipo === "Adiantamento").reduce((s, p) => s + p.valor, 0) / comps.length
     : 0;
   const tiposMes = new Set(doMes.map((p) => p.tipo));
-  const parcial = !tiposMes.has("Salário") || !tiposMes.has("Adiantamento");
+  // "Competência em andamento" só vale para o mês CORRENTE. Marcar qualquer mês
+  // sem Salário+Adiantamento como parcial acusava meses fechados há muito tempo
+  // de quem é pago por Estágio, Empreita ou Prestação de Serviços — pessoas que
+  // nunca terão nenhum dos dois tipos.
+  const competenciaCorrente = compSel === `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`;
+  const parcial = competenciaCorrente && (!tiposMes.has("Salário") || !tiposMes.has("Adiantamento"));
 
   // Resumo anual — derivados (não-hooks; os hooks já foram calculados acima).
   const totalAno = totalDe(doAno);
@@ -982,6 +997,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const mediaMesAno = mesesNoAno ? totalAno / mesesNoAno : 0;
   const serieAno = serie.filter((s) => s.competencia.startsWith(anoSel));
   const totalComDiarias = totalAno + diariasAno;
+  const encargosAno = encargos.filter((p) => p.competencia.startsWith(anoSel)).reduce((a, p) => a + p.valor, 0);
 
   const cargoNome = d.nomeCargo(c);
   const areaNome = d.nomeArea(c.areaId);
@@ -1165,6 +1181,14 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
                 </>
               )}
             </div>
+            {/* Encargo aparece, mas FORA do total: é custo da empresa com esta
+                pessoa, não dinheiro que ela recebeu. Somado junto, o "recebido"
+                de um mês de rescisão inflava milhares de reais. */}
+            {encargosAno > 0 && (
+              <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                <strong className="text-slate-700">{formatBRL(encargosAno)}</strong> em FGTS/INSS no ano — encargo da empresa, <strong>não</strong> entra no que a pessoa recebeu.
+              </p>
+            )}
           </div>
       </SecaoColapsavel>
 
@@ -1225,8 +1249,13 @@ function AbaDocumentos({ colaboradorId, podeEditar, sens, nome, pedido, onConsum
     if (!dataUrl) return true;
     const ok = await putBlob(`doc:${rec.id}`, dataUrl);
     if (ok) {
+      // Marca o blob JÁ — antes do envio à nuvem, que pode demorar ou morrer no
+      // meio (PDF de 8 MB em conexão ruim). Marcando só depois, fechar a aba no
+      // meio do upload deixava o arquivo no IndexedDB e o registro dizendo que
+      // não tinha anexo: blob órfão de um lado, documento mudo do outro.
+      atualizar(rec.id, { arquivoEmBlob: true });
       const subiu = await enviarArquivoNuvem(`doc:${rec.id}`, dataUrl);
-      atualizar(rec.id, { arquivoEmBlob: true, arquivoNaNuvem: subiu });
+      atualizar(rec.id, { arquivoNaNuvem: subiu });
       if (!subiu) toast("Anexo salvo neste computador; sem internet ele ainda não subiu para a nuvem. Abra o documento quando estiver online que ele sobe sozinho.", "info");
       return true;
     }
@@ -1268,11 +1297,12 @@ function AbaDocumentos({ colaboradorId, podeEditar, sens, nome, pedido, onConsum
       );
       return;
     }
-    const w = window.open();
-    if (w) w.document.write(`<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`);
+    // Aqui o dataUrl já está em mãos, mas o clique pode ter expirado durante o
+    // download da nuvem — a janela é aberta pelo mesmo caminho dos outros.
+    await abrirAnexoEmNovaAba(async () => dataUrl, (m) => toast(m, "erro"), doc.nome);
   };
   const excluirDoc = async (doc: import("@/data/types").Documento) => {
-    if (doc.arquivoEmBlob) await delBlob(`doc:${doc.id}`); // remove o blob antes do metadado (evita órfão)
+    await delBlob(`doc:${doc.id}`); // sempre (é idempotente): a flag pode ter ficado para trás
     remover(doc.id);
   };
 
@@ -1395,6 +1425,9 @@ function NovoDocumentoModal({ aberto, onFechar, colaboradorId, onCriar }: { aber
   const [salvando, setSalvando] = useState(false);
   const salvar = async () => {
     if (!nome.trim()) return toast("Informe o nome do documento.", "erro");
+    // Mesma trava da edição: vencimento antes da emissão cria um documento que
+    // já nasce vencido e passa a gritar no Resumo 360º para sempre.
+    if (emissao && vencimento && vencimento < emissao) return toast("O vencimento não pode ser anterior à emissão.", "erro");
     if (lendo) return toast("Aguarde o anexo terminar de carregar.", "info");
     setSalvando(true);
     try {
@@ -1672,8 +1705,12 @@ function PeriodoFeriasModal({ registro, inicial, onFechar, onSalvar }: {
   );
 }
 
+/** "N3" → 3, para saber se a promoção já aconteceu. */
+const grauNivel = (id?: string | null) => Number(String(id ?? "").replace(/\D/g, "")) || 0;
+
 function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
   const d = useDominio();
+  const nivelAtual = d.colabById.get(colaboradorId)?.nivelId ?? null;
   const cicloNome = useCicloAtivo();
   const { items: metas } = useColecao("metas");
   const { items: pdis } = useColecao("pdis");
@@ -1682,7 +1719,11 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
   const aval = avaliacoes.find((a) => a.colaboradorId === colaboradorId && a.tipo === "GESTOR");
   const minhasMetas = metas.filter((m) => m.colaboradorId === colaboradorId);
   const meusPdis = pdis.filter((p) => p.colaboradorId === colaboradorId);
-  const meusFb = feedbacks.filter((f) => f.colaboradorId === colaboradorId);
+  // Mais recente primeiro: a ordem crua misturava o que foi criado nesta
+  // máquina (entra no topo) com o que veio do servidor, e o card não mostrava
+  // data nenhuma — não dava para saber se o feedback era de ontem ou de 2023.
+  const meusFb = feedbacks.filter((f) => f.colaboradorId === colaboradorId)
+    .slice().sort((a, b) => (parseData(b.criadoEm)?.getTime() ?? 0) - (parseData(a.criadoEm)?.getTime() ?? 0));
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -1693,7 +1734,14 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
               <div className="flex justify-between"><span className="text-slate-500">Comportamental</span><span className="font-medium">{aval.notaComportamental}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Resultado</span><span className="font-medium">{aval.notaResultado}</span></div>
               <div className="flex justify-between border-t border-slate-100 pt-2"><span className="font-medium text-slate-700">Nota final</span><Badge variant={aval.statusDesempenho === "Apto" ? "success" : aval.statusDesempenho === "Não apto" ? "danger" : "warning"}>{aval.notaFinal} · {aval.statusDesempenho}</Badge></div>
-              {aval.elegivelPromocao && <div className="rounded bg-green-50 px-3 py-2 text-xs text-green-700">Elegível → {aval.proximoNivel}</div>}
+              {/* A elegibilidade é congelada quando a nota é lançada e ninguém
+                  a recalcula: depois de promovido, o selo continuava dizendo
+                  "Elegível → N3" para quem JÁ é N3. Compara com o nível atual. */}
+              {aval.elegivelPromocao && (
+                grauNivel(aval.proximoNivel) > grauNivel(nivelAtual)
+                  ? <div className="rounded bg-green-50 px-3 py-2 text-xs text-green-700">Elegível → {aval.proximoNivel}</div>
+                  : <div className="rounded bg-slate-50 px-3 py-2 text-xs text-slate-500">Promoção para {aval.proximoNivel} já efetivada.</div>
+              )}
             </div>
           ) : <EmptyState title="Sem avaliação" />}
       </SecaoColapsavel>
@@ -1714,7 +1762,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
       <SecaoColapsavel title="Feedbacks" bodyClassName="space-y-3">
           {meusFb.length === 0 ? <EmptyState title="Sem feedbacks" /> : meusFb.map((f) => (
             <div key={f.id} className="rounded-lg border border-slate-100 px-3 py-2">
-              <div className="mb-1 flex items-center justify-between"><Badge variant={f.tipo === "Positivo" ? "success" : f.tipo === "Desenvolvimento" ? "warning" : "info"}>{f.tipo}</Badge><span className="text-xs text-slate-400">{d.nomeColab(f.autorId)}</span></div>
+              <div className="mb-1 flex items-center justify-between gap-2"><Badge variant={f.tipo === "Positivo" ? "success" : f.tipo === "Desenvolvimento" ? "warning" : "info"}>{f.tipo}</Badge><span className="truncate text-xs text-slate-400">{d.nomeColab(f.autorId)}{f.criadoEm ? ` · ${formatDate(f.criadoEm)}` : ""}</span></div>
               <p className="text-sm text-slate-600">{f.conteudo}</p>
             </div>
           ))}
@@ -1725,7 +1773,11 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
 
 function AbaHistorico({ colaboradorId }: { colaboradorId: string }) {
   const { items } = useColecao("movimentacoes");
-  const lista = items.filter((m) => m.colaboradorId === colaboradorId).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  // Ordena por data saneada: `new Date("")` dá NaN, e comparador que devolve NaN
+  // faz o sort virar ordem indefinida — a linha do tempo inteira embaralhava por
+  // causa de um único registro sem data. Sem data vai para o fim.
+  const quando = (m: { data?: string | null }) => parseData(m.data)?.getTime() ?? -Infinity;
+  const lista = items.filter((m) => m.colaboradorId === colaboradorId).sort((a, b) => quando(b) - quando(a));
   return (
     <SecaoColapsavel title="Histórico de movimentações" icon={<History className="h-[18px] w-[18px]" />}>
         {lista.length === 0 ? <EmptyState title="Sem movimentações" /> : (

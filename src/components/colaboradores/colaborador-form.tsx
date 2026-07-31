@@ -6,6 +6,7 @@ import { useDominio, enquadrar } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
+import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
@@ -155,6 +156,9 @@ export function ColaboradorForm({
 
     if (editar) {
       atualizar(editar.id, dados);
+      // Mesmo registro que a edição no lugar faz: sem isto, promover pelo
+      // formulário grande continuava invisível na linha do tempo.
+      registrarMovimentacaoDeCarreira(editar, { ...editar, ...dados } as Colaborador, d, criarMov);
       toast("Colaborador atualizado.");
     } else {
       const novo = criar(dados);
