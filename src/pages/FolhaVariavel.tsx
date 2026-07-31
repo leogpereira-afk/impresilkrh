@@ -63,12 +63,22 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   const [expandidos, setExpandidos] = useState<Set<string>>(() => new Set());
   const alternarLinha = (id: string) =>
     setExpandidos((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [incluirInativos, setIncluirInativos] = useState(false);
 
+  const todos = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
+  const inativos = useMemo(() => todos.filter((c) => c.statusId === "inativo"), [todos]);
+  // Quem já tem verba lançada NESTE mês continua na lista mesmo depois de
+  // desligado: senão, ao desligar a pessoa, a linha sumia junto com o "Total do
+  // mês" e não havia mais como abrir o detalhe para exportar a folha da rescisão.
+  const comVerbaNoMes = useMemo(
+    () => new Set(lancamentos.filter((l) => l.competencia === competencia).map((l) => l.colaboradorId)),
+    [lancamentos, competencia],
+  );
   const escopo = useMemo(
-    () => colaboradoresVisiveis(sessao, d.colaboradores)
-      .filter((c) => c.statusId !== "inativo")
+    () => todos
+      .filter((c) => c.statusId !== "inativo" || incluirInativos || comVerbaNoMes.has(c.id))
       .sort((a, b) => a.nome.localeCompare(b.nome)),
-    [sessao, d.colaboradores],
+    [todos, incluirInativos, comVerbaNoMes],
   );
 
   const lancDe = (colId: string) => lancamentos.filter((l) => l.colaboradorId === colId && l.competencia === competencia);
@@ -96,19 +106,35 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
 
   return (
     <div>
+      {/* A verba NÃO soma ao ponto nem ao custo: vive só aqui até a contabilidade
+          pagar (e voltar como pagamento do ERP). O texto não pode prometer soma
+          que não existe — o RH acharia que o valor já está em algum total. */}
       {!embutido && (
         <PageHeader
           title="Folha Variável"
-          description="Verbas do mês por colaborador — hora extra, empreita, diária, bônus, comissão e limpeza. Some ao ponto e sai em PDF/Excel para a contabilidade."
+          description="Verbas do mês por colaborador — hora extra, empreita, diária, bônus, comissão e limpeza. Sai em PDF/Excel por pessoa para a contabilidade."
         />
       )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <span className="font-medium">Competência</span>
-          <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
-            className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
-        </label>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <span className="font-medium">Competência</span>
+            <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
+          </label>
+          {/* Rescisão: dá para lançar a verba de quem já saiu sem verba lançada. */}
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={incluirInativos}
+              onChange={(e) => setIncluirInativos(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+            />
+            Incluir inativos
+            {inativos.length > 0 && <span className="text-xs text-slate-400">({inativos.length})</span>}
+          </label>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           <StatCard label="Total do mês" value={formatBRL(totalGeral)} icon={<Coins className="h-4 w-4" />} onClick={() => alternarFoco("comVerba")} ativo={foco === "comVerba"} title="Ver só quem tem verba lançada no mês" />
           <StatCard label="Aprovados" value={`${aprovados}/${escopo.length}`} icon={<ShieldCheck className="h-4 w-4" />} onClick={() => alternarFoco("aprovados")} ativo={foco === "aprovados"} title="Ver só as folhas já aprovadas" />
@@ -154,6 +180,9 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
                             <button type="button" onClick={() => alternarLinha(c.id)} className="text-left font-medium text-slate-700 transition hover:text-brand hover:underline">
                               {c.nome}
                             </button>
+                            {c.statusId === "inativo" && (
+                              <Badge variant="neutral">Desligado{c.dataDesligamento ? ` em ${diaBR(c.dataDesligamento)}` : ""}</Badge>
+                            )}
                           </div>
                         </td>
                         <td className="td text-right tabular-nums font-medium text-slate-700">{tot > 0 ? formatBRL(tot) : "—"}</td>
@@ -297,6 +326,9 @@ function DetalheColaborador({
 }) {
   const [tipo, setTipo] = useState<TipoLancamento>("bonus");
   const [valor, setValor] = useState("");
+  // "O RH escolheu esse valor à mão" — não confundir com "o campo está preenchido":
+  // na edição o campo já vem preenchido pelo próprio sistema.
+  const [valorTocado, setValorTocado] = useState(false);
   const [dia, setDia] = useState("");
   const [descricao, setDescricao] = useState("");
   // Hora extra por relógio: início/fim viram minutos e o valor sai do salário.
@@ -312,11 +344,13 @@ function DetalheColaborador({
     [colaborador.salario, minutosHE, fatorHE],
   );
 
-  // Enquanto o RH não digita nada, o valor mostrado é o sugerido pelo cálculo.
-  const valorEfetivo = valor !== "" ? valor : (ehHoraExtra && minutosHE > 0 ? String(calcHE.valor).replace(".", ",") : "");
+  // Enquanto o RH não escolhe um valor à mão, o mostrado é o sugerido pelo
+  // cálculo — inclusive na edição, para que mudar o horário ou o adicional
+  // refaça o R$ em vez de manter o valor antigo com os minutos novos.
+  const valorEfetivo = valorTocado ? valor : (ehHoraExtra && minutosHE > 0 ? String(calcHE.valor).replace(".", ",") : valor);
 
   const limpar = () => {
-    setValor(""); setDescricao(""); setDia(""); setHoraInicio(""); setHoraFim("");
+    setValor(""); setValorTocado(false); setDescricao(""); setDia(""); setHoraInicio(""); setHoraFim("");
     setFatorHE(FATOR_HE_PADRAO); setEditando(null);
   };
 
@@ -332,6 +366,10 @@ function DetalheColaborador({
     setEditando(l);
     setTipo(l.tipo);
     setValor(String(l.valor).replace(".", ","));
+    // Se o valor gravado é o que o cálculo tinha sugerido, ele volta a ser
+    // sugestão (recalcula ao mexer no horário/adicional). Se foi ajustado à
+    // mão, segue como escolha do RH e não é sobrescrito.
+    setValorTocado(!(l.valorSugerido != null && Math.abs(l.valorSugerido - l.valor) < 0.01));
     setDia(l.data ?? "");
     setDescricao(l.descricao ?? "");
     setHoraInicio(l.horaInicio ?? "");
@@ -351,6 +389,13 @@ function DetalheColaborador({
       : { horaInicio: undefined, horaFim: undefined, minutos: undefined, fatorHE: undefined, valorSugerido: undefined };
 
     if (editando) {
+      // O lançamento pode ter sumido por outro caminho (sync, outra aba): gravar
+      // num id que não existe mais é silencioso e a tela dizia "atualizado".
+      if (!lancamentos.some((x) => x.id === editando.id)) {
+        toast("Esse lançamento foi removido — lance de novo.", "erro");
+        limpar();
+        return;
+      }
       onAtualizar(editando.id, { tipo, valor: v, data: dia || null, descricao: descricao.trim() || undefined, ...extras, atualizadoEm: agora });
       toast("Lançamento atualizado.");
     } else {
@@ -458,7 +503,9 @@ function DetalheColaborador({
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Campo label="Valor (R$)" hint={ehHoraExtra && minutosHE > 0 && !calcHE.semSalario ? "Sugerido pelo cálculo — pode alterar" : undefined}>
-                <Input inputMode="decimal" placeholder="0,00" value={valorEfetivo} onChange={(e) => setValor(e.target.value)} />
+                {/* Apagar o campo devolve a sugestão do cálculo (é o jeito de recalcular). */}
+                <Input inputMode="decimal" placeholder="0,00" value={valorEfetivo}
+                  onChange={(e) => { setValor(e.target.value); setValorTocado(e.target.value !== ""); }} />
               </Campo>
             </div>
 
@@ -570,6 +617,19 @@ function baixar(nome: string, blob: Blob) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+// A tela mostra horário/horas/adicional ao lado do tipo; quem lança hora extra
+// pelo relógio costuma deixar a descrição vazia, e o relatório chegava à
+// contabilidade com um valor sem nenhuma justificativa das horas.
+function descricaoExport(l: Lancamento): string {
+  if (!l.minutos) return l.descricao || "";
+  const adicional = l.fatorHE ? ADICIONAIS_HE.find((a) => a.fator === l.fatorHE)?.curto ?? "" : "";
+  const ajustado = l.valorSugerido != null && Math.abs(l.valorSugerido - l.valor) > 0.01
+    ? `ajustado (sugerido ${formatBRL(l.valorSugerido)})`
+    : "";
+  return [`${l.horaInicio}–${l.horaFim}`, minParaHora(l.minutos), adicional, ajustado, l.descricao]
+    .filter(Boolean).join(" · ");
+}
+
 async function exportarPdf(r: DadosRel) {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
@@ -585,7 +645,7 @@ async function exportarPdf(r: DadosRel) {
   autoTable(doc, {
     startY: 42,
     head: [["Dia", "Tipo", "Descrição", "Valor (R$)"]],
-    body: r.lancamentos.map((l) => [diaBR(l.data), labelTipo(l.tipo), l.descricao || "", formatBRL(l.valor)]),
+    body: r.lancamentos.map((l) => [diaBR(l.data), labelTipo(l.tipo), descricaoExport(l), formatBRL(l.valor)]),
     foot: [["", "", "TOTAL", formatBRL(r.total)]],
     headStyles: { fillColor: marinho },
     footStyles: { fillColor: [240, 243, 246], textColor: marinho, fontStyle: "bold" },
@@ -602,7 +662,7 @@ async function exportarPdf(r: DadosRel) {
 }
 
 function exportarExcel(r: DadosRel) {
-  const linhas = r.lancamentos.map((l) => `<tr><td>${diaBR(l.data)}</td><td>${labelTipo(l.tipo)}</td><td>${(l.descricao || "").replace(/</g, "")}</td><td style="text-align:right">${l.valor.toFixed(2).replace(".", ",")}</td></tr>`).join("");
+  const linhas = r.lancamentos.map((l) => `<tr><td>${diaBR(l.data)}</td><td>${labelTipo(l.tipo)}</td><td>${descricaoExport(l).replace(/</g, "")}</td><td style="text-align:right">${l.valor.toFixed(2).replace(".", ",")}</td></tr>`).join("");
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>
 <table border="1">
 <tr><td colspan="4" style="font-weight:bold;font-size:14px">${r.config.empresaNome || "Impresilk"} — Folha Variável — ${labelMes(r.competencia)}</td></tr>

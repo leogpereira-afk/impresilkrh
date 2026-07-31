@@ -14,7 +14,8 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData } from "@/lib/format";
-import { situacaoExperiencia } from "@/lib/clt";
+import { situacaoExperiencia, type SituacaoExperiencia } from "@/lib/clt";
+import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
 
@@ -35,6 +36,11 @@ const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDeslig
 // trabalhando: fica em card próprio e sai da conta de "ativos", senão o número
 // de quem está de fato produzindo aparece inflado.
 const ehAfastado = (c: Colaborador) => c.statusId === "afastado" && !ehInativo(c);
+
+// Dia de casa em que aparece a 1ª decisão do contrato de experiência (prorrogar
+// ou não, no marco dos 45 dias com a folga de 10 que clt.ts usa). Antes disso não
+// há o que decidir, então quem não foi marcado à mão ainda não entra no aviso.
+const DIAS_1O_MARCO_EXPERIENCIA = 35;
 
 function ThOrdenavel({
   campo, ordem, setOrdem, className, children,
@@ -68,7 +74,6 @@ export default function Colaboradores() {
   const sessao = useSessao();
   const d = useDominio();
   const [busca, setBusca] = useState("");
-  const [fArea, setFArea] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [mostrarInativos, setMostrarInativos] = useState(false); // padrão: só ativos
   const [novo, setNovo] = useState(false);
@@ -94,19 +99,30 @@ export default function Colaboradores() {
   const { items: ferias } = useColecao("ferias");
 
 
-  // Quem está em férias agora (usado nos cards e no filtro rápido).
+  // Quem está em férias agora (usado nos cards e no filtro rápido). Vem das
+  // DATAS do período, não do texto "Em andamento": esse texto é digitado à mão e
+  // ninguém volta para atualizá-lo, então ele contava quem já voltou e deixava
+  // de fora quem está fora hoje.
   const emFerias = useMemo(
-    () => new Set(ferias.filter((f) => f.status === "Em andamento").map((f) => f.colaboradorId)),
+    () => new Set(ferias.filter((f) => feriasEmCurso(f)).map((f) => f.colaboradorId)),
     [ferias],
   );
 
   // Quem está em contrato de experiência, do prazo mais curto para o mais longo
   // (quem vence antes aparece primeiro). Usa a regra da CLT que já existe.
+  //
+  // O aviso olhava SÓ quem foi marcado à mão com o status "Em experiência", mas o
+  // cadastro nasce como "Ativo": quem ninguém marcou nunca entrava aqui, mesmo com
+  // a ficha e o sino (que decidem pela data de admissão) já avisando sobre ele.
+  // Agora a data também vale — porém só a partir do 1º marco de decisão (35 dias,
+  // a mesma folga de clt.ts), para o bloco não virar alarme permanente com todo
+  // recém-admitido, que ainda não tem decisão nenhuma a tomar.
   const emExperiencia = useMemo(
     () => escopo
-      .filter((c) => !c.ehDirecao && !ehInativo(c) && c.statusId === "experiencia")
-      .map((c) => ({ c, sit: situacaoExperiencia(c) }))
-      .filter((x): x is { c: Colaborador; sit: NonNullable<ReturnType<typeof situacaoExperiencia>> } => !!x.sit)
+      .filter((c) => !c.ehDirecao && !ehInativo(c))
+      .map((c) => ({ c, sit: situacaoExperiencia(c), marcado: c.statusId === "experiencia" }))
+      .filter((x): x is { c: Colaborador; sit: SituacaoExperiencia; marcado: boolean } =>
+        !!x.sit && (x.marcado || x.sit.diasDeCasa >= DIAS_1O_MARCO_EXPERIENCIA))
       .sort((a, b) => a.sit.diasParaFim - b.sit.diasParaFim),
     [escopo],
   );
@@ -115,7 +131,6 @@ export default function Colaboradores() {
   const resumo = useMemo(() => {
     const base = escopo.filter((c) => !c.ehDirecao);
     return {
-      total: base.length,
       // "Ativo" = está trabalhando: sem afastamento e sem desligamento.
       ativos: base.filter((c) => !ehInativo(c) && !ehAfastado(c)).length,
       afastados: base.filter((c) => ehAfastado(c)).length,
@@ -193,7 +208,9 @@ export default function Colaboradores() {
         if (foco === "ferias") return !ehInativo(c) && emFerias.has(c.id);
         return mostrarInativos || !ehInativo(c);
       })
-      .filter((c) => (fArea ? c.areaId === fArea : true))
+      // Área tem um filtro só (os chips). O Select abaixo é outra porta para o
+      // MESMO estado — antes eram dois filtros somados em E, e escolher áreas
+      // diferentes nos dois zerava a lista sem explicar.
       .filter((c) => (chips.size ? !!c.areaId && chips.has(c.areaId) : true))
       .filter((c) => (fStatus ? c.statusId === fStatus : true))
       .filter((c) =>
@@ -205,7 +222,7 @@ export default function Colaboradores() {
           : true,
       )
       .sort(comparar);
-  }, [escopo, fArea, fStatus, busca, chips, mostrarInativos, foco, emFerias, d, comparar]);
+  }, [escopo, fStatus, busca, chips, mostrarInativos, foco, emFerias, d, comparar]);
 
   // Lista simples de nomes, agrupada por inicial (A, B, C…) — só os nomes, sem
   // cargo/setor. Usa a mesma lista já filtrada e ordenada alfabeticamente.
@@ -299,7 +316,7 @@ export default function Colaboradores() {
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {emExperiencia.map(({ c, sit }) => {
+            {emExperiencia.map(({ c, sit, marcado }) => {
               const urgente = sit.diasParaFim <= 15;
               const atencao = sit.diasParaFim <= 45;
               return (
@@ -317,6 +334,13 @@ export default function Colaboradores() {
                     <p className="text-[11px] text-slate-500">
                       {sit.diasDeCasa} dias de casa · {d.nomeCargo(c) || "—"}
                     </p>
+                    {/* Entrou pela data de admissão, não pelo status: avisa que a
+                        ficha ainda está como outro status, para o RH acertar. */}
+                    {!marcado && (
+                      <p className="truncate text-[10px] text-slate-400">
+                        pela data de admissão · status não está como “Em experiência”
+                      </p>
+                    )}
                   </div>
                   <div className="shrink-0 text-right">
                     <p className={cn("text-sm font-bold tabular-nums", urgente ? "text-red-700" : atencao ? "text-amber-700" : "text-slate-600")}>
@@ -337,22 +361,33 @@ export default function Colaboradores() {
       {/* Cards de resumo do quadro — clicáveis: filtram a lista abaixo */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {([
-          { key: "ativos", label: "Ativos", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
-          { key: "afastados", label: "Afastados", valor: resumo.afastados, icon: HeartPulse, cor: "text-orange-600", bg: "bg-orange-50" },
-          { key: "ferias", label: "Em férias", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
-          { key: "desligados", label: "Desligados", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
-        ] as const).map(({ key, label, valor, icon: Icon, cor, bg }) => {
+          { key: "ativos", label: "Ativos", nota: "", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
+          { key: "afastados", label: "Afastados", nota: "fora da conta de Ativos", valor: resumo.afastados, icon: HeartPulse, cor: "text-orange-600", bg: "bg-orange-50" },
+          // "Em férias" é um recorte de quem está ativo (férias não suspende o
+          // contrato): a nota avisa, senão parece que os cards se somam e a mesma
+          // pessoa aparece contada duas vezes.
+          { key: "ferias", label: "Em férias", nota: "já contados em Ativos", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
+          { key: "desligados", label: "Desligados", nota: "", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
+        ] as const).map(({ key, label, nota, valor, icon: Icon, cor, bg }) => {
           const ativoCard = foco === key;
+          // Card zerado não vira filtro: clicar só levaria à lista vazia.
+          const semNinguem = valor === 0;
           return (
             <button
               key={label}
               type="button"
               onClick={() => setFoco(ativoCard ? null : key)}
+              disabled={semNinguem}
               aria-pressed={ativoCard}
-              title={ativoCard ? "Clique para limpar o filtro" : `Filtrar por ${label.toLowerCase()}`}
+              title={
+                semNinguem ? "Ninguém nesta situação agora"
+                  : ativoCard ? "Clique para limpar o filtro"
+                    : `Filtrar por ${label.toLowerCase()}`
+              }
               className={cn(
                 "flex items-center gap-3 rounded-2xl border bg-white p-4 text-left shadow-soft transition",
-                ativoCard ? "border-brand ring-1 ring-brand/40" : "border-slate-200/70 hover:border-slate-300 hover:shadow-md",
+                ativoCard ? "border-brand ring-1 ring-brand/40" : "border-slate-200/70",
+                semNinguem ? "cursor-default opacity-70" : !ativoCard && "hover:border-slate-300 hover:shadow-md",
               )}
             >
               <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", bg)}>
@@ -361,6 +396,7 @@ export default function Colaboradores() {
               <div className="min-w-0">
                 <p className="text-2xl font-bold leading-none text-slate-800">{valor}</p>
                 <p className="mt-1 truncate text-xs text-slate-500">{label}{ativoCard && " · filtrando"}</p>
+                {nota && <p className="truncate text-[10px] text-slate-400">{nota}</p>}
               </div>
             </button>
           );
@@ -407,8 +443,16 @@ export default function Colaboradores() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input className="pl-9" placeholder="Buscar por nome, cargo, e-mail ou área…" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
-          <Select value={fArea} onChange={(e) => setFArea(e.target.value)} className="sm:w-56">
-            <option value="">Todas as áreas</option>
+          {/* Mesma seleção dos chips, em forma de lista: escolher uma área aqui
+              marca o chip dela; a 1ª opção limpa. Com mais de uma área marcada
+              nos chips, a lista mostra quantas são (não dá para representar
+              multi-seleção num Select simples). */}
+          <Select
+            value={chips.size === 1 ? [...chips][0] : ""}
+            onChange={(e) => setChips(e.target.value ? new Set([e.target.value]) : new Set())}
+            className="sm:w-56"
+          >
+            <option value="">{chips.size > 1 ? `Várias áreas (${chips.size}) · limpar` : "Todas as áreas"}</option>
             {areasNav.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
           </Select>
           <Select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="sm:w-44">

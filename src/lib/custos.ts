@@ -154,7 +154,10 @@ export function classificarPagamento(plano: string, desp: string): string {
 }
 const tipoDePlano = classificarPagamento; // alias usado pelo parsePagamentos
 
-function competenciaPagto(iso: string): string {
+// Regra de competência da folha: vencimento até o dia 15 pertence ao mês
+// ANTERIOR. Exportada porque a importação do ERP (mubiPagamentos.ts) precisa da
+// MESMA regra — duas cópias dela já fizeram o mesmo dinheiro cair em dois meses.
+export function competenciaPagto(iso: string): string {
   const [y, m, dd] = iso.split("-").map(Number);
   let yy = y, mm = m;
   if (dd <= 15) { mm = m - 1; if (mm === 0) { mm = 12; yy = y - 1; } }

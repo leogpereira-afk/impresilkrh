@@ -16,6 +16,7 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, parseData, diaLocalISO } from "@/lib/format";
 import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
+import { feriasEmCurso } from "@/lib/ferias";
 import { HOJE } from "@/data/_gen";
 import type { Ferias as TFerias, Colaborador } from "@/data/types";
 
@@ -97,10 +98,14 @@ export default function Ferias() {
     [ferias, idsEscopo],
   );
 
+  // "De férias agora" vem das DATAS (helper único em lib/ferias), não do texto
+  // "Em andamento": esse texto é digitado à mão e ninguém volta para avançá-lo,
+  // então contava quem já voltou e deixava de fora quem está fora hoje. Sem isso
+  // esta tela diria 0 enquanto a de Colaboradores diz 2, para a mesma pergunta.
   const deFeriasAgora = useMemo(
     () =>
       lista
-        .filter((f) => f.status === "Em andamento")
+        .filter((f) => feriasEmCurso(f))
         // registros sem data de retorno (NaN) vão para o fim, sem embaralhar a ordem.
         .sort((a, b) => {
           const da = diasAte(a.dataRetorno), db = diasAte(b.dataRetorno);
@@ -116,7 +121,7 @@ export default function Ferias() {
   const proximosRetornos = useMemo(
     () =>
       lista
-        .filter((f) => f.status === "Em andamento" && f.dataRetorno && diasAte(f.dataRetorno) >= 0)
+        .filter((f) => feriasEmCurso(f) && f.dataRetorno && diasAte(f.dataRetorno) >= 0)
         .sort((a, b) => diasAte(a.dataRetorno) - diasAte(b.dataRetorno)),
     [lista],
   );
@@ -130,6 +135,9 @@ export default function Ferias() {
   const tabela = useMemo(() => {
     const base =
       foco === "alertas" ? lista.filter((f) => alertaCLT(f) !== null)
+      // "agora" tem chave própria porque não é um status: é o cálculo por datas
+      // do card. Filtrar por texto aqui mostraria uma lista diferente do número.
+      : foco === "agora" ? lista.filter((f) => feriasEmCurso(f))
       : foco ? lista.filter((f) => f.status === foco)
       : lista;
     return [...base].sort((a, b) => d.nomeColab(a.colaboradorId).localeCompare(d.nomeColab(b.colaboradorId)));
@@ -251,7 +259,7 @@ export default function Ferias() {
       </PageHeader>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="De férias agora" value={deFeriasAgora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Em andamento" onClick={() => alternarFoco("Em andamento")} ativo={foco === "Em andamento"} title="Filtrar o controle de férias por quem está de férias agora" />
+        <StatCard label="De férias agora" value={deFeriasAgora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Período em curso hoje" onClick={() => alternarFoco("agora")} ativo={foco === "agora"} title="Filtrar o controle de férias por quem está de férias agora" />
         <StatCard label="Agendadas" value={agendadas.length} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Gozo programado" onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Filtrar o controle de férias pelas agendadas" />
         <StatCard label="Em aberto" value={emAberto.length} icon={<CalendarPlus className="h-5 w-5" />} accent="amber" hint="Saldo a programar" onClick={() => alternarFoco("Em aberto")} ativo={foco === "Em aberto"} title="Filtrar o controle de férias pelas em aberto" />
         <StatCard label="Alertas CLT" value={alertasCLT.length} icon={<ShieldAlert className="h-5 w-5" />} accent={alertasCLT.length ? "red" : "green"} hint="Períodos a vencer/vencidos" onClick={() => alternarFoco("alertas")} ativo={foco === "alertas"} title="Filtrar o controle de férias pelos períodos vencidos/a vencer" />
@@ -354,7 +362,13 @@ export default function Ferias() {
         <CardHeader title="Controle de férias" subtitle={`${tabela.length} registro(s) no seu escopo`} icon={<Palmtree className="h-[18px] w-[18px]" />} />
         {tabela.length === 0 ? (
           <CardBody>
-            <EmptyState title="Sem registros de férias" description="Nenhum período de férias no seu escopo de acesso." icon={<Palmtree className="h-8 w-8" />} />
+            {/* Card de valor zero também é clicável: sem este aviso a tela diria
+                que não há férias nenhuma com a lista cheia por trás do filtro. */}
+            <EmptyState
+              title={foco ? "Nenhum registro neste filtro" : "Sem registros de férias"}
+              description={foco ? "Clique de novo no cartão para ver todos os períodos." : "Nenhum período de férias no seu escopo de acesso."}
+              icon={<Palmtree className="h-8 w-8" />}
+            />
           </CardBody>
         ) : (
           <div className="overflow-x-auto">

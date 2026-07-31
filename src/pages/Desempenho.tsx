@@ -1649,7 +1649,7 @@ function AbaPesquisas() {
         <StatCard label="Ativas" value={ativas} icon={<ClipboardCheck className="h-5 w-5" />} accent="green"
           title="Mostrar só o que está ativo" ativo={foco === "Ativa"} onClick={() => alternarFoco("Ativa")} />
         <StatCard label="Total" value={pesquisas.length} icon={<MessageSquare className="h-5 w-5" />} accent="blue"
-          title="Ver tudo (limpar o filtro)" onClick={() => setFoco(null)} />
+          title="Ver tudo (limpar o filtro)" ativo={foco === null} onClick={() => setFoco(null)} />
         <StatCard label="eNPS" value={enpsGeral ? `${enpsGeral.score > 0 ? "+" : ""}${enpsGeral.score}` : "—"} hint={enpsGeral ? `${enpsGeral.total} resposta(s)` : "sem respostas"} icon={<Gauge className="h-5 w-5" />} accent={enpsGeral ? (enpsGeral.score >= 0 ? "green" : "red") : "blue"} />
       </div>
 
@@ -1663,7 +1663,13 @@ function AbaPesquisas() {
         />
         <CardBody>
           {surveysVisiveis.length === 0 ? (
-            <EmptyState title="Nenhuma pesquisa" description="Crie pesquisas de clima, eNPS e pulse com suas perguntas." icon={<ClipboardList className="h-8 w-8" />} />
+            /* Com o cartão "Ativas" ligado o vazio pode ser do filtro — dizer que
+               não há pesquisa nenhuma esconderia as que estão em rascunho. */
+            <EmptyState
+              title={foco === "Ativa" ? "Nenhuma pesquisa ativa" : "Nenhuma pesquisa"}
+              description={foco === "Ativa" ? "Clique de novo no cartão “Ativas” para ver todas as pesquisas." : "Crie pesquisas de clima, eNPS e pulse com suas perguntas."}
+              icon={<ClipboardList className="h-8 w-8" />}
+            />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {surveysVisiveis.map((p) => (
@@ -1685,7 +1691,11 @@ function AbaPesquisas() {
         />
         <CardBody>
           {dinamicasVisiveis.length === 0 ? (
-            <EmptyState title="Nenhuma dinâmica" description="Cadastre dinâmicas com o roteiro da atividade." icon={<Sparkles className="h-8 w-8" />} />
+            <EmptyState
+              title={foco === "Ativa" ? "Nenhuma dinâmica ativa" : "Nenhuma dinâmica"}
+              description={foco === "Ativa" ? "Clique de novo no cartão “Ativas” para ver todas as dinâmicas." : "Cadastre dinâmicas com o roteiro da atividade."}
+              icon={<Sparkles className="h-8 w-8" />}
+            />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {dinamicasVisiveis.map((p) => (

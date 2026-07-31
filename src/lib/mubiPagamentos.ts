@@ -13,6 +13,7 @@
 // guardado e resolve o mesmo nome nos meses seguintes.
 // ============================================================================
 import { supabase, FN_MUBI_PAGAMENTOS } from "@/lib/supabase";
+import { competenciaPagto } from "@/lib/custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 
 export interface LinhaMubi {
@@ -108,8 +109,20 @@ export function casarColaborador(
   return candidatos.length === 1 ? candidatos[0] : null;
 }
 
-/** Competência de um pagamento: o mês do VENCIMENTO, como já era na planilha. */
-export const competenciaDe = (l: LinhaMubi) => (l.dataVencimento || "").slice(0, 7);
+/**
+ * Competência de um pagamento — a MESMA regra da planilha: vencimento até o dia
+ * 15 conta para o mês anterior (`competenciaPagto`, em custos.ts).
+ *
+ * Antes aqui era `slice(0, 7)` (o mês do vencimento cru). Como 63% da folha
+ * vence até o dia 15, o ERP jogava esses lançamentos um mês à frente do que já
+ * estava gravado, e a conciliação os via como NOVOS: o mesmo dinheiro contado
+ * em dois meses. A regra mora em UM lugar só; não copiar para cá.
+ */
+export const competenciaDe = (l: LinhaMubi) => {
+  const venc = (l.dataVencimento || "").slice(0, 10);
+  // Título sem vencimento não tem competência (competenciaPagto quebraria no split).
+  return /^\d{4}-\d{2}-\d{2}$/.test(venc) ? competenciaPagto(venc) : "";
+};
 
 /** Monta o registro da coleção "pagamentos" a partir da linha do ERP. */
 export function montarPagamento(l: LinhaMubi, colaboradorId: string): Pagamento {

@@ -11,6 +11,7 @@ import { parseData } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import { JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
+import { feriasEmCurso } from "@/lib/ferias";
 
 export type SeveridadeNotif = "alta" | "media" | "baixa";
 export type CategoriaNotif = "documento" | "nr" | "avaliacao" | "ferias" | "experiencia" | "aniversario";
@@ -48,7 +49,19 @@ export function useNotificacoes(): Notificacao[] {
     const ids = new Set(escopo.map((c) => c.id));
     const nomeById = new Map(colaboradores.map((c) => [c.id, c.nome]));
     const nome = (id: string) => nomeById.get(id) ?? "—";
-    const ativos = escopo.filter((c) => c.statusId === "ativo");
+    // Quem está TRABALHANDO — não só o status "ativo".
+    //
+    // Filtrar por statusId === "ativo" deixava justamente o contrato de
+    // EXPERIÊNCIA sem aviso: quem é marcado como "Em experiência" sumia do sino,
+    // que é onde o prazo de 45/90 dias deveria gritar (perder os 90 dias
+    // transforma o contrato em indeterminado e desligar passa a custar aviso
+    // prévio e multa do FGTS). Aviso prévio também entra: o contrato ainda corre
+    // e as pendências precisam ser resolvidas ANTES da saída.
+    //
+    // Afastado (INSS/licença) fica de fora de propósito: não está trabalhando, e
+    // cobrar exame, treinamento ou avaliação de quem está afastado é ruído.
+    const TRABALHANDO = new Set(["ativo", "experiencia", "aviso"]);
+    const ativos = escopo.filter((c) => TRABALHANDO.has(c.statusId ?? "") && !c.dataDesligamento);
     const out: Notificacao[] = [];
 
     // Documentos a vencer / vencidos
@@ -95,7 +108,9 @@ export function useNotificacoes(): Notificacao[] {
     // Férias em andamento ou começando em até 7 dias
     for (const f of ferias) {
       if (!ids.has(f.colaboradorId)) continue;
-      if (f.status === "Em andamento") {
+      // "Está de férias" é decidido pelas DATAS (lib/ferias). Pelo texto do
+      // status, o sino avisava de quem já voltou e calava sobre quem está fora.
+      if (feriasEmCurso(f)) {
         out.push({ id: `fer-${f.id}`, categoria: "ferias", severidade: "baixa", titulo: `${nome(f.colaboradorId)} está de férias`, descricao: "Período em andamento", href: "/ferias" });
       } else if (f.dataInicio) {
         const dd = diasAte(f.dataInicio);

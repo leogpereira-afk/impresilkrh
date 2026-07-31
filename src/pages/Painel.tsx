@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree, Cake,
   AlertTriangle, CalendarClock, Award, Target, Laugh, Brain, PartyPopper,
@@ -21,6 +21,7 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
 import { formatBRL, formatPercent, formatDate, parseData, MESES_PT } from "@/lib/format";
 import { somaPorTipo, serieMensal, corDoTipo, totalDe } from "@/lib/folha";
+import { feriasEmCurso } from "@/lib/ferias";
 import { ARQUETIPOS, COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
@@ -131,9 +132,12 @@ export default function Painel() {
   const nrsAlerta = certificacoesNr.filter((c) => ids.has(c.colaboradorId) && c.dataValidade && dias(c.dataValidade) <= JANELA_ALERTA_DIAS);
   const nrsVencidas = nrsAlerta.filter((c) => dias(c.dataValidade!) < 0);
 
-  const feriasAtivas = ferias.filter((f) => ids.has(f.colaboradorId) && f.status === "Em andamento");
+  // Quem está de férias HOJE sai das datas do período (lib/ferias), não do texto
+  // "Em andamento" — ninguém volta na tela para avançar esse texto, então ele
+  // contava quem já retornou e ignorava quem está fora agora.
+  const feriasAtivas = ferias.filter((f) => ids.has(f.colaboradorId) && feriasEmCurso(f));
   const proximosRetornos = ferias
-    .filter((f) => ids.has(f.colaboradorId) && f.status === "Em andamento" && f.dataRetorno && dias(f.dataRetorno) >= 0)
+    .filter((f) => ids.has(f.colaboradorId) && feriasEmCurso(f) && f.dataRetorno && dias(f.dataRetorno) >= 0)
     .sort((a, b) => dias(a.dataRetorno) - dias(b.dataRetorno));
 
   const cicloAvaliados = new Set(avaliacoes.filter((a) => a.tipo === "GESTOR").map((a) => a.colaboradorId));
@@ -794,6 +798,7 @@ export default function Painel() {
 function PainelPessoal() {
   const sessao = useSessao();
   const d = useDominio();
+  const navigate = useNavigate();
   const cicloNome = useCicloAtivo();
   const { items: vagas } = useColecao("vagas");
   const { items: documentos } = useColecao("documentos");
@@ -840,13 +845,18 @@ function PainelPessoal() {
         );
       })()}
 
-      {/* Estes 4 ficam sem clique de propósito: são dados do próprio usuário — não há
-          lista nesta tela para filtrar nem outras pessoas por trás do número. */}
+      {/* Os 3 primeiros ficam sem clique de propósito: são dados do próprio usuário — não há
+          lista nesta tela para filtrar nem outras pessoas por trás do número. Já "Documentos a
+          vencer" é uma CONTAGEM de itens, então leva direto à aba onde eles estão listados. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Cargo" value={<span className="text-base">{d.nomeCargo(c)}</span>} icon={<Users className="h-5 w-5" />} accent="brand" hint={`Nível ${d.nomeNivel(c.nivelId)}`} />
         <StatCard label="Saldo de férias" value={`${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={feriasAtiva ? feriasAtiva.status : "Em aberto"} />
         <StatCard label="Nota da avaliação" value={minhaAval?.notaFinal ?? "—"} icon={<Award className="h-5 w-5" />} accent="gold" hint={minhaAval?.statusDesempenho ?? "Sem avaliação"} />
-        <StatCard label="Documentos a vencer" value={meusDocsAlerta.length} icon={<FileWarning className="h-5 w-5" />} accent={meusDocsAlerta.length ? "amber" : "green"} />
+        <StatCard
+          label="Documentos a vencer" value={meusDocsAlerta.length} icon={<FileWarning className="h-5 w-5" />} accent={meusDocsAlerta.length ? "amber" : "green"}
+          title="Ver meus documentos e vencimentos"
+          onClick={() => navigate("/meu-perfil?tab=docs")}
+        />
       </div>
 
       {meusPagamentos.length > 0 && (

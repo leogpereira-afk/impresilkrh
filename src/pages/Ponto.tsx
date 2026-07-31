@@ -18,7 +18,7 @@ import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
+import { colaboradoresVisiveis, ehRH, podeGerir } from "@/lib/rbac";
 import { formatDate, formatNumber, formatPercent, formatBRL, diaLocalISO } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { calcularHoraExtra, calcularFalta, horasDecimais } from "@/lib/pontoFolha";
@@ -27,7 +27,7 @@ import { GlossarioComportamental } from "@/components/comportamental/glossario";
 import { Link } from "react-router-dom";
 import { HOJE, slug } from "@/data/_gen";
 import type { Colaborador, Ponto, PontoDia, SituacaoDia } from "@/data/types";
-import { lerPontoPdf, minParaHora, horaParaMin, type PontoImportado } from "@/lib/pontoImport";
+import { lerPontoPdf, minParaHora, horaParaMin, type PontoImportado, type PontoLinha } from "@/lib/pontoImport";
 import FolhaVariavel from "@/pages/FolhaVariavel";
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -57,6 +57,13 @@ const COR_TIPO_AUS: Record<string, string> = {
 const TIPOS_AUSENCIA = ["Falta", "Atraso", "Atestado", "Falta justificada", "Saída antecipada"] as const;
 
 const primeiroNome = (nome: string) => nome.split(" ")[0];
+
+// Quem é a ficha dentro do mês: o colaborador vinculado ou, sem vínculo, o nome
+// do PDF. É esta chave que forma o id da ficha (`competência::chave`) — duas
+// linhas da mesma importação com a MESMA chave virariam dois registros com o
+// mesmo id, e a partir daí corrigir ou remover um mexeria nos dois.
+const chavePonto = (l: { colaboradorId?: string | null; nomePdf: string }) =>
+  l.colaboradorId || `pdf-${slug(l.nomePdf)}`;
 
 // --- Extrato do ponto: rótulos e cores por situação do dia --------------------
 const SIT_LABEL: Record<SituacaoDia, string> = {
@@ -232,6 +239,7 @@ type Drill = ReturnType<typeof useDrill>;
 // =====================================================================================
 function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const d = useDominio();
+  const sessao = useSessao();
   const config = useConfig();
   const toast = useToast();
   const { items: pontos, criar, atualizar, remover } = useColecao("pontos");
@@ -253,7 +261,15 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const toggleExp = (id: string) =>
     setExpandido((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const colOpts = useMemo(() => d.colaboradores.map((c) => ({ id: c.id, nome: c.nome })), [d.colaboradores]);
+  // Escopo do perfil — as abas irmãs desta tela (Advertências/Absenteísmo) já
+  // respeitam o RBAC; aqui o gestor via, exportava e mexia no ponto da empresa
+  // inteira. NÃO se filtra por status: quem foi desligado ou afastado no meio da
+  // competência precisa continuar aparecendo na apuração daquele mês.
+  const visiveisRbac = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
+  const idsRbac = useMemo(() => new Set(visiveisRbac.map((c) => c.id)), [visiveisRbac]);
+  const souRH = ehRH(sessao);
+
+  const colOpts = useMemo(() => visiveisRbac.map((c) => ({ id: c.id, nome: c.nome })), [visiveisRbac]);
   // Devolve null (e não o id cru) quando o colaborador saiu do cadastro — assim
   // quem chama consegue cair no nome do PDF em vez de imprimir um id no relatório.
   const nomeColab = (id: string | null | undefined) => (id ? (d.colaboradores.find((c) => c.id === id)?.nome ?? null) : null);
@@ -276,7 +292,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       const linhas = r.linhas.map((l) => {
         if (l.colaboradorId) return l;
         const id = vinc[chaveNome(l.nomePdf)];
-        if (!id || !d.colaboradores.some((c) => c.id === id)) return l;
+        // Só reaplica vínculo para quem este perfil enxerga — senão a linha
+        // ficaria presa num id que nem aparece na lista de escolha.
+        if (!id || !idsRbac.has(id)) return l;
         reaproveitados++;
         return { ...l, colaboradorId: id, colaboradorNome: nomeColab(id) };
       });
@@ -302,9 +320,20 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     setPrevia({ ...previa, linhas: previa.linhas.map((l, j) => (j === i ? { ...l, colaboradorId: colId || null, colaboradorNome: nomeColab(colId) } : l)) });
   };
 
+  // Índice da PRIMEIRA linha que usa cada chave. Serve para apontar na tela qual
+  // linha repetiu quem — e para travar a importação enquanto houver repetição.
+  const primeiraLinhaDe = useMemo(() => {
+    const m = new Map<string, number>();
+    (previa?.linhas ?? []).forEach((l, i) => { const k = chavePonto(l); if (!m.has(k)) m.set(k, i); });
+    return m;
+  }, [previa]);
+  const linhaRepetida = (l: PontoLinha, i: number) => primeiraLinhaDe.get(chavePonto(l)) !== i;
+  const linhasRepetidas = (previa?.linhas ?? []).filter(linhaRepetida).length;
+
   const importar = () => {
     if (!previa) return;
     if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano).", "erro"); return; }
+    if (linhasRepetidas > 0) { toast("Duas linhas estão vinculadas à mesma pessoa — corrija antes de importar.", "erro"); return; }
     // Reimportar sobrescreve as fichas do mês. Se já havia ponto gravado nessa
     // competência (inclusive correções feitas à mão), avisa antes de trocar.
     const jaExistem = pontos.filter((p) => p.competencia === competencia).length;
@@ -319,8 +348,12 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     const agora = new Date().toISOString();
     let n = 0;
     let duplicadasRemovidas = 0;
+    // `pontos` é a fotografia do último render e NÃO muda dentro do laço: sem
+    // este conjunto, duas linhas com o mesmo id cairiam as duas em `criar` e o
+    // mês ficaria com dois registros de id idêntico.
+    const gravados = new Set(pontos.map((p) => p.id));
     for (const l of previa.linhas) {
-      const chave = l.colaboradorId || `pdf-${slug(l.nomePdf)}`;
+      const chave = chavePonto(l);
       const id = `${competencia}::${chave}`;
       const rec = {
         id, competencia, colaboradorId: l.colaboradorId, nomePdf: l.nomePdf,
@@ -329,7 +362,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         periodoInicio: previa.periodoInicio ?? null, periodoFim: previa.periodoFim ?? null,
         importadoEm: agora, atualizadoEm: agora,
       };
-      if (pontos.some((p) => p.id === id)) atualizar(id, rec); else criar(rec);
+      if (gravados.has(id)) atualizar(id, rec); else { criar(rec); gravados.add(id); }
 
       // NÃO LANÇAR DE NOVO O QUE JÁ ESTÁ LANÇADO: a mesma pessoa pode já ter uma
       // ficha no mês com OUTRO id — porque o vínculo mudou (pdf-nome ↔ cadastro)
@@ -341,7 +374,10 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         p.id !== id && p.competencia === competencia &&
         ((!!l.colaboradorId && p.colaboradorId === l.colaboradorId) ||
          chaveNome(p.nomePdf) === chaveNome(l.nomePdf));
-      for (const antigo of pontos.filter(mesmaPessoa)) { remover(antigo.id); duplicadasRemovidas++; }
+      // Sai do conjunto também: se uma linha seguinte cair justamente nesse id,
+      // ela precisa CRIAR de novo — `atualizar` num registro já removido não
+      // grava nada e o ponto da pessoa sumiria em silêncio.
+      for (const antigo of pontos.filter(mesmaPessoa)) { remover(antigo.id); gravados.delete(antigo.id); duplicadasRemovidas++; }
       n++;
     }
     toast(
@@ -363,16 +399,24 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     return !!c && (!!c.naoBatePonto || c.statusId === "afastado");
   };
 
+  // Fichas que este perfil pode ver. A ficha SEM vínculo fica só para o RH: sem
+  // o cadastro não dá para saber de quem ela é, então não cabe no escopo de um
+  // gestor. (O laço da importação continua olhando `pontos` inteiro — senão a
+  // gravação duplicaria fichas que o usuário não enxerga.)
+  const pontosNoEscopo = useMemo(
+    () => pontos.filter((p) => (p.colaboradorId ? idsRbac.has(p.colaboradorId) : souRH)),
+    [pontos, idsRbac, souRH],
+  );
   const doMesTodos = useMemo(
-    () => pontos.filter((p) => p.competencia === competencia)
+    () => pontosNoEscopo.filter((p) => p.competencia === competencia)
       .sort((a, b) => (nomeColab(a.colaboradorId) || a.nomePdf).localeCompare(nomeColab(b.colaboradorId) || b.nomePdf)),
-    [pontos, competencia], // eslint-disable-line react-hooks/exhaustive-deps
+    [pontosNoEscopo, competencia], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const doMes = useMemo(() => doMesTodos.filter((p) => !naoBate(p)), [doMesTodos, d.colabById]); // eslint-disable-line react-hooks/exhaustive-deps
   const semControle = useMemo(() => doMesTodos.filter(naoBate), [doMesTodos, d.colabById]); // eslint-disable-line react-hooks/exhaustive-deps
   const totExtras = doMes.reduce((s, p) => s + (p.extrasMin || 0), 0);
   const totFaltas = doMes.reduce((s, p) => s + (p.faltasMin || 0), 0);
-  const comps = useMemo(() => [...new Set(pontos.map((p) => p.competencia))].sort().reverse(), [pontos]);
+  const comps = useMemo(() => [...new Set(pontosNoEscopo.map((p) => p.competencia))].sort().reverse(), [pontosNoEscopo]);
 
   // A aba abria sempre com a competência vazia e mostrava "Nada importado ainda"
   // mesmo com o mês inteiro gravado — parecia que o ponto tinha sumido. Ao
@@ -430,7 +474,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   // Quem não bate ponto (comissão/externo/direção): fica fora da conferência.
   const { atualizar: atualizarColab } = useColecao("colaboradores");
   const [gerNaoBate, setGerNaoBate] = useState(false);
-  const naoBatem = useMemo(() => d.colaboradores.filter((c) => c.naoBatePonto), [d.colaboradores]);
+  const naoBatem = useMemo(() => visiveisRbac.filter((c) => c.naoBatePonto), [visiveisRbac]);
 
   // Conferência: quem do cadastro (ativo, não-direção, que bate ponto) NÃO veio no PDF.
   const presentesIds = useMemo(
@@ -438,12 +482,12 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     [doMes],
   );
   const faltandoNoPonto = useMemo(
-    () => d.colaboradores
+    () => visiveisRbac
       // Afastado (INSS, licença) não bate ponto por definição — cobrar a ficha
       // dele seria ruído todo mês.
       .filter((c) => !c.ehDirecao && !c.naoBatePonto && c.statusId !== "inativo" && c.statusId !== "afastado" && !presentesIds.has(c.id))
       .sort((a, b) => a.nome.localeCompare(b.nome)),
-    [d.colaboradores, presentesIds],
+    [visiveisRbac, presentesIds],
   );
 
   // Expandir/recolher todos os extratos (modo Tudo) — para varrer o mês inteiro.
@@ -453,12 +497,12 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const novosFuncionarios = useMemo(() => {
     const m = /^(\d{4})-(\d{2})$/.exec(competencia || "");
     if (!m) return [];
-    return d.colaboradores
+    return visiveisRbac
       .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
       .filter((c) => String(c.dataAdmissao ?? "").slice(0, 7) === competencia)
       .sort((a, b) => a.nome.localeCompare(b.nome))
       .map((c) => `${c.nome} — admitido em ${diaData(c.dataAdmissao)}`);
-  }, [d.colaboradores, competencia]);
+  }, [visiveisRbac, competencia]);
 
 
   // A apuração exporta EXATAMENTE o que a tabela mostra — antes exportava o mês
@@ -528,30 +572,64 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {previa.linhas.map((l, i) => (
-                    <tr key={i} className={l.colaboradorId ? "" : "bg-amber-50/50"}>
+                  {previa.linhas.map((l, i) => {
+                    const repetida = linhaRepetida(l, i);
+                    const linhaDono = (primeiraLinhaDe.get(chavePonto(l)) ?? 0) + 1;
+                    return (
+                    <tr key={i} className={cn(repetida && "bg-red-50/70", !repetida && !l.colaboradorId && "bg-amber-50/50")}>
                       <td className="td text-slate-700">{l.nomePdf}</td>
                       <td className="td">
-                        {l.colaboradorId ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700"><CheckCircle2 className="h-3.5 w-3.5" /> {nomeColab(l.colaboradorId)}</span>
-                        ) : (
-                          <Select value="" onChange={(e) => definirColab(i, e.target.value)} className="min-w-[180px] text-xs">
-                            <option value="">⚠️ Vincular a…</option>
-                            {colOpts.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                          </Select>
-                        )}
+                        {/* O vínculo fica SEMPRE num select: escolher a pessoa errada
+                            deixava a célula travada num selo verde, e a única saída
+                            era cancelar e ler o PDF de novo. */}
+                        <Select
+                          value={l.colaboradorId ?? ""}
+                          onChange={(e) => definirColab(i, e.target.value)}
+                          className={cn("min-w-[180px] text-xs", repetida && "border-red-400")}
+                        >
+                          <option value="">⚠️ sem vínculo — escolher…</option>
+                          {colOpts.map((c) => {
+                            const usadaEm = primeiraLinhaDe.get(c.id);
+                            return (
+                              <option key={c.id} value={c.id}>
+                                {c.nome}{usadaEm != null && usadaEm !== i ? ` (já usado na linha ${usadaEm + 1})` : ""}
+                              </option>
+                            );
+                          })}
+                        </Select>
+                        {repetida ? (
+                          <p className="mt-1 text-[11px] font-medium text-red-600">
+                            Já vinculado na linha {linhaDono} — corrija antes de importar.
+                          </p>
+                        ) : l.colaboradorId ? (
+                          <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-green-700"><CheckCircle2 className="h-3 w-3" /> {nomeColab(l.colaboradorId) || l.nomePdf}</p>
+                        ) : null}
                       </td>
                       <td className="td text-right tabular-nums text-slate-600">{l.normaisTxt || "—"}</td>
                       <td className={`td text-right tabular-nums ${l.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-400"}`}>{l.faltasTxt || "—"}</td>
                       <td className={`td text-right tabular-nums ${l.extrasMin > 0 ? "font-medium text-brand" : "text-slate-400"}`}>{l.extrasTxt || "—"}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+            {linhasRepetidas > 0 && (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+                {linhasRepetidas} linha(s) apontam para alguém que já está em outra linha. Duas fichas da mesma pessoa no mesmo mês viram um registro só, e o ponto de uma delas se perde — ajuste o vínculo das linhas em vermelho.
+              </p>
+            )}
             <div className="mt-4 flex items-center justify-end gap-2">
               <button onClick={() => { setPrevia(null); if (fileRef.current) fileRef.current.value = ""; }} className="btn-outline">Cancelar</button>
-              <button onClick={importar} className="btn-primary"><CheckCircle2 className="h-4 w-4" /> Importar {previa.linhas.length} para {labelMes(competencia)}</button>
+              <button
+                onClick={importar}
+                disabled={linhasRepetidas > 0}
+                title={linhasRepetidas > 0 ? "Corrija os vínculos repetidos antes de importar" : undefined}
+                className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-4 w-4" /> Importar {previa.linhas.length} para {labelMes(competencia)}
+              </button>
             </div>
           </CardBody>
         </Card>
@@ -560,18 +638,28 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       {/* Ponto já importado da competência */}
       {!previa && (
         <Card>
+          {/* O ponto NÃO alimenta a tela de Custos: nenhuma outra tela lê esta
+              coleção. O que ele alimenta é a conferência, a apuração enviada à
+              contabilidade e o "reflexo na folha" da ficha do colaborador — o
+              subtítulo dizia "somam no custo mensal", o que nunca foi verdade. */}
           <CardHeader
             title="Ponto importado"
-            subtitle="Horas extras e faltas do mês, por colaborador. Estes números somam no custo mensal de cada um."
+            subtitle="Horas extras e faltas do mês, por colaborador. Servem para conferir e para a apuração que vai à contabilidade — o valor em R$ aparece na ficha do mês de cada um."
             icon={<Clock className="h-[18px] w-[18px]" />}
             action={
               <div className="flex items-center gap-2">
                 <button className="btn-outline h-9 px-3 py-0 text-xs" onClick={() => setManual({})} title="Lançar ponto de alguém que não veio no PDF">
                   <Plus className="h-3.5 w-3.5" /> Lançar manual
                 </button>
-                <button className="btn-outline h-9 px-3 py-0 text-xs" onClick={() => setGerNaoBate(true)} title="Marque quem não registra ponto — fica fora da conferência">
-                  <Users className="h-3.5 w-3.5" /> Não batem ponto{naoBatem.length ? ` (${naoBatem.length})` : ""}
-                </button>
+                {/* Marcar "não bate ponto" grava no cadastro do colaborador, e o
+                    servidor só aceita esse tipo de gravação vinda do RH (o resto
+                    volta 403 e fica preso na fila de sincronização). Por isso o
+                    botão não aparece para quem não é RH. */}
+                {souRH && (
+                  <button className="btn-outline h-9 px-3 py-0 text-xs" onClick={() => setGerNaoBate(true)} title="Marque quem não registra ponto — fica fora da conferência">
+                    <Users className="h-3.5 w-3.5" /> Não batem ponto{naoBatem.length ? ` (${naoBatem.length})` : ""}
+                  </button>
+                )}
                 {comps.length > 0 && (
                   <Select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="text-sm">
                     {!comps.includes(competencia) && <option value="">Escolha o mês…</option>}
@@ -716,9 +804,14 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                         const rd = resumoDias(p.dias);
                         const temDias = (p.dias?.length ?? 0) > 0;
                         const aberto = expandido.has(p.id);
+                        // null aqui = ou a ficha nunca foi vinculada, ou o
+                        // colaborador saiu do cadastro depois da importação; nos
+                        // dois casos vale o nome do PDF, senão a linha ficaria
+                        // com o nome em branco e nada visível para clicar.
+                        const nomeLinha = nomeColab(p.colaboradorId);
                         return (
                           <Fragment key={p.id}>
-                            <tr className={cn(!p.colaboradorId && "bg-amber-50/40", "hover:bg-slate-50/50")}>
+                            <tr className={cn(!nomeLinha && "bg-amber-50/40", "hover:bg-slate-50/50")}>
                               <td className="td">
                                 <div className="flex items-center gap-2">
                                   {temDias
@@ -735,9 +828,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                                     : <span className="w-4 shrink-0" />}
                                   <div className="min-w-0">
                                     {/* Clicar no NOME abre o mês inteiro em tela cheia. */}
-                                    {p.colaboradorId
-                                      ? <button type="button" onClick={() => setVerMes(p)} className="text-left font-medium text-slate-700 hover:text-brand hover:underline">{nomeColab(p.colaboradorId)}</button>
-                                      : <button type="button" onClick={() => setVerMes(p)} className="text-left text-amber-700 hover:underline">{p.nomePdf} <Badge variant="warning">não vinculado</Badge></button>}
+                                    {nomeLinha
+                                      ? <button type="button" onClick={() => setVerMes(p)} className="text-left font-medium text-slate-700 hover:text-brand hover:underline">{nomeLinha}</button>
+                                      : <button type="button" onClick={() => setVerMes(p)} className="text-left text-amber-700 hover:underline">{p.nomePdf} <Badge variant="warning">{p.colaboradorId ? "fora do cadastro" : "não vinculado"}</Badge></button>}
                                     {temDias && (rd.faltas > 0 || rd.atestados > 0 || rd.comExtra > 0) && (
                                       <p className="mt-0.5 text-[11px] text-slate-400">
                                         {[rd.comExtra && `${rd.comExtra} dia(s) c/ extra`, rd.faltas && `${rd.faltas} falta(s)`, rd.atestados && `${rd.atestados} atestado(s)`].filter(Boolean).join(" · ")}
@@ -894,9 +987,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         mensagem="O ponto importado deste colaborador nesta competência será apagado. Para recuperar, é preciso reimportar o PDF do mês."
       />
 
-      {gerNaoBate && (
+      {gerNaoBate && souRH && (
         <NaoBatePontoModal
-          colaboradores={d.colaboradores}
+          colaboradores={visiveisRbac}
           cargoDe={(c) => d.nomeCargo(c) || c.cargoLivre || "—"}
           onToggle={(id, valor) => atualizarColab(id, { naoBatePonto: valor })}
           onFechar={() => setGerNaoBate(false)}
@@ -906,7 +999,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       {manual && (
         <ModalPontoManual
           competencia={competencia}
-          colaboradores={d.colaboradores.filter((c) => c.statusId !== "inativo")}
+          colaboradores={visiveisRbac.filter((c) => c.statusId !== "inativo")}
           inicial={manual}
           existente={manual.existente}
           onFechar={() => setManual(null)}

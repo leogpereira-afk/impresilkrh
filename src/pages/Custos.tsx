@@ -57,7 +57,7 @@ import {
   type DiffPagamentos,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
-import { enviarColecao, apagarRegistrosNuvem } from "@/lib/sync";
+import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
 import type {
   ClassificacaoConta,
   ClasseCusto,
@@ -69,6 +69,13 @@ import type {
 // Classes disponíveis no editor (confidencial fica fora — societárias só do master).
 const CLASSES_EDITAVEIS: ClasseCusto[] = ["individual", "rateio", "encargo", "ignorar"];
 
+// Última busca automática no ERP que FALHOU. Fica fora do componente de
+// propósito: Custos é rota lazy, então um useRef morre ao navegar e, com o ERP
+// fora do ar, cada volta à tela refazia a chamada de ~40s em silêncio. Não vai
+// para a config (é sinal de rede, não dado do RH); recarregar a página tenta de novo.
+let ultimaFalhaMubi: { competencia: string; em: number } | null = null;
+const ESPERA_APOS_FALHA_MS = 30 * 60 * 1000;
+
 export default function Custos() {
   const sessao = useSessao();
   const d = useDominio();
@@ -76,6 +83,10 @@ export default function Custos() {
   const drill = useDrill();
 
   const config = useConfig(); // guarda o último mês buscado no ERP e os vínculos
+  // salvarConfig só escreve no navegador. Os vínculos de nome do ERP são trabalho
+  // manual do RH e precisam valer em qualquer computador — por isso todo salvar
+  // daqui sobe para a nuvem, igual ao Painel de Controle.
+  const salvarCfg = (patch: Parameters<typeof salvarConfig>[0]) => { salvarConfig(patch); enviarConfigNuvem(); };
   const planoColecao = useColecao("planoContas");
   const classifColecao = useColecao("classificacaoCustos");
   const pagamentosColecao = useColecao("pagamentos");
@@ -152,6 +163,13 @@ export default function Custos() {
   const [erroMubi, setErroMubi] = useState("");
   // Resultado da busca automática, esperando o RH querer revisar.
   const [respostaMubi, setRespostaMubi] = useState<RespostaMubi | null>(null);
+  // Quantos daqueles lançamentos já casam com alguém do cadastro. É a MESMA
+  // contagem gravada em "Última busca" — sem isso o aviso mostra o total do ERP
+  // e a linha de baixo mostra os vinculados, dois números diferentes no mesmo card.
+  const vinculadosDaResposta = useMemo(
+    () => (respostaMubi ? paraRegistros(respostaMubi.linhas, d.colaboradores, config.vinculosMubi ?? {}).registros.length : 0),
+    [respostaMubi, d.colaboradores, config.vinculosMubi],
+  );
 
   const importarPlano = async (file: File) => {
     try {
@@ -181,7 +199,12 @@ export default function Custos() {
   // Monta a prévia de conciliação a partir do que veio do ERP.
   const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>) => {
     const { registros, naoCasados, coletivas } = paraRegistros(r.linhas, d.colaboradores, vinculos);
-    const existentesDaComp = pagamentos.filter((p: Pagamento) => p.competencia === r.competencia);
+    // Compara contra as competências dos REGISTROS, não contra o mês pedido: uma
+    // busca pode gerar lançamentos em mais de uma competência e o que ficasse de
+    // fora da comparação voltaria como "novo" (duplicata). Mesmo critério de
+    // vincularMubi e da importação por planilha.
+    const comps = new Set(registros.map((x) => x.competencia));
+    const existentesDaComp = pagamentos.filter((p: Pagamento) => comps.has(p.competencia));
     setRemoverAusentes(false);
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros),
@@ -197,9 +220,10 @@ export default function Custos() {
     setErroMubi("");
     try {
       const r = await buscarPagamentosMubi(competencia);
+      ultimaFalhaMubi = null;
       const vinculos = config.vinculosMubi ?? {};
       const { registros, naoCasados } = paraRegistros(r.linhas, d.colaboradores, vinculos);
-      salvarConfig({ ultimaBuscaMubi: { competencia, em: r.buscadoEm, quantidade: registros.length } });
+      salvarCfg({ ultimaBuscaMubi: { competencia, em: r.buscadoEm, quantidade: registros.length } });
       if (registros.length === 0 && naoCasados.length === 0) {
         if (abrirPrevia) setErroMubi(`O Mubisys não tem lançamentos de pessoal em ${compLabel(competencia)}.`);
         return;
@@ -210,6 +234,13 @@ export default function Custos() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha ao consultar o Mubisys.";
       if (abrirPrevia) { setErroMubi(msg); toast(msg, "erro"); }
+      else {
+        // Falha na busca automática não pode passar em branco: sem registrar a
+        // tentativa, cada volta à tela repetia a chamada de ~40s; e sem aviso o
+        // RH acha que a tela já está atualizada com o ERP.
+        ultimaFalhaMubi = { competencia, em: Date.now() };
+        setErroMubi(`Não consegui falar com o ERP agora (${msg}). A tela mostra o que já estava gravado — use "Buscar do Mubisys" para tentar de novo.`);
+      }
     } finally {
       setBuscandoMubi(false);
     }
@@ -226,22 +257,26 @@ export default function Custos() {
     const ultima = config.ultimaBuscaMubi;
     const recente = ultima?.competencia === compAtual && ultima.em
       && agora.getTime() - new Date(ultima.em).getTime() < 6 * 60 * 60 * 1000;
-    if (recente) return;
+    // Se o ERP acabou de recusar a conversa, espera meia hora antes de insistir
+    // (a chamada custa ~40s e a falha costuma durar alguns minutos).
+    const falhouHaPouco = ultimaFalhaMubi?.competencia === compAtual
+      && agora.getTime() - ultimaFalhaMubi.em < ESPERA_APOS_FALHA_MS;
+    if (recente || falhouHaPouco) return;
     jaBuscouRef.current = true;
     void buscarDoMubi(compAtual, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessao]);
 
   // Vincula um nome do ERP a um colaborador e REFAZ a prévia na hora, com o
-  // pagamento já no lugar certo. O vínculo fica guardado: no mês que vem esse
-  // mesmo nome casa sozinho.
+  // pagamento já no lugar certo. O vínculo fica guardado (e sobe para a nuvem):
+  // no mês que vem esse mesmo nome casa sozinho, em qualquer computador.
   const vincularMubi = (nomeMubi: string, colaboradorId: string) => {
     if (!folhaPrev?.mubi) return;
     const chave = normNome(nomeMubi);
     const vinculos = { ...(config.vinculosMubi ?? {}) };
     if (colaboradorId) vinculos[chave] = colaboradorId;
     else delete vinculos[chave];
-    salvarConfig({ vinculosMubi: vinculos });
+    salvarCfg({ vinculosMubi: vinculos });
 
     const { registros, naoCasados, coletivas } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos);
     const comps = new Set(registros.map((r) => r.competencia));
@@ -291,7 +326,10 @@ export default function Custos() {
       pagamentosColecao.atualizar(antigo.id, { valor: novo.valor, dataPagamento: novo.dataPagamento, descricao: novo.descricao });
     }
     for (const n of diff.novos) pagamentosColecao.criar(n);
-    if (removerAusentes) {
+    // Se a busca no ERP veio cortada, "ausente" não quer dizer "saiu da folha" —
+    // pode ser só o que não coube na busca. Nesse caso nunca apaga.
+    const podeRemover = removerAusentes && !folhaPrev.mubi?.truncado;
+    if (podeRemover) {
       for (const a of diff.ausentes) pagamentosColecao.remover(a.id);
     }
     // Preenche o CPF no cadastro (só onde está vazio).
@@ -305,12 +343,12 @@ export default function Custos() {
       });
       if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
     }
-    const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
+    const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (podeRemover ? diff.ausentes.length : 0);
     const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
     toast(
       mexeu === 0
         ? "Planilha idêntica ao que já estava — nada a alterar."
-        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${removerAusentes && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
+        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
       "sucesso",
     );
     setFolhaPrev(null);
@@ -574,7 +612,7 @@ export default function Custos() {
                 {/* Último mês buscado: some a dúvida de "isso já está atualizado?" */}
                 <p className="mt-1 text-[11px] text-slate-400">
                   {config.ultimaBuscaMubi
-                    ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s)`
+                    ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s) vinculado(s) ao cadastro`
                     : "Nenhuma busca no Mubisys ainda."}
                 </p>
               </div>
@@ -600,7 +638,8 @@ export default function Custos() {
             {respostaMubi && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2">
                 <p className="text-xs text-slate-700">
-                  O ERP tem <b>{respostaMubi.linhas.length} lançamento(s) de pessoal</b> em {compLabel(respostaMubi.competencia)}.
+                  O ERP tem <b>{respostaMubi.linhas.length} lançamento(s) de pessoal</b> em {compLabel(respostaMubi.competencia)} — {vinculadosDaResposta} já vinculado(s) ao cadastro.
+                  {respostaMubi.truncado && <span className="text-red-700"> Atenção: a lista veio incompleta (o mês tem mais títulos do que a busca traz de uma vez).</span>}
                 </p>
                 <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => previaDoMubi(respostaMubi, config.vinculosMubi ?? {})}>
                   Revisar e aplicar
@@ -705,7 +744,10 @@ export default function Custos() {
         const { diff, naoCasados } = folhaPrev;
         const nd = (s?: string) => (s ?? "").trim();
         const descAtualizar = diff.iguais.filter((p) => nd(p.antigo.descricao) !== nd(p.novo.descricao));
-        const mexeu = descAtualizar.length + diff.alterados.length + diff.novos.length + (removerAusentes ? diff.ausentes.length : 0);
+        // Busca cortada = a lista do ERP não é a folha inteira. Quem faltou aparece
+        // como "fora desta planilha" mesmo estando certo, então remover é proibido aqui.
+        const buscaIncompleta = !!folhaPrev.mubi?.truncado;
+        const mexeu = descAtualizar.length + diff.alterados.length + diff.novos.length + (removerAusentes && !buscaIncompleta ? diff.ausentes.length : 0);
         return (
           <Modal
             aberto
@@ -721,6 +763,16 @@ export default function Custos() {
             </>}
           >
             <div className="space-y-3">
+              {buscaIncompleta && (
+                <div className="rounded-xl border border-red-300 bg-red-50 p-3">
+                  <p className="text-xs font-semibold text-red-800">A busca no ERP veio incompleta</p>
+                  <p className="mt-1 text-[11px] text-red-700/90">
+                    O mês tem mais títulos do que a busca consegue trazer de uma vez, então parte da folha ficou de fora desta
+                    comparação. Pode aplicar o que veio (é confiável), mas os lançamentos que faltaram aparecem abaixo como
+                    "fora desta planilha" mesmo estando corretos — por isso a remoção está bloqueada.
+                  </p>
+                </div>
+              )}
               {/* Placar dos 4 grupos */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-center">
@@ -822,9 +874,11 @@ export default function Custos() {
                       </tbody>
                     </table>
                   </div>
-                  <label className="mt-2 flex items-center gap-2 text-xs text-amber-800">
-                    <input type="checkbox" checked={removerAusentes} onChange={(e) => setRemoverAusentes(e.target.checked)} />
-                    Remover também estes {diff.ausentes.length} lançamento(s) (cuidado: apaga manuais)
+                  <label className={"mt-2 flex items-center gap-2 text-xs text-amber-800" + (buscaIncompleta ? " opacity-50" : "")}>
+                    <input type="checkbox" disabled={buscaIncompleta} checked={removerAusentes && !buscaIncompleta} onChange={(e) => setRemoverAusentes(e.target.checked)} />
+                    {buscaIncompleta
+                      ? "Remoção bloqueada: a busca no ERP veio incompleta"
+                      : `Remover também estes ${diff.ausentes.length} lançamento(s) (cuidado: apaga manuais)`}
                   </label>
                 </div>
               )}
@@ -1620,6 +1674,12 @@ function CustoGlobalFuncionarios() {
     );
   }
 
+  // A tabela pode estar filtrada por um card. O rodapé precisa fechar com as
+  // linhas que estão à vista — senão parece erro de soma (uma linha de R$ 2 mil
+  // com um total de R$ 94 mil embaixo, dizendo 100%).
+  const visiveis = grupos.filter((g) => !contaFoco || g.cod === contaFoco);
+  const somaVisivel = visiveis.reduce((s, g) => s + g.valor, 0);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -1688,6 +1748,9 @@ function CustoGlobalFuncionarios() {
                     icon={<Layers className="h-4 w-4" />}
                     hint="Contas de pessoal"
                     title="Ver todas as categorias na tabela"
+                    // Este é o card do estado "sem filtro": ele precisa acender quando
+                    // nada está isolado, senão nenhum card fica aceso no estado padrão.
+                    ativo={contaFoco === null}
                     onClick={() => setContaFoco(null)}
                   />
                 </div>
@@ -1708,7 +1771,7 @@ function CustoGlobalFuncionarios() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {grupos.filter((g) => !contaFoco || g.cod === contaFoco).map((g) => (
+                  {visiveis.map((g) => (
                     <tr key={g.cod} className="transition hover:bg-slate-50/60">
                       <td className="td font-medium text-slate-800">{g.nome}</td>
                       <td className="td hidden sm:table-cell text-slate-400">{g.cod}</td>
@@ -1717,13 +1780,23 @@ function CustoGlobalFuncionarios() {
                     </tr>
                   ))}
                   <tr className="bg-slate-50/60">
-                    <td className="td font-semibold text-brand-ink" colSpan={2}>Total de funcionários no mês</td>
-                    <td className="td text-right font-semibold text-brand-ink">{formatBRL(total)}</td>
-                    <td className="td text-right font-semibold text-brand-ink">100%</td>
+                    <td className="td font-semibold text-brand-ink" colSpan={2}>
+                      Total de funcionários no mês{contaFoco ? " (filtrado)" : ""}
+                    </td>
+                    <td className="td text-right font-semibold text-brand-ink">{formatBRL(somaVisivel)}</td>
+                    <td className="td text-right font-semibold text-brand-ink">
+                      {total > 0 ? `${((somaVisivel / total) * 100).toFixed(1)}%` : "—"}
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
+          )}
+          {contaFoco && (
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              Mostrando {visiveis.length} de {grupos.length} categorias · total do mês inteiro: <b className="text-slate-700">{formatBRL(total)}</b>
+              <button type="button" className="btn-outline h-7 px-2 py-0 text-xs" onClick={() => setContaFoco(null)}>Limpar filtro</button>
+            </p>
           )}
           <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
             Esta é a visão <strong>contábil</strong> (plano de contas, grupo {PREFIXO_FUNCIONARIOS}*) — inclui os custos coletivos como alimentação, confraternização e o FGTS mensal. É a mesma base do DRE, então o total deve bater. A aba "Custos de Colaboradores" mostra a folha real <strong>por pessoa</strong>.

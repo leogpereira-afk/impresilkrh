@@ -156,20 +156,22 @@ export default function Treinamento() {
       {/* Indicadores — clicáveis (drill nas pessoas) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {/* O próprio StatCard já vira botão acessível — nada de <button> por fora (botão dentro de botão). */}
+        {/* Card zerado fica sem onClick de propósito: sem onClick o StatCard volta a ser uma <div>
+            comum, então ninguém clica num número 0 para receber uma lista vazia. */}
         <StatCard
           label="Em treinamento" value={ativos.length} hint="Treinamentos não concluídos" icon={<GraduationCap className="h-5 w-5" />} accent="brand"
-          onClick={() => drillRegs("Em treinamento", ativos, `${pessoasDe(ativos).length} pessoa(s) com treinamento em aberto`)}
-          title="Ver quem tem treinamento em aberto"
+          onClick={ativos.length ? () => drillRegs("Em treinamento", ativos, `${pessoasDe(ativos).length} pessoa(s) com treinamento em aberto`) : undefined}
+          title={ativos.length ? "Ver quem tem treinamento em aberto" : undefined}
         />
         <StatCard
           label="Concluídos" value={concluidos.length} hint="Capacitações finalizadas" icon={<CheckCircle2 className="h-5 w-5" />} accent="green"
-          onClick={() => drillRegs("Treinamentos concluídos", concluidos, `${pessoasDe(concluidos).length} pessoa(s) com treinamento concluído`)}
-          title="Ver quem já concluiu treinamentos"
+          onClick={concluidos.length ? () => drillRegs("Treinamentos concluídos", concluidos, `${pessoasDe(concluidos).length} pessoa(s) com treinamento concluído`) : undefined}
+          title={concluidos.length ? "Ver quem já concluiu treinamentos" : undefined}
         />
         <StatCard
           label="Pendentes" value={pendentes.length} hint="Ainda não iniciados" icon={<Clock className="h-5 w-5" />} accent="amber"
-          onClick={() => drillRegs("Treinamentos pendentes", pendentes, `${pessoasDe(pendentes).length} pessoa(s) com pendência`)}
-          title="Ver quem tem treinamento pendente"
+          onClick={pendentes.length ? () => drillRegs("Treinamentos pendentes", pendentes, `${pessoasDe(pendentes).length} pessoa(s) com pendência`) : undefined}
+          title={pendentes.length ? "Ver quem tem treinamento pendente" : undefined}
         />
         <StatCard label="Progresso médio" value={formatPercent(progressoMedio, 0)} hint="Média de conclusão" icon={<Trophy className="h-5 w-5" />} accent="gold" />
       </div>

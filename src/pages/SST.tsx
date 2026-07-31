@@ -129,9 +129,11 @@ export default function SST() {
         />
         {examesVisiveis.length === 0 ? (
           <CardBody>
+            {/* Card de valor zero também é clicável: sem avisar que o vazio é do filtro,
+                a tela afirmaria que não há exame nenhum com a tabela cheia por trás. */}
             <EmptyState
-              title="Nenhum exame ocupacional encontrado"
-              description="ASO e exames periódicos dos colaboradores aparecerão aqui."
+              title={focoExame ? "Nenhum exame neste filtro" : "Nenhum exame ocupacional encontrado"}
+              description={focoExame ? "Clique de novo no cartão para ver todos os exames." : "ASO e exames periódicos dos colaboradores aparecerão aqui."}
               icon={<Stethoscope className="h-8 w-8" />}
             />
           </CardBody>
@@ -295,7 +297,13 @@ function AbaCertificacoesNR() {
         />
         <CardBody className="space-y-5">
           {porNR.length === 0 ? (
-            <EmptyState title="Nenhuma certificação registrada" description="Cadastre quais colaboradores fizeram cada NR e a validade." icon={<Award className="h-8 w-8" />} />
+            /* Clicar no card "A vencer" com 0 esvazia a listagem: sem este aviso a tela
+               dizia que não havia NR cadastrada e escondia as certificações vencidas. */
+            <EmptyState
+              title={foco ? "Nenhuma certificação neste filtro" : "Nenhuma certificação registrada"}
+              description={foco ? "Clique de novo no cartão para ver todas as certificações." : "Cadastre quais colaboradores fizeram cada NR e a validade."}
+              icon={<Award className="h-8 w-8" />}
+            />
           ) : (
             porNR.map(({ nr, itens }) => (
               <div key={nr.codigo} className="rounded-xl border border-slate-200">

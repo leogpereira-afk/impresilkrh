@@ -97,13 +97,27 @@ describe("montarPagamento", () => {
     const p = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "53063" }), "c1");
     expect(p.id).toBe("mubi-53063");
     expect(p.colaboradorId).toBe("c1");
-    expect(p.competencia).toBe("2026-07");
+    expect(p.competencia).toBe("2026-06"); // vence 05/07 → competência de junho
     expect(p.valor).toBe(100);
   });
 
-  it("a competência sai do vencimento, como já era na planilha", () => {
+  // A competência tem de sair pela MESMA regra da planilha (vencimento até o dia
+  // 15 = mês anterior). Se este teste voltar a esperar o mês cru do vencimento, a
+  // importação do ERP duplica a folha inteira em cima do que já está gravado.
+  it("a competência segue a regra da planilha: vencimento até o dia 15 é do mês anterior", () => {
+    expect(competenciaDe(linha("x", { dataVencimento: "2026-07-05" }))).toBe("2026-06");
     expect(competenciaDe(linha("x", { dataVencimento: "2026-07-31" }))).toBe("2026-07");
-    expect(competenciaDe(linha("x", { dataVencimento: "2026-08-01" }))).toBe("2026-08");
+    expect(competenciaDe(linha("x", { dataVencimento: "2026-08-01" }))).toBe("2026-07");
+  });
+
+  it("a virada é entre os dias 15 e 16, e o mês 01 volta para dezembro do ano anterior", () => {
+    expect(competenciaDe(linha("x", { dataVencimento: "2026-07-15" }))).toBe("2026-06");
+    expect(competenciaDe(linha("x", { dataVencimento: "2026-07-16" }))).toBe("2026-07");
+    expect(competenciaDe(linha("x", { dataVencimento: "2026-01-10" }))).toBe("2025-12");
+  });
+
+  it("título sem vencimento não inventa competência", () => {
+    expect(competenciaDe(linha("x", { dataVencimento: "" }))).toBe("");
   });
 });
 

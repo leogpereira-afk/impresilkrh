@@ -83,10 +83,11 @@ export function ViagensPainel() {
   );
 
   // Foco dos cards do topo: filtra a tabela de viagens (clicar de novo limpa).
-  // "mes" atende os dois cards do mês — são o mesmo conjunto de viagens, um
-  // mostra a quantidade e o outro o quanto elas custaram.
-  const [foco, setFoco] = useState<"mes" | "Em andamento" | "Planejada" | null>(null);
-  const alternarFoco = (f: "mes" | "Em andamento" | "Planejada") =>
+  // "mesQtd" e "mesValor" recortam o MESMO conjunto (as viagens do mês) — muda
+  // só qual card fica aceso. Cada card precisa do seu próprio foco, senão os
+  // dois acendem juntos e clicar no segundo desligaria o filtro em vez de ligar.
+  const [foco, setFoco] = useState<"mesQtd" | "mesValor" | "Em andamento" | "Planejada" | null>(null);
+  const alternarFoco = (f: "mesQtd" | "mesValor" | "Em andamento" | "Planejada") =>
     setFoco((atual) => (atual === f ? null : f));
 
   const doMes = useMemo(() => lista.filter((v) => noMesAtual(v.dataInicio)), [lista]);
@@ -97,7 +98,7 @@ export function ViagensPainel() {
   // Só a tabela do fim segue o foco; gráficos e ranking continuam vendo tudo.
   const listaFiltrada = useMemo(() => {
     if (!foco) return lista;
-    if (foco === "mes") return doMes;
+    if (foco === "mesQtd" || foco === "mesValor") return doMes;
     return lista.filter((v) => v.status === foco);
   }, [lista, doMes, foco]);
 
@@ -270,8 +271,8 @@ export function ViagensPainel() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Viagens no mês" value={doMes.length} icon={<Plane className="h-5 w-5" />} accent="brand" hint="Iniciadas neste mês" onClick={() => alternarFoco("mes")} ativo={foco === "mes"} title="Ver na tabela só as viagens iniciadas neste mês" />
-        <StatCard label="Gasto no mês" value={formatBRL(gastoMes)} icon={<Wallet className="h-5 w-5" />} accent="gold" hint="Soma das diárias" onClick={() => alternarFoco("mes")} ativo={foco === "mes"} title="Ver na tabela as viagens que formam o gasto do mês" />
+        <StatCard label="Viagens no mês" value={doMes.length} icon={<Plane className="h-5 w-5" />} accent="brand" hint="Iniciadas neste mês" onClick={() => alternarFoco("mesQtd")} ativo={foco === "mesQtd"} title="Ver na tabela só as viagens iniciadas neste mês" />
+        <StatCard label="Gasto no mês" value={formatBRL(gastoMes)} icon={<Wallet className="h-5 w-5" />} accent="gold" hint="Soma das diárias" onClick={() => alternarFoco("mesValor")} ativo={foco === "mesValor"} title="Ver na tabela as viagens que formam o gasto do mês" />
         <StatCard label="Em andamento" value={emAndamento} icon={<MapPin className="h-5 w-5" />} accent="amber" hint="Equipe em campo" onClick={() => alternarFoco("Em andamento")} ativo={foco === "Em andamento"} title="Ver na tabela só quem está em campo" />
         <StatCard label="Planejadas" value={planejadas} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Aguardando início" onClick={() => alternarFoco("Planejada")} ativo={foco === "Planejada"} title="Ver na tabela só as viagens planejadas" />
       </div>

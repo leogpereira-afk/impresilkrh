@@ -109,13 +109,30 @@ const num = (v: unknown) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-async function buscaPagina(competencia: string, page: number, perPage: number) {
+/**
+ * Janela de vencimentos de uma competência.
+ *
+ * A competência NÃO é o mês de calendário: vencimento até o dia 15 conta para o
+ * mês anterior (regra da folha, em src/lib/custos.ts). Então a competência de
+ * julho é tudo que vence de 16/07 a 15/08. Buscar 01–31/07 trazia meio mês de
+ * junho e deixava de fora a primeira quinzena de agosto — e o que faltava
+ * aparecia na conferência como "sumiu do ERP", convidando a apagar pagamento bom.
+ */
+function janelaDaCompetencia(competencia: string) {
   const [ano, mes] = competencia.split("-").map(Number);
-  const ultimo = new Date(ano, mes, 0).getDate();
+  const inicio = new Date(ano, mes - 1, 16);
+  const fim = new Date(ano, mes, 15);
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { datainicial: iso(inicio), datafinal: iso(fim) };
+}
+
+async function buscaPagina(competencia: string, page: number, perPage: number) {
+  const { datainicial, datafinal } = janelaDaCompetencia(competencia);
   const q = new URLSearchParams({
     filtrodata: "VENCIMENTO",
-    datainicial: `${competencia}-01`,
-    datafinal: `${competencia}-${String(ultimo).padStart(2, "0")}`,
+    datainicial,
+    datafinal,
     status: "TODOS",
     page: String(page),
     per_page: String(perPage),
@@ -150,7 +167,15 @@ Deno.serve(async (req) => {
     const PER_PAGE = 500;
     const primeira = await buscaPagina(competencia, 1, PER_PAGE);
     let itens: Record<string, unknown>[] = primeira?.data ?? [];
-    const totalPaginas = Number(primeira?.pagination?.last_page ?? 1);
+    // O Mubisys às vezes devolve a paginação em "pagination", às vezes em "meta"
+    // (o cliente do Painel já trata os dois). Lendo só um formato, o total virava
+    // 1: as páginas seguintes eram ignoradas em silêncio e "truncado" saía false
+    // — o alerta de busca incompleta nunca dispararia. Sem nenhum dos dois, o
+    // sinal é a página ter vindo cheia.
+    const pag = primeira?.pagination ?? primeira?.meta ?? {};
+    const totalPaginas = Number(
+      pag.last_page ?? pag.total_pages ?? (itens.length >= PER_PAGE ? 2 : 1),
+    ) || 1;
 
     // Teto de 4 páginas (2000 títulos/mês): protege o tempo limite da função.
     for (let p = 2; p <= Math.min(totalPaginas, 4); p++) {
