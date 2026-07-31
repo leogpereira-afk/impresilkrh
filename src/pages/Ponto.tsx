@@ -312,11 +312,19 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const doMes = useMemo(
+  // Quem não bate ponto (gerente, comissão, externo) aparece no PDF do Secullum
+  // com o mês inteiro em FALTAS — mas isso não é falta: é ausência de controle
+  // de jornada. Essas fichas ficam de fora dos totais e do relatório, senão a
+  // contabilidade receberia centenas de horas de falta que não existem.
+  const naoBate = (p: Ponto) => !!(p.colaboradorId && d.colabById.get(p.colaboradorId)?.naoBatePonto);
+
+  const doMesTodos = useMemo(
     () => pontos.filter((p) => p.competencia === competencia)
       .sort((a, b) => (nomeColab(a.colaboradorId) || a.nomePdf).localeCompare(nomeColab(b.colaboradorId) || b.nomePdf)),
     [pontos, competencia], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  const doMes = useMemo(() => doMesTodos.filter((p) => !naoBate(p)), [doMesTodos, d.colabById]); // eslint-disable-line react-hooks/exhaustive-deps
+  const semControle = useMemo(() => doMesTodos.filter(naoBate), [doMesTodos, d.colabById]); // eslint-disable-line react-hooks/exhaustive-deps
   const totExtras = doMes.reduce((s, p) => s + (p.extrasMin || 0), 0);
   const totFaltas = doMes.reduce((s, p) => s + (p.faltasMin || 0), 0);
   const comps = useMemo(() => [...new Set(pontos.map((p) => p.competencia))].sort().reverse(), [pontos]);
@@ -546,6 +554,31 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
                 {modo === "tudo" ? (
                 <>
+                {/* Quem não bate ponto: a ficha existe no PDF (com o mês inteiro
+                    em faltas), mas fica fora dos totais e do relatório. */}
+                {semControle.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                      <Users className="h-4 w-4" /> {semControle.length} sem controle de jornada — fora da apuração
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {semControle.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => setVerMes(p)}
+                          title="Ver a ficha deste colaborador"
+                          className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand/40 hover:text-brand"
+                        >
+                          {nomeColab(p.colaboradorId) || p.nomePdf}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      Aparecem no PDF do Secullum com o mês inteiro em faltas por não registrarem ponto. Não entram nos totais nem no relatório da contabilidade.
+                    </p>
+                  </div>
+                )}
+
                 {/* Divergência entre a soma dos dias e o total do mês: o relatório
                     vai para a contabilidade, então isso não pode passar calado. */}
                 {divergentes.length > 0 && (
