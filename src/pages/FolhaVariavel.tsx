@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
-  Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Lock, ShieldCheck, Pencil, Clock,
+  Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Lock, ShieldCheck, Pencil, Clock, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -59,6 +59,10 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   const [foco, setFoco] = useState<"comVerba" | "aprovados" | null>(null);
   const alternarFoco = (f: "comVerba" | "aprovados") =>
     setFoco((atual) => (atual === f ? null : f));
+  // Linhas expandidas: mostram os lançamentos do mês sem sair da lista.
+  const [expandidos, setExpandidos] = useState<Set<string>>(() => new Set());
+  const alternarLinha = (id: string) =>
+    setExpandidos((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const escopo = useMemo(
     () => colaboradoresVisiveis(sessao, d.colaboradores)
@@ -133,22 +137,45 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
                   const fe = fechDe(c.id);
                   const tot = totalDe(c.id);
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50/50">
-                      {/* O nome abre o mesmo detalhe do botão "Abrir" — é o que a
-                          mão procura primeiro na linha. */}
-                      <td className="td">
-                        <button type="button" onClick={() => setAberto(c)} className="text-left font-medium text-slate-700 transition hover:text-brand hover:underline">
-                          {c.nome}
-                        </button>
-                      </td>
-                      <td className="td text-right tabular-nums font-medium text-slate-700">{tot > 0 ? formatBRL(tot) : "—"}</td>
-                      <td className="td text-center">
-                        {fe?.aprovado ? <Badge variant="success">Aprovado</Badge> : <Badge variant="neutral">Pendente</Badge>}
-                      </td>
-                      <td className="td text-right">
-                        <button className="btn-outline px-3 py-1.5 text-sm" onClick={() => setAberto(c)}>Abrir</button>
-                      </td>
-                    </tr>
+                    <Fragment key={c.id}>
+                      <tr className="hover:bg-slate-50/50">
+                        {/* O nome EXPANDE os lançamentos aqui mesmo; o botão "Abrir"
+                            leva ao detalhe completo (lançar, aprovar, exportar). */}
+                        <td className="td">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => alternarLinha(c.id)}
+                              title={expandidos.has(c.id) ? "Recolher" : "Ver os lançamentos aqui"}
+                              className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand"
+                            >
+                              {expandidos.has(c.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </button>
+                            <button type="button" onClick={() => alternarLinha(c.id)} className="text-left font-medium text-slate-700 transition hover:text-brand hover:underline">
+                              {c.nome}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="td text-right tabular-nums font-medium text-slate-700">{tot > 0 ? formatBRL(tot) : "—"}</td>
+                        <td className="td text-center">
+                          {fe?.aprovado ? <Badge variant="success">Aprovado</Badge> : <Badge variant="neutral">Pendente</Badge>}
+                        </td>
+                        <td className="td text-right">
+                          <button className="btn-outline px-3 py-1.5 text-sm" onClick={() => setAberto(c)}>Abrir</button>
+                        </td>
+                      </tr>
+                      {expandidos.has(c.id) && (
+                        <tr>
+                          <td colSpan={4} className="bg-slate-50/60 p-0">
+                            <LancamentosDaLinha
+                              lancamentos={lancDe(c.id)}
+                              total={tot}
+                              onAbrir={() => setAberto(c)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -179,6 +206,73 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
           toast={toast}
         />
       )}
+    </div>
+  );
+}
+
+// Lançamentos do mês mostrados na própria linha da lista (sem abrir o detalhe).
+// Só leitura: para lançar, corrigir ou aprovar, o botão leva ao detalhe.
+function LancamentosDaLinha({
+  lancamentos, total, onAbrir,
+}: {
+  lancamentos: Lancamento[];
+  total: number;
+  onAbrir: () => void;
+}) {
+  const porTipo = useMemo(() => {
+    const m = new Map<TipoLancamento, number>();
+    for (const l of lancamentos) m.set(l.tipo, (m.get(l.tipo) ?? 0) + (Number(l.valor) || 0));
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [lancamentos]);
+
+  if (lancamentos.length === 0) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <p className="text-xs text-slate-400">Nenhuma verba lançada neste mês.</p>
+        <button className="btn-outline h-7 px-2.5 py-0 text-[11px]" onClick={onAbrir}><Plus className="h-3 w-3" /> Lançar</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 px-3 py-3 sm:px-4">
+      {/* Subtotal por tipo: a leitura que o RH faz primeiro. */}
+      <div className="flex flex-wrap gap-1.5">
+        {porTipo.map(([t, v]) => (
+          <span key={t} className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] text-slate-600">
+            {labelTipo(t)} <b className="tabular-nums text-slate-800">{formatBRL(v)}</b>
+          </span>
+        ))}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
+            <tr><th className="th">Dia</th><th className="th">Tipo</th><th className="th">Descrição</th><th className="th text-right">Valor</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {lancamentos.map((l) => (
+              <tr key={l.id}>
+                <td className="td tabular-nums text-slate-500">{diaBR(l.data)}</td>
+                <td className="td text-slate-700">
+                  {labelTipo(l.tipo)}
+                  {l.minutos ? <span className="ml-1 text-slate-400">({l.horaInicio}–{l.horaFim} · {minParaHora(l.minutos)})</span> : null}
+                </td>
+                <td className="td text-slate-500">{l.descricao || "—"}</td>
+                <td className="td text-right font-medium tabular-nums text-slate-700">{formatBRL(l.valor)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="border-t border-slate-200 bg-slate-50/60">
+            <tr>
+              <td className="td font-semibold text-slate-600" colSpan={3}>Total a receber</td>
+              <td className="td text-right font-bold tabular-nums text-brand-ink">{formatBRL(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div className="flex justify-end">
+        <button className="btn-outline h-7 px-2.5 py-0 text-[11px]" onClick={onAbrir}><Pencil className="h-3 w-3" /> Lançar / corrigir / aprovar</button>
+      </div>
     </div>
   );
 }

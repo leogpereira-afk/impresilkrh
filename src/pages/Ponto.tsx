@@ -79,6 +79,11 @@ const SIT_LEGENDA: { s: SituacaoDia; txt: string }[] = [
 ];
 const diaCurto = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d);
 
+// SALDO do mês: as horas extras abatem as horas de falta (e vice-versa). Positivo
+// = sobrou a favor do colaborador; negativo = deve horas à empresa.
+const saldoDe = (p: { extrasMin: number; faltasMin: number }) => (p.extrasMin || 0) - (p.faltasMin || 0);
+const saldoTxt = (min: number) => (min === 0 ? "00:00" : `${min > 0 ? "+" : "−"}${minParaHora(Math.abs(min))}`);
+
 // MÊS INTEIRO do colaborador: o Secullum fecha o ponto por período (ex.: 29/06 a
 // 28/07), não pelo mês civil. Aqui geramos TODOS os dias desse período e casamos
 // com o que veio no PDF — os dias sem registro aparecem como lacuna, em vez de
@@ -242,6 +247,8 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const alternarFoco = (f: NonNullable<typeof foco>) => setFoco((a) => (a === f ? null : f));
   // Lançamento manual: null = fechado; objeto = aberto (com quem pré-selecionar).
   const [manual, setManual] = useState<{ colaboradorId?: string | null; nome?: string; existente?: Ponto | null } | null>(null);
+  // Correção de um dia específico do extrato.
+  const [editandoDia, setEditandoDia] = useState<{ ponto: Ponto; dia: PontoDia } | null>(null);
   const [expandido, setExpandido] = useState<Set<string>>(() => new Set());
   const toggleExp = (id: string) =>
     setExpandido((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -644,13 +651,15 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                         <th className="th">Colaborador</th>
                         <th className="th text-right">Normais</th>
                         <th className="th text-right">Faltas</th>
+                        <th className="th text-center" title="Dias em que faltou o dia inteiro">Dias</th>
                         <th className="th text-right">Extras</th>
+                        <th className="th text-right" title="Horas extras menos as horas de falta — o que sobra a favor (+) ou contra (−)">Saldo</th>
                         <th className="th" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {visiveis.length === 0 && (
-                        <tr><td colSpan={5} className="td text-center text-slate-400">Ninguém neste filtro — clique no card de novo para ver todos.</td></tr>
+                        <tr><td colSpan={7} className="td text-center text-slate-400">Ninguém neste filtro — clique no card de novo para ver todos.</td></tr>
                       )}
                       {visiveis.map((p) => {
                         const rd = resumoDias(p.dias);
@@ -688,15 +697,25 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                               </td>
                               <td className="td text-right tabular-nums text-slate-600">{minParaHora(p.normaisMin)}</td>
                               <td className={`td text-right tabular-nums ${p.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-400"}`}>{minParaHora(p.faltasMin)}</td>
+                              <td className={cn("td text-center tabular-nums", rd.faltas > 0 ? "font-medium text-red-600" : "text-slate-300")}>{temDias ? (rd.faltas || "—") : "?"}</td>
                               <td className={`td text-right tabular-nums ${p.extrasMin > 0 ? "font-medium text-brand" : "text-slate-400"}`}>{minParaHora(p.extrasMin)}</td>
+                              <td className={cn("td text-right font-semibold tabular-nums", saldoDe(p) > 0 ? "text-green-700" : saldoDe(p) < 0 ? "text-red-600" : "text-slate-400")}>
+                                {saldoTxt(saldoDe(p))}
+                              </td>
                               <td className="td text-right">
                                 <button className="btn-ghost p-1.5 text-red-500" title="Remover" onClick={(e) => { e.stopPropagation(); setExcluir(p.id); }}><Trash2 className="h-4 w-4" /></button>
                               </td>
                             </tr>
                             {aberto && temDias && (
                               <tr>
-                                <td colSpan={5} className="bg-slate-50/50 p-0">
-                                  <ExtratoDiario dias={p.dias!} />
+                                <td colSpan={7} className="bg-slate-50/50 p-0">
+                                  <ExtratoDiario
+                                    dias={p.dias!}
+                                    nome={nomeColab(p.colaboradorId) || p.nomePdf}
+                                    ponto={p}
+                                    empresa={empresa}
+                                    onEditarDia={(dia) => setEditandoDia({ ponto: p, dia })}
+                                  />
                                 </td>
                               </tr>
                             )}
@@ -704,6 +723,22 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                         );
                       })}
                     </tbody>
+                    {visiveis.length > 0 && (
+                      <tfoot className="border-t-2 border-slate-200 text-sm">
+                        <tr>
+                          <td className="td font-semibold text-slate-700">Total{foco ? " (filtrado)" : ""}</td>
+                          <td className="td text-right font-semibold tabular-nums text-slate-600">{minParaHora(visiveis.reduce((s, p) => s + p.normaisMin, 0))}</td>
+                          <td className="td text-right font-semibold tabular-nums text-red-600">{minParaHora(visiveis.reduce((s, p) => s + p.faltasMin, 0))}</td>
+                          <td className="td text-center font-semibold tabular-nums text-red-600">{visiveis.reduce((s, p) => s + resumoDias(p.dias).faltas, 0) || "—"}</td>
+                          <td className="td text-right font-semibold tabular-nums text-brand">{minParaHora(visiveis.reduce((s, p) => s + p.extrasMin, 0))}</td>
+                          {(() => {
+                            const t = visiveis.reduce((s, p) => s + saldoDe(p), 0);
+                            return <td className={cn("td text-right font-bold tabular-nums", t > 0 ? "text-green-700" : t < 0 ? "text-red-600" : "text-slate-400")}>{saldoTxt(t)}</td>;
+                          })()}
+                          <td className="td" />
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
                 </>
@@ -827,6 +862,19 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
           onSalvar={(rec) => {
             if (pontos.some((p) => p.id === rec.id)) atualizar(rec.id, rec); else criar(rec);
             toast(`Ponto de ${rec.nomePdf} salvo em ${labelMes(rec.competencia)}.`);
+          }}
+        />
+      )}
+
+      {editandoDia && (
+        <ModalEditarDia
+          ponto={editandoDia.ponto}
+          dia={editandoDia.dia}
+          nome={nomeColab(editandoDia.ponto.colaboradorId) || editandoDia.ponto.nomePdf}
+          onFechar={() => setEditandoDia(null)}
+          onSalvar={(patch) => {
+            atualizar(editandoDia.ponto.id, patch);
+            toast(`Dia ${diaCurto(editandoDia.dia.data)} corrigido.`);
           }}
         />
       )}
@@ -1366,9 +1414,48 @@ async function exportarMesPdf(
 }
 
 // Extrato diário de um colaborador — segue o layout da folha de ponto do Secullum.
-function ExtratoDiario({ dias }: { dias: PontoDia[] }) {
+// Com `ponto`/`nome` ganha barra de exportação individual; com `onEditarDia`,
+// cada linha vira editável.
+function ExtratoDiario({
+  dias, nome, ponto, empresa, onEditarDia,
+}: {
+  dias: PontoDia[];
+  nome?: string;
+  ponto?: Ponto;
+  empresa?: string;
+  onEditarDia?: (dia: PontoDia) => void;
+}) {
+  const tot = dias.reduce(
+    (s, d) => ({
+      normais: s.normais + (d.normaisMin || 0),
+      faltas: s.faltas + (d.faltasMin || 0),
+      extras: s.extras + (d.extrasMin || 0),
+      diasFalta: s.diasFalta + (d.situacao === "falta" ? 1 : 0),
+    }),
+    { normais: 0, faltas: 0, extras: 0, diasFalta: 0 },
+  );
+  const saldo = tot.extras - tot.faltas;
+
   return (
     <div className="px-3 py-3 sm:px-4">
+      {/* Exportar SÓ este colaborador, sem sair da lista. */}
+      {ponto && nome && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-slate-400">
+            {tot.diasFalta > 0 && <>{tot.diasFalta} dia(s) de falta · </>}
+            saldo do mês <b className={cn(saldo > 0 ? "text-green-700" : saldo < 0 ? "text-red-600" : "text-slate-500")}>{saldoTxt(saldo)}</b>
+            {onEditarDia && " · clique no lápis para corrigir um dia"}
+          </p>
+          <div className="flex gap-2">
+            <button className="btn-outline h-7 px-2.5 py-0 text-[11px]" onClick={() => void exportarMesPdf(empresa || "Impresilk", nome, ponto, dias, resumoDias(ponto.dias))}>
+              <FileDown className="h-3 w-3" /> PDF de {nome.split(" ")[0]}
+            </button>
+            <button className="btn-outline h-7 px-2.5 py-0 text-[11px]" onClick={() => exportarMesExcel(empresa || "Impresilk", nome, ponto, dias)}>
+              <FileSpreadsheet className="h-3 w-3" /> Excel
+            </button>
+          </div>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-400">
@@ -1379,6 +1466,7 @@ function ExtratoDiario({ dias }: { dias: PontoDia[] }) {
               <th className="th text-right">Faltas</th>
               <th className="th text-right">Extras</th>
               <th className="th">Situação</th>
+              {onEditarDia && <th className="th" />}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -1402,14 +1490,144 @@ function ExtratoDiario({ dias }: { dias: PontoDia[] }) {
                 <td className={cn("td text-right tabular-nums", dia.faltasMin > 0 ? "font-medium text-red-600" : "text-slate-300")}>{dia.faltasMin ? minParaHora(dia.faltasMin) : "—"}</td>
                 <td className={cn("td text-right tabular-nums", dia.extrasMin > 0 ? "font-medium text-brand" : "text-slate-300")}>{dia.extrasMin ? minParaHora(dia.extrasMin) : "—"}</td>
                 <td className="td">{dia.situacao !== "normal" && <Badge variant={SIT_BADGE[dia.situacao]}>{SIT_LABEL[dia.situacao]}</Badge>}</td>
+                {onEditarDia && (
+                  <td className="td text-right">
+                    <button
+                      className="btn-ghost p-1 text-slate-300 transition hover:text-brand"
+                      title={`Corrigir ${diaCurto(dia.data)}`}
+                      onClick={() => onEditarDia(dia)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                )}
               </tr>
               );
             })}
           </tbody>
+          {/* Totais do extrato, com o saldo do mês (extras abatendo faltas). */}
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 text-[11px]">
+            <tr>
+              <td className="td font-semibold text-slate-600">Total</td>
+              <td className="td text-slate-400">{tot.diasFalta > 0 ? `${tot.diasFalta} dia(s) de falta` : ""}</td>
+              <td className="td text-right font-semibold tabular-nums text-slate-600">{minParaHora(tot.normais)}</td>
+              <td className="td text-right font-semibold tabular-nums text-red-600">{tot.faltas ? minParaHora(tot.faltas) : "—"}</td>
+              <td className="td text-right font-semibold tabular-nums text-brand">{tot.extras ? minParaHora(tot.extras) : "—"}</td>
+              <td className="td" colSpan={onEditarDia ? 2 : 1}>
+                <span className="text-slate-400">saldo </span>
+                <b className={cn("tabular-nums", saldo > 0 ? "text-green-700" : saldo < 0 ? "text-red-600" : "text-slate-500")}>{saldoTxt(saldo)}</b>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
   );
+}
+
+// Correção de UM dia do extrato, direto na tela. Ao salvar, os totais do mês são
+// refeitos a partir dos dias — assim a ficha nunca fica dizendo uma coisa no
+// total e outra no dia a dia.
+function ModalEditarDia({
+  ponto, dia, nome, onSalvar, onFechar,
+}: {
+  ponto: Ponto;
+  dia: PontoDia;
+  nome: string;
+  onSalvar: (rec: Partial<Ponto>) => void;
+  onFechar: () => void;
+}) {
+  const toast = useToast();
+  const batidasIniciais = (dia.marcacoes ?? []).filter((m) => /^\d{1,2}:\d{2}$/.test(m));
+  const [b, setB] = useState<string[]>([0, 1, 2, 3].map((i) => batidasIniciais[i] ?? ""));
+  const [normais, setNormais] = useState(dia.normaisMin ? minParaHora(dia.normaisMin) : "");
+  const [faltas, setFaltas] = useState(dia.faltasMin ? minParaHora(dia.faltasMin) : "");
+  const [extras, setExtras] = useState(dia.extrasMin ? minParaHora(dia.extrasMin) : "");
+  const [situacao, setSituacao] = useState<SituacaoDia>(dia.situacao);
+
+  const horaOk = (v: string) => v.trim() === "" || /^\d{1,3}:[0-5]\d$/.test(v.trim());
+  const relogioOk = (v: string) => v.trim() === "" || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v.trim());
+
+  const salvar = () => {
+    const ruim = [["Normais", normais], ["Faltas", faltas], ["Extras", extras]].find(([, v]) => !horaOk(String(v)));
+    if (ruim) { toast(`${ruim[0]}: use horas:minutos, como 08:30.`, "erro"); return; }
+    if (b.some((x) => !relogioOk(x))) { toast("Batida inválida: use o relógio, como 07:30.", "erro"); return; }
+
+    const novoDia: PontoDia = {
+      ...dia,
+      situacao,
+      marcacoes: b.map((x) => x.trim()).filter(Boolean),
+      normaisMin: horaParaMin(normais),
+      faltasMin: horaParaMin(faltas),
+      extrasMin: horaParaMin(extras),
+    };
+    const dias = (ponto.dias ?? []).map((x) => (x.data === dia.data ? novoDia : x));
+    // Os totais do mês passam a ser a SOMA dos dias — é o que a tela mostra e o
+    // que a conferência checa.
+    onSalvar({
+      dias,
+      normaisMin: dias.reduce((s, x) => s + (x.normaisMin || 0), 0),
+      faltasMin: dias.reduce((s, x) => s + (x.faltasMin || 0), 0),
+      extrasMin: dias.reduce((s, x) => s + (x.extrasMin || 0), 0),
+      atualizadoEm: new Date().toISOString(),
+    });
+    onFechar();
+  };
+
+  const SITS: SituacaoDia[] = ["normal", "falta", "atestado", "abono", "feriado", "ferias", "folga", "semRegistro"];
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo={`Corrigir ${diaCurto(dia.data)}${dia.diaSemana ? ` (${dia.diaSemana})` : ""}`}
+      descricao={`${nome} · ${labelMes(ponto.competencia)}`}
+      largura="max-w-lg"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}><CheckCircle2 className="h-4 w-4" /> Salvar o dia</button></>}
+    >
+      <div className="space-y-3">
+        <div>
+          <p className="mb-1 text-xs font-medium text-slate-600">Batidas do dia</p>
+          <div className="grid grid-cols-4 gap-2">
+            {["Entrada", "Saída almoço", "Volta almoço", "Saída"].map((rot, i) => (
+              <Campo key={rot} label={rot}>
+                <Input type="time" value={b[i]} onChange={(e) => setB(b.map((v, j) => (j === i ? e.target.value : v)))} />
+              </Campo>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Campo label="Horas normais"><Input value={normais} onChange={(e) => setNormais(e.target.value)} placeholder="08:48" /></Campo>
+          <Campo label="Horas de falta"><Input value={faltas} onChange={(e) => setFaltas(e.target.value)} placeholder="00:00" /></Campo>
+          <Campo label="Horas extras"><Input value={extras} onChange={(e) => setExtras(e.target.value)} placeholder="00:00" /></Campo>
+        </div>
+        <Campo label="Situação do dia">
+          <Select value={situacao} onChange={(e) => setSituacao(e.target.value as SituacaoDia)}>
+            {SITS.map((s) => <option key={s} value={s}>{SIT_LABEL[s]}</option>)}
+          </Select>
+        </Campo>
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+          Ao salvar, os totais do mês são recalculados pela soma dos dias. Reimportar o PDF deste mês substitui esta correção.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+// Excel de um colaborador (mesma tabela do extrato).
+function exportarMesExcel(empresa: string, nome: string, ponto: Ponto, dias: PontoDia[]) {
+  const esc = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const saldo = dias.reduce((s, d) => s + (d.extrasMin || 0) - (d.faltasMin || 0), 0);
+  const linhas = dias.map((x) => `<tr><td>${diaCurto(x.data)} ${esc(x.diaSemana ?? "")}</td><td>${esc((x.marcacoes ?? []).filter((m) => /^\d{1,2}:\d{2}$/.test(m)).join("  "))}</td><td>${x.normaisMin ? minParaHora(x.normaisMin) : ""}</td><td>${x.faltasMin ? minParaHora(x.faltasMin) : ""}</td><td>${x.extrasMin ? minParaHora(x.extrasMin) : ""}</td><td>${x.situacao === "normal" ? "" : SIT_LABEL[x.situacao]}</td></tr>`).join("");
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>
+<table border="1">
+<tr><td colspan="6" style="font-weight:bold;font-size:14px">${esc(empresa)} — Cartão ponto — ${labelMes(ponto.competencia)}</td></tr>
+<tr><td colspan="6">${esc(nome)}</td></tr>
+<tr style="background:#16334f;color:#fff;font-weight:bold"><td>Dia</td><td>Batidas</td><td>Normais</td><td>Faltas</td><td>Extras</td><td>Situação</td></tr>
+${linhas}
+<tr style="font-weight:bold"><td>TOTAL</td><td></td><td>${minParaHora(ponto.normaisMin)}</td><td>${minParaHora(ponto.faltasMin)}</td><td>${minParaHora(ponto.extrasMin)}</td><td>Saldo ${saldo < 0 ? "-" : "+"}${minParaHora(Math.abs(saldo))}</td></tr>
+</table></body></html>`;
+  baixarBlob(`ponto-${slug(nome)}-${ponto.competencia}.xls`, new Blob(["﻿" + html], { type: "application/vnd.ms-excel" }));
 }
 
 // --- Resumo do mês (só extras/faltas/atestados) — visão condensada p/ enviar ----------
