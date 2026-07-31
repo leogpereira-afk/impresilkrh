@@ -348,6 +348,11 @@ export interface Config {
   empresaCidade: string;
   corPrimaria: string;
   corAcento: string;
+  // Integração com o ERP Mubisys (contas a pagar → pagamentos):
+  // vínculos que o RH fez à mão (nome no ERP → colaborador) para o mesmo nome
+  // casar sozinho nos meses seguintes, e o registro da última busca.
+  vinculosMubi?: Record<string, string>;
+  ultimaBuscaMubi?: { competencia: string; em: string; quantidade: number } | null;
 }
 
 // ===================== Frequência e Advertências (Módulo C) =====================

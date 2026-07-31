@@ -15,3 +15,4 @@ export const supabase = SUPABASE_CONFIGURADO
 // URL das Edge Functions (mesma base do projeto Supabase, path fixo do Functions).
 export const FN_SYNC = URL ? `${URL}/functions/v1/sync` : "";
 export const FN_ADMIN_USERS = URL ? `${URL}/functions/v1/admin-users` : "";
+export const FN_MUBI_PAGAMENTOS = URL ? `${URL}/functions/v1/mubi-pagamentos` : "";

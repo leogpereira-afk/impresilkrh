@@ -16,3 +16,6 @@ verify_jwt = false
 
 [functions.admin-users]
 verify_jwt = false
+
+[functions.mubi-pagamentos]
+verify_jwt = false

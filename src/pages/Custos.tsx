@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Wallet,
   Users,
@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
+  RefreshCw,
+  Clock,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
@@ -30,13 +32,14 @@ import { Select, Campo, Input } from "@/components/ui/form";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais } from "@/components/charts/charts";
-import { useColecao } from "@/lib/store";
+import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { calcularEncargos, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
+import { buscarPagamentosMubi, paraRegistros, norm as normNome, type LinhaMubi, type RespostaMubi } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -72,6 +75,7 @@ export default function Custos() {
   const toast = useToast();
   const drill = useDrill();
 
+  const config = useConfig(); // guarda o último mês buscado no ERP e os vínculos
   const planoColecao = useColecao("planoContas");
   const classifColecao = useColecao("classificacaoCustos");
   const pagamentosColecao = useColecao("pagamentos");
@@ -137,8 +141,17 @@ export default function Custos() {
     naoCasados: string[];
     cpfsAprendidos: { colaboradorId: string; cpf: string }[];
     totalLinhas: number;
+    // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
+    // e permitir vincular quem não casou).
+    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean };
   } | null>(null);
   const [removerAusentes, setRemoverAusentes] = useState(false);
+  // Busca no ERP Mubisys
+  const [compMubi, setCompMubi] = useState<string>(() => config.ultimaBuscaMubi?.competencia || ultimaComp || hojeIso);
+  const [buscandoMubi, setBuscandoMubi] = useState(false);
+  const [erroMubi, setErroMubi] = useState("");
+  // Resultado da busca automática, esperando o RH querer revisar.
+  const [respostaMubi, setRespostaMubi] = useState<RespostaMubi | null>(null);
 
   const importarPlano = async (file: File) => {
     try {
@@ -161,6 +174,83 @@ export default function Custos() {
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
     }
+  };
+
+  // Busca a folha do mês direto no Contas a Pagar do Mubisys e cai na MESMA
+  // prévia de conciliação da planilha — nada é gravado sem o RH confirmar.
+  // Monta a prévia de conciliação a partir do que veio do ERP.
+  const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>) => {
+    const { registros, naoCasados, coletivas } = paraRegistros(r.linhas, d.colaboradores, vinculos);
+    const existentesDaComp = pagamentos.filter((p: Pagamento) => p.competencia === r.competencia);
+    setRemoverAusentes(false);
+    setFolhaPrev({
+      diff: conciliarPagamentos(existentesDaComp, registros),
+      naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
+      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado },
+    });
+    setRespostaMubi(null);
+  };
+
+  const buscarDoMubi = async (competencia: string, abrirPrevia = true) => {
+    if (!/^\d{4}-\d{2}$/.test(competencia)) { setErroMubi("Escolha o mês."); return; }
+    setBuscandoMubi(true);
+    setErroMubi("");
+    try {
+      const r = await buscarPagamentosMubi(competencia);
+      const vinculos = config.vinculosMubi ?? {};
+      const { registros, naoCasados } = paraRegistros(r.linhas, d.colaboradores, vinculos);
+      salvarConfig({ ultimaBuscaMubi: { competencia, em: r.buscadoEm, quantidade: registros.length } });
+      if (registros.length === 0 && naoCasados.length === 0) {
+        if (abrirPrevia) setErroMubi(`O Mubisys não tem lançamentos de pessoal em ${compLabel(competencia)}.`);
+        return;
+      }
+      // Busca automática não abre janela por cima do que a pessoa está fazendo:
+      // guarda o resultado e avisa; a prévia abre quando ela quiser.
+      if (abrirPrevia) previaDoMubi(r, vinculos); else setRespostaMubi(r);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Falha ao consultar o Mubisys.";
+      if (abrirPrevia) { setErroMubi(msg); toast(msg, "erro"); }
+    } finally {
+      setBuscandoMubi(false);
+    }
+  };
+
+  // Busca automática ao abrir a tela: só do mês corrente e no máximo uma vez a
+  // cada 6 horas (a chamada ao ERP leva ~40s e não pode virar rotina a cada
+  // clique). O resultado vira um aviso, não um modal.
+  const jaBuscouRef = useRef(false);
+  useEffect(() => {
+    if (jaBuscouRef.current || !podeGerir(sessao)) return;
+    const agora = new Date();
+    const compAtual = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+    const ultima = config.ultimaBuscaMubi;
+    const recente = ultima?.competencia === compAtual && ultima.em
+      && agora.getTime() - new Date(ultima.em).getTime() < 6 * 60 * 60 * 1000;
+    if (recente) return;
+    jaBuscouRef.current = true;
+    void buscarDoMubi(compAtual, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessao]);
+
+  // Vincula um nome do ERP a um colaborador e REFAZ a prévia na hora, com o
+  // pagamento já no lugar certo. O vínculo fica guardado: no mês que vem esse
+  // mesmo nome casa sozinho.
+  const vincularMubi = (nomeMubi: string, colaboradorId: string) => {
+    if (!folhaPrev?.mubi) return;
+    const chave = normNome(nomeMubi);
+    const vinculos = { ...(config.vinculosMubi ?? {}) };
+    if (colaboradorId) vinculos[chave] = colaboradorId;
+    else delete vinculos[chave];
+    salvarConfig({ vinculosMubi: vinculos });
+
+    const { registros, naoCasados, coletivas } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos);
+    const comps = new Set(registros.map((r) => r.competencia));
+    const existentesDaComp = pagamentos.filter((p: Pagamento) => comps.has(p.competencia));
+    setFolhaPrev({
+      diff: conciliarPagamentos(existentesDaComp, registros),
+      naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
+      mubi: { ...folhaPrev.mubi, coletivas },
+    });
   };
 
   // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
@@ -472,27 +562,76 @@ export default function Custos() {
         <Card>
           <CardHeader
             title="Pagamentos (custos individuais)"
-            subtitle="Extrato de Contas a Pagar (.xlsx ou .csv) — a folha real por colaborador."
+            subtitle="A folha real por colaborador — vem do Contas a Pagar do Mubisys."
             icon={<ReceiptText className="h-5 w-5" />}
           />
-          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <p className="flex-1 text-xs text-slate-500">
-              As competências presentes no arquivo são atualizadas; as demais permanecem.
-            </p>
-            <input
-              ref={refPagts}
-              type="file"
-              accept=".xlsx,.csv"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) importarPagamentos(f);
-                e.target.value = "";
-              }}
-            />
-            <button className="btn-primary" onClick={() => refPagts.current?.click()}>
-              <Upload className="h-4 w-4" /> Enviar pagamentos
-            </button>
+          <CardBody className="space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <p className="text-xs text-slate-500">
+                  Busca direto no ERP e mostra a prévia antes de gravar. As competências trazidas são atualizadas; as demais permanecem.
+                </p>
+                {/* Último mês buscado: some a dúvida de "isso já está atualizado?" */}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {config.ultimaBuscaMubi
+                    ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s)`
+                    : "Nenhuma busca no Mubisys ainda."}
+                </p>
+              </div>
+              <div className="flex items-end gap-2">
+                <label className="flex flex-col text-[11px] text-slate-500">
+                  Mês
+                  <input type="month" value={compMubi} onChange={(e) => setCompMubi(e.target.value)}
+                    className="mt-0.5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
+                </label>
+                <button className="btn-primary" onClick={() => void buscarDoMubi(compMubi)} disabled={buscandoMubi}>
+                  {buscandoMubi ? <Clock className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {buscandoMubi ? "Buscando no ERP…" : "Buscar do Mubisys"}
+                </button>
+              </div>
+            </div>
+            {buscandoMubi && (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                O Mubisys costuma levar de 30 segundos a 1 minuto para responder. Pode deixar a tela aberta.
+              </p>
+            )}
+
+            {/* Resultado da busca automática: avisa sem interromper. */}
+            {respostaMubi && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2">
+                <p className="text-xs text-slate-700">
+                  O ERP tem <b>{respostaMubi.linhas.length} lançamento(s) de pessoal</b> em {compLabel(respostaMubi.competencia)}.
+                </p>
+                <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => previaDoMubi(respostaMubi, config.vinculosMubi ?? {})}>
+                  Revisar e aplicar
+                </button>
+              </div>
+            )}
+            {erroMubi && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{erroMubi}</p>
+            )}
+
+            {/* A planilha continua disponível: se o ERP estiver fora do ar, o
+                trabalho não para. */}
+            <details className="text-xs text-slate-500">
+              <summary className="cursor-pointer hover:text-brand">Enviar por planilha (.xlsx/.csv)</summary>
+              <div className="mt-2">
+                <input
+                  ref={refPagts}
+                  type="file"
+                  accept=".xlsx,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) importarPagamentos(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button className="btn-outline" onClick={() => refPagts.current?.click()}>
+                  <Upload className="h-4 w-4" /> Enviar planilha
+                </button>
+              </div>
+            </details>
           </CardBody>
         </Card>
       </div>
@@ -690,12 +829,61 @@ export default function Custos() {
                 </div>
               )}
 
+              {/* Despesas de pessoal sem dono (bolo, Uber, reembolso): não são de
+                  ninguém e por isso não viram custo individual. */}
+              {folhaPrev.mubi && folhaPrev.mubi.coletivas.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <p className="mb-1 text-xs font-semibold text-slate-700">
+                    Despesas de pessoal sem nome ({folhaPrev.mubi.coletivas.length}) — {formatBRL(folhaPrev.mubi.coletivas.reduce((s, l) => s + l.valor, 0))}
+                  </p>
+                  <p className="mb-2 text-[11px] text-slate-500">Lançadas no ERP sem colaborador (alimentação, reembolso, confraternização). Não viram custo individual — continuam no rateio pelo plano de contas.</p>
+                  <div className="max-h-28 overflow-y-auto rounded-lg bg-white/70">
+                    <table className="w-full text-xs">
+                      <tbody className="divide-y divide-slate-100">
+                        {folhaPrev.mubi.coletivas.map((l) => (
+                          <tr key={l.idMubi}>
+                            <td className="td text-slate-600">{l.descricao || "—"}</td>
+                            <td className="td text-slate-400">{l.planoContas}</td>
+                            <td className="td text-right tabular-nums text-slate-500">{formatBRL(l.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {naoCasados.length > 0 && (
                 <div className="rounded-xl border border-red-200 bg-red-50/40 p-3">
-                  <p className="mb-1.5 text-xs font-semibold text-red-800">Não encontrados no cadastro ({naoCasados.length}) — não entram:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-red-700 ring-1 ring-red-200">{n}</span>)}
-                  </div>
+                  <p className="mb-1 text-xs font-semibold text-red-800">Não encontrados no cadastro ({naoCasados.length})</p>
+                  <p className="mb-2 text-[11px] text-red-700/80">
+                    {folhaPrev.mubi
+                      ? "Escolha a pessoa ao lado do nome — o sistema lembra e casa sozinho nos próximos meses. Quem ficar sem escolha não entra."
+                      : "Não entram nesta importação."}
+                  </p>
+                  {folhaPrev.mubi ? (
+                    <div className="space-y-1.5">
+                      {naoCasados.map((n) => (
+                        <div key={n} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/80 px-2.5 py-1.5">
+                          <span className="flex-1 text-xs text-slate-700">{n}</span>
+                          <Select
+                            className="min-w-[190px] text-xs"
+                            value={config.vinculosMubi?.[normNome(n)] ?? ""}
+                            onChange={(e) => vincularMubi(n, e.target.value)}
+                          >
+                            <option value="">Vincular a…</option>
+                            {d.colaboradores.filter((c) => c.statusId !== "inativo").map((c) => (
+                              <option key={c.id} value={c.id}>{c.nome}</option>
+                            ))}
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-red-700 ring-1 ring-red-200">{n}</span>)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
