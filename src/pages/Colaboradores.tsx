@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse, Hourglass } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -14,6 +14,7 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData } from "@/lib/format";
+import { situacaoExperiencia } from "@/lib/clt";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
 
@@ -97,6 +98,17 @@ export default function Colaboradores() {
   const emFerias = useMemo(
     () => new Set(ferias.filter((f) => f.status === "Em andamento").map((f) => f.colaboradorId)),
     [ferias],
+  );
+
+  // Quem está em contrato de experiência, do prazo mais curto para o mais longo
+  // (quem vence antes aparece primeiro). Usa a regra da CLT que já existe.
+  const emExperiencia = useMemo(
+    () => escopo
+      .filter((c) => !c.ehDirecao && !ehInativo(c) && c.statusId === "experiencia")
+      .map((c) => ({ c, sit: situacaoExperiencia(c) }))
+      .filter((x): x is { c: Colaborador; sit: NonNullable<ReturnType<typeof situacaoExperiencia>> } => !!x.sit)
+      .sort((a, b) => a.sit.diasParaFim - b.sit.diasParaFim),
+    [escopo],
   );
 
   // Cards de resumo — sobre o escopo de acesso, sem a Direção (mesma base da lista).
@@ -261,6 +273,66 @@ export default function Colaboradores() {
           </button>
         )}
       </PageHeader>
+
+      {/* AVISO DE EXPERIÊNCIA — perder o prazo dos 90 dias transforma o contrato
+          em indeterminado sozinho, e aí desligar custa aviso prévio e multa do
+          FGTS. Por isso este bloco é grande, fica no topo e não some. */}
+      {emExperiencia.length > 0 && (
+        <div className={cn(
+          "mb-4 rounded-2xl border-2 p-4",
+          emExperiencia.some((e) => e.sit.diasParaFim <= 15) ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50",
+        )}>
+          <div className="mb-3 flex items-center gap-2">
+            <span className={cn(
+              "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+              emExperiencia.some((e) => e.sit.diasParaFim <= 15) ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700",
+            )}>
+              <Hourglass className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-base font-bold text-slate-800">
+                {emExperiencia.length} {emExperiencia.length === 1 ? "pessoa está" : "pessoas estão"} em contrato de experiência
+              </p>
+              <p className="text-xs text-slate-600">
+                Decida antes do prazo: passou de 90 dias sem decisão, o contrato vira por tempo indeterminado — e desligar depois custa aviso prévio e multa do FGTS.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {emExperiencia.map(({ c, sit }) => {
+              const urgente = sit.diasParaFim <= 15;
+              const atencao = sit.diasParaFim <= 45;
+              return (
+                <Link
+                  key={c.id}
+                  to={`/colaboradores/${c.id}`}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border bg-white p-3 transition hover:shadow-md",
+                    urgente ? "border-red-300" : atencao ? "border-amber-300" : "border-slate-200",
+                  )}
+                >
+                  <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-800">{c.nome}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {sit.diasDeCasa} dias de casa · {d.nomeCargo(c) || "—"}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className={cn("text-sm font-bold tabular-nums", urgente ? "text-red-700" : atencao ? "text-amber-700" : "text-slate-600")}>
+                      {sit.diasParaFim < 0 ? "venceu!" : `${sit.diasParaFim} dia${sit.diasParaFim === 1 ? "" : "s"}`}
+                    </p>
+                    <p className="text-[11px] text-slate-400">até {sit.fim.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Marco dos 45 dias: decidir se prorroga. Marco dos 90: efetivar ou desligar. Clique no nome para abrir a ficha.
+          </p>
+        </div>
+      )}
 
       {/* Cards de resumo do quadro — clicáveis: filtram a lista abaixo */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
