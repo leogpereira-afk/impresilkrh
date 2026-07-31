@@ -143,8 +143,10 @@ export default function Desempenho() {
   const drill = useDrill();
 
   const { items: avaliacoes, criar: criarAval, atualizar: atualizarAval } = useColecao("avaliacoes");
-  const { items: metas, criar: criarMeta, atualizar: atualizarMeta } = useColecao("metas");
-  const { items: pdis, criar: criarPdi, atualizar: atualizarPdi } = useColecao("pdis");
+  const [excluirMeta, setExcluirMeta] = useState<(typeof metas)[number] | null>(null);
+  const [excluirPdi, setExcluirPdi] = useState<(typeof pdis)[number] | null>(null);
+  const { items: metas, criar: criarMeta, atualizar: atualizarMeta, remover: removerMeta } = useColecao("metas");
+  const { items: pdis, criar: criarPdi, atualizar: atualizarPdi, remover: removerPdi } = useColecao("pdis");
   const { items: feedbacks, criar: criarFeedback, atualizar: atualizarFeedback, remover: removerFeedback } = useColecao("feedbacks");
   const { items: ciclos } = useColecao("ciclos");
 
@@ -269,6 +271,7 @@ export default function Desempenho() {
           toast={toast}
           criarMeta={criarMeta}
           atualizarMeta={atualizarMeta}
+          removerMeta={removerMeta}
         />
       ),
     },
@@ -285,6 +288,7 @@ export default function Desempenho() {
           toast={toast}
           criarPdi={criarPdi}
           atualizarPdi={atualizarPdi}
+          removerPdi={removerPdi}
         />
       ),
     },
@@ -1014,6 +1018,7 @@ function AbaMetas({
   toast,
   criarMeta,
   atualizarMeta,
+  removerMeta,
 }: {
   metas: Meta[];
   escopo: Colaborador[];
@@ -1022,8 +1027,10 @@ function AbaMetas({
   toast: ReturnType<typeof useToast>;
   criarMeta: ReturnType<typeof useColecao<"metas">>["criar"];
   atualizarMeta: ReturnType<typeof useColecao<"metas">>["atualizar"];
+  removerMeta: ReturnType<typeof useColecao<"metas">>["remover"];
 }) {
   const [edicao, setEdicao] = useState<EdicaoMeta | null>(null);
+  const [excluirMeta, setExcluirMeta] = useState<Meta | null>(null);
 
   function abrirNova() {
     setEdicao(metaVazia());
@@ -1120,9 +1127,16 @@ function AbaMetas({
                         {m.unidade ?? ""}
                       </span>
                       {gerir && (
-                        <button className="btn-ghost px-2 py-1 text-xs" onClick={() => abrirEdicao(m)}>
-                          <PencilLine className="h-3.5 w-3.5" />
-                        </button>
+                        <>
+                          <button className="btn-ghost px-2 py-1 text-xs" onClick={() => abrirEdicao(m)} title="Editar meta">
+                            <PencilLine className="h-3.5 w-3.5" />
+                          </button>
+                          {/* Meta lançada em duplicidade ou na pessoa errada
+                              ficava no ciclo para sempre — só dava para criar. */}
+                          <button className="btn-ghost px-2 py-1 text-xs text-slate-400 hover:text-red-600" onClick={() => setExcluirMeta(m)} title="Excluir meta" aria-label="Excluir meta">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1194,6 +1208,14 @@ function AbaMetas({
           </div>
         )}
       </Modal>
+      <ConfirmDialog
+        aberto={!!excluirMeta}
+        onFechar={() => setExcluirMeta(null)}
+        onConfirmar={() => { if (excluirMeta) { removerMeta(excluirMeta.id); toast("Meta removida."); } setExcluirMeta(null); }}
+        titulo="Excluir meta"
+        textoConfirmar="Excluir"
+        mensagem={excluirMeta ? <>Excluir a meta <strong>{excluirMeta.titulo}</strong>? Ela sai do ciclo e do acompanhamento.</> : ""}
+      />
     </>
   );
 }
@@ -1228,6 +1250,7 @@ function AbaPdi({
   toast,
   criarPdi,
   atualizarPdi,
+  removerPdi,
 }: {
   pdis: PDI[];
   escopo: Colaborador[];
@@ -1236,7 +1259,9 @@ function AbaPdi({
   toast: ReturnType<typeof useToast>;
   criarPdi: ReturnType<typeof useColecao<"pdis">>["criar"];
   atualizarPdi: ReturnType<typeof useColecao<"pdis">>["atualizar"];
+  removerPdi: ReturnType<typeof useColecao<"pdis">>["remover"];
 }) {
+  const [excluirPdi, setExcluirPdi] = useState<PDI | null>(null);
   const [edicao, setEdicao] = useState<EdicaoPdi | null>(null);
 
   function abrirNovo() {
@@ -1318,9 +1343,16 @@ function AbaPdi({
                     </p>
                   </div>
                   {gerir && (
-                    <button className="btn-ghost px-2 py-1 text-xs shrink-0" onClick={() => abrirEdicao(p)}>
-                      <PencilLine className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex shrink-0 items-center">
+                      <button className="btn-ghost px-2 py-1 text-xs" onClick={() => abrirEdicao(p)} title="Editar PDI">
+                        <PencilLine className="h-3.5 w-3.5" />
+                      </button>
+                      {/* O modal de PDI abre com escopo[0] pré-selecionado: é
+                          fácil lançar na pessoa errada e não havia como tirar. */}
+                      <button className="btn-ghost px-2 py-1 text-xs text-slate-400 hover:text-red-600" onClick={() => setExcluirPdi(p)} title="Excluir PDI" aria-label="Excluir PDI">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{p.acao}</p>
@@ -1383,6 +1415,14 @@ function AbaPdi({
           </div>
         )}
       </Modal>
+      <ConfirmDialog
+        aberto={!!excluirPdi}
+        onFechar={() => setExcluirPdi(null)}
+        onConfirmar={() => { if (excluirPdi) { removerPdi(excluirPdi.id); toast("PDI removido."); } setExcluirPdi(null); }}
+        titulo="Excluir PDI"
+        textoConfirmar="Excluir"
+        mensagem={excluirPdi ? <>Excluir o PDI de <strong>{excluirPdi.competencia}</strong>? O plano sai do desenvolvimento da pessoa.</> : ""}
+      />
     </>
   );
 }

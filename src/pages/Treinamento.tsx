@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  GraduationCap, Plus, Trophy, Clock, CheckCircle2, Trash2, ListChecks, Users, BookOpen,
+  GraduationCap, Plus, Trophy, Clock, CheckCircle2, Trash2, Pencil, ListChecks, Users, BookOpen,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -53,6 +53,7 @@ export default function Treinamento() {
   const { items: treinamentos, criar, atualizar, remover } = useColecao("treinamentos");
 
   const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState<Treinamento | null>(null);
   const [excluir, setExcluir] = useState<string | null>(null);
 
   // Escopo de visibilidade: colaboradores do escopo do usuário, sem inativos.
@@ -109,15 +110,20 @@ export default function Treinamento() {
       .map((s) => ({ nome: s, valor: mapa.get(s) ?? 0, cor: cores[s] ?? "#64748b" }));
   }, [lista]);
 
-  // "Quem está em treinamento": registros ativos ordenados por prazo (mais próximo primeiro).
+  // A tabela mostrava SÓ os ativos — e o registro sumia do sistema inteiro no
+  // instante em que chegava a 100%. Arrastar a barra sem querer (ou concluir o
+  // treinamento errado) não tinha desfazer: a linha desaparecia durante o
+  // próprio arrasto e a ficha do colaborador só mostra a CONTAGEM. Agora dá
+  // para ver os concluídos e voltar atrás.
+  const [verConcluidos, setVerConcluidos] = useState(false);
   const emTreinamento = useMemo(
     () =>
-      ativos.slice().sort((a, b) => {
+      (verConcluidos ? lista : ativos).slice().sort((a, b) => {
         const pa = a.prazo ? String(a.prazo).slice(0, 10) : "9999-99-99";
         const pb = b.prazo ? String(b.prazo).slice(0, 10) : "9999-99-99";
         return pa.localeCompare(pb);
       }),
-    [ativos],
+    [ativos, lista, verConcluidos],
   );
 
   // "O que precisa treinar": agrupa treinamentos PENDENTES por título.
@@ -225,8 +231,17 @@ export default function Treinamento() {
       <Card className="mt-6 overflow-hidden">
         <CardHeader
           title="Quem está em treinamento"
-          subtitle={`${emTreinamento.length} treinamento(s) em andamento ou pendentes, por prazo`}
+          subtitle={`${emTreinamento.length} treinamento(s)${verConcluidos ? " (incluindo concluídos)" : " em andamento ou pendentes"}, por prazo`}
           icon={<GraduationCap className="h-[18px] w-[18px]" />}
+          action={
+            <button
+              className={verConcluidos ? "btn-primary h-8 px-3 py-0 text-xs" : "btn-outline h-8 px-3 py-0 text-xs"}
+              onClick={() => setVerConcluidos((v) => !v)}
+              title="Concluído sai da lista por padrão; ligue para corrigir ou reabrir um registro"
+            >
+              {verConcluidos ? "Ocultar concluídos" : "Mostrar concluídos"}
+            </button>
+          }
         />
         {emTreinamento.length === 0 ? (
           <CardBody>
@@ -323,6 +338,16 @@ export default function Treinamento() {
                     <td className="td hidden md:table-cell text-slate-500">{diaData(t.prazo)}</td>
                     {podeEditar && (
                       <td className="td text-right">
+                        {/* Sem o lápis, corrigir o prazo, o tipo ou o título de
+                            um treinamento já lançado exigia apagar e refazer. */}
+                        <button
+                          className="btn-ghost p-1.5 text-slate-400 hover:text-brand"
+                          onClick={() => setEditar(t)}
+                          aria-label="Editar treinamento"
+                          title="Corrigir título, tipo, prazo ou status"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
                         <button
                           className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
                           onClick={() => setExcluir(t.id)}
@@ -382,14 +407,15 @@ export default function Treinamento() {
         </CardBody>
       </Card>
 
-      {novo && (
+      {(novo || editar) && (
         <NovoTreinamentoModal
           escopo={escopo}
-          onFechar={() => setNovo(false)}
+          registro={editar}
+          onFechar={() => { setNovo(false); setEditar(null); }}
           onCriar={(payload) => {
-            criar(payload);
-            toast("Treinamento criado.");
-            setNovo(false);
+            if (editar) { atualizar(editar.id, payload); toast("Treinamento atualizado."); }
+            else { criar(payload); toast("Treinamento criado."); }
+            setNovo(false); setEditar(null);
           }}
         />
       )}
@@ -422,21 +448,25 @@ export default function Treinamento() {
 // =====================================================================================
 function NovoTreinamentoModal({
   escopo,
+  registro,
   onFechar,
   onCriar,
 }: {
   escopo: Colaborador[];
+  /** Preenchido = edição; nulo = novo. */
+  registro?: Treinamento | null;
   onFechar: () => void;
   onCriar: (payload: Partial<Treinamento>) => void;
 }) {
   const toast = useToast();
-  const [colaboradorId, setColaboradorId] = useState(escopo[0]?.id ?? "");
-  const [titulo, setTitulo] = useState("");
-  const [tipo, setTipo] = useState<string>(TIPOS_TREINAMENTO[0]);
-  const [status, setStatus] = useState<string>(STATUS_TREINAMENTO[0]);
-  const [progresso, setProgresso] = useState(0);
-  const [prazo, setPrazo] = useState(iso(HOJE));
-  const [descricao, setDescricao] = useState("");
+  const [colaboradorId, setColaboradorId] = useState(registro?.colaboradorId ?? escopo[0]?.id ?? "");
+  const [titulo, setTitulo] = useState(registro?.titulo ?? "");
+  const [tipo, setTipo] = useState<string>(registro?.tipo ?? TIPOS_TREINAMENTO[0]);
+  const [status, setStatus] = useState<string>(registro?.status ?? STATUS_TREINAMENTO[0]);
+  const [progresso, setProgresso] = useState(registro?.progresso ?? 0);
+  // .slice(0,10): registro antigo pode ter timestamp e o input date fica vazio.
+  const [prazo, setPrazo] = useState((registro?.prazo ?? iso(HOJE)).slice(0, 10));
+  const [descricao, setDescricao] = useState(registro?.descricao ?? "");
 
   const salvar = () => {
     if (!colaboradorId) return toast("Selecione o colaborador.", "erro");
@@ -462,8 +492,8 @@ function NovoTreinamentoModal({
     <Modal
       aberto
       onFechar={onFechar}
-      titulo="Novo treinamento"
-      descricao="Atribua um treinamento ou capacitação a um colaborador."
+      titulo={registro ? "Editar treinamento" : "Novo treinamento"}
+      descricao={registro ? "Corrija os dados deste treinamento." : "Atribua um treinamento ou capacitação a um colaborador."}
       rodape={
         <>
           <button className="btn-outline" onClick={onFechar}>Cancelar</button>

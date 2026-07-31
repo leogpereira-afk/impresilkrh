@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
-import { Plane, Wallet, CalendarClock, MapPin, Plus, Trophy, Upload, Pencil } from "lucide-react";
+import { Plane, Wallet, CalendarClock, MapPin, Plus, Trophy, Upload, Pencil, Trash2 } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { DotBadge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
@@ -50,7 +50,8 @@ export function ViagensPainel() {
   const d = useDominio();
   const toast = useToast();
   const drill = useDrill();
-  const { items: viagens, criar, atualizar } = useColecao("viagens");
+  const { items: viagens, criar, atualizar, remover } = useColecao("viagens");
+  const [excluir, setExcluir] = useState<(typeof viagens)[number] | null>(null);
 
   const [novo, setNovo] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -446,6 +447,16 @@ export function ViagensPainel() {
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
+                        {/* Um JSON importado errado (ou uma viagem digitada em
+                            duplicidade) ficava para sempre inflando o ranking e
+                            o gasto por pessoa — não havia como remover. */}
+                        <button
+                          className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
+                          onClick={() => setExcluir(v)}
+                          aria-label={`Excluir viagem para ${v.destino}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </td>
                     )}
                   </tr>
@@ -455,6 +466,15 @@ export function ViagensPainel() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        onFechar={() => setExcluir(null)}
+        onConfirmar={() => { if (excluir) { remover(excluir.id); toast("Viagem removida."); } setExcluir(null); }}
+        titulo="Excluir viagem"
+        textoConfirmar="Excluir"
+        mensagem={excluir ? <>Excluir a viagem de <strong>{d.nomeColab(excluir.colaboradorId)}</strong> para <strong>{excluir.destino}</strong>? O valor sai do ranking e do gasto por pessoa.</> : ""}
+      />
 
       {podeEditar && (
         <Modal
