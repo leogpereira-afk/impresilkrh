@@ -172,17 +172,24 @@ export default function Relatorios() {
     return { admit, deslig, saldo: admit.length - deslig.length, turnover };
   }, [colaboradores, ativos, filtroMes, filtroAno]);
 
-  // -- Folha real (pagamentos enviados), somando SÓ os ativos. Duas bases:
+  // -- Folha real (pagamentos enviados), de quem está no quadro. Duas bases:
   //    "caixa" = pelo dia em que o pagamento saiu (dataPagamento);
   //    "competencia" = pelo mês de referência (competencia). Respeita o período. --
   const { items: pagamentos } = useColecao("pagamentos");
-  const idsAtivos = useMemo(() => new Set(ativos.map((c) => c.id)), [ativos]);
+  // A folha REAL é dinheiro que saiu do caixa: entra quem está no quadro, mesmo
+  // afastado (INSS/licença continua recebendo). "Ativo" para HEADCOUNT exclui
+  // afastado — usar aquele conjunto aqui apagava a folha dessas pessoas do
+  // gráfico e do total (R$ 49 mil em 2026), como se nunca tivessem sido pagas.
+  const idsFolha = useMemo(
+    () => new Set(colaboradores.filter((c) => !c.ehDirecao && !c.dataDesligamento && c.statusId !== "inativo").map((c) => c.id)),
+    [colaboradores],
+  );
   const [baseFolha, setBaseFolha] = useState<"caixa" | "competencia">("caixa");
   const folhaReal = useMemo(() => {
     const porCaixa = new Map<string, number>();
     const porComp = new Map<string, number>();
     for (const p of pagamentos) {
-      if (!idsAtivos.has(p.colaboradorId)) continue; // só ativos
+      if (!idsFolha.has(p.colaboradorId)) continue; // quem está no quadro (inclui afastado)
       porComp.set(p.competencia, (porComp.get(p.competencia) ?? 0) + p.valor);
       const dt = parseData(p.dataPagamento);
       const ck = dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia;
@@ -197,7 +204,7 @@ export default function Relatorios() {
       return { total, serie, mapa: m };
     };
     return { caixa: resumo(porCaixa), competencia: resumo(porComp), temDados: porCaixa.size > 0 || porComp.size > 0 };
-  }, [pagamentos, idsAtivos, filtroMes, filtroAno]);
+  }, [pagamentos, idsFolha, filtroMes, filtroAno]);
   const folhaAtual = folhaReal[baseFolha];
 
   const drillFolhaReal = useCallback(
@@ -210,11 +217,11 @@ export default function Relatorios() {
         const dt = parseData(p.dataPagamento);
         return (dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia) === key;
       };
-      const ids = new Set(pagamentos.filter((p) => idsAtivos.has(p.colaboradorId) && noMes(p)).map((p) => p.colaboradorId));
+      const ids = new Set(pagamentos.filter((p) => idsFolha.has(p.colaboradorId) && noMes(p)).map((p) => p.colaboradorId));
       const lista = ativos.filter((c) => ids.has(c.id));
       drill.abrir(`Folha real (${baseFolha}) — ${nomeMes}/${filtroAno}`, lista, `${formatBRL(folhaReal[baseFolha].mapa.get(key) ?? 0)} · ${lista.length} colaborador(es)`);
     },
-    [pagamentos, idsAtivos, ativos, filtroAno, baseFolha, folhaReal, drill],
+    [pagamentos, idsFolha, ativos, filtroAno, baseFolha, folhaReal, drill],
   );
 
   // -- Indicadores de cabeçalho --

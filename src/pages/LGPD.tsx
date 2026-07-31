@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef } from "react";
 import { Lock, ShieldCheck, Eye, FileSearch, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -28,24 +28,22 @@ export default function LGPD() {
 
   // Cada card do topo é um filtro das tabelas abaixo — os hooks ficam antes do
   // early return de permissão para não quebrar a ordem dos hooks.
-  const [focoAcesso, setFocoAcesso] = useState<"sensiveis" | null>(null);
-  const [soConsentidos, setSoConsentidos] = useState(false);
+  // Referência da tabela de consentimentos: o card leva até ela (a trilha acima
+  // tem centenas de linhas, e sem isso o clique parecia não fazer nada).
+  const refConsent = useRef<HTMLDivElement>(null);
 
   const ordenados = useMemo(
     () => [...acessos].sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime()),
     [acessos],
   );
 
-  const trilha = useMemo(
-    () => (focoAcesso === "sensiveis" ? ordenados.filter((a) => a.acao.includes("SENSIVEIS")) : ordenados),
-    [ordenados, focoAcesso],
-  );
-
-  // O card conta só os consentidos; o filtro deixa a tabela bater com o número.
-  const consentVisiveis = useMemo(
-    () => (soConsentidos ? consentimentos.filter((c) => c.consentido) : consentimentos),
-    [consentimentos, soConsentidos],
-  );
+  // NÃO existe filtro aqui de propósito: hoje o sistema registra um único tipo
+  // de acesso (visualização de dados sensíveis, em ColaboradorFicha) e grava
+  // todo consentimento como "consentido". Um filtro por esses campos devolveria
+  // sempre a lista inteira — botão que acende e não muda nada engana mais do
+  // que ajuda. Volta a fazer sentido quando houver outras ações registradas.
+  const trilha = ordenados;
+  const consentVisiveis = consentimentos;
 
   if (!ehRH(sessao)) {
     return (
@@ -68,9 +66,16 @@ export default function LGPD() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Total de acessos" value={acessos.length} icon={<Eye className="h-5 w-5" />} accent="brand" onClick={() => setFocoAcesso(null)} ativo={focoAcesso === null} title="Mostrar todos os acessos na trilha" />
-        <StatCard label="Acessos a dados sensíveis" value={totalSensiveis} icon={<FileSearch className="h-5 w-5" />} accent={totalSensiveis ? "amber" : "green"} hint="Visualizações de CPF, salário e dados familiares" onClick={() => setFocoAcesso((f) => (f === "sensiveis" ? null : "sensiveis"))} ativo={focoAcesso === "sensiveis"} title="Ver na trilha só os acessos a dados sensíveis" />
-        <StatCard label="Consentimentos registrados" value={totalConsentidos} icon={<ShieldCheck className="h-5 w-5" />} accent="green" onClick={() => setSoConsentidos((v) => !v)} ativo={soConsentidos} title="Ver só quem consentiu (clique de novo para mostrar todos)" />
+        <StatCard label="Total de acessos" value={acessos.length} icon={<Eye className="h-5 w-5" />} accent="brand" hint="Registrados na trilha abaixo" />
+        <StatCard label="Acessos a dados sensíveis" value={totalSensiveis} icon={<FileSearch className="h-5 w-5" />} accent={totalSensiveis ? "amber" : "green"} hint="Visualizações de CPF, salário e dados familiares" />
+        <StatCard
+          label="Consentimentos registrados"
+          value={`${totalConsentidos} de ${consentimentos.length}`}
+          icon={<ShieldCheck className="h-5 w-5" />}
+          accent="green"
+          onClick={() => refConsent.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          title="Ir para a tabela de consentimentos"
+        />
       </div>
 
       <Card className="mt-6">
@@ -119,6 +124,9 @@ export default function LGPD() {
         </CardBody>
       </Card>
 
+      {/* O card "Consentimentos" rola até aqui — a trilha acima tem centenas de
+          linhas e esta tabela ficava fora da tela. */}
+      <div ref={refConsent}>
       <Card className="mt-6">
         <CardHeader
           title="Consentimentos LGPD"
@@ -160,6 +168,7 @@ export default function LGPD() {
           )}
         </CardBody>
       </Card>
+      </div>
     </div>
   );
 }

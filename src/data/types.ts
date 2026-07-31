@@ -353,6 +353,10 @@ export interface Config {
   // casar sozinho nos meses seguintes, e o registro da última busca.
   vinculosMubi?: Record<string, string>;
   ultimaBuscaMubi?: { competencia: string; em: string; quantidade: number } | null;
+  // Ponto: nome como vem no PDF do Secullum → colaborador escolhido à mão.
+  // Sem isso, quem não casa por diferença de grafia ("Golçalves"/"Gonçalves")
+  // precisa ser vinculado toda vez — e a reimportação cria uma segunda ficha.
+  vinculosPonto?: Record<string, string>;
 }
 
 // ===================== Frequência e Advertências (Módulo C) =====================

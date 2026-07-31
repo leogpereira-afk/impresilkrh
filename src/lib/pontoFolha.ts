@@ -183,6 +183,34 @@ export function calcularFalta({
   };
 }
 
+/**
+ * Lê um valor em dinheiro digitado por gente, aceitando os dois jeitos.
+ *
+ * A regra antiga apagava TODO ponto tratando-o como separador de milhar, então
+ * "10.50" (que muitos teclados entregam) virava 1050 — cem vezes o valor, sem
+ * aviso. Agora: se há vírgula, ela é o decimal e os pontos são milhar; se só há
+ * ponto, ele é o decimal — a menos que esteja claramente separando milhar
+ * ("1.050" ou "1.234.567").
+ */
+export function valorDigitado(txt: string | number | null | undefined): number {
+  if (typeof txt === "number") return Number.isFinite(txt) ? txt : 0;
+  const s = String(txt ?? "").replace(/R\$/gi, "").replace(/\s/g, "").trim();
+  if (!s) return 0;
+  const temVirgula = s.includes(",");
+  let limpo: string;
+  if (temVirgula) {
+    limpo = s.replace(/\./g, "").replace(",", ".");
+  } else {
+    const pontos = (s.match(/\./g) || []).length;
+    const ultimo = s.lastIndexOf(".");
+    const casasDepois = ultimo >= 0 ? s.length - ultimo - 1 : -1;
+    // "1.050" / "1.234.567" = milhar (3 casas depois do último ponto).
+    limpo = pontos >= 2 || (pontos === 1 && casasDepois === 3) ? s.replace(/\./g, "") : s;
+  }
+  const n = Number(limpo);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** Minutos → horas decimais (para mostrar a conta: "5,62 h × R$ 13,64"). */
 export function horasDecimais(minutos: number): number {
   return Math.round((positivo(minutos) / 60) * 100) / 100;

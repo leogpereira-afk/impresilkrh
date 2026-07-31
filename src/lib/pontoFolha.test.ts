@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import {
   valorHora, calcularHoraExtra, calcularFalta, diasDaCompetencia, minutosEntre,
-  horasDecimais, DIVISOR_MENSAL_PADRAO,
+  horasDecimais, valorDigitado, DIVISOR_MENSAL_PADRAO,
 } from "./pontoFolha";
 
 describe("valorHora", () => {
@@ -163,6 +163,38 @@ describe("minutosEntre", () => {
 
   it("mesmo horário é zero, não 24 horas", () => {
     expect(minutosEntre("08:00", "08:00")).toBe(0);
+  });
+});
+
+describe("valorDigitado", () => {
+  // O bug real: "10.50" virava 1050 (cem vezes o valor) e ia para a folha.
+  it("aceita ponto como decimal", () => {
+    expect(valorDigitado("10.50")).toBe(10.5);
+    expect(valorDigitado("0.99")).toBe(0.99);
+    expect(valorDigitado("2500.75")).toBe(2500.75);
+  });
+
+  it("aceita vírgula como decimal (jeito brasileiro)", () => {
+    expect(valorDigitado("10,50")).toBe(10.5);
+    expect(valorDigitado("1.050,00")).toBe(1050);
+    expect(valorDigitado("1.234.567,89")).toBe(1234567.89);
+  });
+
+  it("entende ponto de milhar sem decimal", () => {
+    expect(valorDigitado("1.050")).toBe(1050);
+    expect(valorDigitado("1.234.567")).toBe(1234567);
+  });
+
+  it("número inteiro simples", () => {
+    expect(valorDigitado("500")).toBe(500);
+    expect(valorDigitado(500)).toBe(500);
+  });
+
+  it("ignora R$, espaço e lixo", () => {
+    expect(valorDigitado("R$ 1.050,00")).toBe(1050);
+    expect(valorDigitado("")).toBe(0);
+    expect(valorDigitado(null)).toBe(0);
+    expect(valorDigitado("abc")).toBe(0);
   });
 });
 

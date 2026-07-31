@@ -15,29 +15,15 @@ import { NIVEIS } from "./niveis";
 import { CARGOS } from "./cargos";
 import { STATUS } from "./status";
 import { COLABORADORES } from "./colaboradores";
-import { DOCUMENTOS } from "./documentos";
 import { INSTITUCIONAIS } from "./institucionais";
-import { GUIAS_COMUNICACAO } from "./comunicacao";
 import { POPS } from "./pops";
-import { FERIAS } from "./ferias";
-import { MOVIMENTACOES } from "./movimentacoes";
-import { CICLOS, AVALIACOES, METAS, PDIS, FEEDBACKS } from "./desempenho";
-import { VIAGENS } from "./viagens";
-import { TAREFAS, MODELOS_CHECKLIST } from "./integracao";
-import { CONSENTIMENTOS, ACESSOS, ACEITES } from "./lgpd";
-import { ADVERTENCIAS, AUSENCIAS } from "./frequencia";
-import { CONTATOS, TEMPLATES, AGENDAMENTOS } from "./mensagens";
+import { MODELOS_CHECKLIST } from "./integracao";
+import { TEMPLATES } from "./mensagens";
 import { REPOSITORIO } from "./repositorio";
-import { TREINAMENTOS } from "./treinamentos";
-import { EVOLUCAO } from "./evolucao";
 import { USUARIOS } from "./usuarios";
-import { PAGAMENTOS } from "./pagamentos";
-import { PLANO_CONTAS } from "./planoContas";
 import { CLASSIFICACAO_CONTAS } from "./classificacaoContas";
 import { EVENTOS_CALENDARIO } from "./eventos";
-import { CERTIFICACOES_NR } from "./nrs";
 import { PESQUISAS } from "./pesquisas";
-import { VAGAS, CANDIDATOS } from "./vagas";
 
 export const VERSAO_DADOS = "1.0.0";
 
@@ -99,6 +85,19 @@ export type NomeColecao = keyof ColecaoMap;
 
 // Defaults por coleção. A função garante uma cópia profunda a cada chamada
 // (para que o "restaurar padrão" não compartilhe referências mutáveis).
+//
+// ATENÇÃO — POR QUE OS DADOS DE MOVIMENTO VÊM VAZIOS AQUI:
+// Estes defaults são carregados ANTES do primeiro pull da nuvem. Como o merge
+// do sync preserva o que existe só no local (para nunca apagar às cegas), tudo
+// que estiver aqui é tratado como "registro novo do usuário" e SOBE para a
+// nuvem no primeiro push — mesmo sendo dado de demonstração.
+//
+// Foi exatamente isso que aconteceu em 30/07/2026: os 514 pagamentos de exemplo
+// foram parar no banco de produção e dobraram o custo de pessoal de todos os
+// meses (R$ 366.538 de lixo em R$ 805.261). Só ficam aqui as coleções de
+// REFERÊNCIA (áreas, níveis, cargos, status, modelos…), que o app precisa para
+// abrir e que o usuário edita de propósito. Movimento — pagamento, avaliação,
+// falta, ponto, vaga — nasce vazio e vem da nuvem.
 export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
   return structuredClone({
     areas: AREAS,
@@ -106,41 +105,41 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     cargos: CARGOS,
     status: STATUS,
     colaboradores: COLABORADORES,
-    documentos: DOCUMENTOS,
+    documentos: [],
     institucionais: INSTITUCIONAIS,
-    comunicacao: GUIAS_COMUNICACAO,
+    comunicacao: [],
     pops: POPS,
-    ferias: FERIAS,
-    movimentacoes: MOVIMENTACOES,
-    ciclos: CICLOS,
-    avaliacoes: AVALIACOES,
-    metas: METAS,
-    pdis: PDIS,
-    feedbacks: FEEDBACKS,
-    viagens: VIAGENS,
-    tarefas: TAREFAS,
+    ferias: [],
+    movimentacoes: [],
+    ciclos: [],
+    avaliacoes: [],
+    metas: [],
+    pdis: [],
+    feedbacks: [],
+    viagens: [],
+    tarefas: [],
     modelosChecklist: MODELOS_CHECKLIST,
-    consentimentos: CONSENTIMENTOS,
-    acessos: ACESSOS,
-    aceites: ACEITES,
-    advertencias: ADVERTENCIAS,
-    ausencias: AUSENCIAS,
-    contatos: CONTATOS,
+    consentimentos: [],
+    acessos: [],
+    aceites: [],
+    advertencias: [],
+    ausencias: [],
+    contatos: [],
     templatesMensagem: TEMPLATES,
-    agendamentos: AGENDAMENTOS,
+    agendamentos: [],
     repositorio: REPOSITORIO,
-    treinamentos: TREINAMENTOS,
-    evolucao: EVOLUCAO,
+    treinamentos: [],
+    evolucao: [],
     usuarios: USUARIOS,
-    pagamentos: PAGAMENTOS,
-    planoContas: PLANO_CONTAS,
+    pagamentos: [],
+    planoContas: [],
     classificacaoCustos: CLASSIFICACAO_CONTAS,
     eventos: EVENTOS_CALENDARIO,
-    certificacoesNr: CERTIFICACOES_NR,
+    certificacoesNr: [],
     pesquisas: PESQUISAS,
     respostasPesquisa: [],
-    vagas: VAGAS,
-    candidatos: CANDIDATOS,
+    vagas: [],
+    candidatos: [],
     pontos: [],
     lancamentos: [],
     fechamentos: [],

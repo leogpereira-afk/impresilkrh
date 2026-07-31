@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2, Pencil,
   Upload, ExternalLink, CalendarRange, CalendarX2, Clock, CheckCircle2, Trophy, BarChart3, Brain,
@@ -15,7 +15,7 @@ import { Avatar, EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais, BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
-import { useColecao, useConfig } from "@/lib/store";
+import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
@@ -258,16 +258,32 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   // quem chama consegue cair no nome do PDF em vez de imprimir um id no relatório.
   const nomeColab = (id: string | null | undefined) => (id ? (d.colaboradores.find((c) => c.id === id)?.nome ?? null) : null);
 
+  // Chave do vínculo guardado: o nome como o Secullum escreve, sem acento/caixa.
+  const chaveNome = (s: string) =>
+    (s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+
   const onArquivo = async (file: File) => {
     setOcupado(true);
     try {
       const buf = await file.arrayBuffer();
       const r = await lerPontoPdf(buf, colOpts);
       if (!r.linhas.length) { toast("Não encontrei funcionários neste PDF. É o Cartão Ponto do Secullum?", "erro"); return; }
-      setPrevia(r);
+      // Reaplica os vínculos que o RH já fez à mão em importações anteriores.
+      // Sem isso, quem tem grafia diferente no cadastro volta como "não
+      // vinculado" todo mês — e a reimportação cria uma SEGUNDA ficha da pessoa.
+      const vinc = config.vinculosPonto ?? {};
+      let reaproveitados = 0;
+      const linhas = r.linhas.map((l) => {
+        if (l.colaboradorId) return l;
+        const id = vinc[chaveNome(l.nomePdf)];
+        if (!id || !d.colaboradores.some((c) => c.id === id)) return l;
+        reaproveitados++;
+        return { ...l, colaboradorId: id, colaboradorNome: nomeColab(id) };
+      });
+      setPrevia({ ...r, linhas });
       setCompetencia(r.competencia || competencia);
-      const casados = r.linhas.filter((l) => l.colaboradorId).length;
-      toast(`Lido: ${r.linhas.length} funcionário(s), ${casados} casaram com o cadastro.`);
+      const casados = linhas.filter((l) => l.colaboradorId).length;
+      toast(`Lido: ${linhas.length} funcionário(s), ${casados} casaram com o cadastro${reaproveitados ? ` (${reaproveitados} pelo vínculo que você já tinha feito)` : ""}.`);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Não consegui ler este PDF.", "erro");
     } finally { setOcupado(false); }
@@ -275,6 +291,14 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
   const definirColab = (i: number, colId: string) => {
     if (!previa) return;
+    const linha = previa.linhas[i];
+    // Guarda a escolha: no mês que vem esse mesmo nome casa sozinho.
+    if (linha) {
+      const vinc = { ...(config.vinculosPonto ?? {}) };
+      if (colId) vinc[chaveNome(linha.nomePdf)] = colId;
+      else delete vinc[chaveNome(linha.nomePdf)];
+      salvarConfig({ vinculosPonto: vinc });
+    }
     setPrevia({ ...previa, linhas: previa.linhas.map((l, j) => (j === i ? { ...l, colaboradorId: colId || null, colaboradorNome: nomeColab(colId) } : l)) });
   };
 
@@ -294,6 +318,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     }
     const agora = new Date().toISOString();
     let n = 0;
+    let duplicadasRemovidas = 0;
     for (const l of previa.linhas) {
       const chave = l.colaboradorId || `pdf-${slug(l.nomePdf)}`;
       const id = `${competencia}::${chave}`;
@@ -305,25 +330,38 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         importadoEm: agora, atualizadoEm: agora,
       };
       if (pontos.some((p) => p.id === id)) atualizar(id, rec); else criar(rec);
-      // Se a pessoa tinha sido importada SEM vínculo e agora foi vinculada, o id
-      // muda (pdf-nome → colaboradorId). Remove o registro antigo, senão ela
-      // apareceria duas vezes no mesmo mês (uma vinculada, outra órfã).
-      if (l.colaboradorId) {
-        const idOrfao = `${competencia}::pdf-${slug(l.nomePdf)}`;
-        if (idOrfao !== id && pontos.some((p) => p.id === idOrfao)) remover(idOrfao);
-      }
+
+      // NÃO LANÇAR DE NOVO O QUE JÁ ESTÁ LANÇADO: a mesma pessoa pode já ter uma
+      // ficha no mês com OUTRO id — porque o vínculo mudou (pdf-nome ↔ cadastro)
+      // ou porque o PDF anterior escreveu o nome diferente. Qualquer ficha do mês
+      // que seja da mesma pessoa (mesmo colaborador ou mesmo nome do PDF) e tenha
+      // id diferente é a versão velha: sai, senão a pessoa fica em duplicidade e
+      // o mês soma as horas duas vezes.
+      const mesmaPessoa = (p: Ponto) =>
+        p.id !== id && p.competencia === competencia &&
+        ((!!l.colaboradorId && p.colaboradorId === l.colaboradorId) ||
+         chaveNome(p.nomePdf) === chaveNome(l.nomePdf));
+      for (const antigo of pontos.filter(mesmaPessoa)) { remover(antigo.id); duplicadasRemovidas++; }
       n++;
     }
-    toast(`${n} ponto(s) importados para ${labelMes(competencia)}. Vão somar no custo mensal.`);
+    toast(
+      `${n} ficha(s) de ponto gravada(s) em ${labelMes(competencia)}` +
+      (duplicadasRemovidas ? ` · ${duplicadasRemovidas} ficha(s) repetida(s) do mesmo mês foram substituídas.` : "."),
+    );
     setPrevia(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // Quem não bate ponto (gerente, comissão, externo) aparece no PDF do Secullum
-  // com o mês inteiro em FALTAS — mas isso não é falta: é ausência de controle
-  // de jornada. Essas fichas ficam de fora dos totais e do relatório, senão a
-  // contabilidade receberia centenas de horas de falta que não existem.
-  const naoBate = (p: Ponto) => !!(p.colaboradorId && d.colabById.get(p.colaboradorId)?.naoBatePonto);
+  // Quem não bate ponto (gerente, comissão, externo) e quem está AFASTADO (INSS,
+  // licença) aparecem no PDF do Secullum com o mês inteiro em FALTAS — mas isso
+  // não é falta: é ausência de controle de jornada / de trabalho. Essas fichas
+  // ficam de fora dos totais e do relatório, senão a contabilidade receberia
+  // centenas de horas de falta que não existem.
+  const naoBate = (p: Ponto) => {
+    if (!p.colaboradorId) return false;
+    const c = d.colabById.get(p.colaboradorId);
+    return !!c && (!!c.naoBatePonto || c.statusId === "afastado");
+  };
 
   const doMesTodos = useMemo(
     () => pontos.filter((p) => p.competencia === competencia)
@@ -336,6 +374,13 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const totFaltas = doMes.reduce((s, p) => s + (p.faltasMin || 0), 0);
   const comps = useMemo(() => [...new Set(pontos.map((p) => p.competencia))].sort().reverse(), [pontos]);
 
+  // A aba abria sempre com a competência vazia e mostrava "Nada importado ainda"
+  // mesmo com o mês inteiro gravado — parecia que o ponto tinha sumido. Ao
+  // chegar (ou quando os pontos carregam da nuvem), cai no mês mais recente.
+  useEffect(() => {
+    if (!competencia && comps.length > 0) setCompetencia(comps[0]);
+  }, [comps, competencia]);
+
   // Dashboard do extrato: soma das contagens diárias de todos os colaboradores.
   const agg = useMemo(
     () => doMes.reduce(
@@ -346,11 +391,25 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   );
 
   // Resumo p/ enviar: só quem teve hora extra, falta ou atestado no mês.
+  // Usa `visiveis` (já filtrado pelos cards), não `doMes`: com um card aceso, o
+  // resumo — e o que sai no WhatsApp/PDF/Excel — precisa ser o mesmo recorte que
+  // a tela mostra. Antes o card acendia mas o resumo saía com o mês inteiro.
+  // Lista que a tabela mostra: os cards do topo continuam somando o mês inteiro,
+  // só a tabela obedece ao foco.
+  const visiveis = useMemo(() => doMes.filter((p) => {
+    const r = resumoDias(p.dias);
+    if (foco === "extras") return p.extrasMin > 0;
+    if (foco === "faltasHoras") return p.faltasMin > 0;
+    if (foco === "faltasDias") return r.faltas > 0;
+    if (foco === "atestados") return r.atestados > 0;
+    return true;
+  }), [doMes, foco]);
+
   const resumoLinhas = useMemo<LinhaResumo[]>(
-    () => doMes
+    () => visiveis
       .map((p) => ({ ...ocorrenciasDo(p), nome: nomeColab(p.colaboradorId) || `${p.nomePdf} (não vinculado)` }))
       .filter(temOcorrencia),
-    [doMes], // eslint-disable-line react-hooks/exhaustive-deps
+    [visiveis], // eslint-disable-line react-hooks/exhaustive-deps
   );
   // Totais do resumo derivam das PRÓPRIAS linhas exibidas — fecham com o corpo da tabela.
   const totResumo = useMemo(
@@ -401,16 +460,6 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       .map((c) => `${c.nome} — admitido em ${diaData(c.dataAdmissao)}`);
   }, [d.colaboradores, competencia]);
 
-  // Lista que a tabela mostra: os cards do topo continuam somando o mês inteiro,
-  // só a tabela obedece ao foco.
-  const visiveis = useMemo(() => doMes.filter((p) => {
-    const r = resumoDias(p.dias);
-    if (foco === "extras") return p.extrasMin > 0;
-    if (foco === "faltasHoras") return p.faltasMin > 0;
-    if (foco === "faltasDias") return r.faltas > 0;
-    if (foco === "atestados") return r.atestados > 0;
-    return true;
-  }), [doMes, foco]);
 
   // A apuração exporta EXATAMENTE o que a tabela mostra — antes exportava o mês
   // inteiro mesmo com um filtro ligado, e o arquivo saía diferente da tela.
@@ -1564,13 +1613,28 @@ function ModalEditarDia({
       extrasMin: horaParaMin(extras),
     };
     const dias = (ponto.dias ?? []).map((x) => (x.data === dia.data ? novoDia : x));
-    // Os totais do mês passam a ser a SOMA dos dias — é o que a tela mostra e o
-    // que a conferência checa.
+
+    // Os totais do mês são refeitos pela soma dos dias — MAS só quando o detalhe
+    // diário é a fonte completa (ficha vinda do PDF, com o mês inteiro).
+    //
+    // Numa ficha lançada à mão os totais podem ser digitados com apenas ALGUNS
+    // dias detalhados; ali, somar os dias zeraria o que a pessoa digitou. Nesse
+    // caso aplicamos só a diferença do dia editado, preservando o resto.
+    const somaDias = (campo: "normaisMin" | "faltasMin" | "extrasMin") =>
+      dias.reduce((s, x) => s + (x[campo] || 0), 0);
+    const detalheCompleto = !!ponto.periodoInicio && !!ponto.periodoFim;
+    const ajuste = (campo: "normaisMin" | "faltasMin" | "extrasMin") => {
+      if (detalheCompleto) return somaDias(campo);
+      // Ficha manual: total antigo − valor antigo do dia + valor novo do dia.
+      const antes = (dia[campo] || 0);
+      const depois = (novoDia[campo] || 0);
+      return Math.max(0, (ponto[campo] || 0) - antes + depois);
+    };
     onSalvar({
       dias,
-      normaisMin: dias.reduce((s, x) => s + (x.normaisMin || 0), 0),
-      faltasMin: dias.reduce((s, x) => s + (x.faltasMin || 0), 0),
-      extrasMin: dias.reduce((s, x) => s + (x.extrasMin || 0), 0),
+      normaisMin: ajuste("normaisMin"),
+      faltasMin: ajuste("faltasMin"),
+      extrasMin: ajuste("extrasMin"),
       atualizadoEm: new Date().toISOString(),
     });
     onFechar();

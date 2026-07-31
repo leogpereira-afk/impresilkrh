@@ -17,7 +17,7 @@ import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { minParaHora } from "@/lib/pontoImport";
-import { calcularHoraExtra, minutosEntre, horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO } from "@/lib/pontoFolha";
+import { calcularHoraExtra, minutosEntre, horasDecimais, valorDigitado, ADICIONAIS_HE, FATOR_HE_PADRAO } from "@/lib/pontoFolha";
 import { slug } from "@/data/_gen";
 import type { Colaborador, Lancamento, TipoLancamento } from "@/data/types";
 
@@ -340,7 +340,7 @@ function DetalheColaborador({
   };
 
   const salvar = () => {
-    const v = Number(String(valorEfetivo).replace(/\./g, "").replace(",", "."));
+    const v = valorDigitado(valorEfetivo);
     if (!v || v <= 0) {
       toast(ehHoraExtra && minutosHE === 0 ? "Informe o horário de início e fim (ou o valor)." : "Informe um valor válido.", "erro");
       return;
@@ -405,7 +405,20 @@ function DetalheColaborador({
           </CardBody>
         </Card>
 
-        {/* Adicionar/editar lançamento */}
+        {/* Folha aprovada = fechada. Mexer depois de aprovar mudava o total sem
+            mudar o carimbo de aprovação: o PDF saía "Aprovada em <data>" com um
+            valor que ninguém aprovou. Para alterar, reabra primeiro. */}
+        {fechamento?.aprovado ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-center">
+            <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-green-800">
+              <Lock className="h-4 w-4" /> Folha aprovada — fechada para alterações
+            </p>
+            <p className="mt-1 text-xs text-green-700">
+              Aprovada em {fechamento.aprovadoEm ? new Date(fechamento.aprovadoEm).toLocaleString("pt-BR") : "—"}. Para lançar ou corrigir alguma verba, clique em “Aprovada — clique para reabrir” abaixo.
+            </p>
+          </div>
+        ) : (
+        /* Adicionar/editar lançamento */
         <Card>
           <CardHeader
             title={editando ? "Editar lançamento" : "Lançar verba"}
@@ -457,6 +470,7 @@ function DetalheColaborador({
             </div>
           </CardBody>
         </Card>
+        )}
 
         {/* Lançamentos do mês */}
         <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -484,10 +498,25 @@ function DetalheColaborador({
                   <td className="td text-slate-500">{l.descricao || "—"}</td>
                   <td className="td text-right tabular-nums font-medium text-slate-700">{formatBRL(l.valor)}</td>
                   <td className="td text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" title="Editar" onClick={() => abrirEdicao(l)}><Pencil className="h-4 w-4" /></button>
-                      <button className="btn-ghost p-1.5 text-red-500" title="Remover" onClick={() => onRemover(l.id)}><Trash2 className="h-4 w-4" /></button>
-                    </div>
+                    {/* Aprovada = fechada: sem editar nem remover até reabrir. */}
+                    {fechamento?.aprovado ? (
+                      <span className="text-[11px] text-green-700">aprovado</span>
+                    ) : (
+                      <div className="flex items-center justify-end gap-1">
+                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" title="Editar" onClick={() => abrirEdicao(l)}><Pencil className="h-4 w-4" /></button>
+                        <button
+                          className="btn-ghost p-1.5 text-red-500"
+                          title="Remover"
+                          onClick={() => {
+                            // Verba é dinheiro e não tem desfazer: confirma antes.
+                            if (window.confirm(`Remover ${labelTipo(l.tipo)} de ${formatBRL(l.valor)}?\n\nIsso não pode ser desfeito.`)) {
+                              if (editando?.id === l.id) limpar(); // não deixa o formulário editando um item que sumiu
+                              onRemover(l.id);
+                            }
+                          }}
+                        ><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
