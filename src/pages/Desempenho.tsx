@@ -14,6 +14,7 @@ import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useToast } from "@/components/ui/toast";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, indiceNivel } from "@/lib/dominio";
@@ -679,13 +680,13 @@ function RetencaoLinha({
   const motiv = typeof c.motivacao === "number" ? faixaMotivacao(c.motivacao) : null;
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2 ring-1 ring-inset ring-slate-200/70">
-      <div className="flex min-w-0 items-center gap-2">
+      <LinkFicha id={c.id} className="flex min-w-0 items-center gap-2" titulo="Abrir a ficha antes da conversa de retenção">
         <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-slate-700">{c.nome}</p>
           <p className="truncate text-xs text-slate-400">{d.nomeCargo(c)}</p>
         </div>
-      </div>
+      </LinkFicha>
       <div className="flex shrink-0 items-center gap-1.5">
         {c.riscoSaida === "Alto" && (
           <Badge variant="danger">Saída alta</Badge>
@@ -871,7 +872,7 @@ function AbaAvaliacoes({
                 return (
                   <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                     <td className="td">
-                      <div className="flex items-center gap-2">
+                      <LinkFicha id={c.id} className="flex items-center gap-2" titulo="Abrir a ficha antes de lançar a nota">
                         <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-700">{c.nome}</p>
@@ -879,7 +880,7 @@ function AbaAvaliacoes({
                             {d.nomeCargo(c)} · {d.nomeNivel(c.nivelId)}
                           </p>
                         </div>
-                      </div>
+                      </LinkFicha>
                     </td>
                     <td className="td text-right tabular-nums text-slate-600">{a?.notaTecnico ?? "—"}</td>
                     <td className="td text-right tabular-nums text-slate-600">{a?.notaComportamental ?? "—"}</td>
@@ -1106,7 +1107,7 @@ function AbaMetas({
                       </div>
                       <p className="mt-0.5 text-xs text-slate-400">
                         {m.tipo === "Individual" && m.colaboradorId
-                          ? d.nomeColab(m.colaboradorId)
+                          ? <LinkFicha id={m.colaboradorId}>{d.nomeColab(m.colaboradorId)}</LinkFicha>
                           : d.nomeArea(m.areaId)}
                         {m.indicador ? ` · ${m.indicador}` : ""}
                         {m.prazo ? ` · prazo ${formatDate(m.prazo)}` : ""}
@@ -1312,7 +1313,7 @@ function AbaPdi({
                       <Badge variant={variantStatusPdi(p.status)}>{p.status}</Badge>
                     </div>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      {d.nomeColab(p.colaboradorId)}
+                      <LinkFicha id={p.colaboradorId}>{d.nomeColab(p.colaboradorId)}</LinkFicha>
                       {p.prazo ? ` · prazo ${formatDate(p.prazo)}` : ""}
                     </p>
                   </div>
@@ -1484,9 +1485,9 @@ function AbaFeedbacks({
                   <div className="flex items-center gap-2">
                     <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
                     <div>
-                      <p className="text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
+                      <p className="text-sm font-medium text-slate-700"><LinkFicha id={f.colaboradorId}>{d.nomeColab(f.colaboradorId)}</LinkFicha></p>
                       <p className="text-xs text-slate-400">
-                        por {f.autorId ? d.nomeColab(f.autorId) : "—"} · {formatDate(f.criadoEm)}
+                        por {f.autorId ? <LinkFicha id={f.autorId}>{d.nomeColab(f.autorId)}</LinkFicha> : "—"} · {formatDate(f.criadoEm)}
                       </p>
                     </div>
                   </div>

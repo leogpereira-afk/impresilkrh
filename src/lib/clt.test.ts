@@ -91,3 +91,53 @@ describe("situacaoExperiencia", () => {
     expect(situacaoExperiencia(pessoa("2024-01-01"), new Date(2026, 5, 1))).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Achados da conferência das abas (2026-07-31): três buracos que custavam
+// dinheiro ou poluíam o histórico. Ficam fixos aqui.
+// ---------------------------------------------------------------------------
+describe("clt — correções da conferência", () => {
+  const pessoa = (extra: Partial<Colaborador> = {}): Colaborador =>
+    ({ id: "x", nome: "Teste", dataAdmissao: "2023-01-10", ...extra }) as Colaborador;
+
+  it("férias pela METADE não quitam o período (os 15 restantes também pagam em dobro)", () => {
+    const hoje = new Date(2025, 0, 5); // 5/1/2025, dentro da janela de concessão
+    const meio = situacaoFerias(pessoa(), [
+      { id: "f1", colaboradorId: "x", dataInicio: "2024-03-10", dataRetorno: "2024-03-25", diasGozados: 15, saldoDias: 15, status: "Concluída" },
+    ], hoje);
+    expect(meio?.jaGozou).toBe(false);
+    expect(meio?.diasEmAberto).toBe(15);
+
+    const cheio = situacaoFerias(pessoa(), [
+      { id: "f1", colaboradorId: "x", dataInicio: "2024-03-10", dataRetorno: "2024-04-09", diasGozados: 30, saldoDias: 0, status: "Concluída" },
+    ], hoje);
+    expect(cheio?.jaGozou).toBe(true);
+    expect(cheio?.diasEmAberto).toBe(0);
+  });
+
+  it("base antiga sem diasGozados continua contando como gozada (não vira alarme falso)", () => {
+    const s = situacaoFerias(pessoa(), [
+      { id: "f1", colaboradorId: "x", dataInicio: "2024-03-10", dataRetorno: "2024-04-09", diasGozados: 0, saldoDias: 0, status: "Concluída" },
+    ], new Date(2025, 0, 5));
+    expect(s?.jaGozou).toBe(true);
+  });
+
+  it("quem foi desligado tem o relógio parado na saída, não em hoje", () => {
+    const saiu = pessoa({ dataDesligamento: "2024-06-30", statusId: "inativo" });
+    const a = situacaoFerias(saiu, [], new Date(2025, 0, 5));
+    const b = situacaoFerias(saiu, [], new Date(2026, 6, 31)); // 18 meses depois
+    expect(a?.diasParaLimite).toBe(b?.diasParaLimite);
+  });
+
+  it("experiência já decidida para de pedir decisão (não duplica a movimentação)", () => {
+    const adm = "2026-05-20";
+    const hoje = new Date(2026, 7, 5); // dia 77
+    expect(situacaoExperiencia(pessoa({ dataAdmissao: adm }), hoje)).not.toBeNull();
+    expect(situacaoExperiencia(pessoa({ dataAdmissao: adm, experienciaDecididaEm: "2026-08-04", statusId: "ativo" }), hoje)).toBeNull();
+  });
+
+  it("desligado não recebe mais aviso de contrato de experiência", () => {
+    const hoje = new Date(2026, 7, 5);
+    expect(situacaoExperiencia(pessoa({ dataAdmissao: "2026-05-20", dataDesligamento: "2026-07-15", statusId: "inativo" }), hoje)).toBeNull();
+  });
+});

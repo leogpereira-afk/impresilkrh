@@ -107,6 +107,10 @@ export interface Colaborador {
   setor?: string; // agrupamento intermediário (pode espelhar a área)
   subarea?: string; // subárea dentro do setor (Financeiro, RH, Compras...)
   dataInicioCargo?: string; // início no cargo atual (tempo no cargo)
+  // Dia em que o RH decidiu o contrato de experiência (efetivar/prorrogar).
+  // Sem isto o aviso dos 90 dias voltava depois de decidido — e cada clique em
+  // "Efetivar" gravava outra movimentação de Efetivação no histórico.
+  experienciaDecididaEm?: string | null;
   motivacao?: number; // 0-100 (indicador de motivação / rosto)
   motivacaoAnterior?: number; // registro anterior (tendência)
   cidade?: string;

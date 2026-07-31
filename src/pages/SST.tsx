@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, EmptyState } from "@/components/ui/misc";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { Tabs } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
@@ -161,7 +162,7 @@ export default function SST() {
                   const situacao = situacaoDoc(doc.dataVencimento);
                   return (
                     <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                      <td className="td font-medium text-slate-700">{d.nomeColab(doc.colaboradorId)}</td>
+                      <td className="td font-medium text-slate-700"><LinkFicha id={doc.colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">{d.nomeColab(doc.colaboradorId)}</LinkFicha></td>
                       <td className="td text-slate-600">{doc.categoria}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataEmissao)}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataVencimento)}</td>
@@ -446,7 +447,7 @@ function AbaCertificacoesNR() {
                     const sit = situacaoDoc(c.dataValidade);
                     return (
                       <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                        <div className="flex min-w-0 items-center gap-3">
+                        <LinkFicha id={c.colaboradorId} className="flex min-w-0 items-center gap-3">
                           <Avatar nome={d.nomeColab(c.colaboradorId)} foto={d.fotoColab(c.colaboradorId)} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(c.colaboradorId)}</p>
@@ -456,7 +457,7 @@ function AbaCertificacoesNR() {
                               {c.instituicao ? ` · ${c.instituicao}` : ""}
                             </p>
                           </div>
-                        </div>
+                        </LinkFicha>
                         <div className="flex shrink-0 items-center gap-2">
                           <Badge variant={VARIANTE_SITUACAO[sit]}>{sit}</Badge>
                           {gere && (

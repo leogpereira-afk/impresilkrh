@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { PERFIL_LABEL } from "@/lib/constants";
@@ -114,7 +115,7 @@ export default function LGPD() {
                         <Badge variant={a.acao.includes("SENSIVEIS") ? "warning" : "neutral"}>{a.acao}</Badge>
                       </td>
                       <td className="td text-slate-500">{a.recurso}</td>
-                      <td className="td text-slate-700">{a.colaboradorId ? d.nomeColab(a.colaboradorId) : "—"}</td>
+                      <td className="td text-slate-700">{a.colaboradorId ? <LinkFicha id={a.colaboradorId} titulo="Abrir a ficha de quem foi acessado">{d.nomeColab(a.colaboradorId)}</LinkFicha> : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -150,7 +151,7 @@ export default function LGPD() {
                 <tbody>
                   {consentVisiveis.map((co) => (
                     <tr key={co.id} className="border-t border-slate-100">
-                      <td className="td font-medium text-slate-700">{d.nomeColab(co.colaboradorId)}</td>
+                      <td className="td font-medium text-slate-700"><LinkFicha id={co.colaboradorId}>{d.nomeColab(co.colaboradorId)}</LinkFicha></td>
                       <td className="td text-slate-500">{co.finalidade}</td>
                       <td className="td whitespace-nowrap text-slate-500">{formatDate(co.data)}</td>
                       <td className="td">

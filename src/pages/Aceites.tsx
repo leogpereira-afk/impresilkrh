@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { Campo, Input } from "@/components/ui/form";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -238,7 +239,7 @@ function AcompanhamentoCard() {
               <tbody>
                 {linhas.map(({ colab, aceite }) => (
                   <tr key={colab.id} className="border-t border-slate-100">
-                    <td className="td font-medium text-slate-700">{colab.nome}</td>
+                    <td className="td font-medium text-slate-700"><LinkFicha id={colab.id} titulo="Abrir a ficha para cobrar o aceite">{colab.nome}</LinkFicha></td>
                     <td className="td text-slate-500">{d.nomeArea(colab.areaId)}</td>
                     <td className="td">
                       <Badge variant={aceite ? "success" : "warning"}>{aceite ? "Sim" : "Pendente"}</Badge>

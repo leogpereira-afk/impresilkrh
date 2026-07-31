@@ -23,6 +23,7 @@ import { useToast } from "@/components/ui/toast";
 import { formatBRL } from "@/lib/format";
 import { slug } from "@/data/_gen";
 import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { competenciasPlano, compLabelLongo, confidencialDoMes } from "@/lib/custos";
 import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
 import type { Area, Cargo, CicloAvaliacao, ModeloChecklist, Nivel, Perfil, StatusColaborador, Usuario } from "@/data/types";
@@ -603,7 +604,7 @@ function UsuariosSecao() {
                   <p className="text-xs text-slate-400">{u.email}</p>
                 </td>
                 <td className="td"><Badge variant={PERFIL_VARIANTE[u.perfil] ?? "neutral"}>{PERFIL_LABEL[u.perfil] ?? u.perfil}</Badge></td>
-                <td className="td text-slate-500">{u.colaboradorId ? d.nomeColab(u.colaboradorId) : "—"}</td>
+                <td className="td text-slate-500">{u.colaboradorId ? <LinkFicha id={u.colaboradorId} titulo="Abrir a ficha da pessoa por trás deste login">{d.nomeColab(u.colaboradorId)}</LinkFicha> : "—"}</td>
                 <td className="td">
                   {acessoTotal(u)
                     ? <Badge variant="success">Tudo</Badge>

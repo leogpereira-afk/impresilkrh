@@ -12,6 +12,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -308,7 +309,7 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
                 {lista.map((c) => (
                   <tr key={c.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
-                      <p className="font-medium text-slate-800">{c.nome}</p>
+                      <p className="font-medium text-slate-800"><LinkFicha id={c.colaboradorId}>{c.nome}</LinkFicha></p>
                       <p className="text-xs text-slate-400 sm:hidden">{c.telefone}</p>
                     </td>
                     <td className="td hidden sm:table-cell text-slate-500">{c.telefone}</td>

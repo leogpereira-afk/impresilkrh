@@ -29,6 +29,7 @@ import { vinculosDoColaborador, resumirVinculos } from "@/lib/vinculos";
 import { diaLocalISO } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import { useDominio } from "@/lib/dominio";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { useSessao } from "@/lib/session";
 import { idsDaEquipe, ehRH } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
@@ -626,7 +627,7 @@ function PainelHierarquia() {
               <div key={c.id} className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-1.5 flex items-center gap-2">
                   <Users className="h-4 w-4 text-slate-400" />
-                  <p className="truncate text-sm font-medium text-slate-700">{c.nome}</p>
+                  <p className="truncate text-sm font-medium text-slate-700"><LinkFicha id={c.id} titulo="Abrir a ficha antes de trocar o gestor">{c.nome}</LinkFicha></p>
                   {c.ehDirecao && <Badge variant="neutral">Direção</Badge>}
                 </div>
                 <Select value={c.gestorId ?? ""} onChange={(e) => alterarGestor(c, e.target.value)}>

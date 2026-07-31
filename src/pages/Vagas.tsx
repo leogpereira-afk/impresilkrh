@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { cn } from "@/lib/cn";
@@ -203,7 +204,7 @@ export default function Vagas() {
                                   const nAdv = c.colaboradorId ? advertencias.filter((a) => a.colaboradorId === c.colaboradorId).length : 0;
                                   return (
                                     <tr key={c.id}>
-                                      <td className="td font-medium text-slate-800">{c.nome}</td>
+                                      <td className="td font-medium text-slate-800"><LinkFicha id={c.colaboradorId} titulo="Abrir a ficha do candidato interno">{c.nome}</LinkFicha></td>
                                       <td className="td hidden sm:table-cell text-slate-500">{colab ? `${d.nomeCargo(colab)} · ${d.nomeArea(colab.areaId)}` : "—"}</td>
                                       <td className="td hidden md:table-cell text-slate-500">{colab?.dataAdmissao ? tempoDeCasa(colab.dataAdmissao) : "—"}</td>
                                       <td className="td hidden md:table-cell">
@@ -238,7 +239,7 @@ export default function Vagas() {
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500" title={`${i + 1}º classificado`}>{i + 1}º</span>
                             <div className="min-w-0 flex-1">
                               <p className="flex items-center gap-2 truncate text-sm font-semibold text-slate-800">
-                                {c.nome}
+                                <LinkFicha id={c.colaboradorId} titulo="Abrir a ficha deste candidato interno">{c.nome}</LinkFicha>
                                 {c.colaboradorId && <Badge variant="info">Interno</Badge>}
                               </p>
                               <p className="flex flex-wrap gap-x-3 truncate text-[11px] text-slate-400">

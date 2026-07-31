@@ -166,7 +166,7 @@ export function ColaboradorForm({
           descricao: `Admissão no cargo de ${cargo?.nome ?? "—"}.`,
           cargoNovo: cargo?.nome ?? null,
           nivelNovo: form.nivelId ?? null,
-          salarioNovo: form.salario ?? null,
+          salarioNovo: salario, // o do formulário; `form.salario` só é preenchido no `dados` acima
           registradoPor: "RH",
         });
       }

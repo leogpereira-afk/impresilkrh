@@ -5,6 +5,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
+import { LinkFicha } from "@/components/ui/link-ficha";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
@@ -274,13 +275,13 @@ export default function Ferias() {
             ) : (
               deFeriasAgora.map((f) => (
                 <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                  <div className="flex min-w-0 items-center gap-3">
+                  <LinkFicha id={f.colaboradorId} className="flex min-w-0 items-center gap-3">
                     <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
                       <p className="truncate text-xs text-slate-400">Desde {formatDate(f.dataInicio)}</p>
                     </div>
-                  </div>
+                  </LinkFicha>
                   <Badge variant="success">Retorna {formatDate(f.dataRetorno)}</Badge>
                 </div>
               ))
@@ -298,10 +299,10 @@ export default function Ferias() {
                 const dd = diasAte(f.dataRetorno);
                 return (
                   <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                    <div className="min-w-0">
+                    <LinkFicha id={f.colaboradorId} className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
                       <p className="text-xs text-slate-400">{formatDate(f.dataRetorno)}</p>
-                    </div>
+                    </LinkFicha>
                     <Badge variant="info">{dd === 0 ? "Hoje" : `em ${dd}d`}</Badge>
                   </div>
                 );
@@ -390,10 +391,10 @@ export default function Ferias() {
                   return (
                     <tr key={f.id} className="transition hover:bg-slate-50/60">
                       <td className="td">
-                        <div className="flex items-center gap-3">
+                        <LinkFicha id={f.colaboradorId} className="flex items-center gap-3" titulo="Abrir a ficha para lançar/agendar as férias">
                           <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
                           <span className="font-medium text-slate-800">{d.nomeColab(f.colaboradorId)}</span>
-                        </div>
+                        </LinkFicha>
                       </td>
                       <td className="td hidden md:table-cell text-slate-500">
                         {f.periodoAquisitivoInicio || f.periodoAquisitivoFim

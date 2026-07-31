@@ -22,6 +22,7 @@ import { useDominio, senioridadeDe as senioridade, enquadrar } from "@/lib/domin
 import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
+import { removerSenhaUsuario } from "@/lib/auth";
 import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData, diaLocalISO } from "@/lib/format";
 import { somaPorTipo, serieMensal, totalDe, competenciasDisponiveis, competenciaLabelLongo, corDoTipo } from "@/lib/folha";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
@@ -29,7 +30,7 @@ import { comprimirImagem } from "@/lib/imagem";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
-import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
+import { STATUS_FERIAS, CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
 import { vinculosDoColaborador } from "@/lib/vinculos";
@@ -334,7 +335,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
         abas={[
           { id: "resumo", label: "Resumo 360º", icon: <LayoutGrid className="h-4 w-4" />, conteudo: <AbaResumo360 c={c} onAgir={podeEditar ? executar : undefined} /> },
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} sens={sens} cargo={cargo} podeEditar={podeEditar} /> },
-          { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} pedido={pedido?.tipo === "documento" ? pedido : null} onConsumir={consumir} /> },
+          { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} sens={sens} nome={c.nome} pedido={pedido?.tipo === "documento" ? pedido : null} onConsumir={consumir} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} pedido={pedido?.tipo === "ferias" ? pedido : null} onConsumir={consumir} /> },
           { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro key={c.id} c={c} sens={sens} /> },
           ...(verGestao ? [{ id: "comportamental", label: "Comportamental", icon: <Brain className="h-4 w-4" />, conteudo: <AbaComportamental c={c} /> }] : []),
@@ -398,7 +399,11 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
       acao: {
         tipo: "ferias",
         aquisitivoInicio: diaLocalISO(sFerias.aquisitivoInicio),
-        aquisitivoFim: diaLocalISO(sFerias.direitoDesde),
+        // Véspera: `direitoDesde` é o dia em que o direito NASCE, ou seja o
+        // primeiro dia do período seguinte. Gravar ele como "fim" fazia um
+        // período terminar no mesmo dia em que o outro começa — e a tela /ferias,
+        // que lê este campo como prazo, pintava "vencido" um dia antes.
+        aquisitivoFim: diaLocalISO(new Date(sFerias.direitoDesde.getTime() - 86400000)),
       },
     });
   }
@@ -1192,8 +1197,10 @@ function enqVar(e: string): "danger" | "warning" | "success" | "info" {
   return e === "Crítico" ? "danger" : e === "Abaixo" ? "warning" : e === "Acima" ? "info" : "success";
 }
 
-function AbaDocumentos({ colaboradorId, podeEditar, pedido, onConsumir }: { colaboradorId: string; podeEditar: boolean; pedido?: { id: string } | null; onConsumir?: () => void }) {
+function AbaDocumentos({ colaboradorId, podeEditar, sens, nome, pedido, onConsumir }: { colaboradorId: string; podeEditar: boolean; sens: boolean; nome: string; pedido?: { id: string } | null; onConsumir?: () => void }) {
   const toast = useToast();
+  const sessao = useSessao();
+  const d = useDominio();
   const { items, criar, atualizar, remover } = useColecao("documentos");
   const docs = items.filter((doc) => doc.colaboradorId === colaboradorId);
   const [novo, setNovo] = useState(false);
@@ -1232,6 +1239,13 @@ function AbaDocumentos({ colaboradorId, podeEditar, pedido, onConsumir }: { cola
   };
 
   const abrir = async (doc: import("@/data/types").Documento) => {
+    // Abrir o anexo de OUTRA pessoa é acesso a dado sensível: fica na trilha.
+    if (sessao && sessao.colaboradorId !== colaboradorId) {
+      registrarAcesso(sessao, d.colabById.get(sessao.colaboradorId)?.nome ?? "Usuário", {
+        acao: "VISUALIZAR_DADOS_SENSIVEIS", recurso: `Colaborador:Documento:${doc.nome}`,
+        colaboradorId, detalhe: nome,
+      });
+    }
     let dataUrl = doc.arquivoEmBlob ? await getBlob(`doc:${doc.id}`) : doc.arquivoDataUrl;
     if (doc.arquivoEmBlob) {
       if (!dataUrl) {
@@ -1261,6 +1275,21 @@ function AbaDocumentos({ colaboradorId, podeEditar, pedido, onConsumir }: { cola
     if (doc.arquivoEmBlob) await delBlob(`doc:${doc.id}`); // remove o blob antes do metadado (evita órfão)
     remover(doc.id);
   };
+
+  // MESMA REGRA DO FINANCEIRO. A aba era montada sem nenhuma condição, e o
+  // conteúdo dos anexos é justamente o que o resto da ficha esconde: o contrato
+  // traz salário e CPF, o ASO traz dado de saúde. Um gestor via o CPF mascarado
+  // na aba Dados e, dois cliques ao lado, abria o PDF com tudo — sem passar por
+  // permissão nenhuma e sem deixar rastro na trilha da LGPD.
+  if (!sens) {
+    return (
+      <EmptyState
+        title="Informação restrita"
+        description="Os documentos do colaborador (contrato, ASO, exames) são visíveis apenas para o RH e para o próprio colaborador (LGPD). Prazos e vencimentos continuam no Resumo 360º."
+        icon={<Lock className="h-8 w-8" />}
+      />
+    );
+  }
 
   return (
     <>
@@ -1419,8 +1448,11 @@ function EditarDocumentoModal({ doc, onFechar, onSalvar }: { doc: import("@/data
   const toast = useToast();
   const [nome, setNome] = useState(doc.nome ?? "");
   const [categoria, setCategoria] = useState(doc.categoria || "Contrato");
-  const [emissao, setEmissao] = useState(doc.dataEmissao ?? "");
-  const [vencimento, setVencimento] = useState(doc.dataVencimento ?? "");
+  // .slice(0,10): registro antigo guarda "2026-09-12T13:45:31.123Z" e o
+  // <input type="date"> só entende AAAA-MM-DD — sem cortar, o campo abria VAZIO
+  // e salvar apagava a data que estava lá.
+  const [emissao, setEmissao] = useState((doc.dataEmissao ?? "").slice(0, 10));
+  const [vencimento, setVencimento] = useState((doc.dataVencimento ?? "").slice(0, 10));
   const [observacao, setObservacao] = useState(doc.observacao ?? "");
   const dd = diasAte(vencimento || null);
 
@@ -1458,7 +1490,11 @@ function EditarDocumentoModal({ doc, onFechar, onSalvar }: { doc: import("@/data
   );
 }
 
-const STATUS_FERIAS_FICHA = ["Em aberto", "Agendada", "Em andamento", "Concluída", "Cancelada"];
+// A MESMA lista da tela /ferias. Ter um status a mais só aqui ("Cancelada")
+// criava um estado que o resto do sistema não conhece: o alerta da CLT parava
+// de contar o período, o gráfico não classificava e o select de lá exibia outro
+// status. Se um dia precisar de "Cancelada", ela entra em STATUS_FERIAS.
+const STATUS_FERIAS_FICHA = STATUS_FERIAS;
 const somaDiasISO = (iso: string, n: number) => {
   const d = parseData(iso);
   if (!d) return "";
@@ -1480,12 +1516,13 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
   const colab = d.colabById.get(colaboradorId);
   const sit = colab ? situacaoFerias(colab, lista) : null;
   const sugestao = (() => {
-    if (sit) return { inicio: diaLocalISO(sit.aquisitivoInicio), fim: diaLocalISO(sit.direitoDesde) };
+    if (sit) return { inicio: diaLocalISO(sit.aquisitivoInicio), fim: diaLocalISO(new Date(sit.direitoDesde.getTime() - 86400000)) };
     // Menos de 12 meses de casa: o primeiro aquisitivo é o ano a partir da admissão.
     const adm = parseData(colab?.dataAdmissao);
     if (!adm) return { inicio: "", fim: "" };
     const fim = new Date(adm.getTime());
     fim.setFullYear(fim.getFullYear() + 1);
+    fim.setDate(fim.getDate() - 1); // véspera do aniversário de admissão
     return { inicio: diaLocalISO(adm), fim: diaLocalISO(fim) };
   })();
 
@@ -1569,10 +1606,12 @@ function PeriodoFeriasModal({ registro, inicial, onFechar, onSalvar }: {
   onSalvar: (dados: Partial<import("@/data/types").Ferias>) => void;
 }) {
   const toast = useToast();
-  const [aqIni, setAqIni] = useState(registro?.periodoAquisitivoInicio ?? inicial?.inicio ?? "");
-  const [aqFim, setAqFim] = useState(registro?.periodoAquisitivoFim ?? inicial?.fim ?? "");
-  const [inicio, setInicio] = useState(registro?.dataInicio ?? "");
-  const [retorno, setRetorno] = useState(registro?.dataRetorno ?? "");
+  // Mesma armadilha do modal de documento: data com hora não entra em input date.
+  const dia = (v?: string | null) => (v ?? "").slice(0, 10);
+  const [aqIni, setAqIni] = useState(dia(registro?.periodoAquisitivoInicio) || inicial?.inicio || "");
+  const [aqFim, setAqFim] = useState(dia(registro?.periodoAquisitivoFim) || inicial?.fim || "");
+  const [inicio, setInicio] = useState(dia(registro?.dataInicio));
+  const [retorno, setRetorno] = useState(dia(registro?.dataRetorno));
   const [dias, setDias] = useState(String(registro?.diasGozados ?? 0));
   const [saldo, setSaldo] = useState(String(registro?.saldoDias ?? 30));
   const [status, setStatus] = useState(registro?.status ?? (inicial ? "Agendada" : "Em aberto"));
@@ -1582,12 +1621,14 @@ function PeriodoFeriasModal({ registro, inicial, onFechar, onSalvar }: {
   // corridos, e digitar as três coisas à mão só cria divergência.
   const mudarInicio = (v: string) => {
     setInicio(v);
-    if (v) {
-      const n = Number(dias) > 0 ? Number(dias) : 30;
-      if (!retorno || registro?.dataInicio !== v) setRetorno(somaDiasISO(v, n));
-      if (Number(dias) === 0) { setDias("30"); setSaldo("0"); }
-      if (status === "Em aberto") setStatus("Agendada");
-    }
+    if (!v) return;
+    const n = Number(dias) > 0 ? Number(dias) : 30;
+    if (!retorno || dia(registro?.dataInicio) !== v) setRetorno(somaDiasISO(v, n));
+    if (status === "Em aberto") setStatus("Agendada");
+    // Dias GOZADOS só depois de gozar. Marcar 30/0 ao agendar dizia que férias
+    // que só começam daqui a 40 dias já foram tiradas: a pessoa sumia do alerta
+    // de férias vencidas e o saldo zerava antes da hora. Agendado = saldo cheio.
+    if (Number(dias) === 0 && v > diaLocalISO(HOJE)) setSaldo(saldo === "0" ? "30" : saldo);
   };
 
   const salvar = () => {
@@ -1722,8 +1763,10 @@ function DecidirExperienciaModal({ aberto, onFechar, c, onDesligar, onAbrirCadas
   const { criar: criarMov } = useColecao("movimentacoes");
   const s = situacaoExperiencia(c);
 
+  const jaEfetivado = c.statusId === "ativo" && !!c.experienciaDecididaEm;
   const efetivar = () => {
-    atualizar(c.id, { statusId: "ativo" });
+    if (jaEfetivado) { toast("Esta pessoa já foi efetivada.", "info"); return; }
+    atualizar(c.id, { statusId: "ativo", experienciaDecididaEm: diaLocalISO(HOJE) });
     criarMov({
       colaboradorId: c.id, tipo: "Efetivação", data: diaLocalISO(HOJE),
       descricao: `Contrato de experiência encerrado; efetivado(a) por prazo indeterminado.`, registradoPor: "RH",
@@ -1745,7 +1788,9 @@ function DecidirExperienciaModal({ aberto, onFechar, c, onDesligar, onAbrirCadas
         )}
         <p className="text-sm text-slate-600">Status atual: <strong>{c.statusId === "experiencia" ? "Em experiência" : c.statusId}</strong>. Escolha o que fazer:</p>
         <div className="grid gap-2">
-          <button className="btn-primary justify-start" onClick={efetivar}>Efetivar — passa para Ativo e registra no histórico</button>
+          <button className="btn-primary justify-start" onClick={efetivar} disabled={jaEfetivado}>
+            {jaEfetivado ? "Já efetivado(a)" : "Efetivar — passa para Ativo e registra no histórico"}
+          </button>
           <button className="btn-outline justify-start" onClick={onAbrirCadastro}><Pencil className="h-4 w-4" /> Abrir cadastro (corrigir admissão ou status)</button>
           {!c.dataDesligamento && !c.ehDirecao && (
             <button className="btn-ghost justify-start text-red-600" onClick={onDesligar}><UserMinus className="h-4 w-4" /> Desligar antes de efetivar</button>
@@ -1760,17 +1805,47 @@ function DesligarModal({ aberto, onFechar, c }: { aberto: boolean; onFechar: () 
   const toast = useToast();
   const { atualizar } = useColecao("colaboradores");
   const { criar: criarMov } = useColecao("movimentacoes");
+  const { items: usuarios, atualizar: atualizarUsuario } = useColecao("usuarios");
   const [data, setData] = useState(diaLocalISO(HOJE));
-  const confirmar = () => {
+  // O modal fica montado junto com a ficha; sem isto ele guardava a data (e o
+  // rascunho) da PESSOA ANTERIOR ao navegar pelas setas ◀ ▶.
+  useEffect(() => { if (aberto) setData(diaLocalISO(HOJE)); }, [aberto, c.id]);
+
+  const conta = usuarios.find((u) => u.colaboradorId === c.id && u.ativo);
+
+  const confirmar = async () => {
+    // Data em branco (o input date devolve "" enquanto a digitação está pela
+    // metade) gravava desligamento SEM data: a pessoa sumia do turnover e a
+    // linha do tempo ganhava um evento sem quando.
+    if (!data) { toast("Informe a data do desligamento.", "erro"); return; }
+    if (data > diaLocalISO(HOJE)) { toast("A data do desligamento não pode ser no futuro.", "erro"); return; }
     atualizar(c.id, { statusId: "inativo", dataDesligamento: data });
     criarMov({ colaboradorId: c.id, tipo: "Afastamento", data, descricao: "Desligamento registrado.", registradoPor: "RH" });
-    toast(`${c.nome} foi desligado(a).`);
+    // TIRA O ACESSO. Desligar mexia só no cadastro: quem saiu continuava com
+    // login válido, entrando no sistema e vendo a folha e o cadastro de todos
+    // no dia seguinte à saída. Agora a conta é desativada junto, e a senha do
+    // servidor é removida (se a remoção falhar — sem internet — o desligamento
+    // vale assim mesmo e o aviso diz o que fazer).
+    if (conta) {
+      atualizarUsuario(conta.id, { ativo: false });
+      try {
+        await removerSenhaUsuario(conta.email || conta.nome);
+      } catch {
+        toast("Cadastro desligado, mas não deu para remover a senha no servidor agora. Refaça em Painel de Controle quando estiver online.", "erro");
+      }
+    }
+    toast(conta ? `${c.nome} foi desligado(a) e o acesso ao sistema foi revogado.` : `${c.nome} foi desligado(a).`);
     onFechar();
   };
   return (
     <Modal aberto={aberto} onFechar={onFechar} titulo="Desligar colaborador" largura="max-w-md"
       rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-danger" onClick={confirmar}>Confirmar desligamento</button></>}>
       <p className="mb-3 text-sm text-slate-600">Registrar o desligamento de <strong>{c.nome}</strong>. O status passará para Inativo e sairá do headcount.</p>
+      {conta && (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Esta pessoa tem acesso ao sistema (<strong>{conta.email || conta.nome}</strong>). O login será <strong>revogado</strong> junto com o desligamento.
+        </p>
+      )}
       <Campo label="Data do desligamento"><Input type="date" value={data} onChange={(e) => setData(e.target.value)} /></Campo>
     </Modal>
   );
