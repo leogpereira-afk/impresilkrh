@@ -211,6 +211,33 @@ export function valorDigitado(txt: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * O separador decimal é ambíguo neste texto?
+ *
+ * O leitor de dinheiro (valorDigitado) precisa adivinhar quando o formato é
+ * misto, e adivinhar errado em salário custa 100×: "2.500.38" — ponto de milhar
+ * mais ponto de centavo, digitação natural no teclado numérico — seria lido como
+ * dois separadores de milhar e viraria R$ 250.038,00. Em vez de adivinhar, aqui
+ * a gente recusa e pede o formato certo. Aceita: 2500 · 2500,38 · 2.500,38 ·
+ * 1.234.567,89 · 2500.38 · 1.050. Recusa: 2.500.38 · 2,500.38 · 2500,384.
+ */
+export function dinheiroAmbiguo(txt: string): boolean {
+  const s = txt.replace(/R\$/gi, "").replace(/\s/g, "").trim();
+  if (!/^[\d.,]+$/.test(s)) return true; // letra ou símbolo no meio
+  const virgulas = (s.match(/,/g) || []).length;
+  if (virgulas > 1) return true;
+  if (virgulas === 1) {
+    const [inteiro, dec] = s.split(",");
+    if (dec.length > 2) return true;                                  // 2500,384
+    return inteiro.includes(".") && !/^\d{1,3}(\.\d{3})*$/.test(inteiro); // 2,500.38
+  }
+  const pontos = (s.match(/\./g) || []).length;
+  // Um ponto só nunca é ambíguo: ou é o decimal (2500.38, 12500.5), ou é milhar
+  // com três casas (1.050) — e essa é justamente a regra do leitor.
+  if (pontos <= 1) return false;
+  return !/^\d{1,3}(\.\d{3})+$/.test(s); // vários pontos: só milhar bem formado
+}
+
 /** Minutos → horas decimais (para mostrar a conta: "5,62 h × R$ 13,64"). */
 export function horasDecimais(minutos: number): number {
   return Math.round((positivo(minutos) / 60) * 100) / 100;

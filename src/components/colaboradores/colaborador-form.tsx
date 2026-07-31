@@ -5,6 +5,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, enquadrar } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
+import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
@@ -50,6 +51,9 @@ export function ColaboradorForm({
   };
   const [form, setForm] = useState<Partial<Colaborador>>(editar ?? vazio);
   const set = (patch: Partial<Colaborador>) => setForm((f) => ({ ...f, ...patch }));
+  // O salário é guardado como TEXTO enquanto se digita e só vira número ao
+  // salvar: assim "2.500," no meio da digitação não é lido como valor nenhum.
+  const [salarioTxt, setSalarioTxt] = useState(editar?.salario != null ? String(editar.salario) : "");
 
   const filhos = form.filhos ?? [];
   const addFilho = () => setForm((f) => ({ ...f, filhos: [...(f.filhos ?? []), { nome: "" }] }));
@@ -113,19 +117,31 @@ export function ColaboradorForm({
       );
       return;
     }
-    if (form.salario != null && form.salario < 0) {
-      toast("Salário não pode ser negativo.", "erro");
-      return;
+    // Texto → número, aqui e não a cada tecla. Formato ambíguo ("2.500.38") é
+    // recusado em vez de adivinhado: adivinhar errado dá 100× no salário.
+    let salario: number | null = null;
+    if (salarioTxt.trim() !== "") {
+      if (dinheiroAmbiguo(salarioTxt)) {
+        toast("Salário em formato ambíguo. Escreva assim: 2.500,38", "erro");
+        return;
+      }
+      const n = valorDigitado(salarioTxt);
+      if (!Number.isFinite(n) || n < 0) {
+        toast("Salário inválido (não pode ser negativo). Ex.: 2.500,38", "erro");
+        return;
+      }
+      salario = Math.round(n * 100) / 100;
     }
     const cargo = form.cargoId ? d.cargoById.get(form.cargoId) : undefined;
     // Recalcula sempre que há cargo+salário; senão limpa (deixa o cálculo dinâmico assumir),
     // em vez de manter um enquadramento antigo "grudado".
-    const enquadramento = cargo && form.salario != null ? enquadrar(form.salario, cargo.faixas) : null;
+    const enquadramento = cargo && salario != null ? enquadrar(salario, cargo.faixas) : null;
     const filhosLimpos = (form.filhos ?? []).filter((x) => x.nome?.trim());
     const ce = form.contatoEmergencia;
     const temContato = !!(ce && (ce.nome?.trim() || ce.telefone?.trim() || ce.parentesco?.trim()));
     const dados: Partial<Colaborador> = {
       ...form,
+      salario,
       filhos: filhosLimpos,
       qtdFilhos: filhosLimpos.length,
       contatoEmergencia: temContato ? ce : undefined,
@@ -198,7 +214,16 @@ export function ColaboradorForm({
             {d.niveis.map((n) => <option key={n.id} value={n.id}>{n.codigo} · {n.nome}</option>)}
           </Select>
         </Campo>
-        <Campo label="Salário (R$)"><Input type="number" step="0.01" value={form.salario ?? ""} onChange={(e) => set({ salario: e.target.value === "" ? null : Number(e.target.value) })} /></Campo>
+        {/* Texto, não type="number": o campo numérico do navegador devolve VAZIO
+            para qualquer coisa que ele não valide — inclusive "2.500,38", que é
+            como se escreve aqui — e esse vazio virava salario: null sem aviso,
+            com o selo de enquadramento voltando ao verde "Dentro". Como texto,
+            o valor é lido no formato brasileiro (valorDigitado) e o que a pessoa
+            digitou continua na tela. De quebra, a roda do mouse para de alterar
+            o valor com o campo focado. */}
+        <Campo label="Salário (R$)" hint="Ex.: 2.500,38">
+          <Input inputMode="decimal" value={salarioTxt} onChange={(e) => setSalarioTxt(e.target.value)} placeholder="0,00" />
+        </Campo>
         <Campo label="Admissão"><Input type="date" value={(form.dataAdmissao ?? "").slice(0, 10)} onChange={(e) => set({ dataAdmissao: e.target.value })} /></Campo>
 
         <Campo label="Gestor (reporta-se a)">

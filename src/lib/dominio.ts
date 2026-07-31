@@ -56,8 +56,17 @@ export function useDominio() {
     const colabById = new Map(colaboradores.map((c) => [c.id, c]));
 
     const nomeArea = (id?: string | null) => (id ? areaById.get(id)?.nome ?? "—" : "—");
+    // O CARGO REAL manda; `cargoLivre` é o rótulo de quem não tem cargo (Direção
+    // e quem veio da planilha só com a função).
+    //
+    // Era o contrário, e o contrário mentia: quem tinha rótulo livre e depois
+    // recebia um cargo de verdade continuava aparecendo com o texto antigo na
+    // tela inteira, enquanto a faixa salarial e o enquadramento passavam a ser
+    // calculados pelo cargo novo — invisível. Nesta ordem, atribuir um cargo já
+    // corrige a exibição sozinho, sem precisar apagar o rótulo (apagar era pior:
+    // não tinha volta, porque a ficha não mostra esse campo).
     const nomeCargo = (c: Colaborador) =>
-      c.cargoLivre ?? (c.cargoId ? cargoById.get(c.cargoId)?.nome ?? "—" : "—");
+      (c.cargoId ? cargoById.get(c.cargoId)?.nome : null) || c.cargoLivre || "—";
     const nomeNivel = (id?: string | null) => (id ? nivelById.get(id)?.codigo ?? "—" : "—");
     const nomeColab = (id?: string | null) => (id ? colabById.get(id)?.nome ?? "—" : "—");
     // Foto da pessoa pelo id — as telas que só guardam o colaboradorId (férias,
