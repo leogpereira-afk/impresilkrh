@@ -84,32 +84,64 @@ describe("diasDaCompetencia", () => {
 });
 
 describe("calcularFalta", () => {
-  // 09h47 de falta, salário 2000, julho/2026 (23 úteis, 4 domingos).
-  it("desconta as horas e o reflexo no DSR", () => {
-    const r = calcularFalta({ salario: 2000, minutos: 587, competencia: "2026-07" });
-    expect(r.valorHoras).toBeCloseTo(88.93, 1);
-    // DSR = 88,93 / 23 × 4 ≈ 15,47
-    expect(r.dsr).toBeCloseTo(15.47, 1);
-    expect(r.total).toBeCloseTo(104.4, 1);
-    expect(r.total).toBeGreaterThan(r.valorHoras); // reflexo sempre soma
+  // Regra combinada com o usuário (31/07/2026): dia faltado inteiro = 1/30 do
+  // salário; atraso = por hora. Salário 2000 → dia R$ 66,67 · hora R$ 9,09.
+  it("dia inteiro desconta 1/30 do salário, não a jornada em horas", () => {
+    const r = calcularFalta({ salario: 2000, diasCheios: 1, competencia: "2026-07", comDsr: false });
+    expect(r.valorDiasCheios).toBeCloseTo(66.67, 1);
+    expect(r.total).toBeCloseTo(66.67, 1);
+    // A regra antiga (8h48 × 9,09 = 80,00) descontava MAIS que 1/30.
+    expect(r.total).toBeLessThan(80);
   });
 
-  it("comDsr=false desconta só as horas", () => {
-    const r = calcularFalta({ salario: 2000, minutos: 587, competencia: "2026-07", comDsr: false });
+  it("atraso continua sendo por hora", () => {
+    const r = calcularFalta({ salario: 2000, minutosAtraso: 60, competencia: "2026-07", comDsr: false });
+    expect(r.valorAtrasos).toBeCloseTo(9.09, 1);
+    expect(r.valorDiasCheios).toBe(0);
+  });
+
+  it("soma dia cheio + atraso e aplica o reflexo de DSR", () => {
+    const r = calcularFalta({ salario: 2000, diasCheios: 1, minutosAtraso: 60, competencia: "2026-07" });
+    // (66,67 + 9,09) = 75,76 ; DSR = 75,76 / 23 × 4 ≈ 13,18
+    expect(r.dsr).toBeCloseTo(13.18, 1);
+    expect(r.total).toBeCloseTo(88.94, 1);
+    expect(r.total).toBeGreaterThan(r.valorDiasCheios + r.valorAtrasos);
+  });
+
+  it("comDsr=false não aplica reflexo", () => {
+    const r = calcularFalta({ salario: 2000, diasCheios: 2, competencia: "2026-07", comDsr: false });
     expect(r.dsr).toBe(0);
-    expect(r.total).toBe(r.valorHoras);
+    expect(r.total).toBe(r.valorDiasCheios);
+  });
+
+  // Feriado do mês entra como repouso e muda o reflexo — o dado vem do PDF.
+  it("feriado informado aumenta o repouso e o reflexo", () => {
+    const sem = calcularFalta({ salario: 2000, diasCheios: 1, competencia: "2026-07" });
+    const com = calcularFalta({ salario: 2000, diasCheios: 1, competencia: "2026-07", feriadosISO: ["2026-07-09"] });
+    expect(com.diasRepouso).toBe(sem.diasRepouso + 1);
+    expect(com.dsr).toBeGreaterThan(sem.dsr);
   });
 
   // Competência inválida não pode gerar DSR do nada (divisão por zero úteis).
   it("competência inválida não inventa DSR", () => {
-    const r = calcularFalta({ salario: 2000, minutos: 587, competencia: "xx" });
+    const r = calcularFalta({ salario: 2000, diasCheios: 1, competencia: "xx" });
     expect(r.dsr).toBe(0);
     expect(Number.isFinite(r.total)).toBe(true);
   });
 
   it("sem falta não desconta nada", () => {
-    const r = calcularFalta({ salario: 2000, minutos: 0, competencia: "2026-07" });
+    const r = calcularFalta({ salario: 2000, competencia: "2026-07" });
     expect(r.total).toBe(0);
+  });
+
+  it("sem salário marca a pendência em vez de descontar zero calado", () => {
+    const r = calcularFalta({ salario: null, diasCheios: 3, competencia: "2026-07" });
+    expect(r.total).toBe(0);
+    expect(r.semSalario).toBe(true);
+  });
+
+  it("dias negativos ou quebrados não viram crédito", () => {
+    expect(calcularFalta({ salario: 2000, diasCheios: -3, competencia: "2026-07" }).total).toBe(0);
   });
 });
 

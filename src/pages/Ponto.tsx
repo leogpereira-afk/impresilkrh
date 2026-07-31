@@ -87,13 +87,19 @@ function diasCompletos(p: { dias?: PontoDia[]; periodoInicio?: string | null; pe
   const existentes = new Map((p.dias ?? []).map((d) => [d.data, d]));
   let inicio = p.periodoInicio ?? null;
   let fim = p.periodoFim ?? null;
-  // Sem período gravado (lançamento manual antigo), cai no mês civil da competência.
+  // Sem período gravado (lançamento manual), cai no mês civil da competência.
   if (!inicio || !fim) {
     const m = /^(\d{4})-(\d{2})$/.exec(p.competencia || "");
     if (!m) return (p.dias ?? []).slice().sort((a, b) => a.data.localeCompare(b.data));
     const ultimo = new Date(+m[1], +m[2], 0).getDate();
     inicio = `${m[1]}-${m[2]}-01`;
     fim = `${m[1]}-${m[2]}-${String(ultimo).padStart(2, "0")}`;
+  }
+  // A janela precisa cobrir TODOS os dias gravados: num lançamento manual dá
+  // para registrar um dia fora do mês civil, e ele sumia do extrato em silêncio.
+  for (const dia of p.dias ?? []) {
+    if (dia.data < inicio) inicio = dia.data;
+    if (dia.data > fim) fim = dia.data;
   }
   const emData = (iso: string) => {
     const [a, m, d] = iso.split("-").map(Number);
@@ -109,6 +115,20 @@ function diasCompletos(p: { dias?: PontoDia[]; periodoInicio?: string | null; pe
     cursor.setDate(cursor.getDate() + 1);
   }
   return out;
+}
+
+// CONFERÊNCIA: a soma dos dias tem que fechar com os totais do mês. O relatório
+// vai assinado para a contabilidade, então isso é checado de verdade em vez de
+// ser só uma frase na legenda. Registro sem detalhe diário não entra na conta
+// (não é divergência, é dado que não existe).
+function confereSomaDias(p: Ponto): { ok: boolean; difExtras: number; difFaltas: number } | null {
+  if (!p.dias?.length) return null;
+  const somaExtras = p.dias.reduce((s, x) => s + (x.extrasMin || 0), 0);
+  const somaFaltas = p.dias.reduce((s, x) => s + (x.faltasMin || 0), 0);
+  const difExtras = somaExtras - (p.extrasMin || 0);
+  const difFaltas = somaFaltas - (p.faltasMin || 0);
+  // 1 minuto de tolerância: o Secullum arredonda ao imprimir.
+  return { ok: Math.abs(difExtras) <= 1 && Math.abs(difFaltas) <= 1, difExtras, difFaltas };
 }
 
 // Contagens do extrato para o dashboard (soma de todos os colaboradores do mês).
@@ -227,7 +247,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     setExpandido((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const colOpts = useMemo(() => d.colaboradores.map((c) => ({ id: c.id, nome: c.nome })), [d.colaboradores]);
-  const nomeColab = (id: string | null | undefined) => (id ? (d.colaboradores.find((c) => c.id === id)?.nome ?? id) : null);
+  // Devolve null (e não o id cru) quando o colaborador saiu do cadastro — assim
+  // quem chama consegue cair no nome do PDF em vez de imprimir um id no relatório.
+  const nomeColab = (id: string | null | undefined) => (id ? (d.colaboradores.find((c) => c.id === id)?.nome ?? null) : null);
 
   const onArquivo = async (file: File) => {
     setOcupado(true);
@@ -252,6 +274,17 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const importar = () => {
     if (!previa) return;
     if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano).", "erro"); return; }
+    // Reimportar sobrescreve as fichas do mês. Se já havia ponto gravado nessa
+    // competência (inclusive correções feitas à mão), avisa antes de trocar.
+    const jaExistem = pontos.filter((p) => p.competencia === competencia).length;
+    if (jaExistem > 0) {
+      const ok = window.confirm(
+        `Já existem ${jaExistem} ficha(s) de ponto em ${labelMes(competencia)}.\n\n` +
+        `A importação vai SUBSTITUIR os dados dessas fichas pelo que está no PDF — correções feitas à mão neste mês serão perdidas.\n\n` +
+        `Continuar?`,
+      );
+      if (!ok) return;
+    }
     const agora = new Date().toISOString();
     let n = 0;
     for (const l of previa.linhas) {
@@ -265,6 +298,13 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         importadoEm: agora, atualizadoEm: agora,
       };
       if (pontos.some((p) => p.id === id)) atualizar(id, rec); else criar(rec);
+      // Se a pessoa tinha sido importada SEM vínculo e agora foi vinculada, o id
+      // muda (pdf-nome → colaboradorId). Remove o registro antigo, senão ela
+      // apareceria duas vezes no mesmo mês (uma vinculada, outra órfã).
+      if (l.colaboradorId) {
+        const idOrfao = `${competencia}::pdf-${slug(l.nomePdf)}`;
+        if (idOrfao !== id && pontos.some((p) => p.id === idOrfao)) remover(idOrfao);
+      }
       n++;
     }
     toast(`${n} ponto(s) importados para ${labelMes(competencia)}. Vão somar no custo mensal.`);
@@ -331,18 +371,18 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   );
 
   // Expandir/recolher todos os extratos (modo Tudo) — para varrer o mês inteiro.
-  // Apuração do mês: os dados do relatório que vai para a contabilidade.
-  const apuracao = useMemo(
-    () => montarApuracao(
-      doMes,
-      (p) => nomeColab(p.colaboradorId) || p.nomePdf,
-      (p) => (p.colaboradorId ? (d.colabById.get(p.colaboradorId)?.salario ?? null) : null),
-      competencia,
-    ),
-    [doMes, competencia, d.colabById], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  // "Novos Funcionários" do rodapé: estão no cadastro mas não têm ponto no mês.
-  const novosFuncionarios = useMemo(() => faltandoNoPonto.map((c) => c.nome), [faltandoNoPonto]);
+  // "Novos Funcionários" do rodapé: quem foi ADMITIDO dentro da competência e
+  // por isso ainda não tem (ou tem pouco) ponto — não é "todo mundo sem ponto",
+  // que misturava afastado e recém-desligado na mesma lista.
+  const novosFuncionarios = useMemo(() => {
+    const m = /^(\d{4})-(\d{2})$/.exec(competencia || "");
+    if (!m) return [];
+    return d.colaboradores
+      .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
+      .filter((c) => String(c.dataAdmissao ?? "").slice(0, 7) === competencia)
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .map((c) => `${c.nome} — admitido em ${diaData(c.dataAdmissao)}`);
+  }, [d.colaboradores, competencia]);
 
   // Lista que a tabela mostra: os cards do topo continuam somando o mês inteiro,
   // só a tabela obedece ao foco.
@@ -354,6 +394,21 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     if (foco === "atestados") return r.atestados > 0;
     return true;
   }), [doMes, foco]);
+
+  // A apuração exporta EXATAMENTE o que a tabela mostra — antes exportava o mês
+  // inteiro mesmo com um filtro ligado, e o arquivo saía diferente da tela.
+  const apuracao = useMemo(
+    () => montarApuracao(visiveis, (p) => nomeColab(p.colaboradorId) || p.nomePdf),
+    [visiveis], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Quem tem o detalhe diário divergindo dos totais do mês — a tela avisa em vez
+  // de afirmar que confere.
+  const divergentes = useMemo(
+    () => doMes.map((p) => ({ p, c: confereSomaDias(p) })).filter((x) => x.c && !x.c.ok),
+    [doMes],
+  );
+  const comDetalhe = useMemo(() => doMes.filter((p) => (p.dias?.length ?? 0) > 0).length, [doMes]);
 
   const idsExpansiveis = useMemo(() => visiveis.filter((p) => (p.dias?.length ?? 0) > 0).map((p) => p.id), [visiveis]);
   const todosAbertos = idsExpansiveis.length > 0 && idsExpansiveis.every((id) => expandido.has(id));
@@ -491,6 +546,26 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
                 {modo === "tudo" ? (
                 <>
+                {/* Divergência entre a soma dos dias e o total do mês: o relatório
+                    vai para a contabilidade, então isso não pode passar calado. */}
+                {divergentes.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-red-800">
+                      <AlertTriangle className="h-4 w-4" /> {divergentes.length} ficha(s) com a soma dos dias diferente do total do mês
+                    </p>
+                    <ul className="mt-1 space-y-0.5 text-xs text-red-700">
+                      {divergentes.map(({ p, c }) => (
+                        <li key={p.id}>
+                          <b>{nomeColab(p.colaboradorId) || p.nomePdf}</b>
+                          {c && c.difExtras !== 0 && ` · extras: dias somam ${minParaHora(p.extrasMin + c.difExtras)}, total do mês ${minParaHora(p.extrasMin)}`}
+                          {c && c.difFaltas !== 0 && ` · faltas: dias somam ${minParaHora(p.faltasMin + c.difFaltas)}, total do mês ${minParaHora(p.faltasMin)}`}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-[11px] text-red-600/80">Confira antes de enviar: reimporte o PDF do mês ou corrija a ficha à mão.</p>
+                  </div>
+                )}
+
                 {/* Conferência: quem do cadastro não apareceu no ponto (fora os que não batem) */}
                 {faltandoNoPonto.length > 0 && (
                   <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
@@ -680,7 +755,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                     ))}
                   </div>
                   <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
-                    As horas <b>Normais</b>, <b>Faltas</b> e <b>Extras</b> já vêm calculadas pelo Secullum (regras da CLT) — não recalculamos, para não divergir da folha legal. A soma dos dias confere exatamente com o total do mês.
+                    As horas <b>Normais</b>, <b>Faltas</b> e <b>Extras</b> já vêm calculadas pelo Secullum (regras da CLT) — não recalculamos, para não divergir da folha legal.
+                    {/* Só afirma que confere depois de conferir de verdade. */}
+                    {comDetalhe > 0 && divergentes.length === 0 && ` Conferido: em ${comDetalhe} ficha(s), a soma dos dias fecha com o total do mês.`}
                   </p>
                 </div>
                 )}
@@ -791,122 +868,138 @@ function listaDatas(dias: PontoDia[]): string {
   return `${ds.slice(0, -1).join(", ")} e ${ds[ds.length - 1]}`;
 }
 
+// Separa o que é falta de DIA INTEIRO do que é atraso, e colhe os feriados que o
+// próprio PDF trouxe — os dois entram no cálculo do desconto (dia = 1/30).
+export function decomporFaltas(p: { dias?: PontoDia[]; faltasMin: number }) {
+  const dias = p.dias ?? [];
+  const cheios = dias.filter((x) => x.situacao === "falta");
+  const minCheios = cheios.reduce((s, x) => s + (x.faltasMin || 0), 0);
+  return {
+    diasCheios: cheios.length,
+    // O que sobra do total do mês são atrasos/saídas antecipadas em dias normais.
+    minutosAtraso: Math.max(0, (p.faltasMin || 0) - minCheios),
+    feriadosISO: dias.filter((x) => x.situacao === "feriado").map((x) => x.data),
+    temDetalhe: dias.length > 0,
+  };
+}
+
 interface LinhaApuracao {
   nome: string;
   faltasTxt: string;   // HH:MM
   extrasTxt: string;   // HH:MM
-  hePagar: string;     // R$
-  faltaDescontar: string; // R$
   diasFaltas: string;
   atestados: string;
   complementares: string;
-  semSalario: boolean;
+  semDetalhe: boolean; // ponto sem o dia a dia: não afirmar "0" dias
 }
 
-function montarApuracao(
-  pontos: Ponto[],
-  nomeDe: (p: Ponto) => string,
-  salarioDe: (p: Ponto) => number | null,
-  competencia: string,
-): LinhaApuracao[] {
+function montarApuracao(pontos: Ponto[], nomeDe: (p: Ponto) => string): LinhaApuracao[] {
   return pontos.map((p) => {
     const dias = p.dias ?? [];
+    const temDetalhe = dias.length > 0;
     const faltasDias = dias.filter((x) => x.situacao === "falta");
     const atestados = dias.filter((x) => x.situacao === "atestado");
     const ferias = dias.filter((x) => x.situacao === "ferias");
     const abonos = dias.filter((x) => x.situacao === "abono");
-    const salario = salarioDe(p);
-    const he = calcularHoraExtra({ salario, minutos: p.extrasMin });
-    const fl = calcularFalta({ salario, minutos: p.faltasMin, competencia });
     const compl: string[] = [];
     if (ferias.length) compl.push(`Férias: ${listaDatas(ferias)}`);
     if (abonos.length) compl.push(`Abono: ${listaDatas(abonos)}`);
     if (!p.colaboradorId) compl.push("Não vinculado ao cadastro");
-    if (he.semSalario && (p.extrasMin > 0 || p.faltasMin > 0)) compl.push("SEM SALÁRIO NO CADASTRO — valores não calculados");
-    // Falta acima de ~1/3 do mês quase sempre é afastamento (INSS, licença), não
-    // falta a descontar: avisa em vez de propor um desconto gigante em silêncio.
+    if (!temDetalhe && (p.faltasMin > 0 || p.extrasMin > 0)) compl.push("Sem detalhe diário — reimportar o PDF do mês para ter as datas");
+    // Falta acima de ~1/3 do mês quase sempre é afastamento (INSS, licença) e
+    // não falta a descontar: avisa em vez de deixar passar como falta comum.
     if (p.faltasMin > 60 * 60) compl.push(`CONFERIR: ${minParaHora(p.faltasMin)} de falta — parece afastamento, não desconto`);
     return {
       nome: nomeDe(p),
       faltasTxt: minParaHora(p.faltasMin),
       extrasTxt: minParaHora(p.extrasMin),
-      hePagar: he.semSalario ? "—" : formatBRL(he.valor),
-      faltaDescontar: fl.semSalario ? "—" : (fl.total > 0 ? formatBRL(fl.total) : formatBRL(0)),
-      diasFaltas: listaDatas(faltasDias),
-      atestados: listaDatas(atestados),
+      // Sem o dia a dia não dá para afirmar "0": seria dizer que não houve falta
+      // quando a verdade é que o dado não existe.
+      diasFaltas: temDetalhe ? listaDatas(faltasDias) : "(sem detalhe)",
+      atestados: temDetalhe ? listaDatas(atestados) : "(sem detalhe)",
       complementares: compl.join(" · "),
-      semSalario: he.semSalario,
+      semDetalhe: !temDetalhe,
     };
   });
 }
 
+// Só HORAS: os valores em R$ ficam na tela, para o RH se planejar. O que vai à
+// contabilidade é o fato apurado pelo Secullum — quem fecha a folha é o
+// escritório contábil (decisão do usuário em 31/07/2026).
 const CABECALHO_APURACAO = [
-  "COLABORADOR", "HORAS FALTAS", "H.E", "H.E A PAGAR",
-  "HORAS FALTAS A DESCONTAR", "DIAS FALTAS", "ATESTADO", "INFORMAÇÕES COMPLEMENTARES",
+  "COLABORADOR", "HORAS FALTAS", "H.E", "DIAS FALTAS", "ATESTADO", "INFORMAÇÕES COMPLEMENTARES",
 ];
 
 async function exportarApuracaoPdf(empresa: string, competencia: string, linhas: LinhaApuracao[], novos: string[]) {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
-  const doc = new jsPDF({ orientation: "landscape" }); // 8 colunas não cabem em retrato
+  const doc = new jsPDF({ orientation: "landscape" });
   const marinho: [number, number, number] = [22, 51, 79];
   doc.setFontSize(15); doc.setTextColor(...marinho); doc.text(empresa, 14, 15);
   doc.setFontSize(12); doc.setTextColor(60); doc.text(`Apuração de ponto — ${labelMes(competencia)}`, 14, 22);
   doc.setFontSize(8); doc.setTextColor(120);
-  doc.text("Horas apuradas pelo Secullum (CLT). Valores em R$ calculados pelo salário do cadastro (hora = salário ÷ 220; extra +50%; falta com reflexo de DSR) — conferir antes de pagar.", 14, 27);
+  doc.text("Horas apuradas pelo Secullum, conforme a CLT. Documento de conferência — o fechamento da folha é feito pela contabilidade.", 14, 27);
 
   autoTable(doc, {
     startY: 31,
     head: [CABECALHO_APURACAO],
-    body: linhas.map((l) => [l.nome, l.faltasTxt, l.extrasTxt, l.hePagar, l.faltaDescontar, l.diasFaltas, l.atestados, l.complementares]),
+    body: linhas.map((l) => [l.nome, l.faltasTxt, l.extrasTxt, l.diasFaltas, l.atestados, l.complementares]),
     headStyles: { fillColor: marinho, fontSize: 7 },
     styles: { fontSize: 7.5, cellPadding: 1.5, valign: "middle" },
     columnStyles: {
-      0: { cellWidth: 52, fontStyle: "bold" },
-      1: { halign: "center", cellWidth: 20 },
-      2: { halign: "center", cellWidth: 18 },
-      3: { halign: "right", cellWidth: 24 },
-      4: { halign: "right", cellWidth: 28 },
-      5: { cellWidth: 45 },
-      6: { cellWidth: 45 },
+      0: { cellWidth: 55, fontStyle: "bold" },
+      1: { halign: "center", cellWidth: 22 },
+      2: { halign: "center", cellWidth: 20 },
+      3: { cellWidth: 58 },
+      4: { cellWidth: 58 },
     },
-    // Linha de quem está sem salário fica destacada — é pendência, não zero.
+    // Sem o detalhe diário a linha fica destacada: é dado faltando, não "zero".
     didParseCell: (data) => {
-      if (data.section === "body" && linhas[data.row.index]?.semSalario) {
+      if (data.section === "body" && linhas[data.row.index]?.semDetalhe) {
         data.cell.styles.fillColor = [254, 243, 199];
       }
     },
   });
 
+  // Rodapé com quebra de página: antes, os nomes que passavam do fim da folha
+  // simplesmente sumiam do PDF, sem erro nem aviso.
+  const alturaPagina = doc.internal.pageSize.getHeight();
   let y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 60) + 8;
+  const cabeNaPagina = (altura: number) => {
+    if (y + altura > alturaPagina - 14) { doc.addPage(); y = 20; }
+  };
   if (novos.length) {
+    cabeNaPagina(12);
     doc.setFontSize(10); doc.setTextColor(...marinho);
     doc.text("Novos Funcionários", 14, y);
+    y += 6;
     doc.setFontSize(9); doc.setTextColor(60);
-    novos.forEach((n, i) => doc.text(n, 16, y + 6 + i * 5));
-    y += 6 + novos.length * 5;
+    for (const n of novos) { cabeNaPagina(5); doc.text(n, 16, y); y += 5; }
   }
+  cabeNaPagina(10);
   doc.setFontSize(8); doc.setTextColor(130);
-  doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")}`, 14, y + 6);
-  baixarBlob(`apuracao-ponto-${competencia}.pdf`, doc.output("blob"));
+  doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")} · ${linhas.length} colaborador(es)`, 14, y + 4);
+  baixarBlob(`apuracao-ponto-${competencia || "sem-competencia"}.pdf`, doc.output("blob"));
 }
 
 function exportarApuracaoExcel(empresa: string, competencia: string, linhas: LinhaApuracao[], novos: string[]) {
   const esc = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const nc = CABECALHO_APURACAO.length;
   const corpo = linhas.map((l) =>
-    `<tr${l.semSalario ? ' style="background:#fef3c7"' : ""}><td>${esc(l.nome)}</td><td>${esc(l.faltasTxt)}</td><td>${esc(l.extrasTxt)}</td><td>${esc(l.hePagar)}</td><td>${esc(l.faltaDescontar)}</td><td>${esc(l.diasFaltas)}</td><td>${esc(l.atestados)}</td><td>${esc(l.complementares)}</td></tr>`,
+    `<tr${l.semDetalhe ? ' style="background:#fef3c7"' : ""}><td>${esc(l.nome)}</td><td>${esc(l.faltasTxt)}</td><td>${esc(l.extrasTxt)}</td><td>${esc(l.diasFaltas)}</td><td>${esc(l.atestados)}</td><td>${esc(l.complementares)}</td></tr>`,
   ).join("");
   const rodape = novos.length
-    ? `<tr></tr><tr><td colspan="8" style="font-weight:bold">Novos Funcionários</td></tr>${novos.map((n) => `<tr><td>${esc(n)}</td></tr>`).join("")}`
+    ? `<tr></tr><tr><td colspan="${nc}" style="font-weight:bold">Novos Funcionários</td></tr>${novos.map((n) => `<tr><td>${esc(n)}</td></tr>`).join("")}`
     : "";
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>
 <table border="1">
-<tr><td colspan="8" style="font-weight:bold;font-size:14px">${esc(empresa)} — Apuração de ponto — ${labelMes(competencia)}</td></tr>
+<tr><td colspan="${nc}" style="font-weight:bold;font-size:14px">${esc(empresa)} — Apuração de ponto — ${labelMes(competencia)}</td></tr>
+<tr><td colspan="${nc}" style="font-size:11px;color:#555">Horas apuradas pelo Secullum, conforme a CLT. Documento de conferência — o fechamento da folha é feito pela contabilidade.</td></tr>
 <tr style="background:#16334f;color:#fff;font-weight:bold">${CABECALHO_APURACAO.map((h) => `<td>${h}</td>`).join("")}</tr>
-${corpo || '<tr><td colspan="8">Sem dados</td></tr>'}
+${corpo || `<tr><td colspan="${nc}">Sem dados</td></tr>`}
 ${rodape}
 </table></body></html>`;
-  baixarBlob(`apuracao-ponto-${competencia}.xls`, new Blob(["﻿" + html], { type: "application/vnd.ms-excel" }));
+  baixarBlob(`apuracao-ponto-${competencia || "sem-competencia"}.xls`, new Blob(["﻿" + html], { type: "application/vnd.ms-excel" }));
 }
 
 // Lançamento MANUAL de ponto: para quem não veio no PDF (contratado no meio do
@@ -962,10 +1055,31 @@ function ModalPontoManual({
     toast("Totais preenchidos com a soma dos dias.");
   };
 
+  // "8" ou "8h" viravam 00:00 em silêncio — num campo de horas isso é desconto
+  // ou pagamento errado. Vazio é permitido (= zero); escrito torto, não.
+  const horaValida = (v: string) => v.trim() === "" || /^\d{1,3}:[0-5]\d$/.test(v.trim());
+
   const salvar = () => {
     const nome = colaboradorId ? (colaboradores.find((c) => c.id === colaboradorId)?.nome ?? "") : nomeLivre.trim();
     if (!colaboradorId && !nome) { toast("Escolha o colaborador ou digite um nome.", "erro"); return; }
     if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano) antes.", "erro"); return; }
+    const ruim = [["Horas normais", normais], ["Horas de falta", faltas], ["Horas extras", extras]].find(([, v]) => !horaValida(String(v)));
+    if (ruim) { toast(`${ruim[0]}: use o formato horas:minutos, como 08:30.`, "erro"); return; }
+    // Totais e dias são digitados separados; se brigarem, o relatório sairia
+    // contradizendo o extrato. Avisa antes de gravar.
+    if (dias.length > 0) {
+      const difE = somaDias.extras - horaParaMin(extras);
+      const difF = somaDias.faltas - horaParaMin(faltas);
+      if (Math.abs(difE) > 1 || Math.abs(difF) > 1) {
+        const ok = window.confirm(
+          `Os totais não batem com os dias lançados:\n\n` +
+          `Extras — total ${minParaHora(horaParaMin(extras))} · dias somam ${minParaHora(somaDias.extras)}\n` +
+          `Faltas — total ${minParaHora(horaParaMin(faltas))} · dias somam ${minParaHora(somaDias.faltas)}\n\n` +
+          `Salvar assim mesmo? (o botão "Usar a soma dos dias nos totais" acerta isso)`,
+        );
+        if (!ok) return;
+      }
+    }
     const agora = new Date().toISOString();
     const chave = colaboradorId || `pdf-${slug(nome)}`;
     onSalvar({
@@ -1080,10 +1194,17 @@ function ModalMesColaborador({
   onEditar: () => void;
   onFechar: () => void;
 }) {
+  const temDetalhe = (ponto.dias?.length ?? 0) > 0;
   const dias = useMemo(() => diasCompletos(ponto), [ponto]);
   const rd = resumoDias(ponto.dias);
   const he = calcularHoraExtra({ salario, minutos: ponto.extrasMin });
-  const fl = calcularFalta({ salario, minutos: ponto.faltasMin, competencia: ponto.competencia });
+  // Dia inteiro vale 1/30; atraso vale por hora. Os feriados vêm do próprio PDF
+  // e entram como repouso no reflexo de DSR.
+  const dec = decomporFaltas(ponto);
+  const fl = calcularFalta({
+    salario, competencia: ponto.competencia,
+    diasCheios: dec.diasCheios, minutosAtraso: dec.minutosAtraso, feriadosISO: dec.feriadosISO,
+  });
   const semSalario = he.semSalario;
 
   return (
@@ -1121,7 +1242,12 @@ function ModalMesColaborador({
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <p className="text-xs text-slate-500">Faltas a descontar</p>
                 <p className="text-lg font-semibold tabular-nums text-red-600">{formatBRL(fl.total)}</p>
-                <p className="text-[11px] text-slate-400">{formatBRL(fl.valorHoras)} de horas + {formatBRL(fl.dsr)} de DSR ({fl.diasRepouso} domingo(s) ÷ {fl.diasUteis} dias úteis)</p>
+                <p className="text-[11px] text-slate-400">
+                  {fl.diasCheios > 0 && <>{fl.diasCheios} dia(s) × {formatBRL(fl.valorDia)} (1/30) </>}
+                  {fl.minutosAtraso > 0 && <>{fl.diasCheios > 0 ? "+ " : ""}{minParaHora(fl.minutosAtraso)} de atraso = {formatBRL(fl.valorAtrasos)} </>}
+                  {fl.dsr > 0 && <>+ {formatBRL(fl.dsr)} de DSR ({fl.diasRepouso} de repouso ÷ {fl.diasUteis} úteis)</>}
+                  {fl.total === 0 && "sem desconto"}
+                </p>
               </div>
             </div>
           )}
@@ -1129,13 +1255,27 @@ function ModalMesColaborador({
 
         {/* Mês inteiro, dia a dia */}
         <div>
+          {/* Ponto importado antes do detalhe diário existir: só tem os totais.
+              Avisa em vez de mostrar o mês inteiro como "sem registro", que
+              parece dado perdido. */}
+          {!temDetalhe && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800">
+                <AlertTriangle className="h-4 w-4" /> Este ponto não tem o detalhe dia a dia
+              </p>
+              <p className="mt-1 text-xs text-amber-700">
+                Ele foi importado antes de o extrato diário existir, então só ficaram os totais do mês (que estão certos e continuam valendo).
+                Para ver os dias, <b>suba o PDF do ponto de {labelMes(ponto.competencia)} outra vez</b> — a reimportação atualiza todo mundo de uma vez, sem duplicar.
+              </p>
+            </div>
+          )}
           <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-xs text-slate-500">{dias.length} dia(s) do período · lacunas aparecem como “sem registro”.</p>
+            <p className="text-xs text-slate-500">{temDetalhe ? `${dias.length} dia(s) do período · lacunas aparecem como “sem registro”.` : "Totais do mês (sem o dia a dia)."}</p>
             <div className="flex gap-2">
               <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={onEditar}>
                 <Pencil className="h-3.5 w-3.5" /> Corrigir
               </button>
-              <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => void exportarMesPdf(empresa, nome, ponto, dias, he, fl)}>
+              <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={() => void exportarMesPdf(empresa, nome, ponto, dias, rd)}>
                 <FileDown className="h-3.5 w-3.5" /> PDF deste colaborador
               </button>
             </div>
@@ -1151,10 +1291,11 @@ function ModalMesColaborador({
   );
 }
 
-// PDF de um colaborador: o mês inteiro dia a dia + o reflexo em dinheiro.
+// PDF de um colaborador: o mês inteiro, dia a dia. Só horas — o fechamento em
+// R$ é da contabilidade; os valores ficam na tela, para o RH se planejar.
 async function exportarMesPdf(
   empresa: string, nome: string, ponto: Ponto, dias: PontoDia[],
-  he: ReturnType<typeof calcularHoraExtra>, fl: ReturnType<typeof calcularFalta>,
+  rd: ReturnType<typeof resumoDias>,
 ) {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
@@ -1165,11 +1306,8 @@ async function exportarMesPdf(
   doc.setFontSize(11); doc.setTextColor(20); doc.text(nome, 14, 32);
   doc.setFontSize(9); doc.setTextColor(110);
   doc.text(`Normais ${minParaHora(ponto.normaisMin)}  ·  Extras ${minParaHora(ponto.extrasMin)}  ·  Faltas ${minParaHora(ponto.faltasMin)}`, 14, 38);
-  if (!he.semSalario) {
-    doc.text(`H.E a pagar ${formatBRL(he.valor)}  ·  Faltas a descontar ${formatBRL(fl.total)} (inclui DSR ${formatBRL(fl.dsr)})`, 14, 43);
-  } else {
-    doc.text("Sem salário no cadastro — valores em R$ não calculados.", 14, 43);
-  }
+  // Só horas, como na apuração: o fechamento em R$ é da contabilidade.
+  doc.text(`${rd.faltas} dia(s) de falta  ·  ${rd.atestados} dia(s) de atestado  ·  ${rd.comExtra} dia(s) com hora extra`, 14, 43);
   autoTable(doc, {
     startY: 48,
     head: [["Dia", "Batidas", "Normais", "Faltas", "Extras", "Situação"]],

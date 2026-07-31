@@ -59,13 +59,19 @@ export function calcularHoraExtra({
   const f = positivo(fator) || FATOR_HE_PADRAO;
   const vhNormal = valorHora(salario, divisor);
   const vhExtra = centavos(vhNormal * f);
+  // Arredonda uma vez só, no fim: arredondar a hora e o fator antes de
+  // multiplicar pelas horas embutia erro sistemático (sempre p/ o mesmo lado).
+  const s = positivo(salario);
+  const d = positivo(divisor) || DIVISOR_MENSAL_PADRAO;
   return {
     minutos: min,
     horas,
     valorHoraNormal: vhNormal,
     valorHoraExtra: vhExtra,
     fator: f,
-    valor: centavos(vhExtra * horas),
+    valor: centavos((s / d) * f * horas),
+    // Hora extra NÃO recebe reflexo de DSR aqui (decisão do usuário em
+    // 31/07/2026 — o escritório contábil é quem faz esse cálculo, se fizer).
     semSalario: positivo(salario) === 0,
   };
 }
@@ -95,47 +101,82 @@ export function diasDaCompetencia(competencia: string, feriadosISO: string[] = [
   return { uteis, repouso, totalDias };
 }
 
+// Dia de falta do mensalista vale 1/30 do salário (praxe da folha), não a
+// jornada convertida em horas. Decisão do usuário, confirmada em 31/07/2026.
+export const DIVISOR_DIARIO = 30;
+
+/** Valor do dia para o mensalista: salário ÷ 30. */
+export function valorDia(salario: number | null | undefined, divisorDiario = DIVISOR_DIARIO): number {
+  const s = positivo(salario);
+  const d = positivo(divisorDiario) || DIVISOR_DIARIO;
+  return centavos(s / d);
+}
+
 export interface CalculoFalta {
-  minutos: number;
-  horas: number;
+  diasCheios: number;      // dias faltados por inteiro
+  minutosAtraso: number;   // atrasos/saídas antecipadas (horas soltas)
+  horasAtraso: number;
+  valorDia: number;
   valorHoraNormal: number;
-  valorHoras: number;   // desconto das horas faltadas
-  dsr: number;          // reflexo no descanso semanal remunerado
-  total: number;        // valorHoras + dsr
+  valorDiasCheios: number; // diasCheios × (salário ÷ 30)
+  valorAtrasos: number;    // horas × (salário ÷ 220)
+  dsr: number;             // reflexo no descanso semanal remunerado
+  total: number;
   diasUteis: number;
   diasRepouso: number;
   semSalario: boolean;
 }
 
 /**
- * Falta injustificada em R$: desconta as horas E o reflexo no DSR (Lei 605/49).
- * DSR = (valor das horas faltadas ÷ dias úteis) × dias de repouso do mês.
+ * Falta injustificada em R$.
+ * - Dia faltado por inteiro: 1/30 do salário (praxe do mensalista).
+ * - Atraso / saída antecipada: horas × (salário ÷ 220).
+ * - Reflexo no DSR (Lei 605/49): (desconto ÷ dias úteis) × dias de repouso.
  * Atestado/abono NÃO entram aqui — são ausências justificadas, sem desconto.
+ *
+ * Os valores são SUGESTÃO para o RH se planejar; o relatório que vai à
+ * contabilidade sai só com as horas apuradas.
  */
 export function calcularFalta({
-  salario, minutos, competencia, divisor = DIVISOR_MENSAL_PADRAO, feriadosISO = [], comDsr = true,
+  salario, diasCheios = 0, minutosAtraso = 0, competencia,
+  divisor = DIVISOR_MENSAL_PADRAO, divisorDiario = DIVISOR_DIARIO,
+  feriadosISO = [], comDsr = true,
 }: {
   salario: number | null | undefined;
-  minutos: number;
+  diasCheios?: number;
+  minutosAtraso?: number;
   competencia: string;
   divisor?: number;
+  divisorDiario?: number;
   feriadosISO?: string[];
   comDsr?: boolean;
 }): CalculoFalta {
-  const min = positivo(minutos);
-  const horas = min / 60;
+  const nDias = Math.max(0, Math.round(positivo(diasCheios)));
+  const minAtraso = positivo(minutosAtraso);
+  const horasAtraso = minAtraso / 60;
+  const vd = valorDia(salario, divisorDiario);
   const vh = valorHora(salario, divisor);
-  const valorHoras = centavos(vh * horas);
+  // Arredonda só no fim de cada parcela: arredondar o valor/hora antes de
+  // multiplicar embutia um erro sistemático (sempre para o mesmo lado).
+  const s = positivo(salario);
+  const dDia = positivo(divisorDiario) || DIVISOR_DIARIO;
+  const dHora = positivo(divisor) || DIVISOR_MENSAL_PADRAO;
+  const valorDiasCheios = centavos((s / dDia) * nDias);
+  const valorAtrasos = centavos((s / dHora) * horasAtraso);
+  const bruto = valorDiasCheios + valorAtrasos;
   const { uteis, repouso } = diasDaCompetencia(competencia, feriadosISO);
   // Sem dias úteis conhecidos (competência inválida) não inventa reflexo.
-  const dsr = comDsr && uteis > 0 ? centavos((valorHoras / uteis) * repouso) : 0;
+  const dsr = comDsr && uteis > 0 ? centavos((bruto / uteis) * repouso) : 0;
   return {
-    minutos: min,
-    horas,
+    diasCheios: nDias,
+    minutosAtraso: minAtraso,
+    horasAtraso,
+    valorDia: vd,
     valorHoraNormal: vh,
-    valorHoras,
+    valorDiasCheios,
+    valorAtrasos,
     dsr,
-    total: centavos(valorHoras + dsr),
+    total: centavos(bruto + dsr),
     diasUteis: uteis,
     diasRepouso: repouso,
     semSalario: positivo(salario) === 0,

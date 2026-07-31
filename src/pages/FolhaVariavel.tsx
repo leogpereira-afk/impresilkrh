@@ -134,7 +134,13 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
                   const tot = totalDe(c.id);
                   return (
                     <tr key={c.id} className="hover:bg-slate-50/50">
-                      <td className="td font-medium text-slate-700">{c.nome}</td>
+                      {/* O nome abre o mesmo detalhe do botão "Abrir" — é o que a
+                          mão procura primeiro na linha. */}
+                      <td className="td">
+                        <button type="button" onClick={() => setAberto(c)} className="text-left font-medium text-slate-700 transition hover:text-brand hover:underline">
+                          {c.nome}
+                        </button>
+                      </td>
                       <td className="td text-right tabular-nums font-medium text-slate-700">{tot > 0 ? formatBRL(tot) : "—"}</td>
                       <td className="td text-center">
                         {fe?.aprovado ? <Badge variant="success">Aprovado</Badge> : <Badge variant="neutral">Pendente</Badge>}
