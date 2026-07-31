@@ -811,6 +811,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       {gerNaoBate && (
         <NaoBatePontoModal
           colaboradores={d.colaboradores}
+          cargoDe={(c) => d.nomeCargo(c) || c.cargoLivre || "—"}
           onToggle={(id, valor) => atualizarColab(id, { naoBatePonto: valor })}
           onFechar={() => setGerNaoBate(false)}
         />
@@ -847,9 +848,10 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 // Modal para marcar quem NÃO bate ponto (comissão/externo/direção) — fica fora da
 // conferência do ponto. Grava o flag no cadastro do colaborador.
 function NaoBatePontoModal({
-  colaboradores, onToggle, onFechar,
+  colaboradores, cargoDe, onToggle, onFechar,
 }: {
   colaboradores: Colaborador[];
+  cargoDe: (c: Colaborador) => string;
   onToggle: (id: string, valor: boolean) => void;
   onFechar: () => void;
 }) {
@@ -877,7 +879,11 @@ function NaoBatePontoModal({
                 onChange={(e) => onToggle(c.id, e.target.checked)}
                 className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
               />
-              <span className="text-sm text-slate-700">{c.nome}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm text-slate-700">{c.nome}</span>
+                {/* O cargo ajuda a decidir quem marcar — a escolha é sempre à mão. */}
+                <span className="block truncate text-[11px] text-slate-400">{cargoDe(c)}</span>
+              </span>
             </label>
           ))}
           {lista.length === 0 && <p className="px-2 py-4 text-center text-sm text-slate-400">Ninguém encontrado.</p>}
