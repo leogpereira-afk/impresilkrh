@@ -6,7 +6,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { Tabs } from "@/components/ui/tabs";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
@@ -40,8 +40,13 @@ const VARIANTE_SITUACAO: Record<Situacao, "danger" | "warning" | "success"> = {
 export default function SST() {
   const sessao = useSessao();
   const d = useDominio();
+  const toast = useToast();
+  const gere = podeGerir(sessao);
   const { items: institucionais } = useColecao("institucionais");
-  const { items: documentos } = useColecao("documentos");
+  const { items: documentos, atualizar: atualizarDoc, remover: removerDoc } = useColecao("documentos");
+  // Corrigir/apagar exame: um ASO com data errada ficava para sempre na lista.
+  const [editarExame, setEditarExame] = useState<(typeof documentos)[number] | null>(null);
+  const [apagarExame, setApagarExame] = useState<(typeof documentos)[number] | null>(null);
 
   const programas = useMemo(
     () => institucionais.filter((doc) => doc.categoria === "SST"),
@@ -147,6 +152,7 @@ export default function SST() {
                   <th className="th">Emissão</th>
                   <th className="th">Vencimento</th>
                   <th className="th text-right">Situação</th>
+                  {gere && <th className="th" />}
                 </tr>
               </thead>
               <tbody>
@@ -161,6 +167,29 @@ export default function SST() {
                       <td className="td text-right">
                         <Badge variant={VARIANTE_SITUACAO[situacao]}>{situacao}</Badge>
                       </td>
+                      {/* Antes só dava para ADICIONAR exame (pela ficha do
+                          colaborador): um ASO lançado com data errada ficava para
+                          sempre na tela, e vencido ainda por cima. */}
+                      {gere && (
+                        <td className="td text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="btn-ghost p-1.5 text-slate-400 hover:text-brand"
+                              title="Corrigir datas deste exame"
+                              onClick={() => setEditarExame(doc)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
+                              title="Apagar este exame"
+                              onClick={() => setApagarExame(doc)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -186,7 +215,88 @@ export default function SST() {
           { id: "exames", label: "Exames ocupacionais", icon: <HardHat className="h-4 w-4" />, conteudo: abaExames },
         ]}
       />
+
+      {editarExame && (
+        <ModalEditarExame
+          doc={editarExame}
+          nome={d.nomeColab(editarExame.colaboradorId)}
+          onFechar={() => setEditarExame(null)}
+          onSalvar={(patch) => {
+            atualizarDoc(editarExame.id, patch);
+            toast("Exame atualizado.");
+          }}
+        />
+      )}
+
+      {/* Apagar exame pede confirmação: some da ficha do colaborador também. */}
+      <ConfirmDialog
+        aberto={!!apagarExame}
+        onFechar={() => setApagarExame(null)}
+        onConfirmar={() => {
+          if (apagarExame) {
+            removerDoc(apagarExame.id);
+            toast("Exame apagado.");
+          }
+          setApagarExame(null);
+        }}
+        titulo="Apagar exame?"
+        mensagem={
+          apagarExame
+            ? `${apagarExame.categoria} de ${d.nomeColab(apagarExame.colaboradorId)}${apagarExame.dataVencimento ? ` (vence ${formatDate(apagarExame.dataVencimento)})` : ""} será removido daqui e da ficha do colaborador. Não dá para desfazer.`
+            : ""
+        }
+      />
     </div>
+  );
+}
+
+// Corrigir um exame já lançado: tipo e datas. O anexo (quando existe) não é
+// tocado aqui — para trocar o arquivo, use a ficha do colaborador.
+function ModalEditarExame({
+  doc, nome, onSalvar, onFechar,
+}: {
+  doc: { id: string; categoria: string; dataEmissao?: string | null; dataVencimento?: string | null };
+  nome: string;
+  onSalvar: (patch: { categoria: string; dataEmissao: string | null; dataVencimento: string | null }) => void;
+  onFechar: () => void;
+}) {
+  const toast = useToast();
+  const [categoria, setCategoria] = useState(doc.categoria);
+  const [emissao, setEmissao] = useState((doc.dataEmissao ?? "").slice(0, 10));
+  const [vencimento, setVencimento] = useState((doc.dataVencimento ?? "").slice(0, 10));
+
+  const salvar = () => {
+    // Vencimento antes da emissão quase sempre é dedo trocado — e deixaria o
+    // exame nascer "vencido" na lista.
+    if (emissao && vencimento && vencimento < emissao) {
+      toast("O vencimento não pode ser antes da emissão.", "erro");
+      return;
+    }
+    onSalvar({ categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null });
+    onFechar();
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo="Corrigir exame"
+      descricao={nome}
+      largura="max-w-md"
+      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}><CheckCircle2 className="h-4 w-4" /> Salvar</button></>}
+    >
+      <div className="space-y-3">
+        <Campo label="Tipo">
+          <Select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+            {CATEGORIAS_SST.map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Emissão"><Input type="date" value={emissao} onChange={(e) => setEmissao(e.target.value)} /></Campo>
+          <Campo label="Vencimento"><Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} /></Campo>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
