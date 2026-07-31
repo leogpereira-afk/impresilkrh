@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -27,6 +27,13 @@ const varianteEnq: Record<string, "danger" | "warning" | "success" | "info"> = {
 type CampoOrdem = "nome" | "area" | "nivel" | "tempo" | "enquadramento" | "status";
 interface Ordem { campo: CampoOrdem; asc: boolean }
 const ORDEM_ENQUADRAMENTO: Record<string, number> = { Crítico: 0, Abaixo: 1, Dentro: 2, Acima: 3 };
+
+// Inativo = desligado (data de desligamento) ou status "inativo".
+const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
+// Afastado (INSS, licença, acidente) continua na empresa, mas NÃO está
+// trabalhando: fica em card próprio e sai da conta de "ativos", senão o número
+// de quem está de fato produzindo aparece inflado.
+const ehAfastado = (c: Colaborador) => c.statusId === "afastado" && !ehInativo(c);
 
 function ThOrdenavel({
   campo, ordem, setOrdem, className, children,
@@ -73,7 +80,7 @@ export default function Colaboradores() {
   // "Por setor" continuam para quem quiser navegar por setor.
   const [visao, setVisao] = useState<"setor" | "lista">("lista");
   // Card de resumo clicado (filtro rápido): ativos / em férias / desligados.
-  const [foco, setFoco] = useState<"ativos" | "ferias" | "desligados" | null>(null);
+  const [foco, setFoco] = useState<"ativos" | "afastados" | "ferias" | "desligados" | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
   const [chips, setChips] = useState<Set<string>>(() => new Set());
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
@@ -85,8 +92,6 @@ export default function Colaboradores() {
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
   const { items: ferias } = useColecao("ferias");
 
-  // Inativo = desligado (data de desligamento) ou status "inativo".
-  const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
 
   // Quem está em férias agora (usado nos cards e no filtro rápido).
   const emFerias = useMemo(
@@ -99,7 +104,9 @@ export default function Colaboradores() {
     const base = escopo.filter((c) => !c.ehDirecao);
     return {
       total: base.length,
-      ativos: base.filter((c) => !ehInativo(c)).length,
+      // "Ativo" = está trabalhando: sem afastamento e sem desligamento.
+      ativos: base.filter((c) => !ehInativo(c) && !ehAfastado(c)).length,
+      afastados: base.filter((c) => ehAfastado(c)).length,
       ferias: base.filter((c) => emFerias.has(c.id) && !ehInativo(c)).length,
       desligados: base.filter((c) => ehInativo(c)).length,
     };
@@ -169,7 +176,8 @@ export default function Colaboradores() {
       // Card clicado tem prioridade sobre o checkbox "incluir inativos".
       .filter((c) => {
         if (foco === "desligados") return ehInativo(c);
-        if (foco === "ativos") return !ehInativo(c);
+        if (foco === "ativos") return !ehInativo(c) && !ehAfastado(c);
+        if (foco === "afastados") return ehAfastado(c);
         if (foco === "ferias") return !ehInativo(c) && emFerias.has(c.id);
         return mostrarInativos || !ehInativo(c);
       })
@@ -255,9 +263,10 @@ export default function Colaboradores() {
       </PageHeader>
 
       {/* Cards de resumo do quadro — clicáveis: filtram a lista abaixo */}
-      <div className="mb-4 grid grid-cols-3 gap-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {([
           { key: "ativos", label: "Ativos", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
+          { key: "afastados", label: "Afastados", valor: resumo.afastados, icon: HeartPulse, cor: "text-orange-600", bg: "bg-orange-50" },
           { key: "ferias", label: "Em férias", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
           { key: "desligados", label: "Desligados", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
         ] as const).map(({ key, label, valor, icon: Icon, cor, bg }) => {

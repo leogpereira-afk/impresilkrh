@@ -380,7 +380,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   );
   const faltandoNoPonto = useMemo(
     () => d.colaboradores
-      .filter((c) => !c.ehDirecao && !c.naoBatePonto && c.statusId !== "inativo" && !presentesIds.has(c.id))
+      // Afastado (INSS, licença) não bate ponto por definição — cobrar a ficha
+      // dele seria ruído todo mês.
+      .filter((c) => !c.ehDirecao && !c.naoBatePonto && c.statusId !== "inativo" && c.statusId !== "afastado" && !presentesIds.has(c.id))
       .sort((a, b) => a.nome.localeCompare(b.nome)),
     [d.colaboradores, presentesIds],
   );
