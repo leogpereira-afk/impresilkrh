@@ -36,7 +36,7 @@ import { BarrasVerticais } from "@/components/charts/charts";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { calcularEncargos, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
+import { calcularEncargos, separarRecebido, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
@@ -512,6 +512,12 @@ export default function Custos() {
   // Regras de encargo vivem em lib/encargos.ts (com testes) — aqui só o uso.
   const enc = useMemo(() => calcularEncargos(linhasColab, fgtsLancado), [linhasColab, fgtsLancado]);
   const { bruto, fgts, decimoTerceiro: prov13, ferias: provFerias, total: encargos } = enc;
+  // Reconciliação do mês: quanto do que a pessoa recebeu está na base de encargo
+  // e quanto está fora (faxina, empreita, comissão, extras). Sai de `linhasColab`
+  // e NÃO do toggle "Só Salário" de propósito — tem de fechar com o `bruto`, que
+  // também ignora o toggle; se um lado obedecesse e o outro não, a conta não
+  // fecharia na tela e ninguém saberia por quê.
+  const recebido = useMemo(() => separarRecebido(linhasColab, TIPOS_ENCARGO), [linhasColab]);
   const custoReal = custoPago + encargos;
   const custoTotalColab = comEncargos ? custoReal : custoPago;
   const colabSel = d.colabById.get(colabId);
@@ -1440,6 +1446,36 @@ export default function Custos() {
                           ativo={comEncargos}
                           onClick={() => setComEncargos(true)}
                         />
+                      </div>
+                      {/* O que a pessoa recebeu, por inteiro — e onde cada parte
+                          entra. Sem isto, ver "encargos sobre o bruto (R$ 20.418)"
+                          ao lado de um custo pago de R$ 25.788 não explicava os
+                          R$ 5.370 do meio, que são justamente faxina e empreita. */}
+                      <div className="rounded-xl border border-slate-200/70 bg-white p-4">
+                        <div className="flex items-baseline justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total recebido no mês</p>
+                          <p className="text-lg font-semibold text-green-700 tabular-nums">{formatBRL(recebido.totalRecebido)}</p>
+                        </div>
+                        <dl className="mt-2 space-y-1.5 text-sm">
+                          <div className="flex justify-between text-slate-600">
+                            <dt>Base de encargo <span className="text-xs text-slate-400">(salário + adiantamento)</span></dt>
+                            <dd className="tabular-nums">{formatBRL(recebido.base)}</dd>
+                          </div>
+                          {recebido.linhasFora.map((l) => (
+                            <div key={l.tipo} className="flex justify-between text-slate-500">
+                              <dt className="flex items-center gap-2 pl-3">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
+                                {l.tipo}
+                              </dt>
+                              <dd className="tabular-nums">{formatBRL(l.valor)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        {recebido.fora > 0 && (
+                          <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-relaxed text-slate-400">
+                            Os {formatBRL(recebido.fora)} acima da base entram no que a pessoa recebeu, mas <strong className="font-semibold text-slate-500">não geram FGTS, 13º nem férias</strong> — a provisão ao lado continua igual à que a empresa deve de fato.
+                          </p>
+                        )}
                       </div>
                       <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">

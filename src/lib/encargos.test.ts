@@ -1,7 +1,7 @@
 // Encargos da folha. Erro aqui aparece direto no custo por pessoa e no
 // fechamento contra o DRE — então cada regra fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { baseEncargos, calcularEncargos, ehContaDeFuncionarios, FGTS_PCT } from "./encargos";
+import { baseEncargos, calcularEncargos, ehContaDeFuncionarios, FGTS_PCT, separarRecebido } from "./encargos";
 
 const l = (tipo: string, valor: number) => ({ tipo, valor });
 
@@ -68,5 +68,48 @@ describe("ehContaDeFuncionarios", () => {
   it("outros grupos ficam de fora", () => {
     expect(ehContaDeFuncionarios("3.1.01")).toBe(false);
     expect(ehContaDeFuncionarios("")).toBe(false);
+  });
+});
+
+// A tela mostrava "encargos sobre o bruto (R$ 20.418)" ao lado de um custo pago
+// de R$ 25.788 sem explicar a diferença. Estes testes travam a reconciliação —
+// e travam sobretudo o que NÃO deve mudar: a base de encargo continua sendo só
+// salário + adiantamento, mesmo com faxina e empreita na tela.
+describe("separarRecebido", () => {
+  const l = (tipo: string, valor: number) => ({ tipo, valor });
+
+  it("separa o que gera encargo do que só foi recebido", () => {
+    const r = separarRecebido([l("Salário", 1600), l("Adiantamento", 800), l("Limpeza/Faxina", 300), l("Freelancer (Empreita)", 240)]);
+    expect(r.base).toBe(2400);
+    expect(r.fora).toBe(540);
+    expect(r.totalRecebido).toBe(2940);
+  });
+
+  it("faxina e empreita NÃO entram na base de encargo (decisão mantida)", () => {
+    const linhas = [l("Salário", 1600), l("Limpeza/Faxina", 300), l("Freelancer (Empreita)", 240)];
+    expect(separarRecebido(linhas).base).toBe(baseEncargos(linhas));
+    expect(calcularEncargos(linhas).bruto).toBe(1600);
+  });
+
+  it("encargo da empresa (FGTS/INSS) fica fora dos dois lados — não é recebimento", () => {
+    const r = separarRecebido([l("Salário", 1600), l("FGTS", 128), l("INSS", 200)], ["FGTS", "INSS"]);
+    expect(r.base).toBe(1600);
+    expect(r.fora).toBe(0);
+    expect(r.totalRecebido).toBe(1600);
+  });
+
+  it("soma o mesmo tipo lançado várias vezes e ordena pelo maior", () => {
+    const r = separarRecebido([l("Salário", 1000), l("Limpeza/Faxina", 300), l("Limpeza/Faxina", 300), l("Comissão", 1000)]);
+    expect(r.linhasFora).toEqual([{ tipo: "Comissão", valor: 1000 }, { tipo: "Limpeza/Faxina", valor: 600 }]);
+  });
+
+  it("base + fora sempre fecha com o total recebido", () => {
+    const r = separarRecebido([l("Salário", 1234.56), l("Horas Extras", 78.9), l("Adiantamento", 600)]);
+    expect(r.base + r.fora).toBeCloseTo(r.totalRecebido, 2);
+  });
+
+  it("mês sem nada não quebra", () => {
+    const r = separarRecebido([]);
+    expect(r).toEqual({ base: 0, fora: 0, totalRecebido: 0, linhasFora: [] });
   });
 });
