@@ -323,6 +323,38 @@ export function paraRegistros(
   };
 }
 
+/**
+ * Sugestão para um nome que o casamento automático NÃO resolveu — o sistema
+ * pergunta em vez de deixar em aberto.
+ *
+ * Por que existe: 57 dos 88 do cadastro são INATIVOS, quase todos com
+ * lançamento, e valores altos ficavam presos na lista de "não encontrados"
+ * porque o seletor de vínculo escondia ex-colaborador. A pedido do Leonardo
+ * (01/08/2026): quando parecer um inativo, o sistema tem que PERGUNTAR.
+ *
+ * A regra é mais frouxa que a do casamento automático de propósito — e por
+ * isso ela NUNCA grava sozinha, só sugere com botão de confirmar:
+ *  - automático: os pedaços têm de casar NA ORDEM, do começo do nome;
+ *  - sugestão: cada pedaço do ERP acha par em QUALQUER posição do nome
+ *    ("JESSICA SAMPAIO" acha "Jessica Fernanda Souza Sampaio").
+ * Continua exigindo 2+ pedaços e um único candidato — dois candidatos é
+ * decisão do RH no seletor, não chute do sistema.
+ *
+ * Erro de digitação (Golçalves × Gonçalves) segue NÃO sugerido, de propósito:
+ * aproximação por semelhança de letras em folha de pagamento troca pessoa.
+ * Para esses o caminho é o seletor manual — que agora mostra os inativos.
+ */
+export function sugerirVinculo(nomeMubi: string, colaboradores: Colaborador[]): Colaborador | null {
+  const alvoToks = tokens(nomeMubi);
+  if (alvoToks.length < 2) return null;
+  const candidatos = colaboradores.filter((c) => {
+    const toks = tokens(c.nome);
+    if (toks.length < 2) return false;
+    return alvoToks.every((t) => toks.some((x) => pedacoCasa(t, x)));
+  });
+  return candidatos.length === 1 ? candidatos[0] : null;
+}
+
 /** Nome do ERP que não casou com ninguém — com o que está ficando de fora. */
 export interface NaoCasado {
   nome: string;

@@ -2,7 +2,7 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, paraRegistros, type LinhaMubi } from "./mubiPagamentos";
+import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi } from "./mubiPagamentos";
 import { conciliarPagamentos } from "./custos";
 import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
@@ -399,5 +399,46 @@ describe("paraRegistros — o que não casa vira aviso com valor", () => {
       comCpf, {},
     );
     expect(r.cpfsAprendidos).toHaveLength(0);
+  });
+});
+
+// A sugestão que PERGUNTA em vez de deixar em aberto. 57 dos 88 do cadastro
+// são inativos com lançamento — o que ela sugerir de errado o RH grava com um
+// clique, então os casos de NÃO sugerir importam mais que os de sugerir.
+describe("sugerirVinculo", () => {
+  it("acha pedaços fora de ordem/posição — o caso que o automático não pega", () => {
+    // Automático exige casar na ordem a partir do começo; "JESSICA SAMPAIO"
+    // pula os nomes do meio e ficava sem par.
+    expect(sugerirVinculo("JESSICA SAMPAIO", CADASTRO)?.id).toBe("c7");
+  });
+
+  it("sugere inativo normalmente — é para isso que existe", () => {
+    const inativo = c("x1", "Waldeir Antunes da Silveira");
+    expect(sugerirVinculo("WALDEIR SILVEIRA", [...CADASTRO, inativo])?.id).toBe("x1");
+  });
+
+  it("dois candidatos possíveis: NÃO sugere (decisão é do RH)", () => {
+    // "ADRIANO LIMA" até casaria o c1, mas "ADRIANO" sozinho abre para o c2 —
+    // com dois Adrianos plausíveis o sistema não chuta.
+    const dois = [...CADASTRO, c("x2", "Adriano Pinheiro de Lima Souza")];
+    expect(sugerirVinculo("ADRIANO LIMA", dois)).toBeNull();
+  });
+
+  it("um pedaço só nunca sugere ninguém", () => {
+    expect(sugerirVinculo("BARBARA", CADASTRO)).toBeNull();
+  });
+
+  it("erro de digitação não é aproximado (Gonçalves × Golçalves)", () => {
+    // Semelhança de letras em folha troca pessoa; esse caso vai para o seletor
+    // manual — que agora mostra os inativos.
+    expect(sugerirVinculo("PEDRO HENRIQUE GONCALVES PEREIRA", CADASTRO)).toBeNull();
+  });
+
+  it("nome truncado pelo ERP continua achando (pedaço como começo do outro)", () => {
+    expect(sugerirVinculo("BARBARA PATRICIA FERREIRA VASC", CADASTRO)?.id).toBe("c3");
+  });
+
+  it("conectivos não atrapalham nem ajudam", () => {
+    expect(sugerirVinculo("JESSICA DE SAMPAIO", CADASTRO)?.id).toBe("c7");
   });
 });

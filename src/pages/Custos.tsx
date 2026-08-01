@@ -40,7 +40,7 @@ import { calcularEncargos, separarRecebido, PREFIXO_FUNCIONARIOS } from "@/lib/e
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
-import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
+import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -117,6 +117,20 @@ export default function Custos() {
     () => [...d.ativos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     [d.ativos],
   );
+  // Fora do quadro mas COM lançamento: inativo, desligado, afastado ou direção
+  // que tem folha histórica. Antes eles eram invisíveis na seção individual —
+  // o dinheiro estava lá, contava na folha geral, e não havia como "entrar" na
+  // pessoa para ver (pedido de 01/08/2026: os valores são altos demais para
+  // ficarem em aberto).
+  const foraDoQuadroComLanc = useMemo(() => {
+    const noQuadro = new Set(ativosOrdenados.map((c) => c.id));
+    const comPag = new Set((pagamentos as Pagamento[]).map((p) => p.colaboradorId));
+    return d.colaboradores
+      .filter((c: Colaborador) => !noQuadro.has(c.id) && comPag.has(c.id))
+      .sort((a: Colaborador, b: Colaborador) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [ativosOrdenados, pagamentos, d.colaboradores]);
+  // As setas ‹ › percorrem os dois grupos: primeiro o quadro, depois o resto.
+  const navegaveis = useMemo(() => [...ativosOrdenados, ...foraDoQuadroComLanc], [ativosOrdenados, foraDoQuadroComLanc]);
   const [colabId, setColabId] = useState<string>(ativosOrdenados[0]?.id ?? "");
 
   const [comAdiantamento, setComAdiantamento] = useState<boolean>(true);
@@ -137,11 +151,11 @@ export default function Custos() {
   const compAtiva = comp && competencias.includes(comp) ? comp : compPadrao;
 
   // Navegação por setas: entre colaboradores (‹ ›, circular) e entre meses (‹ ›).
-  const idxColab = ativosOrdenados.findIndex((c) => c.id === colabId);
+  const idxColab = navegaveis.findIndex((c) => c.id === colabId);
   const irColab = (delta: number) => {
-    if (!ativosOrdenados.length) return;
+    if (!navegaveis.length) return;
     const base = idxColab < 0 ? 0 : idxColab;
-    setColabId(ativosOrdenados[(base + delta + ativosOrdenados.length) % ativosOrdenados.length].id);
+    setColabId(navegaveis[(base + delta + navegaveis.length) % navegaveis.length].id);
   };
   const idxComp = competencias.indexOf(compAtiva);
   const irMes = (delta: number) => {
@@ -198,6 +212,27 @@ export default function Custos() {
     () => (respostaMubi ? paraRegistros(respostaMubi.linhas, d.colaboradores, config.vinculosMubi ?? {}).registros.length : 0),
     [respostaMubi, d.colaboradores, config.vinculosMubi],
   );
+  // Seletor de vínculo manual: o cadastro INTEIRO, separado em quadro atual e
+  // inativos. Os inativos ficavam escondidos — e 57 dos 88 são inativos, quase
+  // todos com lançamento, então valor alto ficava preso sem ter para onde ir.
+  const opcoesVinculo = useMemo(() => {
+    const ordena = (arr: Colaborador[]) => [...arr].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    return {
+      quadro: ordena(d.colaboradores.filter((c: Colaborador) => c.statusId !== "inativo")),
+      inativos: ordena(d.colaboradores.filter((c: Colaborador) => c.statusId === "inativo")),
+    };
+  }, [d.colaboradores]);
+  // O sistema PERGUNTA em vez de deixar em aberto: para cada não encontrado,
+  // procura um único candidato plausível (regra frouxa, só sugere — quem grava
+  // é o clique do RH).
+  const sugestoesVinculo = useMemo(() => {
+    const m = new Map<string, Colaborador>();
+    for (const n of folhaPrev?.naoCasados ?? []) {
+      const s = sugerirVinculo(n.nome, d.colaboradores);
+      if (s) m.set(n.nome, s);
+    }
+    return m;
+  }, [folhaPrev, d.colaboradores]);
 
   const importarPlano = async (file: File) => {
     try {
@@ -1039,27 +1074,53 @@ export default function Custos() {
                   </p>
                   {folhaPrev.mubi ? (
                     <div className="space-y-1.5">
-                      {naoCasados.map((n) => (
-                        <div key={n.nome} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/80 px-2.5 py-1.5">
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium text-slate-700">{n.nome}</span>
-                            <span className="block text-[11px] text-slate-400">
-                              {n.linhas} lançamento(s) · {formatBRL(n.total)} · {[...n.tipos].join(", ")}
-                              {n.cpf ? ` · CPF ${n.cpf}` : ""}
+                      {naoCasados.map((n) => {
+                        const sug = sugestoesVinculo.get(n.nome);
+                        const escolhido = config.vinculosMubi?.[normNome(n.nome)] ?? "";
+                        return (
+                          <div key={n.nome} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/80 px-2.5 py-1.5">
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-medium text-slate-700">{n.nome}</span>
+                              <span className="block text-[11px] text-slate-400">
+                                {n.linhas} lançamento(s) · {formatBRL(n.total)} · {[...n.tipos].join(", ")}
+                                {n.cpf ? ` · CPF ${n.cpf}` : ""}
+                              </span>
                             </span>
-                          </span>
-                          <Select
-                            className="min-w-[190px] text-xs"
-                            value={config.vinculosMubi?.[normNome(n.nome)] ?? ""}
-                            onChange={(e) => vincularMubi(n.nome, e.target.value)}
-                          >
-                            <option value="">Vincular a…</option>
-                            {d.colaboradores.filter((c) => c.statusId !== "inativo").map((c) => (
-                              <option key={c.id} value={c.id}>{c.nome}</option>
-                            ))}
-                          </Select>
-                        </div>
-                      ))}
+                            {/* A pergunta: um candidato único e plausível vira botão
+                                de confirmar — inclusive (principalmente) inativo.
+                                Só aparece enquanto o RH não escolheu ninguém. */}
+                            {sug && !escolhido && (
+                              <button
+                                type="button"
+                                onClick={() => vincularMubi(n.nome, sug.id)}
+                                className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                                title="Confirmar o vínculo sugerido — o sistema lembra para os próximos meses"
+                              >
+                                É {sug.nome}{sug.statusId === "inativo" ? " (Inativo)" : ""}? Vincular
+                              </button>
+                            )}
+                            <Select
+                              className="min-w-[190px] text-xs"
+                              value={escolhido}
+                              onChange={(e) => vincularMubi(n.nome, e.target.value)}
+                            >
+                              <option value="">Vincular a…</option>
+                              <optgroup label="Quadro atual">
+                                {opcoesVinculo.quadro.map((c) => (
+                                  <option key={c.id} value={c.id}>{c.nome}</option>
+                                ))}
+                              </optgroup>
+                              {opcoesVinculo.inativos.length > 0 && (
+                                <optgroup label="Inativos (ex-colaboradores)">
+                                  {opcoesVinculo.inativos.map((c) => (
+                                    <option key={c.id} value={c.id}>{c.nome}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </Select>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
@@ -1306,7 +1367,13 @@ export default function Custos() {
 
             <Card>
               <CardHeader
-                title="Colaborador ativo"
+                // A tela DIZ quando a pessoa está fora do quadro (Inativo,
+                // Direção…) em vez de fingir que é ativa — pedido de 01/08.
+                title={
+                  colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id)
+                    ? `Colaborador · ${d.nomeStatus(colabSel.statusId)}`
+                    : "Colaborador ativo"
+                }
                 subtitle={`Folha real de ${compLabelLongo(compAtiva)}`}
                 icon={<Users className="h-5 w-5" />}
                 action={
@@ -1314,7 +1381,7 @@ export default function Custos() {
                     <button
                       type="button"
                       onClick={() => irColab(-1)}
-                      disabled={ativosOrdenados.length < 2}
+                      disabled={navegaveis.length < 2}
                       className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
                       aria-label="Colaborador anterior"
                       title="Colaborador anterior"
@@ -1326,17 +1393,31 @@ export default function Custos() {
                       onChange={(e) => setColabId(e.target.value)}
                       className="h-9 w-auto py-0 text-sm"
                     >
-                      {ativosOrdenados.length === 0 && <option value="">Sem colaboradores ativos</option>}
-                      {ativosOrdenados.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nome}
-                        </option>
-                      ))}
+                      {navegaveis.length === 0 && <option value="">Sem colaboradores</option>}
+                      <optgroup label="Quadro atual">
+                        {ativosOrdenados.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {/* Quem saiu (ou está fora do quadro) mas tem folha:
+                          o lançamento existe, então a pessoa tem que existir
+                          aqui também — senão o valor fica órfão na tela. */}
+                      {foraDoQuadroComLanc.length > 0 && (
+                        <optgroup label="Fora do quadro (com lançamentos)">
+                          {foraDoQuadroComLanc.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome} · {d.nomeStatus(c.statusId)}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </Select>
                     <button
                       type="button"
                       onClick={() => irColab(1)}
-                      disabled={ativosOrdenados.length < 2}
+                      disabled={navegaveis.length < 2}
                       className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
                       aria-label="Próximo colaborador"
                       title="Próximo colaborador"
