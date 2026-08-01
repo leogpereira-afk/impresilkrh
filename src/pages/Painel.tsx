@@ -38,6 +38,7 @@ const ddmm = (iso?: string | null) => {
 };
 
 export default function Painel() {
+  const navegar = useNavigate();
   const sessao = useSessao();
   const d = useDominio();
   const drill = useDrill();
@@ -226,6 +227,17 @@ export default function Painel() {
     const area = folhaPorArea.find((x) => x.nome === nome);
     if (area) abrirFolhaArea(area.id, area.nomeCompleto);
   };
+  // "Horas Extras: R$ 18.400" e ninguém sabia QUEM. O card ao lado (folha por
+  // setor) já abre a lista no clique — este era o único que não abria.
+  const abrirFolhaTipo = (tipo: string) => {
+    const doTipo = pagsPeriodo.filter((p) => p.tipo === tipo);
+    const ids = new Set(doTipo.map((p) => p.colaboradorId));
+    drill.abrir(
+      `${tipo} · ${rotuloPeriodo}`,
+      d.colaboradores.filter((c) => ids.has(c.id)),
+      `${formatBRL(totalDe(doTipo))} · ${ids.size} colaborador(es)`,
+    );
+  };
 
   // Pagamentos por colaborador no período (tabela para feedback — link para a ficha).
   const porColabMap = new Map<string, number>();
@@ -235,7 +247,16 @@ export default function Painel() {
     .sort((a, b) => b.valor - a.valor);
 
   // ---------- Folha comparativa mês a mês (valores reais) ----------
-  const folhaComparativa = serieMensal(pagamentos.filter((p) => idsBruto.has(p.colaboradorId))).map((s) => ({ nome: s.nome, valor: s.valor }));
+  const serieFolha = serieMensal(pagamentos.filter((p) => idsBruto.has(p.colaboradorId)));
+  const folhaComparativa = serieFolha.map((s) => ({ nome: s.nome, valor: s.valor }));
+  // Clicar na barra de um mês leva o Painel inteiro para aquela competência —
+  // o rótulo do gráfico ("Mar/2026") volta a virar ano+mês do filtro.
+  const irParaCompetencia = (rotulo: string) => {
+    const achou = serieFolha.find((x) => x.nome === rotulo);
+    if (!achou) return;
+    const [ano, mes] = achou.competencia.split("-").map(Number);
+    if (ano && mes) { setFiltroAno(ano); setFiltroMes(mes); }
+  };
 
   // ---------- Treinamento (v3) ----------
   // Considera apenas treinamentos de colaboradores ATIVOS (no escopo de headcount).
@@ -401,7 +422,7 @@ export default function Painel() {
               <CardHeader title="Composição da folha" subtitle="Tudo que foi pago: salário, adiantamento, extras e benefícios" icon={<Wallet className="h-[18px] w-[18px]" />} />
               <CardBody>
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <BarrasColoridas data={folhaTipoBarras} altura={240} />
+                  <BarrasColoridas data={folhaTipoBarras} altura={240} onItemClick={abrirFolhaTipo} />
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="border-b border-slate-100">
@@ -409,7 +430,7 @@ export default function Painel() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {folhaPorTipo.map((t) => (
-                          <tr key={t.tipo}>
+                          <tr key={t.tipo} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirFolhaTipo(t.tipo)} title={`Ver quem recebeu ${t.tipo}`}>
                             <td className="td font-medium text-slate-700"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: corDoTipo(t.tipo) }} />{t.tipo}</td>
                             <td className="td text-right text-slate-700">{formatBRL(t.valor)}</td>
                             <td className="td text-right text-slate-500">{formatPercent(folhaTotal ? t.valor / folhaTotal : 0)}</td>
@@ -455,7 +476,10 @@ export default function Painel() {
             <Card>
               <CardHeader title="Folha comparativa mês a mês" subtitle="Valores reais por competência (Dez/2025 e mês corrente podem estar parciais)" icon={<Wallet className="h-[18px] w-[18px]" />} />
               <CardBody>
-                <BarrasVerticais data={folhaComparativa} moeda cor="#16334f" altura={240} />
+                {/* O único gráfico do Painel sem clique — e o mesmo gráfico
+                    abre em Relatórios. Clicar na barra joga o painel inteiro
+                    para aquela competência. */}
+                <BarrasVerticais data={folhaComparativa} moeda cor="#16334f" altura={240} onItemClick={irParaCompetencia} />
               </CardBody>
             </Card>
           </div>
@@ -652,37 +676,56 @@ export default function Painel() {
                   const dd = dias(c.dataValidade!);
                   const vencido = dd < 0;
                   return (
-                    <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-700">{c.nr} · {d.nomeColab(c.colaboradorId)}</p>
-                        <p className="text-xs text-slate-400">Treinamento de NR</p>
-                      </div>
+                    /* O aviso agora leva à renovação — antes era beco sem
+                       saída: lia-se "NR-35 vencida há 12d" e era preciso ir na
+                       mão até SST e caçar o nome na lista. */
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => navegar("/sst", { state: { renovarNr: c.id } })}
+                      title="Abrir em SST para renovar esta NR"
+                      className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 text-left transition hover:border-brand-200 hover:bg-brand-50/40"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-slate-700">{c.nr} · {d.nomeColab(c.colaboradorId)}</span>
+                        <span className="block text-xs text-slate-400">Treinamento de NR · clique para renovar</span>
+                      </span>
                       <Badge variant={vencido ? "danger" : "warning"}>
                         {vencido ? `Vencida há ${Math.abs(dd)}d` : `Vence em ${dd}d`}
                       </Badge>
-                    </div>
+                    </button>
                   );
                 })}
                 {docsVisiveis.map((doc) => {
                   const dd = dias(doc.dataVencimento);
                   const vencido = dd < 0;
                   return (
-                    <div key={doc.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-700">{doc.nome} · {d.nomeColab(doc.colaboradorId)}</p>
-                        <p className="text-xs text-slate-400">{doc.categoria}</p>
-                      </div>
+                    <Link
+                      key={doc.id}
+                      to={`/colaboradores/${doc.colaboradorId}`}
+                      title="Abrir a ficha para renovar o documento"
+                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-slate-700">{doc.nome} · {d.nomeColab(doc.colaboradorId)}</span>
+                        <span className="block text-xs text-slate-400">{doc.categoria} · clique para abrir a ficha</span>
+                      </span>
                       <Badge variant={vencido ? "danger" : "warning"}>
                         {vencido ? `Vencido há ${Math.abs(dd)}d` : `Vence em ${dd}d`}
                       </Badge>
-                    </div>
+                    </Link>
                   );
                 })}
                 {avaliacoesVisiveis.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                    <p className="truncate text-sm font-medium text-slate-700">Avaliação pendente · {c.nome}</p>
+                  <Link
+                    key={c.id}
+                    to={`/colaboradores/${c.id}`}
+                    title="Abrir a pessoa para conferir antes de avaliar"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40"
+                  >
+                    <span className="truncate text-sm font-medium text-slate-700">Avaliação pendente · {c.nome}</span>
                     <Badge variant="info">{cicloNome}</Badge>
-                  </div>
+                  </Link>
                 ))}
               </>
             )}
@@ -737,8 +780,8 @@ export default function Painel() {
               ) : (
                 proximosRetornos.slice(0, 4).map((f) => (
                   <div key={f.id} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-700">{d.nomeColab(f.colaboradorId)}</span>
-                    <span className="text-slate-400">{formatDate(f.dataRetorno)}</span>
+                    <Link to={`/colaboradores/${f.colaboradorId}`} className="truncate text-slate-700 hover:text-brand hover:underline" title="Abrir a ficha para preparar o retorno">{d.nomeColab(f.colaboradorId)}</Link>
+                    <span className="shrink-0 text-slate-400">{formatDate(f.dataRetorno)}</span>
                   </div>
                 ))
               )}
@@ -763,14 +806,19 @@ export default function Painel() {
           </CardBody>
         </Card>
         <Card>
-          <CardHeader title="Elegíveis a promoção" subtitle={cicloNome} icon={<Award className="h-[18px] w-[18px]" />} />
+          <CardHeader
+            title="Elegíveis a promoção"
+            subtitle={cicloNome}
+            icon={<Award className="h-[18px] w-[18px]" />}
+            action={elegiveis.length > 6 ? <Link to="/desempenho" className="text-xs font-medium text-brand hover:underline">Ver todos ({elegiveis.length}) →</Link> : undefined}
+          />
           <CardBody className="space-y-2">
             {elegiveis.length === 0 ? (
               <p className="text-sm text-slate-400">Nenhum elegível no momento.</p>
             ) : (
               elegiveis.slice(0, 6).map((a) => (
-                <div key={a.id} className="flex items-center justify-between text-sm">
-                  <span className="text-slate-700">{d.nomeColab(a.colaboradorId)}</span>
+                <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                  <Link to={`/colaboradores/${a.colaboradorId}`} className="truncate text-slate-700 hover:text-brand hover:underline" title="Abrir a ficha para tocar a promoção">{d.nomeColab(a.colaboradorId)}</Link>
                   <DotBadge label={`→ ${a.proximoNivel}`} cor="#16a34a" />
                 </div>
               ))
