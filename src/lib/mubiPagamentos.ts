@@ -194,11 +194,29 @@ export function competenciasParaTras(meses: number, hoje = new Date()): string[]
  * Ordem: vínculo salvo pelo RH → nome igual → todos os pedaços do nome do
  * cadastro cabem no nome do ERP (resolve o abreviado "F." x "Ferreira").
  */
+const soDigitos = (v?: string | null) => String(v ?? "").replace(/\D/g, "");
+
 export function casarColaborador(
   nomeMubi: string,
   colaboradores: Colaborador[],
   vinculos: Record<string, string>,
+  cpfMubi?: string | null,
 ): Colaborador | null {
+  // 1) CPF — a chave forte, e a que estava sobrando.
+  //
+  // O ERP manda o documento em cada título e nós casávamos só por NOME. Nos
+  // pagamentos recorrentes isso funcionava (o nome do colaborador fixo é
+  // escrito igual todo mês), mas quebrava justamente onde o nome varia: das 10
+  // linhas de Limpeza/Faxina, NENHUMA casava; das 28 de Freelancer, só 1.
+  // Eram os pagamentos que somem do extrato da pessoa sem ninguém perceber.
+  //
+  // 14 dígitos é CNPJ (fornecedor, não é gente) e fica de fora.
+  const doc = soDigitos(cpfMubi);
+  if (doc.length === 11) {
+    const porCpf = colaboradores.filter((c) => soDigitos(c.cpf) === doc);
+    if (porCpf.length === 1) return porCpf[0];
+  }
+
   const alvo = norm(nomeMubi);
   if (!alvo) return null;
 
@@ -270,18 +288,48 @@ export function paraRegistros(
   linhas: LinhaMubi[],
   colaboradores: Colaborador[],
   vinculos: Record<string, string>,
-): { registros: Pagamento[]; naoCasados: string[]; coletivas: LinhaMubi[] } {
+): { registros: Pagamento[]; naoCasados: NaoCasado[]; coletivas: LinhaMubi[]; cpfsAprendidos: { colaboradorId: string; cpf: string }[] } {
   const registros: Pagamento[] = [];
-  const naoCasados = new Set<string>();
+  const porNome = new Map<string, NaoCasado>();
   const coletivas: LinhaMubi[] = [];
+  const cpfs = new Map<string, string>();
 
   for (const l of linhas) {
     if (!l.nome.trim()) { coletivas.push(l); continue; }
-    const c = casarColaborador(l.nome, colaboradores, vinculos);
-    if (!c) { naoCasados.add(l.nome.trim()); continue; }
+    const c = casarColaborador(l.nome, colaboradores, vinculos, l.cpfCnpj);
+    if (!c) {
+      // Guarda o VALOR junto do nome: uma lista só de nomes é fácil de ignorar,
+      // e o que está ficando de fora é dinheiro que some do extrato da pessoa.
+      const chave = l.nome.trim();
+      const atual = porNome.get(chave) ?? { nome: chave, cpf: l.cpfCnpj ?? null, linhas: 0, total: 0, tipos: new Set<string>() };
+      atual.linhas += 1;
+      atual.total += l.valor || 0;
+      atual.tipos.add(l.tipo);
+      if (!atual.cpf && l.cpfCnpj) atual.cpf = l.cpfCnpj;
+      porNome.set(chave, atual);
+      continue;
+    }
+    // Casou pelo NOME e o cadastro está sem CPF: aprende, para o mês que vem
+    // casar pela chave forte e não depender de como o ERP escreveu o nome.
+    const doc = String(l.cpfCnpj ?? "").replace(/\D/g, "");
+    if (doc.length === 11 && !String(c.cpf ?? "").replace(/\D/g, "")) cpfs.set(c.id, doc);
     registros.push(montarPagamento(l, c.id));
   }
-  return { registros, naoCasados: [...naoCasados], coletivas };
+  return {
+    registros,
+    naoCasados: [...porNome.values()].sort((a, b) => b.total - a.total),
+    coletivas,
+    cpfsAprendidos: [...cpfs.entries()].map(([colaboradorId, cpf]) => ({ colaboradorId, cpf })),
+  };
+}
+
+/** Nome do ERP que não casou com ninguém — com o que está ficando de fora. */
+export interface NaoCasado {
+  nome: string;
+  cpf: string | null;
+  linhas: number;
+  total: number;
+  tipos: Set<string>;
 }
 
 export interface PreviaMubi {
@@ -305,7 +353,7 @@ export function montarPrevia(
 
   for (const l of linhas) {
     if (!l.nome.trim()) { semNome.push(l); continue; }
-    const c = casarColaborador(l.nome, colaboradores, vinculos);
+    const c = casarColaborador(l.nome, colaboradores, vinculos, l.cpfCnpj);
     if (c) vinculadas.push({ linha: l, colaborador: c });
     else semVinculo.push(l);
   }
@@ -363,7 +411,7 @@ export function sugerirSalarios(
   const porPessoa = new Map<string, Map<string, LinhaMubi[]>>();
   for (const l of linhas) {
     if (!TIPOS_SALARIO.includes(l.tipo) || !l.nome.trim()) continue;
-    const c = casarColaborador(l.nome, colaboradores, vinculos);
+    const c = casarColaborador(l.nome, colaboradores, vinculos, l.cpfCnpj);
     if (!c) continue;
     if (c.salario != null && c.salario > 0) continue; // já tem salário: o cadastro manda
     if (c.ehDirecao) continue;                        // direção não tem salário por definição

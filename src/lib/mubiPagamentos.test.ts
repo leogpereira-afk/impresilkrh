@@ -2,7 +2,7 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, type LinhaMubi } from "./mubiPagamentos";
+import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, paraRegistros, type LinhaMubi } from "./mubiPagamentos";
 import { conciliarPagamentos } from "./custos";
 import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
@@ -320,5 +320,84 @@ describe("adoção do id do ERP pelos lançamentos que já existem", () => {
     const d = conciliarPagamentos([julho], [agosto], new Set([agosto.competencia]));
     expect(d.novos).toHaveLength(1);
     expect(d.ausentes).toHaveLength(0); // julho está fora da janela buscada
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Casamento por CPF. O ERP manda o documento em cada título e nós usávamos só
+// o nome — por isso Limpeza/Faxina (0 de 10) e Freelancer (1 de 28) nunca
+// casavam: são os pagamentos em que o nome varia.
+// ---------------------------------------------------------------------------
+describe("casarColaborador — CPF é a chave forte", () => {
+  const colabs = [
+    { id: "c1", nome: "Maria das Graças Silva Santos", cpf: "111.444.777-35" } as Colaborador,
+    { id: "c2", nome: "Joana Pereira Lima", cpf: "529.982.247-25" } as Colaborador,
+  ];
+
+  it("casa pelo CPF mesmo com o nome escrito de outro jeito", () => {
+    // O ERP escreve abreviado/sem acento; o nome sozinho não casaria.
+    const c = casarColaborador("M DAS GRACAS S SANTOS", colabs, {}, "11144477735");
+    expect(c?.id).toBe("c1");
+  });
+
+  it("aceita CPF com pontuação (o ERP manda dos dois jeitos)", () => {
+    expect(casarColaborador("QUALQUER NOME", colabs, {}, "111.444.777-35")?.id).toBe("c1");
+  });
+
+  it("CNPJ (14 dígitos) NÃO casa com pessoa — é fornecedor", () => {
+    expect(casarColaborador("EMPRESA DE LIMPEZA LTDA", colabs, {}, "11222333000181")).toBeNull();
+  });
+
+  it("CPF que não está em ninguém não inventa vínculo", () => {
+    expect(casarColaborador("FULANO DESCONHECIDO", colabs, {}, "39053344705")).toBeNull();
+  });
+
+  it("sem CPF, continua valendo a regra de nome de antes", () => {
+    expect(casarColaborador("Joana Pereira Lima", colabs, {}, null)?.id).toBe("c2");
+    expect(casarColaborador("Joana", colabs, {}, null)).toBeNull(); // um pedaço só nunca casa
+  });
+
+  it("o vínculo salvo pelo RH continua tendo força", () => {
+    // A chave do vínculo é o nome normalizado (norm) — que trabalha em CAIXA ALTA.
+    const c = casarColaborador("FAXINA DA JOANA", colabs, { "FAXINA DA JOANA": "c2" }, null);
+    expect(c?.id).toBe("c2");
+  });
+});
+
+describe("paraRegistros — o que não casa vira aviso com valor", () => {
+  const colabs = [{ id: "c1", nome: "Adriano Pinheiro Lima" } as Colaborador];
+
+  it("agrupa por nome e soma o que está ficando de fora", () => {
+    const r = paraRegistros([
+      linha("PRESTADOR DESCONHECIDO", { idMubi: "1", tipo: "Limpeza/Faxina", valor: 150 }),
+      linha("PRESTADOR DESCONHECIDO", { idMubi: "2", tipo: "Limpeza/Faxina", valor: 200 }),
+      linha("OUTRO QUALQUER", { idMubi: "3", tipo: "Freelancer (Empreita)", valor: 900 }),
+    ], colabs, {});
+    expect(r.registros).toHaveLength(0);
+    expect(r.naoCasados).toHaveLength(2);
+    // Ordenado pelo maior valor: o que mais dói aparece primeiro.
+    expect(r.naoCasados[0].nome).toBe("OUTRO QUALQUER");
+    expect(r.naoCasados[0].total).toBe(900);
+    const limpeza = r.naoCasados.find((x) => x.nome === "PRESTADOR DESCONHECIDO")!;
+    expect(limpeza.linhas).toBe(2);
+    expect(limpeza.total).toBe(350);
+    expect([...limpeza.tipos]).toEqual(["Limpeza/Faxina"]);
+  });
+
+  it("aprende o CPF de quem casou pelo nome e está sem CPF no cadastro", () => {
+    const r = paraRegistros(
+      [linha("Adriano Pinheiro Lima", { idMubi: "1", cpfCnpj: "529.982.247-25" })],
+      colabs, {},
+    );
+    expect(r.cpfsAprendidos).toEqual([{ colaboradorId: "c1", cpf: "52998224725" }]);
+  });
+
+  it("não sobrescreve CPF que já existe no cadastro", () => {
+    const comCpf = [{ id: "c1", nome: "Adriano Pinheiro Lima", cpf: "111.444.777-35" } as Colaborador];
+    const r = paraRegistros(
+      [linha("Adriano Pinheiro Lima", { idMubi: "1", cpfCnpj: "529.982.247-25" })],
+      comCpf, {},
+    );
+    expect(r.cpfsAprendidos).toHaveLength(0);
   });
 });

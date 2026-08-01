@@ -40,7 +40,7 @@ import { calcularEncargos, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
-import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario } from "@/lib/mubiPagamentos";
+import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -146,7 +146,8 @@ export default function Custos() {
   // Prévia de conciliação da folha (subir a mesma planilha: mexe só no diferente).
   const [folhaPrev, setFolhaPrev] = useState<{
     diff: DiffPagamentos;
-    naoCasados: string[];
+    naoCasados: NaoCasado[];
+    cpfsAprendidos?: { colaboradorId: string; cpf: string }[];
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
@@ -209,7 +210,7 @@ export default function Custos() {
   // prévia de conciliação da planilha — nada é gravado sem o RH confirmar.
   // Monta a prévia de conciliação a partir do que veio do ERP.
   const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>) => {
-    const { registros, naoCasados, coletivas } = paraRegistros(r.linhas, d.colaboradores, vinculos);
+    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(r.linhas, d.colaboradores, vinculos);
     // Compara contra as competências dos REGISTROS, não contra o mês pedido: uma
     // busca pode gerar lançamentos em mais de uma competência e o que ficasse de
     // fora da comparação voltaria como "novo" (duplicata).
@@ -228,7 +229,7 @@ export default function Custos() {
     setRemoverAusentes(false);
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
-      naoCasados, totalLinhas: registros.length,
+      naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       mubi: { linhas: r.linhas, coletivas, truncado: r.truncado },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
@@ -344,7 +345,7 @@ export default function Custos() {
     else delete vinculos[chave];
     salvarCfg({ vinculosMubi: vinculos });
 
-    const { registros, naoCasados, coletivas } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos);
+    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos);
     const comps = new Set(registros.map((r) => r.competencia));
     const existentesDaComp = pagamentos.filter(
       (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
@@ -354,7 +355,7 @@ export default function Custos() {
     setSalariosMarcados(new Set());
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
-      naoCasados, totalLinhas: registros.length,
+      naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       mubi: { ...folhaPrev.mubi, coletivas },
     });
   };
@@ -405,18 +406,35 @@ export default function Custos() {
       for (const a of diff.ausentes) pagamentosColecao.remover(a.id);
     }
     const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (podeRemover ? diff.ausentes.length : 0);
+
+    // CPF aprendido do ERP, só onde o cadastro está vazio. É o que faz o mês
+    // seguinte casar pela chave forte em vez de depender de como o ERP escreveu
+    // o nome — a causa de Limpeza/Faxina e Freelancer nunca casarem.
+    const cpfs = folhaPrev.cpfsAprendidos ?? [];
+    let cpfsPreenchidos = 0;
+    if (cpfs.length) {
+      const mapa = new Map(cpfs.map((x) => [x.colaboradorId, x.cpf]));
+      const atualizados = colaboradoresColecao.items.map((c) => {
+        const cpf = mapa.get(c.id);
+        if (cpf && !String(c.cpf ?? "").replace(/\D/g, "")) { cpfsPreenchidos++; return { ...c, cpf }; }
+        return c;
+      });
+      if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
+    }
+    const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es) — o próximo mês casa sozinho.` : "";
+
     // Salários marcados — só o que está na lista da tela (marca órfã não conta).
     const aplicaveis = salarios.filter((x) => salariosMarcados.has(x.colaborador.id));
     for (const sug of aplicaveis) {
       colaboradoresColecao.atualizar(sug.colaborador.id, { salario: sug.sugerido });
     }
     const parteSalario = aplicaveis.length ? ` Salário preenchido em ${aplicaveis.length} colaborador(es).` : "";
-    // Um toast só, dizendo as duas coisas: antes ele avisava "nada a alterar"
-    // no mesmo clique em que salários eram gravados.
+    // Um toast só, dizendo tudo: antes ele avisava "nada a alterar" no mesmo
+    // clique em que salários eram gravados.
     toast(
       mexeu === 0
-        ? `Folha já estava igual — nada a alterar.${parteSalario}`
-        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${parteSalario}`,
+        ? `Folha já estava igual — nada a alterar.${parteSalario}${avisoCpf}`
+        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${parteSalario}${avisoCpf}`,
       "sucesso",
     );
     fecharPrevia();
@@ -973,21 +991,32 @@ export default function Custos() {
 
               {naoCasados.length > 0 && (
                 <div className="rounded-xl border border-red-200 bg-red-50/40 p-3">
-                  <p className="mb-1 text-xs font-semibold text-red-800">Não encontrados no cadastro ({naoCasados.length})</p>
+                  {/* O VALOR na frente: uma lista só de nomes é fácil de passar
+                      batido, e o que fica de fora some do extrato da pessoa. */}
+                  <p className="mb-1 text-xs font-semibold text-red-800">
+                    Não encontrados no cadastro: {naoCasados.length} nome(s) ·{" "}
+                    {formatBRL(naoCasados.reduce((acc, x) => acc + x.total, 0))} ficando de fora
+                  </p>
                   <p className="mb-2 text-[11px] text-red-700/80">
                     {folhaPrev.mubi
-                      ? "Escolha a pessoa ao lado do nome — o sistema lembra e casa sozinho nos próximos meses. Quem ficar sem escolha não entra."
+                      ? "Escolha a pessoa ao lado do nome — o sistema lembra, e do mês seguinte em diante casa pelo CPF. Quem ficar sem escolha NÃO entra."
                       : "Não entram nesta importação."}
                   </p>
                   {folhaPrev.mubi ? (
                     <div className="space-y-1.5">
                       {naoCasados.map((n) => (
-                        <div key={n} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/80 px-2.5 py-1.5">
-                          <span className="flex-1 text-xs text-slate-700">{n}</span>
+                        <div key={n.nome} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/80 px-2.5 py-1.5">
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium text-slate-700">{n.nome}</span>
+                            <span className="block text-[11px] text-slate-400">
+                              {n.linhas} lançamento(s) · {formatBRL(n.total)} · {[...n.tipos].join(", ")}
+                              {n.cpf ? ` · CPF ${n.cpf}` : ""}
+                            </span>
+                          </span>
                           <Select
                             className="min-w-[190px] text-xs"
-                            value={config.vinculosMubi?.[normNome(n)] ?? ""}
-                            onChange={(e) => vincularMubi(n, e.target.value)}
+                            value={config.vinculosMubi?.[normNome(n.nome)] ?? ""}
+                            onChange={(e) => vincularMubi(n.nome, e.target.value)}
                           >
                             <option value="">Vincular a…</option>
                             {d.colaboradores.filter((c) => c.statusId !== "inativo").map((c) => (
@@ -999,7 +1028,7 @@ export default function Custos() {
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
-                      {naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-red-700 ring-1 ring-red-200">{n}</span>)}
+                      {naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-red-700 ring-1 ring-red-200">{n.nome} · {formatBRL(n.total)}</span>)}
                     </div>
                   )}
                 </div>
