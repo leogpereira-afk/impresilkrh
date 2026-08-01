@@ -167,3 +167,46 @@ describe("competenciasComDados", () => {
     expect(competenciasComDados([conta("2026-06")], [{ competencia: "2026-06" }])).toEqual(["2026-06"]);
   });
 });
+
+// Pagamento em dinheiro não existe no ERP — e a prévia da varredura listava o
+// lançamento manual como "fora do ERP", com o remover-em-massa ao lado. Estes
+// testes garantem que dinheiro lançado à mão nunca entra na lista de remoção,
+// mas continua adotável se o título um dia aparecer no Mubisys.
+describe("lançamento manual × conciliação", () => {
+  const doErp = (over: Partial<Pagamento> = {}): Pagamento =>
+    pg({ idMubi: `t${Math.random()}`, ...over });
+
+  it("manual NÃO vira 'ausente do ERP' (fluxo com id do ERP)", () => {
+    const manual = pg({ id: "x1", manual: true, tipo: "Salário", valor: 500 });
+    const r = conciliarPagamentos([manual], [doErp({ colaboradorId: "outro" })], new Set(["2026-06"]));
+    expect(r.ausentes).toHaveLength(0);
+  });
+
+  it("prefixo pg_man_ conta como manual mesmo sem o campo (registros antigos)", () => {
+    const antigo = pg({ id: "pg_man_adilson_adi_2026_06", valor: 782.17 });
+    const r = conciliarPagamentos([antigo], [doErp({ colaboradorId: "outro" })], new Set(["2026-06"]));
+    expect(r.ausentes).toHaveLength(0);
+  });
+
+  it("manual também fica fora dos ausentes no fluxo da planilha", () => {
+    const manual = pg({ id: "x2", manual: true });
+    const r = conciliarPagamentos([manual], [pg({ id: "n1", colaboradorId: "outra-pessoa" })]);
+    expect(r.ausentes).toHaveLength(0);
+  });
+
+  it("não-manual continua aparecendo como ausente (a proteção não esconde erro real)", () => {
+    const comum = pg({ id: "x3" });
+    const r = conciliarPagamentos([comum], [doErp({ colaboradorId: "outro" })], new Set(["2026-06"]));
+    expect(r.ausentes).toHaveLength(1);
+  });
+
+  it("manual é ADOTADO quando o título aparece no ERP igual (ganha idMubi, não duplica)", () => {
+    const manual = pg({ id: "pg_man_teste", manual: true, valor: 782.17, dataPagamento: "2026-06-22" });
+    const titulo = doErp({ valor: 782.17, dataPagamento: "2026-06-22", idMubi: "999" });
+    const r = conciliarPagamentos([manual], [titulo], new Set(["2026-06"]));
+    expect(r.novos).toHaveLength(0);
+    expect(r.alterados).toHaveLength(1);
+    expect(r.alterados[0].antigo.id).toBe("pg_man_teste");
+    expect(r.alterados[0].novo.idMubi).toBe("999");
+  });
+});

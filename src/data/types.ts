@@ -507,6 +507,14 @@ export interface Pagamento {
    * ERP, deixando a base inteira sem proteção nenhuma.
    */
   idMubi?: string | null;
+  /**
+   * Lançado à mão pelo RH (ex.: pagamento em dinheiro que não passa pelo ERP).
+   * A conciliação NUNCA lista um manual como "fora do ERP" — não existir no
+   * Mubisys é a natureza dele, não um erro a corrigir. Se um dia o título
+   * aparecer no ERP com a mesma pessoa+competência+data+valor, a adoção casa
+   * normalmente e o registro ganha o idMubi.
+   */
+  manual?: boolean;
 }
 
 // ===================== Custos de colaboradores (v4) =====================

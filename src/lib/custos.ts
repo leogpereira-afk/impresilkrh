@@ -300,6 +300,15 @@ export const idMubiDe = (p: Pag): string | null =>
 export const ehDoMubi = (p: Pag) => idMubiDe(p) != null;
 
 /**
+ * Lançado à mão pelo RH — pagamento em dinheiro, acerto, o que não passa pelo
+ * ERP. O prefixo `pg_man_` cobre os registros criados antes de existir o campo
+ * `manual`. Um manual NUNCA é "ausente do ERP": não estar no Mubisys é a
+ * natureza dele. Ele continua elegível para ADOÇÃO — se o título aparecer no
+ * ERP com a mesma pessoa+competência+data+valor, casa e ganha o idMubi.
+ */
+export const ehManual = (p: Pag) => p.manual === true || String(p.id ?? "").startsWith("pg_man_");
+
+/**
  * Concilia o que o ERP mandou com o que já está no sistema.
  *
  * `janela` são as competências que a busca realmente cobriu. Só o que está
@@ -354,7 +363,7 @@ export function conciliarPagamentos(existentes: Pag[], novos: Pag[], janela?: Se
     alterados.push({ antigo, novo: { ...n, id: antigo.id } });
   }
 
-  const ausentes = existentes.filter((p) => !casados.has(p.id));
+  const ausentes = existentes.filter((p) => !casados.has(p.id) && !ehManual(p));
   return recortarAusentes({ iguais, alterados, novos: novosFinal, ausentes }, janela);
 }
 
@@ -413,7 +422,7 @@ function conciliarPorAssinatura(existentes: Pag[], novos: Pag[]): DiffPagamentos
     else novosFinal.push(n);
   }
   const ausentes: Pag[] = [];
-  for (const arr of porChave.values()) ausentes.push(...arr);
+  for (const arr of porChave.values()) ausentes.push(...arr.filter((p) => !ehManual(p)));
 
   return { iguais, alterados, novos: novosFinal, ausentes };
 }

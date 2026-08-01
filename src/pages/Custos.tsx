@@ -55,6 +55,7 @@ import {
   parsePlanoContas,
   conciliarPagamentos,
   ehDoMubi,
+  ehManual,
   ehContaConfidencial,
   type DiffPagamentos,
 } from "@/lib/custos";
@@ -673,6 +674,10 @@ export default function Custos() {
         valor: Math.round(valor * 100) / 100,
         dataPagamento: `${compAtiva}-15`,
         descricao: lancDesc.trim() || "Lançamento manual",
+        // Pagamento em dinheiro não passa pelo ERP: sem esta marca, a prévia
+        // da varredura listaria o lançamento como "fora do ERP" com o botão
+        // de remover em massa ao lado — um clique apagaria dinheiro real.
+        manual: true,
       });
       toast("Lançamento adicionado.");
     }
@@ -1694,6 +1699,13 @@ export default function Custos() {
                                 <span className="text-slate-700">{p.tipo}</span>
                                 {p.descricao && p.descricao !== "Lançamento manual" && (
                                   <span className="text-xs text-slate-400">· {p.descricao}</span>
+                                )}
+                                {/* Lançado à mão (dinheiro/acerto): a varredura do
+                                    ERP nunca oferece este registro para remoção. */}
+                                {ehManual(p) && (
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200" title="Lançado à mão pelo RH — não passa pelo ERP e a varredura não o remove">
+                                    manual
+                                  </span>
                                 )}
                               </span>
                             </td>
