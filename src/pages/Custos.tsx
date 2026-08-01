@@ -200,6 +200,7 @@ export default function Custos() {
     setFolhaPrev(null);
     setSalarios([]);
     setSalariosMarcados(new Set());
+    setGruposAbertos(new Set());
   };
   // Varredura do histórico: quantos meses para trás, onde está e o cancelamento.
   const [mesesHistorico, setMesesHistorico] = useState(12);
@@ -209,8 +210,8 @@ export default function Custos() {
   // contagem gravada em "Última busca" — sem isso o aviso mostra o total do ERP
   // e a linha de baixo mostra os vinculados, dois números diferentes no mesmo card.
   const vinculadosDaResposta = useMemo(
-    () => (respostaMubi ? paraRegistros(respostaMubi.linhas, d.colaboradores, config.vinculosMubi ?? {}).registros.length : 0),
-    [respostaMubi, d.colaboradores, config.vinculosMubi],
+    () => (respostaMubi ? paraRegistros(respostaMubi.linhas, d.colaboradores, config.vinculosMubi ?? {}, config.vinculosMubiTitulo ?? {}).registros.length : 0),
+    [respostaMubi, d.colaboradores, config.vinculosMubi, config.vinculosMubiTitulo],
   );
   // Seletor de vínculo manual: o cadastro INTEIRO, separado em quadro atual e
   // inativos. Os inativos ficavam escondidos — e 57 dos 88 são inativos, quase
@@ -233,6 +234,18 @@ export default function Custos() {
     }
     return m;
   }, [folhaPrev, d.colaboradores]);
+  // Grupos de não-encontrados abertos linha a linha na prévia.
+  const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(new Set());
+  // Grupo com 2+ CPFs distintos por baixo = várias pessoas na mesma origem
+  // genérica; vincular o grupo inteiro a alguém seria erro na certa.
+  const ehGrupoDeVarios = (n: NaoCasado) => {
+    const docs = new Set(
+      (n.titulos ?? [])
+        .map((t) => String(t.cpfCnpj ?? "").replace(/\D/g, ""))
+        .filter((x) => x.length === 11),
+    );
+    return docs.size >= 2;
+  };
 
   const importarPlano = async (file: File) => {
     try {
@@ -261,7 +274,7 @@ export default function Custos() {
   // prévia de conciliação da planilha — nada é gravado sem o RH confirmar.
   // Monta a prévia de conciliação a partir do que veio do ERP.
   const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>) => {
-    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(r.linhas, d.colaboradores, vinculos);
+    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {});
     // Compara contra as competências dos REGISTROS, não contra o mês pedido: uma
     // busca pode gerar lançamentos em mais de uma competência e o que ficasse de
     // fora da comparação voltaria como "novo" (duplicata).
@@ -340,7 +353,7 @@ export default function Custos() {
       const r = await buscarPagamentosMubi(competencia);
       ultimaFalhaMubi = null;
       const vinculos = config.vinculosMubi ?? {};
-      const { registros, naoCasados } = paraRegistros(r.linhas, d.colaboradores, vinculos);
+      const { registros, naoCasados } = paraRegistros(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {});
       salvarCfg({ ultimaBuscaMubi: { competencia, em: r.buscadoEm, quantidade: registros.length } });
       if (registros.length === 0 && naoCasados.length === 0) {
         if (abrirPrevia) setErroMubi(`O Mubisys não tem lançamentos de pessoal em ${compLabel(competencia)}.`);
@@ -388,15 +401,9 @@ export default function Custos() {
   // Vincula um nome do ERP a um colaborador e REFAZ a prévia na hora, com o
   // pagamento já no lugar certo. O vínculo fica guardado (e sobe para a nuvem):
   // no mês que vem esse mesmo nome casa sozinho, em qualquer computador.
-  const vincularMubi = (nomeMubi: string, colaboradorId: string) => {
+  const recomputarPrevia = (vinculos: Record<string, string>, vinculosTitulo: Record<string, string>) => {
     if (!folhaPrev?.mubi) return;
-    const chave = normNome(nomeMubi);
-    const vinculos = { ...(config.vinculosMubi ?? {}) };
-    if (colaboradorId) vinculos[chave] = colaboradorId;
-    else delete vinculos[chave];
-    salvarCfg({ vinculosMubi: vinculos });
-
-    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos);
+    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos, vinculosTitulo);
     const comps = new Set(registros.map((r) => r.competencia));
     const existentesDaComp = pagamentos.filter(
       (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
@@ -409,6 +416,28 @@ export default function Custos() {
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       mubi: { ...folhaPrev.mubi, coletivas },
     });
+  };
+
+  const vincularMubi = (nomeMubi: string, colaboradorId: string) => {
+    if (!folhaPrev?.mubi) return;
+    const chave = normNome(nomeMubi);
+    const vinculos = { ...(config.vinculosMubi ?? {}) };
+    if (colaboradorId) vinculos[chave] = colaboradorId;
+    else delete vinculos[chave];
+    salvarCfg({ vinculosMubi: vinculos });
+    recomputarPrevia(vinculos, config.vinculosMubiTitulo ?? {});
+  };
+
+  // Vínculo POR TÍTULO: para as levas com origem genérica ("Colaboradores"),
+  // onde o vínculo por nome mandaria títulos de gente diferente para uma
+  // pessoa só. O apontamento fica guardado por id do título no ERP.
+  const vincularTitulo = (idMubi: string, colaboradorId: string) => {
+    if (!folhaPrev?.mubi) return;
+    const vinculosTitulo = { ...(config.vinculosMubiTitulo ?? {}) };
+    if (colaboradorId) vinculosTitulo[idMubi] = colaboradorId;
+    else delete vinculosTitulo[idMubi];
+    salvarCfg({ vinculosMubiTitulo: vinculosTitulo });
+    recomputarPrevia(config.vinculosMubi ?? {}, vinculosTitulo);
   };
 
   // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
@@ -1077,8 +1106,10 @@ export default function Custos() {
                       {naoCasados.map((n) => {
                         const sug = sugestoesVinculo.get(n.nome);
                         const escolhido = config.vinculosMubi?.[normNome(n.nome)] ?? "";
+                        const aberto = gruposAbertos.has(n.nome);
                         return (
-                          <div key={n.nome} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/80 px-2.5 py-1.5">
+                          <div key={n.nome} className="rounded-lg bg-white/80 px-2.5 py-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-xs font-medium text-slate-700">{n.nome}</span>
                               <span className="block text-[11px] text-slate-400">
@@ -1099,25 +1130,95 @@ export default function Custos() {
                                 É {sug.nome}{sug.statusId === "inativo" ? " (Inativo)" : ""}? Vincular
                               </button>
                             )}
-                            <Select
-                              className="min-w-[190px] text-xs"
-                              value={escolhido}
-                              onChange={(e) => vincularMubi(n.nome, e.target.value)}
-                            >
-                              <option value="">Vincular a…</option>
-                              <optgroup label="Quadro atual">
-                                {opcoesVinculo.quadro.map((c) => (
-                                  <option key={c.id} value={c.id}>{c.nome}</option>
-                                ))}
-                              </optgroup>
-                              {opcoesVinculo.inativos.length > 0 && (
-                                <optgroup label="Inativos (ex-colaboradores)">
-                                  {opcoesVinculo.inativos.map((c) => (
+                            {/* Origem genérica com CPFs diferentes por baixo =
+                                VÁRIAS pessoas num grupo só ("Colaboradores",
+                                44 títulos). Vincular o grupo a alguém mandaria
+                                título de gente diferente para uma pessoa — o
+                                seletor de grupo some e sobra o título a título. */}
+                            {!ehGrupoDeVarios(n) ? (
+                              <Select
+                                className="min-w-[190px] text-xs"
+                                value={escolhido}
+                                onChange={(e) => vincularMubi(n.nome, e.target.value)}
+                              >
+                                <option value="">Vincular a…</option>
+                                <optgroup label="Quadro atual">
+                                  {opcoesVinculo.quadro.map((c) => (
                                     <option key={c.id} value={c.id}>{c.nome}</option>
                                   ))}
                                 </optgroup>
-                              )}
-                            </Select>
+                                {opcoesVinculo.inativos.length > 0 && (
+                                  <optgroup label="Inativos (ex-colaboradores)">
+                                    {opcoesVinculo.inativos.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.nome}</option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                              </Select>
+                            ) : (
+                              <span className="text-[11px] font-medium text-red-700">várias pessoas — vincule título a título ↓</span>
+                            )}
+                            {(n.titulos ?? []).length > 0 && (
+                              <button
+                                type="button"
+                                className="btn-outline h-7 px-2 text-[11px]"
+                                onClick={() => setGruposAbertos((s) => { const x = new Set(s); if (x.has(n.nome)) x.delete(n.nome); else x.add(n.nome); return x; })}
+                              >
+                                {aberto ? "Fechar" : `Conferir os ${(n.titulos ?? []).length} título(s)`}
+                              </button>
+                            )}
+                          </div>
+                          {/* Linha a linha: a descrição é onde mora o nome quando
+                              a origem é genérica — dá para conferir até a última
+                              linha e apontar cada título para a pessoa certa. */}
+                          {aberto && (
+                            <div className="mt-2 overflow-x-auto rounded-lg border border-red-100">
+                              <table className="w-full text-[11px]">
+                                <thead className="bg-red-50/50 text-red-800">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left">Venc.</th>
+                                    <th className="px-2 py-1 text-left">Tipo</th>
+                                    <th className="px-2 py-1 text-right">Valor</th>
+                                    <th className="px-2 py-1 text-left">Descrição (é aqui que está o nome)</th>
+                                    <th className="px-2 py-1 text-left">Vincular este título a…</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-red-50">
+                                  {(n.titulos ?? []).map((t) => (
+                                    <tr key={t.idMubi} className="bg-white">
+                                      <td className="px-2 py-1 whitespace-nowrap text-slate-500">{t.dataVencimento?.slice(8, 10)}/{t.dataVencimento?.slice(5, 7)}/{t.dataVencimento?.slice(2, 4)}</td>
+                                      <td className="px-2 py-1 whitespace-nowrap text-slate-600">{t.tipo}</td>
+                                      <td className="px-2 py-1 text-right font-medium text-slate-800 whitespace-nowrap">{formatBRL(t.valor)}</td>
+                                      <td className="px-2 py-1 text-slate-600" title={t.descricao || undefined}>
+                                        <span className="block max-w-[260px] truncate">{t.descricao || "—"}</span>
+                                      </td>
+                                      <td className="px-2 py-1">
+                                        <Select
+                                          className="min-w-[170px] text-[11px]"
+                                          value={config.vinculosMubiTitulo?.[t.idMubi] ?? ""}
+                                          onChange={(e) => vincularTitulo(t.idMubi, e.target.value)}
+                                        >
+                                          <option value="">Escolher…</option>
+                                          <optgroup label="Quadro atual">
+                                            {opcoesVinculo.quadro.map((c) => (
+                                              <option key={c.id} value={c.id}>{c.nome}</option>
+                                            ))}
+                                          </optgroup>
+                                          {opcoesVinculo.inativos.length > 0 && (
+                                            <optgroup label="Inativos (ex-colaboradores)">
+                                              {opcoesVinculo.inativos.map((c) => (
+                                                <option key={c.id} value={c.id}>{c.nome}</option>
+                                              ))}
+                                            </optgroup>
+                                          )}
+                                        </Select>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                           </div>
                         );
                       })}

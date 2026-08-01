@@ -2,7 +2,7 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi } from "./mubiPagamentos";
+import { casarColaborador, casarPelaDescricao, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi } from "./mubiPagamentos";
 import { conciliarPagamentos } from "./custos";
 import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
@@ -440,5 +440,75 @@ describe("sugerirVinculo", () => {
 
   it("conectivos não atrapalham nem ajudam", () => {
     expect(sugerirVinculo("JESSICA DE SAMPAIO", CADASTRO)?.id).toBe("c7");
+  });
+});
+
+// O caso real de 01/08/2026: o ERP lançou uma leva de 44 títulos com a ORIGEM
+// "Colaboradores" (R$ 70 mil) e o nome de cada pessoa foi parar na DESCRIÇÃO.
+// Também: SUPER TRIGO (CNPJ, padaria) e a guia de FGTS apareciam como "não
+// encontrado" pedindo vínculo — que seria sempre errado.
+describe("casarPelaDescricao", () => {
+  it("acha a pessoa no meio do texto da descrição", () => {
+    expect(casarPelaDescricao("ADIANTAMENTO SALARIAL ADRIANO PINHEIRO LIMA REF 06/2026", CADASTRO)?.id).toBe("c1");
+  });
+
+  it("descrição com DUAS pessoas não é de ninguém", () => {
+    expect(casarPelaDescricao("RATEIO ADRIANO PINHEIRO LIMA E CANDIDA ELIZA DAVID BARROS", CADASTRO)).toBeNull();
+  });
+
+  it("exige o nome na ORDEM — sobrenome solto não basta", () => {
+    expect(casarPelaDescricao("PAGAMENTO PEREIRA DIVERSOS", CADASTRO)).toBeNull();
+  });
+
+  it("aceita truncamento no texto, como na origem", () => {
+    expect(casarPelaDescricao("SALARIO BARBARA PATRICIA F VASCONCELOS", CADASTRO)?.id).toBe("c3");
+  });
+
+  it("descrição vazia ou curta não casa", () => {
+    expect(casarPelaDescricao("", CADASTRO)).toBeNull();
+    expect(casarPelaDescricao("SALARIO", CADASTRO)).toBeNull();
+  });
+});
+
+describe("paraRegistros — origem genérica, CNPJ e guias", () => {
+  it("leva 'Colaboradores' se resolve pela descrição, título a título", () => {
+    const linhas = [
+      linha("Colaboradores", { idMubi: "t1", descricao: "SALARIO ADRIANO PINHEIRO LIMA 06/2026" }),
+      linha("Colaboradores", { idMubi: "t2", descricao: "SALARIO CANDIDA ELIZA DAVID BARROS 06/2026" }),
+      linha("Colaboradores", { idMubi: "t3", descricao: "PAGTO DIVERSOS" }), // sem nome: fica para o RH
+    ];
+    const r = paraRegistros(linhas, CADASTRO, {});
+    expect(r.registros.map((x) => x.colaboradorId).sort()).toEqual(["c1", "c5"]);
+    expect(r.naoCasados).toHaveLength(1);
+    expect(r.naoCasados[0].titulos.map((t) => t.idMubi)).toEqual(["t3"]);
+  });
+
+  it("vínculo POR TÍTULO resolve o que a descrição não disse", () => {
+    const linhas = [linha("Colaboradores", { idMubi: "t9", descricao: "PAGTO DIVERSOS" })];
+    const r = paraRegistros(linhas, CADASTRO, {}, { t9: "c5" });
+    expect(r.registros[0].colaboradorId).toBe("c5");
+    expect(r.naoCasados).toHaveLength(0);
+  });
+
+  it("CNPJ (fornecedor) vira despesa coletiva, nunca pessoa", () => {
+    const r = paraRegistros([linha("SUPER TRIGO", { idMubi: "t4", cpfCnpj: "44.333.231/0001-92", tipo: "Alimentação" })], CADASTRO, {});
+    expect(r.registros).toHaveLength(0);
+    expect(r.naoCasados).toHaveLength(0);
+    expect(r.coletivas.map((c) => c.idMubi)).toEqual(["t4"]);
+  });
+
+  it("guia de FGTS/INSS (origem é o imposto) vai para as coletivas", () => {
+    const r = paraRegistros([linha("FGTS", { idMubi: "t5", tipo: "FGTS" }), linha("INSS", { idMubi: "t6", tipo: "INSS" })], CADASTRO, {});
+    expect(r.naoCasados).toHaveLength(0);
+    expect(r.coletivas).toHaveLength(2);
+  });
+
+  it("os títulos do não-encontrado vêm juntos, para conferir até a última linha", () => {
+    const r = paraRegistros([
+      linha("Fulano Desconhecido da Silva", { idMubi: "t7", valor: 100 }),
+      linha("Fulano Desconhecido da Silva", { idMubi: "t8", valor: 200 }),
+    ], CADASTRO, {});
+    expect(r.naoCasados[0].titulos.map((t) => t.idMubi)).toEqual(["t7", "t8"]);
+    expect(r.naoCasados[0].total).toBe(300);
   });
 });

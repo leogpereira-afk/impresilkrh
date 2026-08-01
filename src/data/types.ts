@@ -356,6 +356,13 @@ export interface Config {
   // vínculos que o RH fez à mão (nome no ERP → colaborador) para o mesmo nome
   // casar sozinho nos meses seguintes, e o registro da última busca.
   vinculosMubi?: Record<string, string>;
+  /**
+   * Vínculo POR TÍTULO (id do título no ERP → colaborador). Existe para as
+   * levas com origem genérica ("Colaboradores", 44 títulos de gente diferente):
+   * ali o vínculo por nome mandaria tudo para uma pessoa só, então o RH aponta
+   * título a título e o apontamento fica guardado.
+   */
+  vinculosMubiTitulo?: Record<string, string>;
   ultimaBuscaMubi?: { competencia: string; em: string; quantidade: number } | null;
   // Padrões do gerador de anúncio de vaga. O que se repete em toda divulgação
   // (local, jornada, benefícios, como se candidatar) fica guardado para não ser

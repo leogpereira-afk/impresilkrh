@@ -277,41 +277,92 @@ export function montarPagamento(l: LinhaMubi, colaboradorId: string): Pagamento 
 }
 
 /**
+ * Casa uma linha pela DESCRIÇÃO do título.
+ *
+ * Por que existe (01/08/2026): o ERP lança levas inteiras com a ORIGEM
+ * genérica — "Colaboradores", 44 títulos, R$ 70 mil — e o nome da pessoa vai
+ * no texto da descrição. O casamento por origem não tem como resolver isso, e
+ * o grupo aparecia na tela como um bloco opaco só com o total: impossível de
+ * vincular, e perigoso (vincular o grupo a alguém mandaria títulos de gente
+ * diferente para uma pessoa só).
+ *
+ * A régua: TODOS os pedaços do nome do colaborador (2+) precisam aparecer na
+ * descrição, NA ORDEM (subsequência), aceitando truncamento/abreviação
+ * (pedacoCasa). E só casa com UM candidato — descrição que menciona duas
+ * pessoas não é de ninguém.
+ */
+export function casarPelaDescricao(descricao: string, colaboradores: Colaborador[]): Colaborador | null {
+  const descToks = tokens(descricao);
+  if (descToks.length < 2) return null;
+  const candidatos = colaboradores.filter((c) => {
+    const toks = tokens(c.nome);
+    if (toks.length < 2) return false;
+    // subsequência: cada pedaço do nome aparece na descrição, na ordem
+    let i = 0;
+    for (const t of descToks) {
+      if (i < toks.length && pedacoCasa(t, toks[i])) i++;
+    }
+    return i === toks.length;
+  });
+  return candidatos.length === 1 ? candidatos[0] : null;
+}
+
+/**
  * Converte a resposta do ERP no MESMO formato que a importação por planilha
  * devolve, para reaproveitar a conciliação que já existe (prévia com o que é
  * novo, o que mudou e o que sumiu).
  *
- * Linhas sem nome (bolo de aniversário, Uber, reembolso) não são de ninguém:
- * ficam de fora dos registros e são devolvidas à parte, como despesa coletiva.
+ * Ordem de decisão por título:
+ *  1. origem (CPF → vínculo salvo → nome), como sempre;
+ *  2. vínculo manual POR TÍTULO (vinculosTitulo[idMubi]) — o RH apontou;
+ *  3. DESCRIÇÃO (casarPelaDescricao) — para as levas de origem genérica;
+ *  4. CNPJ (14 dígitos) → despesa coletiva: SUPER TRIGO não é colaborador;
+ *  5. origem FGTS/INSS sem CPF → guia paga ao governo, coletiva (rateio);
+ *  6. sobrou → "não encontrado", agora COM os títulos linha a linha.
  */
 export function paraRegistros(
   linhas: LinhaMubi[],
   colaboradores: Colaborador[],
   vinculos: Record<string, string>,
+  vinculosTitulo: Record<string, string> = {},
 ): { registros: Pagamento[]; naoCasados: NaoCasado[]; coletivas: LinhaMubi[]; cpfsAprendidos: { colaboradorId: string; cpf: string }[] } {
   const registros: Pagamento[] = [];
   const porNome = new Map<string, NaoCasado>();
   const coletivas: LinhaMubi[] = [];
   const cpfs = new Map<string, string>();
+  const porId = new Map(colaboradores.map((c) => [c.id, c]));
 
   for (const l of linhas) {
     if (!l.nome.trim()) { coletivas.push(l); continue; }
-    const c = casarColaborador(l.nome, colaboradores, vinculos, l.cpfCnpj);
+    const doc = String(l.cpfCnpj ?? "").replace(/\D/g, "");
+
+    const c =
+      casarColaborador(l.nome, colaboradores, vinculos, l.cpfCnpj) ??
+      (vinculosTitulo[l.idMubi] ? porId.get(vinculosTitulo[l.idMubi]) ?? null : null) ??
+      casarPelaDescricao(l.descricao, colaboradores);
+
     if (!c) {
-      // Guarda o VALOR junto do nome: uma lista só de nomes é fácil de ignorar,
-      // e o que está ficando de fora é dinheiro que some do extrato da pessoa.
+      // CNPJ é fornecedor (padaria da alimentação, plano de saúde da empresa):
+      // não é de ninguém — vai para as coletivas e segue no rateio, em vez de
+      // ficar na lista pedindo um vínculo que seria errado.
+      if (doc.length === 14) { coletivas.push(l); continue; }
+      // Guia de FGTS/INSS: origem é o próprio imposto, não uma pessoa.
+      if (/^(FGTS|INSS)$/i.test(l.nome.trim()) && doc.length !== 11) { coletivas.push(l); continue; }
+      // Guarda o VALOR e os TÍTULOS junto do nome: uma lista só de nomes é
+      // fácil de ignorar, e sem as linhas não dá para conferir até o fim nem
+      // vincular título a título quando a origem é genérica.
       const chave = l.nome.trim();
-      const atual = porNome.get(chave) ?? { nome: chave, cpf: l.cpfCnpj ?? null, linhas: 0, total: 0, tipos: new Set<string>() };
+      const atual = porNome.get(chave) ?? { nome: chave, cpf: l.cpfCnpj ?? null, linhas: 0, total: 0, tipos: new Set<string>(), titulos: [] as LinhaMubi[] };
       atual.linhas += 1;
       atual.total += l.valor || 0;
       atual.tipos.add(l.tipo);
+      atual.titulos.push(l);
       if (!atual.cpf && l.cpfCnpj) atual.cpf = l.cpfCnpj;
       porNome.set(chave, atual);
       continue;
     }
     // Casou pelo NOME e o cadastro está sem CPF: aprende, para o mês que vem
     // casar pela chave forte e não depender de como o ERP escreveu o nome.
-    const doc = String(l.cpfCnpj ?? "").replace(/\D/g, "");
     if (doc.length === 11 && !String(c.cpf ?? "").replace(/\D/g, "")) cpfs.set(c.id, doc);
     registros.push(montarPagamento(l, c.id));
   }
@@ -362,6 +413,9 @@ export interface NaoCasado {
   linhas: number;
   total: number;
   tipos: Set<string>;
+  /** Os títulos por trás do total — para conferir até a última linha e
+   *  vincular um a um quando a origem é genérica ("Colaboradores"). */
+  titulos: LinhaMubi[];
 }
 
 export interface PreviaMubi {
