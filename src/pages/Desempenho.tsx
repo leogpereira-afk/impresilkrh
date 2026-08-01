@@ -255,6 +255,8 @@ export default function Desempenho() {
           toast={toast}
           criarAval={criarAval}
           atualizarAval={atualizarAval}
+          drill={drill}
+          cicloNome={ciclo?.nome ?? "ciclo atual"}
         />
       ),
     },
@@ -736,10 +738,14 @@ function AbaAvaliacoes({
   toast,
   criarAval,
   atualizarAval,
+  drill,
+  cicloNome,
 }: {
   escopo: Colaborador[];
   avalPorColab: Map<string, Avaliacao>;
   ciclo: CicloAvaliacao | undefined;
+  drill: ReturnType<typeof useDrill>;
+  cicloNome: string;
   gerir: boolean;
   d: ReturnType<typeof useDominio>;
   toast: ReturnType<typeof useToast>;
@@ -842,11 +848,19 @@ function AbaAvaliacoes({
   return (
     <>
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {/* Eram <div> no meio de uma tela onde todo card irmão abre a lista:
+            o número dizia que existem "3 Não apto" e não dizia quem. */}
         {STATUS_DESEMPENHO.map((s) => (
-          <div key={s} className="card flex items-center justify-between px-4 py-3">
+          <button
+            key={s}
+            type="button"
+            className="card flex items-center justify-between px-4 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50/40"
+            title={`Ver quem está como ${s}`}
+            onClick={() => drill.abrir(s, escopo.filter((c) => avalPorColab.get(c.id)?.statusDesempenho === s), `${distribuicao[s]} colaborador(es) · ${cicloNome}`)}
+          >
             <span className="text-xs font-medium text-slate-500">{s}</span>
             <Badge variant={variantStatusDesempenho(s)}>{distribuicao[s]}</Badge>
-          </div>
+          </button>
         ))}
       </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight, ChevronDown, Trophy, Medal, CheckCircle2, Plus, Circle, Trash2, Route } from "lucide-react";
+import { GitBranch, ArrowRight, Calculator, Lock, ChevronRight, ChevronDown, Trophy, Medal, CheckCircle2, Plus, Circle, Trash2, Route, Pencil
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +91,10 @@ export default function Carreira() {
   const [modalEtapaAberto, setModalEtapaAberto] = useState(false);
   const [formEtapa, setFormEtapa] = useState({ titulo: "", descricao: "", cargoAlvo: "" });
   const [etapaExcluir, setEtapaExcluir] = useState<EtapaEvolucao | null>(null);
+  // Edição: a trilha padrão nasce com 6 textos genéricos, então corrigir o texto
+  // de uma etapa é rotina — e antes só dava para apagar (zerando o progresso)
+  // e recriar do zero.
+  const [etapaEditando, setEtapaEditando] = useState<EtapaEvolucao | null>(null);
 
   // LGPD: a área de Carreira e Salários é restrita ao RH / Gestor Principal.
   // (Todos os hooks acima já executaram antes deste retorno antecipado.)
@@ -128,23 +133,33 @@ export default function Carreira() {
     atualizarEtapa(etapa.id, { concluida: !etapa.concluida });
   };
 
+  const abrirEdicaoEtapa = (e: EtapaEvolucao) => {
+    setEtapaEditando(e);
+    setFormEtapa({ titulo: e.titulo, descricao: e.descricao ?? "", cargoAlvo: e.cargoAlvo ?? "" });
+    setModalEtapaAberto(true);
+  };
+
   const salvarNovaEtapa = () => {
     if (!colabId || !formEtapa.titulo.trim()) {
       toast("Informe um título para a etapa.", "erro");
       return;
     }
-    const proximaOrdem = etapasColab.length ? Math.max(...etapasColab.map((e) => e.ordem)) + 1 : 0;
-    criarEtapa({
-      colaboradorId: colabId,
+    const dados = {
       titulo: formEtapa.titulo.trim(),
       descricao: formEtapa.descricao.trim() || undefined,
       cargoAlvo: formEtapa.cargoAlvo.trim() || (cargo ? `N${nivelAlvo}` : undefined),
-      concluida: false,
-      ordem: proximaOrdem,
-    });
+    };
+    if (etapaEditando) {
+      atualizarEtapa(etapaEditando.id, dados);
+      toast("Etapa atualizada.");
+    } else {
+      const proximaOrdem = etapasColab.length ? Math.max(...etapasColab.map((e) => e.ordem)) + 1 : 0;
+      criarEtapa({ colaboradorId: colabId, ...dados, concluida: false, ordem: proximaOrdem });
+      toast("Etapa adicionada à trilha.");
+    }
     setFormEtapa({ titulo: "", descricao: "", cargoAlvo: "" });
+    setEtapaEditando(null);
     setModalEtapaAberto(false);
-    toast("Etapa adicionada à trilha.");
   };
 
   // Cria uma trilha padrão (etapas iniciais) para colaboradores ainda sem trilha.
@@ -336,6 +351,17 @@ export default function Carreira() {
                       {ehRHFlag && (
                         <button
                           type="button"
+                          onClick={() => abrirEdicaoEtapa(etapa)}
+                          className="text-slate-300 transition-colors hover:text-brand"
+                          title="Corrigir o texto desta etapa"
+                          aria-label="Editar etapa"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      )}
+                      {ehRHFlag && (
+                        <button
+                          type="button"
                           onClick={() => setEtapaExcluir(etapa)}
                           className="text-slate-300 transition-colors hover:text-red-600"
                           title="Excluir etapa"
@@ -397,12 +423,12 @@ export default function Carreira() {
       {/* Modal: adicionar etapa à trilha de evolução */}
       <Modal
         aberto={modalEtapaAberto}
-        onFechar={() => setModalEtapaAberto(false)}
+        onFechar={() => { setModalEtapaAberto(false); setEtapaEditando(null); setFormEtapa({ titulo: "", descricao: "", cargoAlvo: "" }); }}
         titulo="Adicionar etapa à trilha"
-        descricao={colab ? `Nova etapa de evolução para ${colab.nome}` : undefined}
+        descricao={colab ? `${etapaEditando ? "Corrigir etapa" : "Nova etapa"} de evolução para ${colab.nome}` : undefined}
         rodape={
           <>
-            <button className="btn-outline" onClick={() => setModalEtapaAberto(false)}>Cancelar</button>
+            <button className="btn-outline" onClick={() => { setModalEtapaAberto(false); setEtapaEditando(null); setFormEtapa({ titulo: "", descricao: "", cargoAlvo: "" }); }}>Cancelar</button>
             <button className="btn-primary" onClick={salvarNovaEtapa}>Adicionar</button>
           </>
         }

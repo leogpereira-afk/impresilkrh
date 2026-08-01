@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Users,
   Wallet,
@@ -726,11 +727,12 @@ export default function Relatorios() {
           <CardBody className="space-y-4">
             {/* Em cima: salário de carteira (contrato) × folha real paga no período */}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+              {/* As duas maiores cifras da tela e nenhuma abria quem as compõe. */}
+              <button type="button" className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50/40" title="Ver os ativos que somam este salário de carteira" onClick={() => drill.abrir("Salário de carteira · ativos", ativos, `${formatBRL(indicadores.folha)} · ${ativos.length} ativo(s)`)}>
                 <p className="text-xs uppercase tracking-wide text-slate-400">Salário de carteira (contrato) · atual</p>
                 <p className="mt-0.5 text-2xl font-semibold text-gold-700">{formatBRL(indicadores.folha)}</p>
                 <p className="text-xs text-slate-400">Soma dos salários registrados dos ativos</p>
-              </div>
+              </button>
               <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
                 <p className="text-xs uppercase tracking-wide text-slate-400">
                   Folha real · {baseFolha === "caixa" ? "caixa" : "competência"} · {rotuloPeriodo}
@@ -1008,18 +1010,21 @@ export default function Relatorios() {
           />
           <CardBody>
             <div className="mb-3 grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+              {/* Eram três <div> mortos. Ler "5 Admissões" e não ter os 5 nomes
+                  para conferir integração, documentos e exame admissional era o
+                  buraco: só o cartão de turnover abria os desligados. */}
+              <button type="button" className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center transition hover:border-brand-200 hover:bg-brand-50/40" title="Ver quem foi admitido no período" onClick={() => drill.abrir(`Admissões · ${rotuloPeriodo}`, periodo.admit, `${periodo.admit.length} admissão(ões)`)}>
                 <p className="text-lg font-semibold text-green-700">{periodo.admit.length}</p>
                 <p className="text-xs text-slate-500">Admissões · {rotuloPeriodo}</p>
-              </div>
-              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+              </button>
+              <button type="button" className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center transition hover:border-brand-200 hover:bg-brand-50/40" title="Ver quem saiu no período" onClick={() => drill.abrir(`Desligamentos · ${rotuloPeriodo}`, periodo.deslig, `${periodo.deslig.length} desligamento(s)`)}>
                 <p className="text-lg font-semibold text-red-600">{periodo.deslig.length}</p>
                 <p className="text-xs text-slate-500">Desligamentos · {rotuloPeriodo}</p>
-              </div>
-              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
+              </button>
+              <button type="button" className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center transition hover:border-brand-200 hover:bg-brand-50/40" title="Ver as entradas e saídas do período" onClick={() => drill.abrir(`Movimentação · ${rotuloPeriodo}`, periodo.admit.concat(periodo.deslig), `${periodo.admit.length} entrada(s) e ${periodo.deslig.length} saída(s)`)}>
                 <p className={`text-lg font-semibold ${periodo.saldo >= 0 ? "text-green-700" : "text-red-600"}`}>{periodo.saldo >= 0 ? "+" : ""}{periodo.saldo}</p>
                 <p className="text-xs text-slate-500">Saldo no período</p>
-              </div>
+              </button>
             </div>
             <BarrasDuplas
               data={movimentacao.chart}
@@ -1078,10 +1083,10 @@ export default function Relatorios() {
                     { label: "Dias em campo", valor: dashViagens.dias },
                     { label: "Custo médio/viagem", valor: formatBRL(dashViagens.count ? dashViagens.total / dashViagens.count : 0) },
                   ].map((m) => (
-                    <div key={m.label} className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-center">
+                    <Link key={m.label} to="/custos" title="Abrir Custos de Colaboradores para ver e corrigir as viagens" className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-center transition hover:border-brand-200 hover:bg-brand-50/40">
                       <p className="text-lg font-semibold text-slate-800 tabular-nums">{m.valor}</p>
                       <p className="text-xs text-slate-500">{m.label}</p>
-                    </div>
+                    </Link>
                   ))}
                 </div>
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -1101,7 +1106,16 @@ export default function Relatorios() {
                   {filtroMes === 0 && (
                     <div>
                       <p className="mb-2 text-xs font-medium text-slate-500">Gasto por mês ({filtroAno})</p>
-                      <BarrasVerticais data={dashViagens.mesChart} cor="#16334f" moeda />
+                      {/* Era o único gráfico da tela sem clique. */}
+                      <BarrasVerticais
+                        data={dashViagens.mesChart}
+                        cor="#16334f"
+                        moeda
+                        onItemClick={(nome) => {
+                          const i = MESES_PT.findIndex((mm) => mm.slice(0, 3).toLowerCase() === nome.slice(0, 3).toLowerCase());
+                          if (i >= 0) setFiltroMes(i + 1);
+                        }}
+                      />
                     </div>
                   )}
                 </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Wallet,
   Users,
@@ -389,6 +390,12 @@ export default function Custos() {
   // ---------- Resumo geral do mês (folha de todos os colaboradores) ----------
   const pagsDoMes = useMemo(() => pagamentos.filter((p: Pagamento) => p.competencia === compAtiva), [pagamentos, compAtiva]);
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
+  const abrirDrillTipo = (tipo: string) => {
+    const doTipo = pagsDoMes.filter((p) => p.tipo === tipo);
+    const ids = new Set(doTipo.map((p) => p.colaboradorId));
+    const pessoas = [...ids].map((id) => d.colabById.get(id)).filter((c): c is NonNullable<typeof c> => !!c);
+    drill.abrir(`${tipo} · ${compAtiva}`, pessoas, `${formatBRL(doTipo.reduce((a, p) => a + p.valor, 0))} · ${ids.size} colaborador(es)`);
+  };
   const totalMes = useMemo(() => linhasMes.reduce((s, l) => s + l.valor, 0), [linhasMes]);
   const pessoasNoMes = useMemo(() => new Set(pagsDoMes.map((p) => p.colaboradorId)).size, [pagsDoMes]);
   // Só para o drill-down dos cards: quem são as pessoas por trás da folha do mês.
@@ -1015,7 +1022,10 @@ export default function Custos() {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {linhasMes.map((l) => (
-                            <tr key={l.tipo}>
+                            /* Ver "Comissão R$ 42.310" e não saber quem recebeu
+                               era o buraco da conferência do mês — os dois cards
+                               vizinhos já abrem a lista. */
+                            <tr key={l.tipo} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirDrillTipo(l.tipo)} title={`Ver quem recebeu ${l.tipo}`}>
                               <td className="td">
                                 <span className="flex items-center gap-2">
                                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
@@ -1275,7 +1285,9 @@ export default function Custos() {
                       Custo total mensal do colaborador
                     </p>
                     <p className="mt-0.5 text-sm text-white/80">
-                      {colabSel?.nome ?? "—"} · {comEncargos ? "custo real (com encargos)" : "custo pago"}
+                      {/* A aba inteira fala de uma pessoa e não tinha um único
+                          caminho para a ficha dela. */}
+                      {colabSel ? <Link to={`/colaboradores/${colabSel.id}`} className="font-medium underline decoration-white/40 underline-offset-2 hover:decoration-white">{colabSel.nome}</Link> : "—"} · {comEncargos ? "custo real (com encargos)" : "custo pago"}
                     </p>
                   </div>
                   <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
@@ -1302,7 +1314,17 @@ export default function Custos() {
                 ) : (
                   <div className="grid gap-5 lg:grid-cols-3">
                     <div className="lg:col-span-2">
-                      <BarrasVerticais data={historicoColab.map((h) => ({ nome: h.nome, valor: h.valor }))} moeda altura={260} />
+                      <BarrasVerticais
+                        data={historicoColab.map((h) => ({ nome: h.nome, valor: h.valor }))}
+                        moeda
+                        altura={260}
+                        /* Clicar no pico leva o seletor de competência até lá —
+                           antes era preciso achar o mês na lista lá em cima. */
+                        onItemClick={(nome) => {
+                          const h = historicoColab.find((x) => x.nome === nome);
+                          if (h) setComp(h.competencia);
+                        }}
+                      />
                     </div>
                     <div className="space-y-3">
                       <StatCard label="Acumulado no período" value={formatBRL(acumuladoColab)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={`${historicoColab.length} mes(es)`} />

@@ -22,6 +22,10 @@ const FolhaVariavel = lazy(() => import("@/pages/FolhaVariavel"));
 const Integracao = lazy(() => import("@/pages/Integracao"));
 const Comunicacao = lazy(() => import("@/pages/Comunicacao"));
 const Pops = lazy(() => import("@/pages/Pops"));
+// Mural de vagas internas: a tela existia pronta e NENHUMA rota chegava nela —
+// o selo "No mural" e o toggle "todos os colaboradores veem a vaga no mural"
+// prometiam algo que não existia no ar.
+const MuralVagas = lazy(() => import("@/pages/MuralVagas"));
 const Documentos = lazy(() => import("@/pages/Documentos"));
 const SST = lazy(() => import("@/pages/SST"));
 const MeuPerfil = lazy(() => import("@/pages/MeuPerfil"));
@@ -86,6 +90,7 @@ export default function App() {
             <Route path="/comunicacao" element={<Comunicacao />} />
           <Route path="/mensagens" element={<Restrito perfis={GESTAO}><Mensagens /></Restrito>} />
             <Route path="/pops" element={<Pops />} />
+            <Route path="/mural-vagas" element={<MuralVagas />} />
             <Route path="/documentos" element={<Documentos />} />
             <Route path="/sst" element={<Restrito perfis={GESTAO}><SST /></Restrito>} />
             <Route path="/meu-perfil" element={<MeuPerfil />} />

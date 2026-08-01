@@ -152,6 +152,7 @@ type Colab = import("@/data/types").Colaborador;
 // quem lia tinha de adivinhar onde agir e caçar a linha na lista.
 // ---------------------------------------------------------------------------
 type AcaoFicha =
+  | { tipo: "admissao" }
   | { tipo: "ferias"; aquisitivoInicio: string; aquisitivoFim: string }
   | { tipo: "documento"; id: string }
   | { tipo: "experiencia" }
@@ -176,6 +177,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
   // abas desta ficha; NR mora na tela de SST (a ficha não tem aba de NR) e vai
   // por rota, com o id no state para a SST já abrir a renovação.
   const executar = (a: AcaoFicha) => {
+    if (a.tipo === "admissao") { setAba("dados"); return; }
     if (a.tipo === "experiencia") { setExperiencia(true); return; }
     if (a.tipo === "nr") { navegar("/sst", { state: { renovarNr: a.id } }); return; }
     setAba(a.tipo === "ferias" ? "ferias" : "docs");
@@ -388,7 +390,19 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
   // Cada aviso carrega o que fazer a respeito (`acao`) e o rótulo do botão.
   // Sem isso o aviso era um beco sem saída: dizia o problema e parava ali.
   const alertas: { texto: string; grave: boolean; acao?: AcaoFicha; rotulo?: string }[] = [];
-  if (sFerias && sFerias.situacao !== "em-dia") {
+  const desligado = !!c.dataDesligamento || c.statusId === "inativo";
+
+  // Sem data de admissão nada da CLT pode ser calculado — e a ficha dizia
+  // "Nada pendente", como se soubesse. É o contrário: não dá para saber.
+  if (!desligado && !c.dataAdmissao) {
+    alertas.push({
+      grave: true,
+      texto: "Sem data de admissão: férias e contrato de experiência não podem ser calculados para esta pessoa.",
+      rotulo: "Preencher",
+      acao: { tipo: "admissao" },
+    });
+  }
+  if (!desligado && sFerias && sFerias.situacao !== "em-dia") {
     alertas.push({
       grave: sFerias.situacao === "vencida",
       texto: sFerias.situacao === "vencida"
@@ -406,7 +420,7 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
       },
     });
   }
-  if (sExp && sExp.situacao !== "primeiro-periodo") {
+  if (!desligado && sExp && sExp.situacao !== "primeiro-periodo") {
     alertas.push({
       grave: sExp.situacao === "expirou",
       texto: sExp.situacao === "expirou"
@@ -451,7 +465,14 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
       <Card>
         <CardHeader title="Precisa de atenção" subtitle="Prazos legais e vencimentos desta pessoa" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
         <CardBody>
-          {alertas.length === 0 ? (
+          {desligado ? (
+            /* Prazo legal só corre para quem está no quadro. A ficha de um
+               desligado seguia estampando "férias vencidas há N dias" com o
+               contador crescendo todo dia — ruído em 53 pessoas inativas. */
+            <p className="text-sm text-slate-500">
+              Colaborador(a) desligado(a){c.dataDesligamento ? ` em ${formatDate(c.dataDesligamento)}` : ""} — os prazos legais não correm mais.
+            </p>
+          ) : alertas.length === 0 ? (
             <p className="text-sm text-emerald-700">Nada pendente: prazos e vencimentos em dia.</p>
           ) : (
             <ul className="space-y-2">
@@ -976,12 +997,18 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   const porTipo = somaPorTipo(doMes);
   const totalMes = totalDe(doMes);
   const serie = serieMensal(meus); // total recebido por competência
-  const mediaMensal = comps.length ? totalDe(meus) / comps.length : 0;
+  // A competência corrente costuma ter só o adiantamento (o saldo vence no mês
+  // seguinte): incluí-la puxava as médias para baixo todo começo de mês. Ela
+  // sai da conta quando há outros meses para comparar.
+  const compsFechadas = comps.filter((k) => k !== `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`);
+  const baseMedia = compsFechadas.length ? compsFechadas : comps;
+  const pagsBaseMedia = meus.filter((p) => baseMedia.includes(p.competencia));
+  const mediaMensal = baseMedia.length ? totalDe(pagsBaseMedia) / baseMedia.length : 0;
   // "Salário médio" = só salário + adiantamento (o pagamento recorrente, próximo do
   // salário do cadastro), separado do ganho total — que inclui comissão, férias e
   // extras e por isso fica bem acima do salário (era o que confundia: "salário alto").
-  const mediaSalario = comps.length
-    ? meus.filter((p) => p.tipo === "Salário" || p.tipo === "Adiantamento").reduce((s, p) => s + p.valor, 0) / comps.length
+  const mediaSalario = baseMedia.length
+    ? pagsBaseMedia.filter((p) => p.tipo === "Salário" || p.tipo === "Adiantamento").reduce((s, p) => s + p.valor, 0) / baseMedia.length
     : 0;
   const tiposMes = new Set(doMes.map((p) => p.tipo));
   // "Competência em andamento" só vale para o mês CORRENTE. Marcar qualquer mês
@@ -1818,7 +1845,9 @@ function DecidirExperienciaModal({ aberto, onFechar, c, onDesligar, onAbrirCadas
   const jaEfetivado = c.statusId === "ativo" && !!c.experienciaDecididaEm;
   const efetivar = () => {
     if (jaEfetivado) { toast("Esta pessoa já foi efetivada.", "info"); return; }
-    atualizar(c.id, { statusId: "ativo", experienciaDecididaEm: diaLocalISO(HOJE) });
+    // dataDesligamento: null — efetivar alguém marcado como desligado deixava
+    // o registro contraditório (ativo COM data de saída).
+    atualizar(c.id, { statusId: "ativo", experienciaDecididaEm: diaLocalISO(HOJE), dataDesligamento: null });
     criarMov({
       colaboradorId: c.id, tipo: "Efetivação", data: diaLocalISO(HOJE),
       descricao: `Contrato de experiência encerrado; efetivado(a) por prazo indeterminado.`, registradoPor: "RH",

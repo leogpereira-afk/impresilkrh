@@ -20,6 +20,7 @@ import { MODO_JWT, definirSenhaUsuario, removerSenhaUsuario } from "@/lib/auth";
 import { criarHash, podeHashear } from "@/lib/senha";
 import { ehMaster } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
+import { EmptyState } from "@/components/ui/misc";
 import { formatBRL } from "@/lib/format";
 import { slug } from "@/data/_gen";
 import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
@@ -369,19 +370,49 @@ function ConteudoSecao() {
 // ---------------- Avaliação & Checklists ----------------
 function AvaliacaoSecao() {
   const toast = useToast();
-  const { items: ciclos, atualizar } = useColecao("ciclos");
+  const { items: ciclos, criar: criarCiclo, atualizar } = useColecao("ciclos");
+  const toastPC = useToast();
+  // Criar e abrir/fechar ciclo. Só dava para mexer nos PESOS: virou o semestre,
+  // não havia como encerrar o ciclo e abrir o próximo — e Desempenho escolhe o
+  // ciclo por status === "Aberto", então o módulo inteiro ficava preso no
+  // ciclo anterior (ou vazio, já que a base nasce sem ciclo nenhum).
+  const novoCiclo = () => {
+    const ano = new Date().getFullYear();
+    const semestre = new Date().getMonth() < 6 ? 1 : 2;
+    criarCiclo({
+      nome: `Ciclo ${ano}.${semestre}`, status: "Aberto",
+      pesoTecnico: 0.4, pesoComportamental: 0.3, pesoResultado: 0.3,
+      notaMinPromocao: 7, mesesMinNivel: 12,
+    });
+    toastPC(`Ciclo ${ano}.${semestre} criado e aberto.`);
+  };
+  const alternarCiclo = (c: CicloAvaliacao) => {
+    const novo = c.status === "Aberto" ? "Fechado" : "Aberto";
+    atualizar(c.id, { status: novo });
+    toastPC(`${c.nome} agora está ${novo.toLowerCase()}.`);
+  };
   const { items: modelos, atualizar: atualizarModelo } = useColecao("modelosChecklist");
 
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="Ciclos de avaliação" subtitle="Pesos e regras de elegibilidade" icon={<Award className="h-[18px] w-[18px]" />} />
+        <CardHeader
+          title="Ciclos de avaliação"
+          subtitle="Pesos, regras de elegibilidade e qual ciclo está valendo"
+          icon={<Award className="h-[18px] w-[18px]" />}
+          action={<button className="btn-outline h-8 px-3 py-0 text-xs" onClick={novoCiclo}><Plus className="h-4 w-4" /> Novo ciclo</button>}
+        />
         <CardBody className="space-y-4">
+          {ciclos.length === 0 && (
+            <EmptyState title="Nenhum ciclo de avaliação" description="Sem ciclo aberto, o módulo Desempenho não tem onde lançar as notas." icon={<Award className="h-8 w-8" />} acao={<button className="btn-primary" onClick={novoCiclo}>Criar o primeiro ciclo</button>} />
+          )}
           {(ciclos as CicloAvaliacao[]).map((c) => (
             <div key={c.id} className="rounded-lg border border-slate-100 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <p className="font-medium text-slate-700">{c.nome}</p>
-                <Badge variant={c.status === "Aberto" ? "success" : "neutral"}>{c.status}</Badge>
+                <button type="button" onClick={() => alternarCiclo(c)} title={c.status === "Aberto" ? "Encerrar este ciclo" : "Reabrir este ciclo"}>
+                  <Badge variant={c.status === "Aberto" ? "success" : "neutral"}>{c.status} · clique para {c.status === "Aberto" ? "fechar" : "abrir"}</Badge>
+                </button>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <Campo label="Peso técnico"><Input type="number" step="0.05" value={c.pesoTecnico} onChange={(e) => atualizar(c.id, { pesoTecnico: Number(e.target.value) })} /></Campo>

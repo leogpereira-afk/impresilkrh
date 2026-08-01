@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Coins, Plus, Trash2, CheckCircle2, FileDown, FileSpreadsheet, Lock, ShieldCheck, Pencil, Clock, ChevronDown, ChevronRight,
 } from "lucide-react";
@@ -494,7 +495,7 @@ function DetalheColaborador({
                   <p className="mt-2 text-xs text-slate-600">
                     <b>{minParaHora(minutosHE)}</b> de hora extra
                     {calcHE.semSalario
-                      ? <span className="text-amber-700"> · sem salário no cadastro — digite o valor à mão</span>
+                      ? <span className="text-amber-700"> · sem salário no cadastro — <Link to={`/colaboradores/${colaborador.id}`} className="font-semibold underline">preencha na ficha</Link> ou digite o valor à mão</span>
                       : <> · {horasDecimais(minutosHE)} h × {formatBRL(calcHE.valorHoraExtra)} = <b>{formatBRL(calcHE.valor)}</b> <span className="text-slate-400">(hora de {formatBRL(calcHE.valorHoraNormal)})</span></>}
                   </p>
                 )}

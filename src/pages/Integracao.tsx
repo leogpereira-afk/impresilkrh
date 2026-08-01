@@ -18,8 +18,7 @@ import {
   FileText,
   Trophy,
   Sparkles,
-  Users,
-} from "lucide-react";
+  Users, Pencil, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
@@ -302,6 +301,7 @@ export default function Integracao() {
               icon: <UserPlus className="h-4 w-4" />,
               conteudo: (
                 <PainelChecklist
+          onIniciar={() => setIniciar(true)}
                   tipo="Admissão"
                   tarefas={tarefasEscopo}
                   escopoIds={idsEscopo}
@@ -315,6 +315,7 @@ export default function Integracao() {
               icon: <UserMinus className="h-4 w-4" />,
               conteudo: (
                 <PainelChecklist
+          onIniciar={() => setIniciar(true)}
                   tipo="Desligamento"
                   tarefas={tarefasEscopo}
                   escopoIds={idsEscopo}
@@ -401,11 +402,15 @@ function PainelChecklist({
   tarefas,
   escopoIds,
   onAlternar,
+  onIniciar,
 }: {
   tipo: TipoChecklist;
   tarefas: Tarefa[];
   escopoIds: Set<string>;
   onAlternar: (t: Tarefa, valor: boolean) => void;
+  /** Abre o mesmo modal do botão do topo — o estado vazio mandava usar um
+   *  botão que não estava ali e ainda por cima com outro nome. */
+  onIniciar?: () => void;
 }) {
   const d = useDominio();
   const [focoId, setFocoId] = useState<string | null>(null);
@@ -477,8 +482,9 @@ function PainelChecklist({
             ? "Nenhum onboarding em aberto"
             : "Nenhum offboarding em aberto"
         }
-        description="Use “Iniciar checklist” para criar um novo a partir de um modelo."
+        description="Comece pelo modelo padrão — dá para ajustar os itens depois."
         icon={<ClipboardList className="h-8 w-8" />}
+        acao={onIniciar ? <button className="btn-primary" onClick={onIniciar}>Iniciar jornada</button> : undefined}
       />
     );
   }
@@ -624,7 +630,33 @@ function CardChecklist({
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
-  const { criar, atualizar: atualizarTarefa } = useColecao("tarefas");
+  const { criar, atualizar: atualizarTarefa, remover: removerTarefa } = useColecao("tarefas");
+  // Renomear e excluir item: dava para adicionar e marcar, e mais nada. Tirar
+  // um item que não se aplica (EPI para quem é do administrativo, "Foto 3x4"
+  // de quem já entregou) ou corrigir um texto digitado errado era impossível —
+  // inclusive nos 7 documentos que o modelo cria sozinho.
+  const [renomeando, setRenomeando] = useState<{ id: string; texto: string } | null>(null);
+  const salvarRenome = () => {
+    if (!renomeando) return;
+    const texto = renomeando.texto.trim();
+    if (!texto) { toast("O item não pode ficar sem nome.", "erro"); return; }
+    atualizarTarefa(renomeando.id, { titulo: texto });
+    setRenomeando(null);
+  };
+  const AcoesItem = ({ t: item }: { t: Tarefa }) => (
+    gere ? (
+      <span className="flex shrink-0 items-center">
+        <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-brand" title="Renomear item" aria-label="Renomear item"
+          onClick={() => setRenomeando({ id: item.id, texto: item.titulo })}>
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-red-600" title="Remover item do checklist" aria-label="Remover item"
+          onClick={() => { removerTarefa(item.id); toast("Item removido do checklist."); }}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </span>
+    ) : null
+  );
   const { atualizar: atualizarColab } = useColecao("colaboradores");
   const gere = podeGerir(sessao);
 
@@ -834,15 +866,26 @@ function CardChecklist({
               className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
             >
               <div className="min-w-0">
-                <p
-                  className={
-                    t.concluida
-                      ? "text-sm text-slate-400 line-through"
-                      : "text-sm font-medium text-slate-700"
-                  }
-                >
-                  {t.titulo}
-                </p>
+                {renomeando?.id === t.id ? (
+                  <Input
+                    autoFocus
+                    value={renomeando.texto}
+                    onChange={(e) => setRenomeando({ id: t.id, texto: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") salvarRenome(); if (e.key === "Escape") setRenomeando(null); }}
+                    onBlur={salvarRenome}
+                    className="h-8 py-0 text-sm"
+                  />
+                ) : (
+                  <p
+                    className={
+                      t.concluida
+                        ? "text-sm text-slate-400 line-through"
+                        : "text-sm font-medium text-slate-700"
+                    }
+                  >
+                    {t.titulo}
+                  </p>
+                )}
                 <p className="text-xs text-slate-400">
                   {t.responsavel ?? "RH"}
                   {t.concluida && t.concluidaEm
@@ -850,7 +893,8 @@ function CardChecklist({
                     : ""}
                 </p>
               </div>
-              <div className="mt-0.5 shrink-0">
+              <div className="mt-0.5 flex shrink-0 items-center gap-1">
+                <AcoesItem t={t} />
                 <Toggle
                   checked={t.concluida}
                   onChange={(v) => onAlternar(t, v)}
@@ -898,7 +942,8 @@ function CardChecklist({
                       </Badge>
                     )}
                   </div>
-                  <div className="shrink-0">
+                  <div className="flex shrink-0 items-center gap-1">
+                    <AcoesItem t={t} />
                     <Toggle
                       checked={t.concluida}
                       onChange={(v) => onAlternar(t, v)}

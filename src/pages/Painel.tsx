@@ -653,11 +653,22 @@ export default function Painel() {
             {topTreinos.length === 0 ? (
               <EmptyState title="Nenhum treinamento pendente" description="Todo o time está em dia com a capacitação." icon={<ClipboardCheck className="h-8 w-8" />} />
             ) : (
+              /* "Integração de Segurança — 7 pendente(s)" e nenhum jeito de
+                 saber quem são os 7 para montar a turma. */
               topTreinos.map(([titulo, qtd]) => (
-                <div key={titulo} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+                <button
+                  key={titulo}
+                  type="button"
+                  title={`Ver quem falta fazer "${titulo}"`}
+                  onClick={() => {
+                    const ids = new Set(treinosAbertos.filter((x) => x.titulo === titulo).map((x) => x.colaboradorId));
+                    drill.abrir(titulo, ativos.filter((c) => ids.has(c.id)), `${qtd} pendente(s)`);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40"
+                >
                   <span className="truncate text-sm font-medium text-slate-700">{titulo}</span>
                   <Badge variant="warning">{qtd} pendente(s)</Badge>
-                </div>
+                </button>
               ))
             )}
           </CardBody>
@@ -898,7 +909,9 @@ function PainelPessoal() {
           vencer" é uma CONTAGEM de itens, então leva direto à aba onde eles estão listados. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Cargo" value={<span className="text-base">{d.nomeCargo(c)}</span>} icon={<Users className="h-5 w-5" />} accent="brand" hint={`Nível ${d.nomeNivel(c.nivelId)}`} />
-        <StatCard label="Saldo de férias" value={`${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={feriasAtiva ? feriasAtiva.status : "Em aberto"} />
+        {/* Há lista por trás deste número, sim: os períodos na aba Férias. */}
+        <StatCard label="Saldo de férias" value={`${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={feriasAtiva ? feriasAtiva.status : "Em aberto"}
+          title="Ver meus períodos de férias" onClick={() => navigate("/meu-perfil?tab=ferias")} />
         <StatCard label="Nota da avaliação" value={minhaAval?.notaFinal ?? "—"} icon={<Award className="h-5 w-5" />} accent="gold" hint={minhaAval?.statusDesempenho ?? "Sem avaliação"} />
         <StatCard
           label="Documentos a vencer" value={meusDocsAlerta.length} icon={<FileWarning className="h-5 w-5" />} accent={meusDocsAlerta.length ? "amber" : "green"}

@@ -7,7 +7,14 @@ import { EmptyState } from "@/components/ui/misc";
 import { RichContent } from "@/components/ui/rich";
 import { useColecao } from "@/lib/store";
 
-export default function Pops() {
+/**
+ * @param comoAba  Sem o cabeçalho de página — a tela vira aba de Documentos
+ *                 Institucionais. A rota /pops continua valendo para quem tem
+ *                 o endereço salvo; o caminho novo é pelo menu Documentos,
+ *                 porque item nenhum do menu levava aqui: os POPs estavam
+ *                 publicados e invisíveis.
+ */
+export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
   const { items } = useColecao("pops");
   const pops = useMemo(() => [...items].sort((a, b) => a.ordem - b.ordem), [items]);
 
@@ -29,21 +36,30 @@ export default function Pops() {
 
   return (
     <div>
-      <PageHeader
-        title="POPs e Procedimentos"
-        description="Procedimentos Operacionais Padrão."
-      >
-        {pops.length > 0 && (
-          <>
-            <button className="btn-outline px-3 py-1.5 text-xs" onClick={expandirTodos}>
-              Expandir todos
-            </button>
-            <button className="btn-ghost px-3 py-1.5 text-xs" onClick={recolherTodos}>
-              Recolher todos
-            </button>
-          </>
-        )}
-      </PageHeader>
+      {comoAba ? (
+        pops.length > 0 && (
+          <div className="mb-4 flex justify-end gap-2">
+            <button className="btn-outline px-3 py-1.5 text-xs" onClick={expandirTodos}>Expandir todos</button>
+            <button className="btn-ghost px-3 py-1.5 text-xs" onClick={recolherTodos}>Recolher todos</button>
+          </div>
+        )
+      ) : (
+        <PageHeader
+          title="POPs e Procedimentos"
+          description="Procedimentos Operacionais Padrão."
+        >
+          {pops.length > 0 && (
+            <>
+              <button className="btn-outline px-3 py-1.5 text-xs" onClick={expandirTodos}>
+                Expandir todos
+              </button>
+              <button className="btn-ghost px-3 py-1.5 text-xs" onClick={recolherTodos}>
+                Recolher todos
+              </button>
+            </>
+          )}
+        </PageHeader>
+      )}
 
       <Card className="mb-6">
         <CardBody className="flex items-start gap-3 p-5">

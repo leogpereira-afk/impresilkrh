@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  FileText, ShieldCheck, FolderOpen, Upload, ExternalLink, Download, Plus, Trash2, Search,
-} from "lucide-react";
+  FileText, ShieldCheck, FolderOpen, Upload, ExternalLink, Download, Plus, Trash2, Pencil, Search, ListChecks } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { Tabs } from "@/components/ui/tabs";
+import Pops from "./Pops";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
@@ -42,6 +42,14 @@ export default function Documentos() {
             label: "Repositório",
             icon: <FolderOpen className="h-4 w-4" />,
             conteudo: <Repositorio />,
+          },
+          {
+            // Os POPs tinham tela pronta, com conteúdo, e NENHUM link no
+            // sistema chegava até ela — só digitando o endereço.
+            id: "pops",
+            label: "POPs e Procedimentos",
+            icon: <ListChecks className="h-4 w-4" />,
+            conteudo: <Pops comoAba />,
           },
         ]}
       />
@@ -194,6 +202,7 @@ function Repositorio() {
   const { items, criar, atualizar, remover } = useColecao("repositorio");
   const [busca, setBusca] = useState("");
   const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState<ArquivoRepositorio | null>(null);
   const [excluir, setExcluir] = useState<ArquivoRepositorio | null>(null);
   // Filtro acionado pelos cartões do topo — soma-se à busca.
   const [foco, setFoco] = useState<FocoRepositorio>(null);
@@ -266,6 +275,20 @@ function Repositorio() {
   // Adiciona ao repositório: metadados no localStorage, conteúdo no IndexedDB
   // e na nuvem (disponível em todos os computadores).
   // Retorna true se gravou (ou não havia anexo); false se o arquivo não coube.
+  // Correção de um registro existente. O anexo só é tocado quando veio arquivo
+  // novo — trocar a categoria não pode apagar o PDF que já estava lá.
+  const atualizarArquivo = async (id: string, meta: Partial<ArquivoRepositorio>, dataUrl: string | null): Promise<boolean> => {
+    atualizar(id, meta);
+    if (!dataUrl) return true;
+    const ok = await putBlob(`doc:${id}`, dataUrl);
+    if (!ok) { toast("Não foi possível guardar o arquivo (armazenamento indisponível).", "erro"); return false; }
+    atualizar(id, { arquivoEmBlob: true });
+    const subiu = await enviarArquivoNuvem(`doc:${id}`, dataUrl);
+    atualizar(id, { arquivoNaNuvem: subiu });
+    if (!subiu) toast("Arquivo salvo neste computador; sobe para a nuvem quando houver internet.", "info");
+    return true;
+  };
+
   const adicionar = async (meta: Partial<ArquivoRepositorio>, dataUrl: string | null): Promise<boolean> => {
     const rec = criar({ ...meta, arquivoDataUrl: null, arquivoEmBlob: false });
     if (!dataUrl) return true;
@@ -423,6 +446,7 @@ function Repositorio() {
                     onAbrir={() => abrir(arq)}
                     onBaixar={() => baixarArquivo(arq)}
                     onExcluir={() => setExcluir(arq)}
+                    onEditar={() => setEditar(arq)}
                   />
                 ))}
               </div>
@@ -433,9 +457,11 @@ function Repositorio() {
 
       {novo && (
         <NovoArquivoModal
-          aberto={novo}
-          onFechar={() => setNovo(false)}
+          aberto={novo || !!editar}
+          registro={editar}
+          onFechar={() => { setNovo(false); setEditar(null); }}
           onCriar={adicionar}
+          onSalvar={atualizarArquivo}
         />
       )}
       <ConfirmDialog
@@ -461,12 +487,14 @@ function ArquivoCard({
   onAbrir,
   onBaixar,
   onExcluir,
+  onEditar,
 }: {
   arq: ArquivoRepositorio;
   podeGerir: boolean;
   onAbrir: () => void;
   onBaixar: () => void;
   onExcluir: () => void;
+  onEditar: () => void;
 }) {
   const temArquivo = temAnexo(arq);
   return (
@@ -503,19 +531,28 @@ function ArquivoCard({
                   <Download className="h-4 w-4" /> Baixar
                 </button>
               </>
+            ) : podeGerir ? (
+              /* Era o único estado da tela sem saída: cadastrar sem o PDF (ainda
+                 não assinado) e nunca poder anexá-lo depois. */
+              <button className="btn-outline" onClick={onEditar} title="Anexar o arquivo a este registro">
+                <Upload className="h-4 w-4" /> Anexar arquivo
+              </button>
             ) : (
               <span className="text-xs italic text-slate-400">Sem arquivo anexado</span>
             )}
           </div>
         </div>
         {podeGerir && (
-          <button
-            className="btn-ghost shrink-0 p-1.5 text-slate-400 hover:text-red-600"
-            onClick={onExcluir}
-            aria-label="Remover documento"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center">
+            {/* Corrigir a categoria obrigava a apagar o registro (perdendo o
+                anexo, o blob e a data) e refazer tudo. */}
+            <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={onEditar} aria-label="Corrigir documento" title="Corrigir nome, categoria ou descrição">
+              <Pencil className="h-4 w-4" />
+            </button>
+            <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={onExcluir} aria-label="Remover documento">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </CardBody>
     </Card>
@@ -524,18 +561,23 @@ function ArquivoCard({
 
 function NovoArquivoModal({
   aberto,
+  registro,
   onFechar,
   onCriar,
+  onSalvar,
 }: {
   aberto: boolean;
+  /** Preenchido = correção do registro existente; nulo = documento novo. */
+  registro?: ArquivoRepositorio | null;
   onFechar: () => void;
   onCriar: (item: Partial<ArquivoRepositorio>, dataUrl: string | null) => Promise<boolean>;
+  onSalvar?: (id: string, item: Partial<ArquivoRepositorio>, dataUrl: string | null) => Promise<boolean>;
 }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [nome, setNome] = useState("");
-  const [categoria, setCategoria] = useState<string>(CATEGORIAS_REPOSITORIO[0]);
-  const [descricao, setDescricao] = useState("");
+  const [nome, setNome] = useState(registro?.nome ?? "");
+  const [categoria, setCategoria] = useState<string>(registro?.categoria ?? CATEGORIAS_REPOSITORIO[0]);
+  const [descricao, setDescricao] = useState(registro?.descricao ?? "");
   const [arquivo, setArquivo] = useState<{ nome: string; dataUrl: string; tamanho: number } | null>(
     null,
   );
@@ -565,18 +607,18 @@ function NovoArquivoModal({
     if (lendo) return toast("Aguarde o anexo terminar de carregar.", "info");
     setSalvando(true);
     try {
-      const ok = await onCriar(
-        {
-          nome: nome.trim(),
-          categoria,
-          descricao: descricao.trim() || undefined,
-          arquivoNome: arquivo?.nome ?? null,
-          tamanhoBytes: arquivo?.tamanho ?? null,
-          criadoEm: new Date().toISOString(),
-        },
-        arquivo?.dataUrl ?? null,
-      );
-      if (ok) toast("Documento adicionado ao repositório."); // erro já sinalizado se falhou
+      const dados: Partial<ArquivoRepositorio> = {
+        nome: nome.trim(),
+        categoria,
+        descricao: descricao.trim() || undefined,
+      };
+      // Só mexe no anexo quando um arquivo novo foi escolhido — corrigir a
+      // categoria não pode apagar o PDF que já estava lá.
+      if (arquivo) { dados.arquivoNome = arquivo.nome; dados.tamanhoBytes = arquivo.tamanho; }
+      const ok = registro && onSalvar
+        ? await onSalvar(registro.id, dados, arquivo?.dataUrl ?? null)
+        : await onCriar({ ...dados, arquivoNome: arquivo?.nome ?? null, tamanhoBytes: arquivo?.tamanho ?? null, criadoEm: new Date().toISOString() }, arquivo?.dataUrl ?? null);
+      if (ok) toast(registro ? "Documento atualizado." : "Documento adicionado ao repositório.");
       onFechar();
     } finally {
       setSalvando(false);
@@ -587,7 +629,7 @@ function NovoArquivoModal({
     <Modal
       aberto={aberto}
       onFechar={onFechar}
-      titulo="Adicionar documento"
+      titulo={registro ? "Corrigir documento" : "Adicionar documento"}
       descricao="O arquivo é guardado no navegador (até 10 MB) e abre em nova aba."
       rodape={
         <>

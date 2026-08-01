@@ -110,7 +110,7 @@ export function ViagensPainel() {
       .filter((v) => v.status !== "Cancelada")
       .forEach((v) => mapa.set(v.colaboradorId, (mapa.get(v.colaboradorId) ?? 0) + (v.valorTotal ?? 0)));
     return [...mapa.entries()]
-      .map(([id, valor]) => ({ nome: d.nomeColab(id).split(" ")[0], valor }))
+      .map(([id, valor]) => ({ id, nome: d.nomeColab(id).split(" ")[0], valor }))
       .sort((a, b) => b.valor - a.valor);
   }, [lista, d]);
 
@@ -284,7 +284,17 @@ export function ViagensPainel() {
           {gastoPorColab.length === 0 ? (
             <EmptyState title="Sem dados de gasto" description="Nenhuma viagem registrada no seu escopo." icon={<Wallet className="h-8 w-8" />} />
           ) : (
-            <BarrasVerticais data={gastoPorColab} cor="#c2a14d" moeda />
+            /* O gráfico do ranking, 18 linhas abaixo, já abre a pessoa: duas
+               barras iguais na mesma tela, uma clicando e a outra não. */
+            <BarrasVerticais
+              data={gastoPorColab}
+              cor="#c2a14d"
+              moeda
+              onItemClick={(nome) => {
+                const alvo = gastoPorColab.find((x) => x.nome === nome);
+                if (alvo) abrirDrillColab(alvo.id);
+              }}
+            />
           )}
         </CardBody>
       </Card>

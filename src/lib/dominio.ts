@@ -80,8 +80,13 @@ export function useDominio() {
       c.cargoId ? faixaNoNivel(cargoById.get(c.cargoId), c.nivelId) : null;
     const enquadrarColab = (c: Colaborador): Enquadramento => {
       const cargo = c.cargoId ? cargoById.get(c.cargoId) : undefined;
-      if (c.enquadramento) return c.enquadramento as Enquadramento;
-      return enquadrar(c.salario, cargo?.faixas);
+      // CALCULA SEMPRE que dá para calcular. Preferir o valor gravado deixava o
+      // selo congelado no dia em que foi salvo: mexer na faixa do cargo em
+      // Carreira e Salários mudava a régua de todo mundo daquele cargo, e a
+      // ficha continuava mostrando "Dentro" com base na faixa velha. O campo
+      // gravado vira só registro histórico, usado quando não há cargo/salário.
+      if (cargo?.faixas?.length && c.salario != null) return enquadrar(c.salario, cargo.faixas);
+      return (c.enquadramento as Enquadramento) ?? enquadrar(c.salario, cargo?.faixas);
     };
 
     // Subárea (nível abaixo da área) — usa o valor salvo ou deriva do cargo/função.

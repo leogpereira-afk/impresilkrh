@@ -88,8 +88,15 @@ export function situacaoFerias(c: Colaborador, feriasDaPessoa: Ferias[], hoje = 
     // (férias partidas em 15+15 somam). Só está quitado quem chegou aos 30 —
     // ou quem não registrou os dias mas tem um gozo lançado, para não passar a
     // gritar com a base antiga, em que `diasGozados` costuma vir zerado.
+    // Janela do período: do nascimento do direito até o direito SEGUINTE. Um
+    // gozo lançado depois do limite de concessão também quita o período —
+    // férias vencidas concedidas em atraso (pagas em dobro) continuam sendo
+    // férias tiradas. Sem isto, agendar as férias vencidas não apagava o aviso:
+    // o "VENCIDAS há 567 dias" ficava para sempre e a sugestão travava no
+    // período mais antigo, sem deixar lançar os seguintes.
+    const fimDaJanela = somaMeses(direitoDesde, 24); // 12 de concessão + 12 de atraso tolerado
     const naJanela = gozos.filter(
-      (g) => g.inicio.getTime() >= direitoDesde.getTime() && g.inicio.getTime() < limiteConcessao.getTime(),
+      (g) => g.inicio.getTime() >= direitoDesde.getTime() && g.inicio.getTime() < fimDaJanela.getTime(),
     );
     const diasGozados = naJanela.reduce((soma, g) => soma + g.dias, 0);
     const semRegistroDeDias = naJanela.length > 0 && diasGozados === 0;

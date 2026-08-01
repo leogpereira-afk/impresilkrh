@@ -77,16 +77,21 @@ export function EmptyState({
   title,
   description,
   icon,
+  acao,
 }: {
   title: string;
   description?: string;
   icon?: React.ReactNode;
+  /** Botão/link para sair do vazio. Vários estados vazios MANDAVAM usar um
+   *  botão e não ofereciam nenhum — às vezes com outro nome do que o real. */
+  acao?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-12 text-center">
       {icon && <div className="mb-3 text-slate-300">{icon}</div>}
       <p className="text-sm font-medium text-slate-600">{title}</p>
       {description && <p className="mt-1 text-xs text-slate-400">{description}</p>}
+      {acao && <div className="mt-3">{acao}</div>}
     </div>
   );
 }

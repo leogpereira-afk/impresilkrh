@@ -660,11 +660,23 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                     <Users className="h-3.5 w-3.5" /> Não batem ponto{naoBatem.length ? ` (${naoBatem.length})` : ""}
                   </button>
                 )}
-                {comps.length > 0 && (
+                {/* O seletor SEMPRE aparece. Ele só existia quando já havia ponto
+                    importado — então, para lançar à mão o ponto de quem foi
+                    contratado num mês que ainda não tem PDF, a pessoa preenchia
+                    tudo, clicava em Salvar e ouvia "Escolha a competência antes",
+                    sem nenhum lugar onde escolher. Com fichas, é a lista dos
+                    meses; sem fichas, é um campo de mês livre. */}
+                {comps.length > 0 ? (
                   <Select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="text-sm">
                     {!comps.includes(competencia) && <option value="">Escolha o mês…</option>}
                     {comps.map((c) => <option key={c} value={c}>{labelMes(c)}</option>)}
+                    <option value="__outro">Outro mês…</option>
                   </Select>
+                ) : (
+                  <Input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="h-9 w-36 py-0 text-sm" title="Mês de referência do lançamento" />
+                )}
+                {comps.length > 0 && competencia === "__outro" && (
+                  <Input type="month" value="" onChange={(e) => setCompetencia(e.target.value)} className="h-9 w-36 py-0 text-sm" title="Escolha o mês" />
                 )}
               </div>
             }
@@ -735,7 +747,11 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                     <ul className="mt-1 space-y-0.5 text-xs text-red-700">
                       {divergentes.map(({ p, c }) => (
                         <li key={p.id}>
-                          <b>{nomeColab(p.colaboradorId) || p.nomePdf}</b>
+                          {/* Clique abre o mês daquela pessoa para achar o dia
+                              errado — o aviso mandava conferir e não levava. */}
+                          <button type="button" onClick={() => setVerMes(p)} className="font-bold underline decoration-dotted underline-offset-2 hover:text-red-900" title="Abrir o mês desta pessoa para conferir os dias">
+                            {nomeColab(p.colaboradorId) || p.nomePdf}
+                          </button>
                           {c && c.difExtras !== 0 && ` · extras: dias somam ${minParaHora(p.extrasMin + c.difExtras)}, total do mês ${minParaHora(p.extrasMin)}`}
                           {c && c.difFaltas !== 0 && ` · faltas: dias somam ${minParaHora(p.faltasMin + c.difFaltas)}, total do mês ${minParaHora(p.faltasMin)}`}
                         </li>
@@ -1030,6 +1046,8 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
           salario={verMes.colaboradorId ? (d.colabById.get(verMes.colaboradorId)?.salario ?? null) : null}
           empresa={empresa}
           onEditar={() => { setManual({ colaboradorId: verMes.colaboradorId, nome: verMes.nomePdf, existente: verMes }); setVerMes(null); }}
+          onEditarDia={(dia) => setEditandoDia({ ponto: verMes, dia })}
+          onReimportar={() => { setVerMes(null); fileRef.current?.click(); }}
           onFechar={() => setVerMes(null)}
         />
       )}
@@ -1416,7 +1434,7 @@ function ModalPontoManual({
 // MÊS INTEIRO de um colaborador, em tela cheia: todos os dias do período (com as
 // lacunas visíveis), o que isso vale em dinheiro e o extrato completo.
 function ModalMesColaborador({
-  ponto, nome, salario, empresa, onEditar, onFechar,
+  ponto, nome, salario, empresa, onEditar, onFechar, onEditarDia, onReimportar,
 }: {
   ponto: Ponto;
   nome: string;
@@ -1424,6 +1442,8 @@ function ModalMesColaborador({
   empresa: string;
   onEditar: () => void;
   onFechar: () => void;
+  onEditarDia?: (dia: PontoDia) => void;
+  onReimportar?: () => void;
 }) {
   const temDetalhe = (ponto.dias?.length ?? 0) > 0;
   const dias = useMemo(() => diasCompletos(ponto), [ponto]);
@@ -1461,7 +1481,9 @@ function ModalMesColaborador({
           {semSalario ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
-              Sem salário no cadastro deste colaborador — preencha em Colaboradores para o sistema calcular os valores.
+              Sem salário no cadastro deste colaborador — {ponto.colaboradorId
+                ? <Link to={`/colaboradores/${ponto.colaboradorId}`} onClick={onFechar} className="font-semibold underline">abra a ficha e preencha o salário</Link>
+                : "preencha em Colaboradores"} para o sistema calcular os valores.
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1498,6 +1520,13 @@ function ModalMesColaborador({
                 Ele foi importado antes de o extrato diário existir, então só ficaram os totais do mês (que estão certos e continuam valendo).
                 Para ver os dias, <b>suba o PDF do ponto de {labelMes(ponto.competencia)} outra vez</b> — a reimportação atualiza todo mundo de uma vez, sem duplicar.
               </p>
+              {/* O texto mandava reimportar e o seletor de arquivo ficava no
+                  card lá em cima, atrás deste modal. */}
+              {onReimportar && (
+                <button className="btn-outline mt-2 h-8 px-3 py-0 text-xs" onClick={onReimportar}>
+                  <Upload className="h-3.5 w-3.5" /> Reimportar o PDF de {labelMes(ponto.competencia)}
+                </button>
+              )}
             </div>
           )}
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -1511,7 +1540,7 @@ function ModalMesColaborador({
               </button>
             </div>
           </div>
-          <ExtratoDiario dias={dias} />
+          <ExtratoDiario dias={dias} onEditarDia={temDetalhe ? onEditarDia : undefined} />
         </div>
 
         <p className="text-[11px] leading-relaxed text-slate-400">
@@ -2345,6 +2374,13 @@ function AbaAbsenteismo({
     const c = d.colabById.get(id);
     if (c) drill.abrir(`Ausências de ${c.nome}`, [c], `Período de ${diaData(de)} a ${diaData(ate)}`);
   };
+  // Os dois gráficos vizinhos já abriam o recorte; a barra "Atestado" alta e
+  // nenhum jeito de saber QUEM apresentou atestado era o buraco deste.
+  const abrirPorTipo = (tipo: string) => {
+    const ids = new Set(lista.filter((a) => a.tipo === tipo).map((a) => a.colaboradorId));
+    const pessoas = [...ids].map((id) => d.colabById.get(id)).filter((c): c is NonNullable<typeof c> => !!c);
+    drill.abrir(`Ausências — ${tipo}`, pessoas, `Período de ${diaData(de)} a ${diaData(ate)} · ${ids.size} pessoa(s)`);
+  };
 
   return (
     <div>
@@ -2461,7 +2497,7 @@ function AbaAbsenteismo({
           {porTipo.length === 0 ? (
             <EmptyState title="Sem dados no período" description="Nenhuma ausência registrada no intervalo selecionado." icon={<BarChart3 className="h-8 w-8" />} />
           ) : (
-            <BarrasColoridas data={porTipo} />
+            <BarrasColoridas data={porTipo} onItemClick={abrirPorTipo} />
           )}
         </CardBody>
       </Card>
@@ -2493,10 +2529,10 @@ function AbaAbsenteismo({
                 {listaVisivel.map((a) => (
                   <tr key={a.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
-                      <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => abrirDrill(a.colaboradorId)} className="flex items-center gap-3 text-left">
                         <Avatar nome={d.nomeColab(a.colaboradorId)} foto={d.fotoColab(a.colaboradorId)} size="sm" />
-                        <span className="font-medium text-slate-800">{d.nomeColab(a.colaboradorId)}</span>
-                      </div>
+                        <span className="font-medium text-slate-800 hover:text-brand">{d.nomeColab(a.colaboradorId)}</span>
+                      </button>
                     </td>
                     <td className="td hidden sm:table-cell text-slate-500">{diaData(a.data)}</td>
                     <td className="td">

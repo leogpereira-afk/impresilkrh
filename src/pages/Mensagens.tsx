@@ -279,10 +279,12 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
           <span className="text-xs font-medium text-slate-500">
             {contatos.length} contato(s) ·
           </span>
+          {/* Ler "Liderança · 6" e ter de digitar "Liderança" na busca à mão
+              para ver quem são os 6. Agora o selo é o filtro. */}
           {resumoGrupos.map(([grupo, qtd]) => (
-            <Badge key={grupo} variant="neutral">
-              {grupo} · {qtd}
-            </Badge>
+            <button key={grupo} type="button" onClick={() => setBusca(busca === grupo ? "" : grupo)} title={`Ver só os contatos de ${grupo}`}>
+              <Badge variant={busca === grupo ? "info" : "neutral"}>{grupo} · {qtd}</Badge>
+            </button>
           ))}
         </div>
       )}
@@ -597,6 +599,22 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<FormAgendamento>(AGENDAMENTO_VAZIO);
   const [excluir, setExcluir] = useState<Agendamento | null>(null);
+  // Corrigir um envio que já está na fila: agendou para 14h em vez de 16h, ou
+  // viu um erro de português no texto. Antes só dava para apagar e digitar tudo
+  // de novo — a mensagem inteira, o grupo e a data.
+  const [editando, setEditando] = useState<Agendamento | null>(null);
+  const abrirEdicao = (a: Agendamento) => {
+    setEditando(a);
+    setForm({
+      templateId: a.templateId ?? "",
+      titulo: a.titulo,
+      mensagem: a.mensagem ?? "",
+      grupoAlvo: a.grupoAlvo ?? TODOS,
+      // datetime-local não aceita o "Z" do ISO nem os segundos.
+      quando: a.quando ? new Date(a.quando).toISOString().slice(0, 16) : "",
+    });
+    setModal(true);
+  };
 
   const setCampo = (campo: keyof FormAgendamento, valor: string) => setForm((f) => ({ ...f, [campo]: valor }));
 
@@ -633,11 +651,13 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   const visiveis = useMemo(() => (foco ? lista.filter((a) => a.status === foco) : lista), [lista, foco]);
 
   const abrirNovo = () => {
+    setEditando(null);
     setForm({ ...AGENDAMENTO_VAZIO, quando: HOJE.toISOString().slice(0, 16) });
     setModal(true);
   };
   const fechar = () => {
     setModal(false);
+    setEditando(null);
     setForm(AGENDAMENTO_VAZIO);
   };
 
@@ -663,16 +683,20 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
       toast("Defina a data/hora do envio.", "erro");
       return;
     }
-    criar({
+    const dados = {
       templateId: form.templateId || undefined,
       titulo,
       mensagem,
       grupoAlvo: form.grupoAlvo,
       quando: new Date(form.quando).toISOString(),
-      status: "Agendada",
-      criadoEm: new Date().toISOString(),
-    });
-    toast(`Envio "${titulo}" agendado para ${contar(form.grupoAlvo)} contato(s).`);
+    };
+    if (editando) {
+      atualizar(editando.id, dados);
+      toast(`Envio "${titulo}" atualizado.`);
+    } else {
+      criar({ ...dados, status: "Agendada", criadoEm: new Date().toISOString() });
+      toast(`Envio "${titulo}" agendado para ${contar(form.grupoAlvo)} contato(s).`);
+    }
     fechar();
   };
 
@@ -767,6 +791,14 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
                             {a.status === "Agendada" && (
                               <>
                                 <button
+                                  className="btn-ghost p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand"
+                                  onClick={() => abrirEdicao(a)}
+                                  title="Corrigir texto, grupo ou horário"
+                                  aria-label={`Editar ${a.titulo}`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
                                   className="btn-ghost p-1.5 text-green-600 hover:bg-green-50"
                                   onClick={() => marcarEnviada(a)}
                                   title="Marcar como enviada (simular disparo)"
@@ -808,7 +840,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
         <Modal
           aberto={modal}
           onFechar={fechar}
-          titulo="Agendar envio"
+          titulo={editando ? "Corrigir envio agendado" : "Agendar envio"}
           descricao="Adicione um disparo à fila local. O envio real é apenas simulado."
           rodape={
             <>
