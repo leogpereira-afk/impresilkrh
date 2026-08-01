@@ -103,7 +103,15 @@ export default function Custos() {
   // por ele) ficava fora do seletor com a folha já lançada dentro.
   const competencias = useMemo(() => competenciasComDados(planoContas, pagamentos), [planoContas, pagamentos]);
   const ultimaComp = competencias[competencias.length - 1] ?? "";
-  const [comp, setComp] = useState<string>(ultimaComp);
+  // Abre no último mês FECHADO — o último que tem planilha do contador. Abrir
+  // direto no mês corrente mostraria o rateio, os encargos e o Custo Global
+  // zerados logo de cara, que se lê como sistema quebrado; o mês corrente fica
+  // a um clique na seta, com o aviso explicando o que ainda não venceu.
+  const compPadrao = useMemo(() => {
+    const doPlano = competenciasPlano(planoContas);
+    return doPlano[doPlano.length - 1] ?? ultimaComp;
+  }, [planoContas, ultimaComp]);
+  const [comp, setComp] = useState<string>(compPadrao);
 
   const ativosOrdenados = useMemo(
     () => [...d.ativos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
@@ -126,7 +134,7 @@ export default function Custos() {
   const [pagExcluir, setPagExcluir] = useState<string | null>(null);
 
   // Competência efetiva (cai para a última quando a selecionada some / inicial vazia).
-  const compAtiva = comp && competencias.includes(comp) ? comp : ultimaComp;
+  const compAtiva = comp && competencias.includes(comp) ? comp : compPadrao;
 
   // Navegação por setas: entre colaboradores (‹ ›, circular) e entre meses (‹ ›).
   const idxColab = ativosOrdenados.findIndex((c) => c.id === colabId);
@@ -146,7 +154,10 @@ export default function Custos() {
   // ---------- Uploads ----------
   const refPlano = useRef<HTMLInputElement>(null);
   const hojeIso = new Date().toISOString().slice(0, 7);
-  const [compUpload, setCompUpload] = useState<string>(ultimaComp || hojeIso);
+  // Fica no último mês COM plano (não no último com folha): o seletor de meses
+  // cresceu e o envio de planilha sobrescreve a competência escolhida — mudar
+  // esse padrão calado seria trocar o mês em que o plano do contador cai.
+  const [compUpload, setCompUpload] = useState<string>(compPadrao || hojeIso);
   // Importação avulsa de comissões, casando por NOME (caso à parte)
   // Prévia de conciliação da folha (subir a mesma planilha: mexe só no diferente).
   const [folhaPrev, setFolhaPrev] = useState<{
