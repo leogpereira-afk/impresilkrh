@@ -168,6 +168,14 @@ export default function Custos() {
   // Sugestões de salário para o cadastro (vindas do ERP) e quem o RH marcou.
   const [salarios, setSalarios] = useState<SugestaoSalario[]>([]);
   const [salariosMarcados, setSalariosMarcados] = useState<Set<string>>(new Set());
+  // Um caminho só para fechar a prévia. Antes as marcações de salário
+  // sobreviviam ao Cancelar e reapareciam — aplicáveis — na prévia seguinte,
+  // inclusive na da PLANILHA, que não tem salário nenhum.
+  const fecharPrevia = () => {
+    setFolhaPrev(null);
+    setSalarios([]);
+    setSalariosMarcados(new Set());
+  };
   // Varredura do histórico: quantos meses para trás, onde está e o cancelamento.
   const [mesesHistorico, setMesesHistorico] = useState(12);
   const [varrendo, setVarrendo] = useState<{ feitos: number; total: number; onde: string } | null>(null);
@@ -216,19 +224,23 @@ export default function Custos() {
     // isso sobrava um caminho para duplicar: o ERP corrige o vencimento de
     // 15/07 para 16/07, a competência vira outra (a janela é do 16 ao 15), o
     // registro antigo fica fora do recorte e o mesmo título é gravado de novo.
+    // Todos os títulos já vindos do ERP entram para poder casar por id; a JANELA
+    // diz o que pode ser dado como ausente — sem ela, importar agosto listava a
+    // folha inteira de julho como "fora da planilha", com o botão de apagar ao lado.
     const comps = new Set(registros.map((x) => x.competencia));
     const existentesDaComp = pagamentos.filter(
       (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
     );
     setRemoverAusentes(false);
     setFolhaPrev({
-      diff: conciliarPagamentos(existentesDaComp, registros),
+      diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
       mubi: { linhas: r.linhas, coletivas, truncado: r.truncado },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
     setSalarios(sugerirSalarios(r.linhas, d.colaboradores, vinculos));
+    setSalariosMarcados(new Set()); // marcação vale para a lista da tela, não para a pessoa
     setRespostaMubi(null);
   };
 
@@ -343,8 +355,11 @@ export default function Custos() {
     const existentesDaComp = pagamentos.filter(
       (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
     );
+    // O vínculo novo pode fazer aparecer (ou sumir) uma sugestão de salário.
+    setSalarios(sugerirSalarios(folhaPrev.mubi.linhas, d.colaboradores, vinculos));
+    setSalariosMarcados(new Set());
     setFolhaPrev({
-      diff: conciliarPagamentos(existentesDaComp, registros),
+      diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
       mubi: { ...folhaPrev.mubi, coletivas },
     });
@@ -353,6 +368,7 @@ export default function Custos() {
   // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
   // mesma planilha de novo mostra o que é igual, o que mudou e o que é novo.
   const importarPagamentos = async (file: File) => {
+    setSalarios([]); setSalariosMarcados(new Set()); // planilha não traz salário
     try {
       const linhas = await lerPlanilha(file);
       const { registros, naoCasados, cpfsAprendidos } = parsePagamentos(linhas, d.colaboradores);
@@ -379,15 +395,34 @@ export default function Custos() {
     // Linhas iguais (mesmo valor) cuja DESCRIÇÃO mudou — atualiza só o texto.
     let descAtualizadas = 0;
     for (const { antigo, novo } of diff.iguais) {
-      if (nd(antigo.descricao) !== nd(novo.descricao)) {
-        pagamentosColecao.atualizar(antigo.id, { descricao: novo.descricao || undefined });
-        descAtualizadas++;
+      const adotaId = !antigo.idMubi && !!novo.idMubi;
+      if (nd(antigo.descricao) !== nd(novo.descricao) || adotaId) {
+        pagamentosColecao.atualizar(antigo.id, {
+          descricao: novo.descricao || undefined,
+          ...(adotaId ? { idMubi: novo.idMubi } : {}),
+        });
+        if (nd(antigo.descricao) !== nd(novo.descricao)) descAtualizadas++;
       }
     }
     for (const { antigo, novo } of diff.alterados) {
-      pagamentosColecao.atualizar(antigo.id, { valor: novo.valor, dataPagamento: novo.dataPagamento, descricao: novo.descricao });
+      // O registro INTEIRO. Gravar só valor/data deixava pessoa, competência e
+      // tipo congelados no que foi importado da primeira vez: o ERP repassava o
+      // título para outra pessoa (ou reclassificava o plano) e o dinheiro ficava
+      // somando na pessoa/mês errados — e o item voltava como "corrigido" em
+      // toda importação seguinte, porque nunca convergia.
+      pagamentosColecao.atualizar(antigo.id, {
+        colaboradorId: novo.colaboradorId,
+        competencia: novo.competencia,
+        tipo: novo.tipo,
+        valor: novo.valor,
+        dataPagamento: novo.dataPagamento,
+        descricao: novo.descricao,
+        idMubi: novo.idMubi ?? null,
+      });
     }
-    for (const n of diff.novos) pagamentosColecao.criar(n);
+    // criarOuAtualizar: se o id já existir (reimportação, aba aberta em dois
+    // lugares), atualiza em vez de gravar uma segunda linha com a mesma chave.
+    for (const n of diff.novos) pagamentosColecao.criarOuAtualizar(n);
     // Se a busca no ERP veio cortada, "ausente" não quer dizer "saiu da folha" —
     // pode ser só o que não coube na busca. Nesse caso nunca apaga.
     const podeRemover = removerAusentes && !folhaPrev.mubi?.truncado;
@@ -407,25 +442,21 @@ export default function Custos() {
     }
     const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (podeRemover ? diff.ausentes.length : 0);
     const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
+    // Salários marcados — só o que está na lista da tela (marca órfã não conta).
+    const aplicaveis = salarios.filter((x) => salariosMarcados.has(x.colaborador.id));
+    for (const sug of aplicaveis) {
+      colaboradoresColecao.atualizar(sug.colaborador.id, { salario: sug.sugerido });
+    }
+    const parteSalario = aplicaveis.length ? ` Salário preenchido em ${aplicaveis.length} colaborador(es).` : "";
+    // Um toast só, dizendo as duas coisas: antes ele avisava "nada a alterar"
+    // no mesmo clique em que salários eram gravados.
     toast(
       mexeu === 0
-        ? "Planilha idêntica ao que já estava — nada a alterar."
-        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
+        ? `Folha já estava igual — nada a alterar.${parteSalario}${avisoCpf}`
+        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${parteSalario}${avisoCpf}`,
       "sucesso",
     );
-    // Salários marcados pelo RH — gravados só onde ele marcou.
-    if (salariosMarcados.size) {
-      let nSal = 0;
-      for (const sug of salarios) {
-        if (!salariosMarcados.has(sug.colaborador.id)) continue;
-        colaboradoresColecao.atualizar(sug.colaborador.id, { salario: sug.sugerido });
-        nSal++;
-      }
-      if (nSal) toast(`Salário do cadastro atualizado em ${nSal} colaborador(es).`, "sucesso");
-    }
-    setSalarios([]);
-    setSalariosMarcados(new Set());
-    setFolhaPrev(null);
+    fecharPrevia();
   };
 
   // Comissões avulsas (casadas por NOME): lê e abre a prévia.
@@ -770,11 +801,17 @@ export default function Custos() {
               <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{erroMubi}</p>
             )}
 
-            {/* A planilha continua disponível: se o ERP estiver fora do ar, o
-                trabalho não para. */}
+            {/* A FONTE AGORA É O ERP. A planilha fica como saída de emergência
+                (ERP fora do ar) e para o que for anterior ao que ele guarda —
+                por isso continua funcionando, mas recolhida e rotulada como o
+                caminho antigo, para ninguém usar por engano no dia a dia. */}
             <details className="text-xs text-slate-500">
-              <summary className="cursor-pointer hover:text-brand">Enviar por planilha (.xlsx/.csv)</summary>
-              <div className="mt-2">
+              <summary className="cursor-pointer hover:text-brand">Caminho antigo: enviar planilha (.xlsx/.csv)</summary>
+              <div className="mt-2 space-y-2">
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                  A folha passou a vir do Mubisys. Use a planilha só se o ERP estiver indisponível —
+                  o que vier por aqui não tem o id do título e não se reconcilia sozinho depois.
+                </p>
                 <input
                   ref={refPagts}
                   type="file"
@@ -871,12 +908,12 @@ export default function Custos() {
         return (
           <Modal
             aberto
-            onFechar={() => setFolhaPrev(null)}
+            onFechar={fecharPrevia}
             titulo="Conferir importação da folha"
             descricao="Comparação com o que já está no sistema. Só o que mudou será alterado — o que é igual fica intacto."
             largura="max-w-2xl"
             rodape={<>
-              <button className="btn-outline" onClick={() => setFolhaPrev(null)}>Cancelar</button>
+              <button className="btn-outline" onClick={fecharPrevia}>Cancelar</button>
               <button className="btn-primary" onClick={aplicarFolha}>
                 <Coins className="h-4 w-4" /> {mexeu + salariosMarcados.size === 0
                   ? "Nada a alterar"
@@ -915,31 +952,25 @@ export default function Custos() {
                 </div>
               </div>
 
-              {/* SALÁRIO DO CADASTRO sugerido pelo ERP.
-                  Fica separado da folha de propósito: pagamento é histórico, o
-                  salário do cadastro é a BASE de todo cálculo de hora extra e de
-                  desconto de falta. Nada aqui é aplicado sem marcar — o pago não
-                  é o contrato (falta desconta, adiantamento divide), e deixar o
-                  ERP sobrescrever sozinho faria um mês com falta rebaixar o
-                  salário e errar o cálculo do mês seguinte. */}
-              {salarios.length > 0 && (
+              {/* SALÁRIO: só para quem está SEM salário no cadastro.
+                  O que o ERP tem é o LÍQUIDO pago (já saíram INSS, IRRF, VT e o
+                  desconto de falta), então não serve como salário de contrato de
+                  quem já tem um — rebaixaria quase todo mundo, e esse campo é a
+                  base do cálculo de hora extra e de desconto de falta. Para quem
+                  não tem nada, um ponto de partida conferido pelo RH é melhor do
+                  que o sistema não conseguir calcular. Nada é aplicado sem marcar. */}
+              {folhaPrev.mubi && salarios.length > 0 && (
                 <div className="rounded-xl border border-gold-200">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gold-100 bg-gold-50/50 px-3 py-1.5">
                     <p className="text-xs font-semibold text-gold-700">
-                      Salário do cadastro sugerido pelo ERP
-                      {salarios.some((x) => x.semSalario) && ` · ${salarios.filter((x) => x.semSalario).length} sem salário hoje`}
+                      Sem salário no cadastro · {salarios.length} pessoa(s)
                     </p>
-                    <button
-                      className="text-[11px] font-medium text-gold-700 underline"
-                      onClick={() => setSalariosMarcados((atual) =>
-                        atual.size === salarios.length ? new Set() : new Set(salarios.map((x) => x.colaborador.id)))}
-                    >
-                      {salariosMarcados.size === salarios.length ? "desmarcar todos" : "marcar todos"}
-                    </button>
                   </div>
                   <p className="px-3 py-1.5 text-[11px] text-slate-500">
-                    Soma de <b>Salário + Adiantamento</b> da competência mais recente de cada um. Confira antes de marcar:
-                    mês com falta ou rescisão paga menos que o contrato.
+                    Valor <b>pago</b> na competência (Salário + Adiantamento) — é o líquido, já sem
+                    INSS, IRRF e vale-transporte. Use como <b>ponto de partida</b> e ajuste na ficha
+                    se o contrato for outro. Sem salário, o sistema não calcula hora extra nem
+                    desconto de falta dessas pessoas.
                   </p>
                   <div className="max-h-48 overflow-y-auto">
                     <table className="w-full text-sm">
@@ -952,28 +983,24 @@ export default function Custos() {
                                 <input
                                   type="checkbox"
                                   checked={marcado}
+                                  disabled={!sug.completo}
                                   onChange={() => setSalariosMarcados((atual) => {
                                     const n = new Set(atual);
                                     if (n.has(sug.colaborador.id)) n.delete(sug.colaborador.id); else n.add(sug.colaborador.id);
                                     return n;
                                   })}
-                                  aria-label={`Aplicar salário sugerido de ${sug.colaborador.nome}`}
+                                  aria-label={`Preencher o salário de ${sug.colaborador.nome}`}
                                 />
                               </td>
-                              <td className="td font-medium text-slate-700">
-                                {sug.colaborador.nome}
-                                {sug.semSalario && <Badge variant="danger" className="ml-2">sem salário</Badge>}
+                              <td className="td font-medium text-slate-700">{sug.colaborador.nome}</td>
+                              <td className="td text-slate-400">
+                                {compLabel(sug.competencia)}
+                                {/* Mês com só uma das pernas (adiantamento OU saldo) daria
+                                    metade do salário: não deixa marcar. */}
+                                {!sug.completo && <span className="ml-1 text-red-600">· mês incompleto</span>}
                               </td>
-                              <td className="td text-slate-400">{compLabel(sug.competencia)}</td>
-                              <td className="td text-right tabular-nums">
-                                <span className="text-slate-400">{sug.atual != null ? formatBRL(sug.atual) : "—"}</span>
-                                <span className="mx-1 text-slate-300">→</span>
-                                <span className="font-semibold text-gold-700">{formatBRL(sug.sugerido)}</span>
-                                {sug.atual != null && sug.diferencaPct !== 0 && (
-                                  <span className={`ml-1 text-[11px] ${Math.abs(sug.diferencaPct) > 20 ? "font-semibold text-red-600" : "text-slate-400"}`}>
-                                    ({sug.diferencaPct > 0 ? "+" : ""}{sug.diferencaPct}%)
-                                  </span>
-                                )}
+                              <td className="td text-right tabular-nums font-semibold text-gold-700">
+                                {formatBRL(sug.sugerido)}
                               </td>
                             </tr>
                           );

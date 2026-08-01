@@ -244,8 +244,11 @@ export const competenciaDe = (l: LinhaMubi) => {
 /** Monta o registro da coleção "pagamentos" a partir da linha do ERP. */
 export function montarPagamento(l: LinhaMubi, colaboradorId: string): Pagamento {
   return {
-    // Vem do id do título no ERP: reimportar o mesmo mês atualiza em vez de duplicar.
+    // O id é só a chave do registro; a IDENTIDADE do título é o campo idMubi
+    // abaixo — é ele que faz a reimportação atualizar em vez de duplicar, e é
+    // ele que os lançamentos vindos de planilha adotam no primeiro encontro.
     id: `mubi-${l.idMubi}`,
+    idMubi: String(l.idMubi),
     colaboradorId,
     competencia: competenciaDe(l),
     tipo: l.tipo,
@@ -316,65 +319,56 @@ export function montarPrevia(
 }
 
 // ---------------------------------------------------------------------------
-// Salário do cadastro sugerido pelo ERP.
+// Salário do cadastro, a partir do que o ERP pagou.
 //
-// POR QUE SUGERIR E NÃO GRAVAR DIRETO. O que o ERP tem é o que foi PAGO, e pago
-// não é o salário de contrato:
+// ISTO NÃO É O SALÁRIO DE CONTRATO. O que sai do contas a pagar é o LÍQUIDO: já
+// saíram INSS, IRRF, vale-transporte e o desconto de falta do mês. Usar esse
+// número como salário do cadastro rebaixaria quase todo mundo — e esse campo é
+// a base de TODO o cálculo de hora extra e de desconto de falta
+// (lib/pontoFolha). Um mês com falta rebaixaria a base e erraria o cálculo do
+// mês seguinte, que por sua vez erraria o próximo: um ciclo se alimentando.
 //
-//  • o mês costuma vir partido em adiantamento (2.1.2) + saldo (2.1.1), então
-//    nenhum dos dois sozinho é o salário;
-//  • falta, atraso e vale-transporte descontam, então um mês com falta pagaria
-//    menos e "corrigiria" o cadastro para baixo;
-//  • rescisão, férias e 13º entram como outros tipos e não são salário mensal.
-//
-// E o salário do cadastro é a base de TODO o cálculo de hora extra e de desconto
-// de falta (lib/pontoFolha). Deixar o ERP sobrescrever isso sozinho fecharia um
-// ciclo vicioso: mês com falta → salário menor no cadastro → hora extra e
-// desconto do mês seguinte calculados por uma base errada.
-//
-// Por isso a conta é: salário + adiantamento da MESMA competência, mostrado como
-// SUGESTÃO ao lado do que está no cadastro. Quem decide é o RH — e quem está sem
-// salário nenhum aparece em primeiro lugar, porque é para esses que o sistema
-// hoje não consegue calcular nada.
+// Por isso só entra quem está SEM salário nenhum no cadastro. Ali não há o que
+// rebaixar, e um ponto de partida conferido pelo RH é melhor do que o sistema
+// não conseguir calcular nada para aquela pessoa. Quem já tem salário, o
+// cadastro manda — o ERP não opina.
 // ---------------------------------------------------------------------------
 
-/** Tipos que, somados na competência, compõem a remuneração mensal. */
+/** Tipos que, somados na competência, compõem a remuneração do mês. */
 const TIPOS_SALARIO = ["Salário", "Adiantamento"];
 
 export interface SugestaoSalario {
   colaborador: Colaborador;
-  /** Soma de Salário + Adiantamento na competência usada. */
+  /** Soma de Salário + Adiantamento na competência usada (líquido pago). */
   sugerido: number;
   competencia: string;
   /** O que está gravado hoje no cadastro (null = em branco). */
   atual: number | null;
-  /** Quanto o sugerido difere do atual, em % (0 quando não há atual). */
-  diferencaPct: number;
-  /** Sem salário no cadastro: é o caso que trava o cálculo de folha. */
-  semSalario: boolean;
-  /** As linhas do ERP que formaram a soma — para o RH conferir a origem. */
+  /** As linhas do ERP que formaram a soma — para conferir a origem. */
   origem: LinhaMubi[];
+  /** O mês tem as DUAS pernas (adiantamento e saldo)? Se não, é meio salário. */
+  completo: boolean;
 }
 
-/**
- * Monta as sugestões de salário a partir das linhas do ERP.
- *
- * Usa a competência MAIS RECENTE em que a pessoa tem salário/adiantamento — mês
- * antigo não serve de base para o contrato de hoje.
- */
 export function sugerirSalarios(
   linhas: LinhaMubi[],
   colaboradores: Colaborador[],
   vinculos: Record<string, string>,
+  hoje = new Date(),
 ): SugestaoSalario[] {
-  // colaboradorId -> competencia -> linhas
+  // A competência corrente ainda não fechou (a janela vai do 16 ao 15): nela
+  // costuma haver só o adiantamento, e metade do salário viraria "o salário".
+  const compCorrente = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+
   const porPessoa = new Map<string, Map<string, LinhaMubi[]>>();
   for (const l of linhas) {
     if (!TIPOS_SALARIO.includes(l.tipo) || !l.nome.trim()) continue;
     const c = casarColaborador(l.nome, colaboradores, vinculos);
     if (!c) continue;
+    if (c.salario != null && c.salario > 0) continue; // já tem salário: o cadastro manda
+    if (c.ehDirecao) continue;                        // direção não tem salário por definição
     const comp = competenciaDe(l);
-    if (!comp) continue;
+    if (!comp || comp >= compCorrente) continue;
     const porComp = porPessoa.get(c.id) ?? new Map<string, LinhaMubi[]>();
     porComp.set(comp, [...(porComp.get(comp) ?? []), l]);
     porPessoa.set(c.id, porComp);
@@ -384,24 +378,28 @@ export function sugerirSalarios(
   for (const [colaboradorId, porComp] of porPessoa) {
     const colaborador = colaboradores.find((c) => c.id === colaboradorId);
     if (!colaborador) continue;
-    const competencia = [...porComp.keys()].sort().pop()!; // a mais recente
+    // Prefere o mês mais recente que tenha as DUAS pernas; se nenhum tiver, usa
+    // o mais recente e marca como incompleto (a tela não deixa aplicar).
+    const comps = [...porComp.keys()].sort().reverse();
+    const completo = comps.find((k) => {
+      const tipos = new Set((porComp.get(k) ?? []).map((l) => l.tipo));
+      return tipos.has("Salário") && tipos.has("Adiantamento");
+    });
+    const competencia = completo ?? comps[0];
+    if (!competencia) continue;
     const origem = porComp.get(competencia) ?? [];
     const sugerido = Math.round(origem.reduce((s, l) => s + (l.valor ?? 0), 0) * 100) / 100;
     if (sugerido <= 0) continue;
-    const atual = colaborador.salario ?? null;
     out.push({
-      colaborador, sugerido, competencia, atual,
-      diferencaPct: atual ? Math.round(((sugerido - atual) / atual) * 1000) / 10 : 0,
-      semSalario: atual == null,
+      colaborador, sugerido, competencia,
+      atual: colaborador.salario ?? null,
       origem,
+      completo: !!completo,
     });
   }
 
-  // Quem está sem salário primeiro (é o que trava o cálculo); depois a maior
-  // divergência, que é o que merece o olho do RH.
   return out.sort((a, b) =>
-    Number(b.semSalario) - Number(a.semSalario) ||
-    Math.abs(b.diferencaPct) - Math.abs(a.diferencaPct) ||
+    Number(b.completo) - Number(a.completo) ||
     a.colaborador.nome.localeCompare(b.colaborador.nome, "pt"),
   );
 }

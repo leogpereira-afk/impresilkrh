@@ -481,6 +481,17 @@ export interface Pagamento {
   valor: number;
   dataPagamento: string; // ISO (vencimento)
   descricao?: string;
+  /**
+   * Id do título no ERP Mubisys. É a IDENTIDADE do lançamento: reimportar o
+   * mesmo título atualiza em vez de criar outro, mesmo que o ERP corrija a
+   * data, o valor ou a classificação.
+   *
+   * É campo, e não prefixo do `id`, de propósito: os 593 pagamentos que já
+   * existem vieram de planilha e têm id próprio. Codificando a identidade no
+   * id, eles nunca a adotariam — e a trava só protegeria o que nascesse do
+   * ERP, deixando a base inteira sem proteção nenhuma.
+   */
+  idMubi?: string | null;
 }
 
 // ===================== Custos de colaboradores (v4) =====================

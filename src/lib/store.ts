@@ -140,17 +140,28 @@ export function obter<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
 }
 
 /**
- * Cria um registro. Se o item já traz `id`, ele MANDA (é assim que a importação
- * do ERP carimba `mubi-<id do título>` e a reimportação atualiza em vez de
- * duplicar).
+ * Cria um registro. Se o item já traz `id`, ele manda.
  *
- * REDE DE SEGURANÇA: id que já existe nunca vira um segundo registro — vira
- * atualização. Antes isso prependava uma cópia com a MESMA id, e o sistema
- * inteiro passa a se comportar de forma imprevisível: `find` acha a primeira,
- * `atualizar` mexe só numa, a soma conta as duas, e o sync não sabe qual é a
- * boa. Em pagamento isso é dinheiro contado em dobro num relatório.
+ * NÃO faz upsert: telas que derivam o id de um nome ou e-mail contam com
+ * `criar` sempre inserir, e transformá-lo em upsert em silêncio faria um
+ * cadastro novo sobrescrever um homônimo já existente sem ninguém perceber.
+ * Quem precisa de upsert usa `criarOuAtualizarEm`.
  */
 export function criarEm<K extends NomeColecao>(
+  nome: K,
+  item: Partial<ColecaoMap[K]>,
+): ColecaoMap[K] {
+  const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
+  gravar(nome, [novo, ...ler(nome)]);
+  notificar(nome, "upsert", (novo as { id: string }).id);
+  return novo;
+}
+
+/**
+ * Insere OU atualiza pelo id. Para importação de fonte externa (o ERP), em que
+ * o mesmo registro pode chegar de novo e não pode virar uma segunda linha.
+ */
+export function criarOuAtualizarEm<K extends NomeColecao>(
   nome: K,
   item: Partial<ColecaoMap[K]>,
 ): ColecaoMap[K] {
@@ -233,11 +244,12 @@ export function useColecao<K extends NomeColecao>(nome: K) {
   const items = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const criar = useCallback((item: Partial<ColecaoMap[K]>) => criarEm(nome, item), [nome]);
+  const criarOuAtualizar = useCallback((item: Partial<ColecaoMap[K]>) => criarOuAtualizarEm(nome, item), [nome]);
   const atualizar = useCallback((id: string, patch: Partial<ColecaoMap[K]>) => atualizarEm(nome, id, patch), [nome]);
   const remover = useCallback((id: string) => removerEm(nome, id), [nome]);
   const definir = useCallback((itens: ColecaoMap[K][]) => definirColecao(nome, itens), [nome]);
 
-  return { items, criar, atualizar, remover, definir };
+  return { items, criar, criarOuAtualizar, atualizar, remover, definir };
 }
 
 // ---- Config (singleton) ----

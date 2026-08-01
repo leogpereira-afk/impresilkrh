@@ -276,52 +276,98 @@ function multimap(itens: Pag[], chave: (p: Pag) => string): Map<string, Pag[]> {
   return m;
 }
 
-/** Título vindo do ERP: o id carrega a identidade do lançamento no Mubisys. */
-export const ehDoMubi = (p: Pag) => String(p.id ?? "").startsWith("mubi-");
+/** Identidade do título no ERP (campo novo; o prefixo do id é o formato antigo). */
+export const idMubiDe = (p: Pag): string | null =>
+  p.idMubi ? String(p.idMubi) : (String(p.id ?? "").startsWith("mubi-") ? String(p.id).slice(5) : null);
+export const ehDoMubi = (p: Pag) => idMubiDe(p) != null;
 
-// `existentes` deve ser filtrado às competências presentes em `novos` (o resto não entra).
-export function conciliarPagamentos(existentes: Pag[], novos: Pag[]): DiffPagamentos {
-  // 0) TÍTULO DO ERP CASA PELO ID, antes de qualquer outra regra.
-  //
-  // A conciliação por assinatura (pessoa+competência+tipo+data+valor) nasceu para
-  // a PLANILHA, que não tem identificador nenhum. Para o ERP existe algo melhor:
-  // o id do título. E usar a assinatura ali criava duplicata de verdade — basta
-  // o ERP corrigir a data de vencimento entre duas buscas. A data entra na
-  // assinatura, então o mesmo título voltava como "novo" e era gravado outra
-  // vez. Pior quando a correção atravessa o dia 15: a competência muda junto e o
-  // registro antigo nem entrava na comparação.
-  //
-  // Com o id, o mesmo título é sempre o mesmo lançamento — mudou a data, o valor
-  // ou a descrição, é ATUALIZAÇÃO. Nunca uma segunda linha.
-  const porId = new Map(existentes.filter(ehDoMubi).map((p) => [p.id, p]));
-  if (porId.size || novos.some(ehDoMubi)) {
-    const iguaisId: { antigo: Pag; novo: Pag }[] = [];
-    const alteradosId: { antigo: Pag; novo: Pag }[] = [];
-    const restoNovos: Pag[] = [];
-    const casados = new Set<string>();
-    for (const n of novos) {
-      const antigo = ehDoMubi(n) ? porId.get(n.id) : undefined;
-      if (!antigo) { restoNovos.push(n); continue; }
-      casados.add(antigo.id);
-      const mudou =
-        Math.round((antigo.valor ?? 0) * 100) !== Math.round((n.valor ?? 0) * 100) ||
-        dia10(antigo.dataPagamento) !== dia10(n.dataPagamento) ||
-        antigo.competencia !== n.competencia ||
-        antigo.tipo !== n.tipo ||
-        antigo.colaboradorId !== n.colaboradorId;
-      (mudou ? alteradosId : iguaisId).push({ antigo, novo: n });
-    }
-    // O que não veio do ERP (planilha, lançamento manual) segue pela regra antiga.
-    const restoExistentes = existentes.filter((p) => !ehDoMubi(p) || !casados.has(p.id));
-    const d = conciliarPorAssinatura(restoExistentes, restoNovos);
-    return {
-      iguais: [...iguaisId, ...d.iguais],
-      alterados: [...alteradosId, ...d.alterados],
-      novos: d.novos,
-      ausentes: d.ausentes,
-    };
+/**
+ * Concilia o que o ERP mandou com o que já está no sistema.
+ *
+ * `janela` são as competências que a busca realmente cobriu. Só o que está
+ * DENTRO dela pode ser dado como ausente — sem esse recorte, importar agosto
+ * listava a folha inteira de julho como "fora da planilha" e oferecia apagá-la.
+ */
+export function conciliarPagamentos(existentes: Pag[], novos: Pag[], janela?: Set<string>): DiffPagamentos {
+  const temErp = novos.some(ehDoMubi);
+  if (!temErp) return recortarAusentes(conciliarPorAssinatura(existentes, novos), janela);
+
+  // 1) CASA PELO ID DO ERP. É a identidade de verdade: mudou data, valor,
+  //    classificação ou até a pessoa, continua sendo o mesmo título.
+  const porId = new Map<string, Pag>();
+  for (const p of existentes) { const k = idMubiDe(p); if (k) porId.set(k, p); }
+
+  const iguais: { antigo: Pag; novo: Pag }[] = [];
+  const alterados: { antigo: Pag; novo: Pag }[] = [];
+  const semPar: Pag[] = [];
+  const casados = new Set<string>();
+
+  for (const n of novos) {
+    const k = idMubiDe(n);
+    const antigo = k ? porId.get(k) : undefined;
+    if (!antigo) { semPar.push(n); continue; }
+    casados.add(antigo.id);
+    (mudouAlgo(antigo, n) ? alterados : iguais).push({ antigo, novo: n });
   }
-  return conciliarPorAssinatura(existentes, novos);
+
+  // 2) ADOÇÃO: o título do ERP que ainda não tem par por id procura, entre os
+  //    registros SEM id do ERP, a mesma linha por pessoa+competência+data+valor.
+  //
+  //    É o caso da base real: 593 pagamentos vieram de planilha e nenhum tem id
+  //    do ERP. Sem esta etapa, a primeira importação casaria por assinatura, o
+  //    registro continuaria sem identidade, e na busca seguinte — bastando o ERP
+  //    corrigir um vencimento — o mesmo título entraria como novo. A duplicata
+  //    que a trava existe para impedir, no único cenário que existe hoje.
+  //
+  //    O TIPO fica de fora da comparação de propósito: a planilha e o ERP
+  //    classificam de formas diferentes (o DE_PARA do ERP nem existia quando a
+  //    planilha foi importada), e exigir tipo igual faria a adoção falhar e
+  //    duplicar tudo na primeira importação.
+  const livres = existentes.filter((p) => !ehDoMubi(p) && !casados.has(p.id));
+  const porLinha = multimap(livres, chaveSemTipo);
+  const novosFinal: Pag[] = [];
+  for (const n of semPar) {
+    const arr = porLinha.get(chaveSemTipo(n));
+    const antigo = arr && arr.length ? arr.pop()! : undefined;
+    if (!antigo) { novosFinal.push(n); continue; }
+    casados.add(antigo.id);
+    // Adotado: mantém o id do registro (não quebra referência nem sync) e passa
+    // a carregar o idMubi. Daqui para frente casa por id, não por assinatura.
+    alterados.push({ antigo, novo: { ...n, id: antigo.id } });
+  }
+
+  const ausentes = existentes.filter((p) => !casados.has(p.id));
+  return recortarAusentes({ iguais, alterados, novos: novosFinal, ausentes }, janela);
+}
+
+/** Mudou algo que precisa ser gravado? */
+function mudouAlgo(a: Pag, b: Pag): boolean {
+  return (
+    Math.round((a.valor ?? 0) * 100) !== Math.round((b.valor ?? 0) * 100) ||
+    dia10(a.dataPagamento) !== dia10(b.dataPagamento) ||
+    a.competencia !== b.competencia ||
+    a.tipo !== b.tipo ||
+    a.colaboradorId !== b.colaboradorId ||
+    idMubiDe(a) !== idMubiDe(b) ||
+    (a.descricao ?? "").trim() !== (b.descricao ?? "").trim()
+  );
+}
+
+/** Linha sem o tipo — a planilha e o ERP classificam diferente. */
+const chaveSemTipo = (p: Pag) =>
+  `${p.colaboradorId}|${p.competencia}|${dia10(p.dataPagamento)}|${Math.round((p.valor ?? 0) * 100)}`;
+
+/**
+ * "Ausente" só vale dentro da janela que a busca cobriu.
+ *
+ * Sem isto, importar um mês listava como "fora da planilha" tudo o que estava
+ * gravado nos outros meses — e o checkbox de remover, ao lado, apagaria folha
+ * boa com um clique. O contador ainda crescia a cada importação, treinando o
+ * usuário a marcar a caixa.
+ */
+function recortarAusentes(d: DiffPagamentos, janela?: Set<string>): DiffPagamentos {
+  if (!janela) return d;
+  return { ...d, ausentes: d.ausentes.filter((p) => janela.has(p.competencia)) };
 }
 
 /** Regra da PLANILHA: sem id estável, a identidade é a assinatura da linha. */

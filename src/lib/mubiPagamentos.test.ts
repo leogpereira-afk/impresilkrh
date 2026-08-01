@@ -207,53 +207,118 @@ describe("ERP: o mesmo título nunca vira dois lançamentos", () => {
   void colab;
 });
 
-describe("sugerirSalarios", () => {
-  const colabs = [
-    { id: "c1", nome: "Adriano Pinheiro Lima", salario: 2000 } as Colaborador,
-    { id: "c2", nome: "Karen Luiza Rodrigues Duarte" } as Colaborador, // sem salário
-  ];
+describe("sugerirSalarios — só para quem está SEM salário", () => {
+  const comSalario = { id: "c1", nome: "Adriano Pinheiro Lima", salario: 2000 } as Colaborador;
+  const semSalario = { id: "c2", nome: "Karen Luiza Rodrigues Duarte" } as Colaborador;
+  const direcao = { id: "c3", nome: "Maria Inês", ehDirecao: true } as Colaborador;
+  const colabs = [comSalario, semSalario, direcao];
+  const HOJE = new Date(2026, 7, 15); // 15/08/2026 — competência corrente é 2026-08
 
-  it("soma salário + adiantamento da mesma competência", () => {
-    const s = sugerirSalarios([
-      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Adiantamento", valor: 800, dataVencimento: "2026-07-20" }),
-      linha("Adriano Pinheiro Lima", { idMubi: "2", tipo: "Salário", valor: 1400, dataVencimento: "2026-08-05" }),
-    ], colabs, {});
+  const mes = (nome: string, comp: { adiantamento?: number; saldo?: number }, venc = "2026-07-20") => {
+    const out: LinhaMubi[] = [];
+    if (comp.adiantamento) out.push(linha(nome, { idMubi: `a-${nome}`, tipo: "Adiantamento", valor: comp.adiantamento, dataVencimento: venc }));
+    if (comp.saldo) out.push(linha(nome, { idMubi: `s-${nome}`, tipo: "Salário", valor: comp.saldo, dataVencimento: venc }));
+    return out;
+  };
+
+  it("NÃO sugere para quem já tem salário — o pago é líquido e rebaixaria o cadastro", () => {
+    const s = sugerirSalarios(mes("Adriano Pinheiro Lima", { adiantamento: 700, saldo: 1100 }), colabs, {}, HOJE);
+    expect(s).toHaveLength(0);
+  });
+
+  it("sugere para quem está sem salário, somando adiantamento + saldo", () => {
+    const s = sugerirSalarios(mes("Karen Luiza Rodrigues Duarte", { adiantamento: 600, saldo: 1000 }), colabs, {}, HOJE);
     expect(s).toHaveLength(1);
-    expect(s[0].sugerido).toBe(2200);
-    expect(s[0].atual).toBe(2000);
-    expect(s[0].diferencaPct).toBe(10);
+    expect(s[0].sugerido).toBe(1600);
+    expect(s[0].completo).toBe(true);
   });
 
-  it("quem está SEM salário no cadastro vem primeiro", () => {
-    const s = sugerirSalarios([
-      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Salário", valor: 2000, dataVencimento: "2026-07-20" }),
-      linha("Karen Luiza Rodrigues Duarte", { idMubi: "2", tipo: "Salário", valor: 1600, dataVencimento: "2026-07-20" }),
-    ], colabs, {});
-    expect(s[0].colaborador.id).toBe("c2");
-    expect(s[0].semSalario).toBe(true);
+  it("mês com só uma das pernas é marcado como INCOMPLETO (metade do salário)", () => {
+    const s = sugerirSalarios(mes("Karen Luiza Rodrigues Duarte", { adiantamento: 600 }), colabs, {}, HOJE);
+    expect(s[0].completo).toBe(false);
   });
 
-  it("usa a competência MAIS RECENTE, não a mais antiga", () => {
+  it("prefere o mês completo ao mês pela metade, mesmo sendo mais antigo", () => {
     const s = sugerirSalarios([
-      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Salário", valor: 1500, dataVencimento: "2026-03-20" }),
-      linha("Adriano Pinheiro Lima", { idMubi: "2", tipo: "Salário", valor: 2500, dataVencimento: "2026-07-20" }),
-    ], colabs, {});
-    expect(s[0].sugerido).toBe(2500);
+      ...mes("Karen Luiza Rodrigues Duarte", { adiantamento: 600, saldo: 1000 }, "2026-06-20"),
+      linha("Karen Luiza Rodrigues Duarte", { idMubi: "x", tipo: "Adiantamento", valor: 600, dataVencimento: "2026-07-20" }),
+    ], colabs, {}, HOJE);
+    expect(s[0].completo).toBe(true);
+    expect(s[0].sugerido).toBe(1600);
+  });
+
+  it("ignora a competência corrente, que ainda não fechou", () => {
+    // 20/08 cai na competência 2026-08, a corrente em 15/08.
+    const s = sugerirSalarios(mes("Karen Luiza Rodrigues Duarte", { adiantamento: 600, saldo: 1000 }, "2026-08-20"), colabs, {}, HOJE);
+    expect(s).toHaveLength(0);
+  });
+
+  it("ignora direção", () => {
+    const s = sugerirSalarios(mes("Maria Inês", { adiantamento: 5000, saldo: 5000 }), colabs, {}, HOJE);
+    expect(s).toHaveLength(0);
   });
 
   it("ignora férias, 13º e rescisão — não são salário mensal", () => {
     const s = sugerirSalarios([
-      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Férias", valor: 3000, dataVencimento: "2026-07-20" }),
-      linha("Adriano Pinheiro Lima", { idMubi: "2", tipo: "13º Salário", valor: 2000, dataVencimento: "2026-07-20" }),
-      linha("Adriano Pinheiro Lima", { idMubi: "3", tipo: "Rescisão", valor: 5000, dataVencimento: "2026-07-20" }),
-    ], colabs, {});
+      linha("Karen Luiza Rodrigues Duarte", { idMubi: "1", tipo: "Férias", valor: 3000, dataVencimento: "2026-07-20" }),
+      linha("Karen Luiza Rodrigues Duarte", { idMubi: "2", tipo: "13º Salário", valor: 2000, dataVencimento: "2026-07-20" }),
+      linha("Karen Luiza Rodrigues Duarte", { idMubi: "3", tipo: "Rescisão", valor: 5000, dataVencimento: "2026-07-20" }),
+    ], colabs, {}, HOJE);
     expect(s).toHaveLength(0);
   });
 
   it("nome que não casa com ninguém não vira sugestão", () => {
-    const s = sugerirSalarios([
-      linha("Fulano Que Nao Existe", { idMubi: "1", tipo: "Salário", valor: 2000, dataVencimento: "2026-07-20" }),
-    ], colabs, {});
+    const s = sugerirSalarios(mes("Fulano Que Nao Existe", { adiantamento: 600, saldo: 1000 }), colabs, {}, HOJE);
     expect(s).toHaveLength(0);
+  });
+});
+
+describe("adoção do id do ERP pelos lançamentos que já existem", () => {
+  const colab = [{ id: "c1", nome: "Adriano Pinheiro Lima" } as Colaborador];
+  void colab;
+
+  it("linha de PLANILHA adota o idMubi no primeiro encontro — e a 2ª busca não duplica", () => {
+    // A base real: 593 pagamentos de planilha, nenhum com id do ERP.
+    const daPlanilha = {
+      id: "pg_up_abc", colaboradorId: "c1", competencia: "2026-07", tipo: "Salário",
+      valor: 1000, dataPagamento: "2026-07-20",
+    } as Pagamento;
+    const doErp = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "500", valor: 1000, dataVencimento: "2026-07-20" }), "c1");
+
+    // 1ª busca: casa por assinatura e ADOTA o id (mantendo a chave do registro).
+    const d1 = conciliarPagamentos([daPlanilha], [doErp], new Set(["2026-07"]));
+    expect(d1.novos).toHaveLength(0);
+    expect(d1.alterados).toHaveLength(1);
+    expect(d1.alterados[0].antigo.id).toBe("pg_up_abc");
+    expect(d1.alterados[0].novo.idMubi).toBe("500");
+
+    // Depois de aplicar, o registro carrega o idMubi.
+    const adotado = { ...daPlanilha, idMubi: "500" } as Pagamento;
+
+    // 2ª busca com o vencimento CORRIGIDO: antes isso duplicava.
+    const corrigido = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "500", valor: 1000, dataVencimento: "2026-07-22" }), "c1");
+    const d2 = conciliarPagamentos([adotado], [corrigido], new Set(["2026-07"]));
+    expect(d2.novos).toHaveLength(0);
+    expect(d2.alterados).toHaveLength(1);
+  });
+
+  it("a adoção ignora o TIPO: planilha e ERP classificam diferente", () => {
+    const daPlanilha = {
+      id: "pg_up_x", colaboradorId: "c1", competencia: "2026-07", tipo: "Salário",
+      valor: 800, dataPagamento: "2026-07-20",
+    } as Pagamento;
+    // O ERP classifica o mesmo título como "Adiantamento".
+    const doErp = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "600", tipo: "Adiantamento", valor: 800, dataVencimento: "2026-07-20" }), "c1");
+    const d = conciliarPagamentos([daPlanilha], [doErp], new Set(["2026-07"]));
+    expect(d.novos).toHaveLength(0);
+    expect(d.alterados).toHaveLength(1);
+  });
+
+  it("importar AGOSTO não marca a folha de julho como ausente", () => {
+    const julho = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "700", dataVencimento: "2026-07-20" }), "c1");
+    const agosto = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "800", dataVencimento: "2026-08-20" }), "c1");
+    const d = conciliarPagamentos([julho], [agosto], new Set([agosto.competencia]));
+    expect(d.novos).toHaveLength(1);
+    expect(d.ausentes).toHaveLength(0); // julho está fora da janela buscada
   });
 });
