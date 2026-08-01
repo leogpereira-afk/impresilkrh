@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Briefcase, Plus, Pencil, Trash2, Users, ChevronDown, ChevronRight,
-  ExternalLink, Paperclip, Upload, Mail, Phone, Trophy,
-} from "lucide-react";
+  ExternalLink, Paperclip, Upload, Mail, Phone, Trophy, Megaphone } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -14,6 +14,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { LinkFicha } from "@/components/ui/link-ficha";
+import { GeradorAnuncio } from "@/components/vagas/gerador-anuncio";
 import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
@@ -45,6 +46,7 @@ export default function Vagas() {
 
   const [formVaga, setFormVaga] = useState<Vaga | "nova" | null>(null);
   const [vagaExcluir, setVagaExcluir] = useState<Vaga | null>(null);
+  const [anuncio, setAnuncio] = useState<Vaga | null>(null);
   const [formCand, setFormCand] = useState<{ vagaId: string; cand: Candidato | null } | null>(null);
   const [candExcluir, setCandExcluir] = useState<Candidato | null>(null);
   const [abertas, setAbertas] = useState<Set<string>>(() => new Set(vagas.filter((v) => v.status === "Aberta").map((v) => v.id)));
@@ -159,14 +161,15 @@ export default function Vagas() {
                   </button>
                   <Badge variant={corStatus(v.status)}>{v.status}</Badge>
                   {v.divulgacaoInterna && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700" title="Em disputa interna no Mural de Vagas">
+                    <Link to="/mural-vagas" className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100" title="Ver como esta vaga aparece no Mural de Vagas">
                       <Trophy className="h-3.5 w-3.5" /> No mural
-                    </span>
+                    </Link>
                   )}
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                     <Users className="h-3.5 w-3.5" /> {lista.length}
                   </span>
                   <div className="flex shrink-0 gap-0.5">
+                    <button onClick={() => setAnuncio(v)} title="Gerar anúncio para divulgar esta vaga" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand"><Megaphone className="h-4 w-4" /></button>
                     <button onClick={() => setFormVaga(v)} title="Editar vaga" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand"><Pencil className="h-4 w-4" /></button>
                     <button onClick={() => setVagaExcluir(v)} title="Remover vaga" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
                   </div>
@@ -279,6 +282,8 @@ export default function Vagas() {
           })}
         </div>
       )}
+
+      {anuncio && <GeradorAnuncio vaga={anuncio} onFechar={() => setAnuncio(null)} />}
 
       {formVaga && (
         <VagaForm

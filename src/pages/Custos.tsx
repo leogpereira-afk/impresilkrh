@@ -51,8 +51,6 @@ import {
   serieCustos,
   CLASSE_LABEL,
   parsePlanoContas,
-  parsePagamentos,
-  parseComissoesPorNome,
   conciliarPagamentos,
   ehDoMubi,
   ehContaConfidencial,
@@ -142,17 +140,13 @@ export default function Custos() {
 
   // ---------- Uploads ----------
   const refPlano = useRef<HTMLInputElement>(null);
-  const refPagts = useRef<HTMLInputElement>(null);
   const hojeIso = new Date().toISOString().slice(0, 7);
   const [compUpload, setCompUpload] = useState<string>(ultimaComp || hojeIso);
   // Importação avulsa de comissões, casando por NOME (caso à parte)
-  const refComissoesNome = useRef<HTMLInputElement>(null);
-  const [comissoesPrev, setComissoesPrev] = useState<{ registros: Pagamento[]; naoCasados: string[]; total: number } | null>(null);
   // Prévia de conciliação da folha (subir a mesma planilha: mexe só no diferente).
   const [folhaPrev, setFolhaPrev] = useState<{
     diff: DiffPagamentos;
     naoCasados: string[];
-    cpfsAprendidos: { colaboradorId: string; cpf: string }[];
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
@@ -234,7 +228,7 @@ export default function Custos() {
     setRemoverAusentes(false);
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
-      naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
+      naoCasados, totalLinhas: registros.length,
       mubi: { linhas: r.linhas, coletivas, truncado: r.truncado },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
@@ -360,37 +354,18 @@ export default function Custos() {
     setSalariosMarcados(new Set());
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
-      naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
+      naoCasados, totalLinhas: registros.length,
       mubi: { ...folhaPrev.mubi, coletivas },
     });
   };
 
   // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
   // mesma planilha de novo mostra o que é igual, o que mudou e o que é novo.
-  const importarPagamentos = async (file: File) => {
-    setSalarios([]); setSalariosMarcados(new Set()); // planilha não traz salário
-    try {
-      const linhas = await lerPlanilha(file);
-      const { registros, naoCasados, cpfsAprendidos } = parsePagamentos(linhas, d.colaboradores);
-      if (registros.length === 0) {
-        toast("Nenhum pagamento reconhecido na planilha.", "erro");
-        return;
-      }
-      const compsImportadas = new Set(registros.map((r: Pagamento) => r.competencia));
-      const existentesDaComp = pagamentos.filter((p: Pagamento) => compsImportadas.has(p.competencia));
-      const diff = conciliarPagamentos(existentesDaComp, registros);
-      setRemoverAusentes(false);
-      setFolhaPrev({ diff, naoCasados, cpfsAprendidos, totalLinhas: registros.length });
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
-    }
-  };
-
   // Aplica a prévia: mexe SÓ no que mudou (corrige valores, insere novos, atualiza
   // descrições) e, opcionalmente, remove os ausentes. Iguais sem mudança não são tocados.
   const aplicarFolha = () => {
     if (!folhaPrev) return;
-    const { diff, cpfsAprendidos } = folhaPrev;
+    const { diff } = folhaPrev;
     const nd = (s?: string) => (s ?? "").trim();
     // Linhas iguais (mesmo valor) cuja DESCRIÇÃO mudou — atualiza só o texto.
     let descAtualizadas = 0;
@@ -429,19 +404,7 @@ export default function Custos() {
     if (podeRemover) {
       for (const a of diff.ausentes) pagamentosColecao.remover(a.id);
     }
-    // Preenche o CPF no cadastro (só onde está vazio).
-    let cpfsPreenchidos = 0;
-    if (cpfsAprendidos.length) {
-      const mapa = new Map(cpfsAprendidos.map((x) => [x.colaboradorId, x.cpf]));
-      const atualizados = colaboradoresColecao.items.map((c) => {
-        const cpf = mapa.get(c.id);
-        if (cpf && !c.cpf) { cpfsPreenchidos++; return { ...c, cpf }; }
-        return c;
-      });
-      if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
-    }
     const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (podeRemover ? diff.ausentes.length : 0);
-    const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
     // Salários marcados — só o que está na lista da tela (marca órfã não conta).
     const aplicaveis = salarios.filter((x) => salariosMarcados.has(x.colaborador.id));
     for (const sug of aplicaveis) {
@@ -452,36 +415,11 @@ export default function Custos() {
     // no mesmo clique em que salários eram gravados.
     toast(
       mexeu === 0
-        ? `Folha já estava igual — nada a alterar.${parteSalario}${avisoCpf}`
-        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${parteSalario}${avisoCpf}`,
+        ? `Folha já estava igual — nada a alterar.${parteSalario}`
+        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${parteSalario}`,
       "sucesso",
     );
     fecharPrevia();
-  };
-
-  // Comissões avulsas (casadas por NOME): lê e abre a prévia.
-  const abrirComissoesNome = async (file: File) => {
-    try {
-      const linhas = await lerPlanilha(file);
-      const res = parseComissoesPorNome(linhas, d.colaboradores);
-      if (res.registros.length === 0 && res.naoCasados.length === 0) { toast("Nenhuma comissão reconhecida na planilha.", "erro"); return; }
-      setComissoesPrev(res);
-    } catch (e) { toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro"); }
-  };
-  // Aplica: substitui as comissões das competências afetadas e insere as novas.
-  const aplicarComissoesNome = () => {
-    if (!comissoesPrev) return;
-    const comps = new Set(comissoesPrev.registros.map((r) => r.competencia));
-    const novosIds = new Set(comissoesPrev.registros.map((r) => r.id));
-    const removidos = pagamentos.filter((p: Pagamento) => p.tipo === "Comissão" && comps.has(p.competencia) && !novosIds.has(p.id)).map((p: Pagamento) => p.id);
-    pagamentosColecao.definir([
-      ...pagamentos.filter((p: Pagamento) => !(p.tipo === "Comissão" && comps.has(p.competencia))),
-      ...comissoesPrev.registros,
-    ]);
-    apagarRegistrosNuvem("pagamentos", removidos); // lápide nos antigos (não voltam da nuvem)
-    void enviarColecao("pagamentos"); // sobe pra nuvem na hora
-    toast(`${comissoesPrev.registros.length} comissão(ões) lançada(s) — já somam nos totais.`);
-    setComissoesPrev(null);
   };
 
   // ---------- Seção 1: custo individual por colaborador ----------
@@ -801,101 +739,9 @@ export default function Custos() {
               <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{erroMubi}</p>
             )}
 
-            {/* A FONTE AGORA É O ERP. A planilha fica como saída de emergência
-                (ERP fora do ar) e para o que for anterior ao que ele guarda —
-                por isso continua funcionando, mas recolhida e rotulada como o
-                caminho antigo, para ninguém usar por engano no dia a dia. */}
-            <details className="text-xs text-slate-500">
-              <summary className="cursor-pointer hover:text-brand">Caminho antigo: enviar planilha (.xlsx/.csv)</summary>
-              <div className="mt-2 space-y-2">
-                <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-                  A folha passou a vir do Mubisys. Use a planilha só se o ERP estiver indisponível —
-                  o que vier por aqui não tem o id do título e não se reconcilia sozinho depois.
-                </p>
-                <input
-                  ref={refPagts}
-                  type="file"
-                  accept=".xlsx,.csv"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) importarPagamentos(f);
-                    e.target.value = "";
-                  }}
-                />
-                <button className="btn-outline" onClick={() => refPagts.current?.click()}>
-                  <Upload className="h-4 w-4" /> Enviar planilha
-                </button>
-              </div>
-            </details>
           </CardBody>
         </Card>
       </div>
-
-      {/* Comissões avulsas — caso à parte, casado por NOME (some na soma total) */}
-      <Card className="mb-6">
-        <CardHeader
-          title="Comissões (por nome)"
-          subtitle="Importa só as comissões de uma planilha (formato Resultado), casando por nome. Para um caso pontual — o fluxo normal segue por CPF."
-          icon={<Coins className="h-5 w-5" />}
-        />
-        <CardBody>
-          <input ref={refComissoesNome} type="file" accept=".xlsx,.csv" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) abrirComissoesNome(f); e.target.value = ""; }} />
-          <button className="btn-outline" onClick={() => refComissoesNome.current?.click()}>
-            <Upload className="h-4 w-4" /> Importar comissões (por nome)
-          </button>
-        </CardBody>
-      </Card>
-
-      {comissoesPrev && (
-        <Modal
-          aberto
-          onFechar={() => setComissoesPrev(null)}
-          titulo="Comissões a lançar"
-          descricao="Casadas por nome. Só as que casarem serão lançadas; as competências afetadas têm a comissão substituída."
-          largura="max-w-lg"
-          rodape={<>
-            <button className="btn-outline" onClick={() => setComissoesPrev(null)}>Cancelar</button>
-            <button className="btn-primary disabled:opacity-50" disabled={comissoesPrev.registros.length === 0} onClick={aplicarComissoesNome}>
-              <Coins className="h-4 w-4" /> Lançar {comissoesPrev.registros.length}
-            </button>
-          </>}
-        >
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
-              <span className="font-medium text-green-700">{comissoesPrev.registros.length} casaram</span>
-              <span className="text-slate-400">·</span>
-              <span className="font-medium text-amber-700">{comissoesPrev.naoCasados.length} sem match</span>
-              <span className="ml-auto font-semibold text-brand-ink">Total: {formatBRL(comissoesPrev.total)}</span>
-            </div>
-            {comissoesPrev.registros.length > 0 && (
-              <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50"><tr><th className="th">Colaborador</th><th className="th">Competência</th><th className="th text-right">Valor</th></tr></thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {comissoesPrev.registros.map((r) => (
-                      <tr key={r.id}>
-                        <td className="td font-medium text-slate-700">{d.nomeColab(r.colaboradorId)}</td>
-                        <td className="td text-slate-500">{compLabel(r.competencia)}</td>
-                        <td className="td text-right tabular-nums">{formatBRL(r.valor)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {comissoesPrev.naoCasados.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3">
-                <p className="mb-1.5 text-xs font-semibold text-amber-800">Não encontrados (não serão lançados):</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {comissoesPrev.naoCasados.map((n, i) => <span key={i} className="rounded-full bg-white px-2.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200">{n}</span>)}
-                </div>
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
 
       {folhaPrev && (() => {
         const { diff, naoCasados } = folhaPrev;
