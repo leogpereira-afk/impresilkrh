@@ -22,6 +22,24 @@ export function competenciasPlano(plano: ContaPlano[]): string[] {
   return [...new Set(plano.map((p) => p.competencia))].sort();
 }
 
+/**
+ * Meses que a tela pode mostrar: os do plano de contas MAIS os que têm folha.
+ *
+ * A lista vinha só do plano de contas, e o plano é uma planilha que o contador
+ * manda depois do mês fechado. Resultado real em 01/08/2026: a base tinha
+ * pagamento de agosto/2025 a julho/2026 e o seletor só oferecia janeiro a junho
+ * — sete competências de folha, incluindo o mês corrente, eram invisíveis. Quem
+ * olhava concluía que o dado não tinha entrado.
+ */
+export function competenciasComDados(
+  plano: ContaPlano[],
+  pagamentos: { competencia: string }[],
+): string[] {
+  const s = new Set<string>(plano.map((p) => p.competencia));
+  for (const p of pagamentos) if (p.competencia) s.add(p.competencia);
+  return [...s].sort();
+}
+
 // "2026-05" -> "Mai/2026"
 export function compLabel(comp: string): string {
   const [y, m] = comp.split("-").map(Number);
@@ -434,6 +452,108 @@ export function parseComissoesPorNome(
     registros.push({ id: `cm_${lote}_${++seq}`, colaboradorId: id, competencia: competenciaPagto(venc), tipo: "Comissão", valor: v2, dataPagamento: venc });
   }
   return { registros, naoCasados: [...naoCasados], total: Math.round(total * 100) / 100 };
+}
+
+// ===================== Conferência da competência =====================
+//
+// Por que existe: em 01/08/2026 julho apareceu com os 27 adiantamentos e NENHUM
+// salário, e a tela mostrou o mês pela metade sem dizer por quê — parecia dado
+// perdido. Não era. O salário de uma competência vence no início do mês
+// SEGUINTE (dias 5 a 7 nas últimas doze), então o mês corrente sempre parece
+// incompleto até o ERP lançar a folha.
+//
+// A janela da competência vai do dia 16 do mês anterior ao dia 15 do seguinte —
+// a mesma regra de `competenciaPagto` aqui e de `janelaDaCompetencia` na Edge
+// Function. Antes de a janela fechar, salário faltando é ESPERA; depois dela é
+// buraco de verdade, e aí a varredura do histórico é o conserto.
+//
+// O sinal escolhido é por pessoa, não estatístico: quem recebeu ADIANTAMENTO e
+// não tem salário na mesma competência. Adiantamento é a primeira metade do
+// salário — se ele saiu, a segunda metade existe. Comparar com a média dos
+// meses anteriores daria alarme falso em mês de admissão e demissão.
+
+export type EstadoCompetencia = "completa" | "aguardando" | "incompleta";
+
+export interface DiagnosticoCompetencia {
+  estado: EstadoCompetencia;
+  titulo: string;
+  detalhe: string;
+  /** Quem recebeu adiantamento na competência e ficou sem salário nenhum. */
+  semSalario: { id: string; nome: string }[];
+}
+
+// Rescisão faz as vezes de salário: quem foi desligado no mês recebe ela no
+// lugar, e cobrar salário dessa pessoa seria alarme falso.
+const CONTA_COMO_SALARIO = ["Salário", "Rescisão"];
+
+/** Último dia em que um título ainda cai nesta competência (dia 15 do mês seguinte). */
+export function fimDaCompetencia(comp: string): Date | null {
+  const [ano, mes] = comp.split("-").map(Number);
+  if (!ano || !mes || mes < 1 || mes > 12) return null;
+  return new Date(ano, mes, 15);
+}
+
+/** Quando o salário desta competência costuma cair (início do mês seguinte). */
+export function previsaoDoSalario(comp: string): Date | null {
+  const [ano, mes] = comp.split("-").map(Number);
+  if (!ano || !mes || mes < 1 || mes > 12) return null;
+  return new Date(ano, mes, 5);
+}
+
+const ddmm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+export function conferirCompetencia(
+  comp: string,
+  pagamentos: Pag[],
+  pessoas: { id: string; nome: string }[],
+  hoje: Date = new Date(),
+): DiagnosticoCompetencia {
+  const nada: DiagnosticoCompetencia = { estado: "completa", titulo: "", detalhe: "", semSalario: [] };
+  const fim = fimDaCompetencia(comp);
+  const previsao = previsaoDoSalario(comp);
+  if (!fim || !previsao) return nada;
+
+  const doMes = pagamentos.filter((p) => p.competencia === comp);
+  if (doMes.length === 0) return nada; // o "sem pagamentos neste mês" da tela já fala por si
+
+  // Comparação por DIA, no fuso local: usar a hora corrente faria a competência
+  // "fechar" no meio do próprio dia 15.
+  const hojeDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).getTime();
+  const janelaAberta = hojeDia <= fim.getTime();
+
+  const comSalario = new Set(doMes.filter((p) => CONTA_COMO_SALARIO.includes(p.tipo)).map((p) => p.colaboradorId));
+  const comAdiantamento = new Set(doMes.filter((p) => p.tipo === "Adiantamento").map((p) => p.colaboradorId));
+  const nomePorId = new Map(pessoas.map((p) => [p.id, p.nome]));
+  const semSalario = [...comAdiantamento]
+    .filter((id) => !comSalario.has(id))
+    .map((id) => ({ id, nome: nomePorId.get(id) ?? "(fora do cadastro)" }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+
+  if (semSalario.length === 0) return nada;
+
+  const folhaInteira = comSalario.size === 0; // ninguém: é a folha toda que não foi lançada
+
+  if (janelaAberta) {
+    return {
+      estado: "aguardando",
+      titulo: folhaInteira
+        ? "O salário desta competência ainda não foi lançado no ERP"
+        : `${semSalario.length} ${semSalario.length === 1 ? "pessoa ainda está" : "pessoas ainda estão"} sem salário nesta competência`,
+      detalhe: folhaInteira
+        ? `Os ${comAdiantamento.size} adiantamentos já entraram. O salário de ${compLabelLongo(comp)} vence por volta de ${ddmm(previsao)} e só existe no Mubisys na semana do pagamento — por isso o mês aparece pela metade. Não falta dado: falta a data chegar.`
+        : `A folha de ${compLabelLongo(comp)} ainda está sendo lançada — a competência só fecha em ${ddmm(fim)}. Quem já tem salário aparece normalmente.`,
+      semSalario,
+    };
+  }
+
+  return {
+    estado: "incompleta",
+    titulo: folhaInteira
+      ? "Esta competência não tem nenhum salário lançado"
+      : `${semSalario.length} ${semSalario.length === 1 ? "pessoa recebeu adiantamento e não tem" : "pessoas receberam adiantamento e não têm"} salário`,
+    detalhe: `A competência fechou em ${ddmm(fim)} e ${folhaInteira ? "não há um único salário nela" : "essas pessoas ficaram só com o adiantamento"}. Use "Puxar histórico" para trazer o que faltou do Mubisys; se continuar faltando depois disso, o título existe no ERP em outro nome ou com outro CPF e aparece na lista de não encontrados.`,
+    semSalario,
+  };
 }
 
 // ---- Reuso para importadores por nome (comissões das vendedoras, limpeza) ----

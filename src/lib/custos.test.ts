@@ -2,7 +2,7 @@
 // (R$ 62.576,49) quando a mesma planilha subiu duas vezes. A regra de subir de
 // novo sem duplicar fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { conciliarPagamentos, classificarPagamento } from "./custos";
+import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados } from "./custos";
 import type { Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> = {}): Pagamento =>
@@ -83,5 +83,87 @@ describe("classificarPagamento", () => {
 
   it("o que não reconhece cai em Outros (nunca some da conta)", () => {
     expect(classificarPagamento("", "xyz coisa estranha")).toBe("Outros");
+  });
+});
+
+// A tela mostrava julho/2026 com 27 adiantamentos e zero salário sem explicar
+// nada, e parecia dado perdido — era só o salário que ainda não tinha vencido.
+// Estes testes travam a diferença entre "ainda não chegou a data" e "faltou".
+describe("conferirCompetencia", () => {
+  const pessoas = [
+    { id: "joao", nome: "João Silva" },
+    { id: "maria", nome: "Maria Souza" },
+    { id: "ana", nome: "Ana Lima" },
+  ];
+  const adiant = (cid: string, comp = "2026-07") => pg({ colaboradorId: cid, competencia: comp, tipo: "Adiantamento", valor: 800 });
+  const salario = (cid: string, comp = "2026-07") => pg({ colaboradorId: cid, competencia: comp, tipo: "Salário", valor: 1600 });
+
+  it("mês corrente sem salário é ESPERA, não buraco (o caso de julho/2026)", () => {
+    const pags = [adiant("joao"), adiant("maria"), adiant("ana")];
+    // 01/08: a competência de julho só fecha em 15/08
+    const r = conferirCompetencia("2026-07", pags, pessoas, new Date(2026, 7, 1));
+    expect(r.estado).toBe("aguardando");
+    expect(r.detalhe).toContain("05/08");
+    expect(r.semSalario).toHaveLength(3);
+  });
+
+  it("depois de a competência fechar, o mesmo mês vira INCOMPLETO", () => {
+    const pags = [adiant("joao"), adiant("maria"), adiant("ana")];
+    const r = conferirCompetencia("2026-07", pags, pessoas, new Date(2026, 7, 16));
+    expect(r.estado).toBe("incompleta");
+    expect(r.titulo).toContain("nenhum salário");
+  });
+
+  it("o dia 15 ainda é janela aberta (não fecha no meio do próprio dia)", () => {
+    const r = conferirCompetencia("2026-07", [adiant("joao")], pessoas, new Date(2026, 7, 15, 23, 59));
+    expect(r.estado).toBe("aguardando");
+  });
+
+  it("mês completo não avisa nada", () => {
+    const pags = [adiant("joao"), salario("joao"), adiant("maria"), salario("maria")];
+    const r = conferirCompetencia("2026-07", pags, pessoas, new Date(2026, 7, 20));
+    expect(r.estado).toBe("completa");
+    expect(r.semSalario).toHaveLength(0);
+  });
+
+  it("aponta pelo NOME quem ficou só com adiantamento", () => {
+    const pags = [adiant("joao"), salario("joao"), adiant("maria"), adiant("ana")];
+    const r = conferirCompetencia("2026-07", pags, pessoas, new Date(2026, 7, 20));
+    expect(r.estado).toBe("incompleta");
+    expect(r.semSalario.map((s) => s.nome)).toEqual(["Ana Lima", "Maria Souza"]);
+  });
+
+  it("rescisão conta como salário do mês — desligado não vira alarme falso", () => {
+    const pags = [adiant("joao"), pg({ colaboradorId: "joao", competencia: "2026-07", tipo: "Rescisão", valor: 3000 })];
+    const r = conferirCompetencia("2026-07", pags, pessoas, new Date(2026, 7, 20));
+    expect(r.estado).toBe("completa");
+  });
+
+  it("salário sem adiantamento é normal (admissão no meio do mês) e não avisa", () => {
+    const r = conferirCompetencia("2026-07", [salario("ana")], pessoas, new Date(2026, 7, 20));
+    expect(r.estado).toBe("completa");
+  });
+
+  it("competência sem nenhum pagamento não inventa aviso", () => {
+    const r = conferirCompetencia("2026-07", [adiant("joao", "2026-06")], pessoas, new Date(2026, 7, 20));
+    expect(r.estado).toBe("completa");
+  });
+
+  it("competência inválida não quebra", () => {
+    expect(conferirCompetencia("", [adiant("joao")], pessoas).estado).toBe("completa");
+    expect(conferirCompetencia("2026-13", [adiant("joao")], pessoas).estado).toBe("completa");
+  });
+});
+
+describe("competenciasComDados", () => {
+  const conta = (competencia: string) => ({ competencia }) as never;
+
+  it("mostra o mês que tem folha mas ainda não tem plano de contas", () => {
+    const r = competenciasComDados([conta("2026-06")], [{ competencia: "2026-07" }, { competencia: "2025-08" }]);
+    expect(r).toEqual(["2025-08", "2026-06", "2026-07"]);
+  });
+
+  it("não repete o mês que existe nos dois", () => {
+    expect(competenciasComDados([conta("2026-06")], [{ competencia: "2026-06" }])).toEqual(["2026-06"]);
   });
 });

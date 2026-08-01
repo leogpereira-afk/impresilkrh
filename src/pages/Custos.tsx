@@ -20,7 +20,7 @@ import {
   ChevronRight,
   CalendarDays,
   RefreshCw,
-  Clock, History } from "lucide-react";
+  Clock, History, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
@@ -44,6 +44,8 @@ import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRe
 import {
   classeMap,
   competenciasPlano,
+  competenciasComDados,
+  conferirCompetencia,
   compLabel,
   compLabelLongo,
   folhasDoMes,
@@ -96,7 +98,10 @@ export default function Custos() {
   const pagamentos = pagamentosColecao.items;
 
   // ---------- Estado (hooks SEMPRE antes de qualquer return) ----------
-  const competencias = useMemo(() => competenciasPlano(planoContas), [planoContas]);
+  // Meses do plano de contas MAIS os meses que têm folha: o plano é planilha do
+  // contador e chega depois, então o mês corrente (e todo mês ainda não fechado
+  // por ele) ficava fora do seletor com a folha já lançada dentro.
+  const competencias = useMemo(() => competenciasComDados(planoContas, pagamentos), [planoContas, pagamentos]);
   const ultimaComp = competencias[competencias.length - 1] ?? "";
   const [comp, setComp] = useState<string>(ultimaComp);
 
@@ -466,6 +471,19 @@ export default function Custos() {
         .filter((c): c is Colaborador => !!c)
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     [pagsDoMes, d.colabById],
+  );
+  // Conferência do mês: a folha desta competência está inteira, ainda está
+  // chegando, ou faltou gente? Sem isso o mês corrente aparecia pela metade sem
+  // dizer que o salário só vence no mês seguinte.
+  const conferencia = useMemo(
+    () => conferirCompetencia(compAtiva, pagamentos, d.colaboradores),
+    [compAtiva, pagamentos, d.colaboradores],
+  );
+  // Mês que tem folha mas ainda não tem a planilha do contador: o rateio e os
+  // encargos ficam zerados e isso precisa estar escrito, não deduzido.
+  const semPlanoNaComp = useMemo(
+    () => pagsDoMes.length > 0 && !planoContas.some((p: ContaPlano) => p.competencia === compAtiva),
+    [pagsDoMes, planoContas, compAtiva],
   );
   // No modo "Só Salário" excluímos o tipo "Adiantamento" (a soma não duplica).
   const linhasConsideradas = useMemo(
@@ -1089,6 +1107,110 @@ export default function Custos() {
                 }
               />
               <CardBody>
+                {/* Conferência do mês. O buraco que existia aqui: julho/2026
+                    aparecia com 27 adiantamentos e nenhum salário, e a tela não
+                    dizia se aquilo era espera ou perda. */}
+                {conferencia.estado !== "completa" && (
+                  <div
+                    className={
+                      "mb-4 rounded-xl border p-3 " +
+                      (conferencia.estado === "incompleta"
+                        ? "border-amber-200 bg-amber-50/60"
+                        : "border-sky-200 bg-sky-50/60")
+                    }
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {conferencia.estado === "incompleta" ? (
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      ) : (
+                        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className={"text-sm font-semibold " + (conferencia.estado === "incompleta" ? "text-amber-900" : "text-sky-900")}>
+                          {conferencia.titulo}
+                        </p>
+                        <p className={"mt-0.5 text-xs " + (conferencia.estado === "incompleta" ? "text-amber-800" : "text-sky-800")}>
+                          {conferencia.detalhe}
+                        </p>
+                        {/* Nome, não contagem: "3 pessoas" não diz a quem ir
+                            perguntar. Até 8, cada nome abre a ficha; acima
+                            disso vira um clique só, senão o aviso vira parede
+                            de nomes justo no mês em que falta a folha toda. */}
+                        {conferencia.semSalario.length > 0 && (
+                          <p className="mt-1.5 flex flex-wrap gap-1">
+                            {conferencia.semSalario.length <= 8 ? (
+                              conferencia.semSalario.map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const c = d.colabById.get(s.id);
+                                    if (c) drill.abrir("Sem salário nesta competência", [c], compLabelLongo(compAtiva));
+                                  }}
+                                  className={
+                                    "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
+                                    (conferencia.estado === "incompleta"
+                                      ? "border-amber-300 bg-white/70 text-amber-900"
+                                      : "border-sky-300 bg-white/70 text-sky-900")
+                                  }
+                                  title="Ver a ficha"
+                                >
+                                  {s.nome}
+                                </button>
+                              ))
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  drill.abrir(
+                                    "Sem salário nesta competência",
+                                    conferencia.semSalario
+                                      .map((s) => d.colabById.get(s.id))
+                                      .filter((c): c is Colaborador => !!c),
+                                    compLabelLongo(compAtiva),
+                                  )
+                                }
+                                className={
+                                  "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
+                                  (conferencia.estado === "incompleta"
+                                    ? "border-amber-300 bg-white/70 text-amber-900"
+                                    : "border-sky-300 bg-white/70 text-sky-900")
+                                }
+                              >
+                                Ver as {conferencia.semSalario.length} pessoas
+                              </button>
+                            )}
+                          </p>
+                        )}
+                        {conferencia.estado === "incompleta" && (
+                          <button
+                            type="button"
+                            className="btn-outline mt-2 h-8 px-2.5 text-xs"
+                            onClick={() => void buscarHistorico()}
+                            disabled={buscandoMubi}
+                            title="Varre o histórico do Mubisys e mostra a prévia antes de gravar"
+                          >
+                            <History className="h-3.5 w-3.5" /> Puxar histórico do ERP
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Folha lançada antes de o contador mandar a planilha do mês:
+                    o rateio e os encargos ficam em zero e isso tem de estar
+                    escrito — zero sem explicação passa por número real. */}
+                {semPlanoNaComp && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p className="text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
+                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam zerados até você enviar a planilha do contador deste mês.
+                    </p>
+                  </div>
+                )}
+
                 {pagsDoMes.length === 0 ? (
                   <EmptyState
                     title="Sem pagamentos neste mês"
