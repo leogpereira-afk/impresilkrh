@@ -77,7 +77,35 @@ const DE_PARA: [string, string][] = [
   ["2.1.20-", "Plano de Saúde"],      // e 2.1.20.1 Pró Vida
   // 2.1.21 (Divulgação de vagas) e 2.1.22 (Advocatícios) são despesas de RH,
   // não pagamento a colaborador — ficam em "Outros" de propósito.
+  //
+  // FORA DO GRUPO 2.1, mas é gente recebendo (ver FOLHA_FORA_DO_21 abaixo):
+  ["2.3.2.1-", "Limpeza/Faxina"],     // Limpeza Escritório
+  ["2.3.2.2-", "Limpeza/Faxina"],     // Limpeza Produção
+  ["2.11.1-", "Freelancer (Empreita)"],
 ];
+
+/**
+ * Contas fora do grupo 2.1 que mesmo assim pagam PESSOA.
+ *
+ * Descoberto em 01/08/2026 cruzando o plano de contas do contador com a folha:
+ * a faxina da Barbara e da Marcella e a empreita NUNCA chegavam do ERP, e não
+ * era problema de casamento de nome — o contador não lança essas duas em 2.1.
+ * A faxina vai para 2.3.2.1 (Limpeza Escritório) e a empreita para 2.11.1
+ * (Freelancer), e o filtro daqui só aceitava "2.1.".
+ *
+ * A prova é aritmética: 2.3.2.1 vale R$ 600 em jan, fev, mar e jun, R$ 750 em
+ * abr e R$ 300 em mai — exatamente os pagamentos de faxina que existem na base,
+ * vindos da época da planilha. Quando a fonte virou o ERP, esse dinheiro parou
+ * de entrar em silêncio, porque a planilha classificava pelo TEXTO ("faxina") e
+ * o ERP classifica pelo CÓDIGO.
+ *
+ * É lista fechada, e por código exato, de propósito: as irmãs 2.3.2.3 (Caçamba)
+ * e 2.3.2.4 (Serquip) são empresas de resíduo, e 2.11.2/3/4 são Munk, Gráfica e
+ * Frete. Abrir o 2.3.2 ou o 2.11 inteiro jogaria fornecedor na ficha de gente.
+ * Empresa que apareça mesmo assim (CNPJ) não vira pessoa: o casamento por CPF
+ * recusa 14 dígitos e ela cai na lista de não encontrados, visível.
+ */
+const FOLHA_FORA_DO_21 = ["2.3.2.1", "2.3.2.2", "2.11.1"];
 
 /**
  * Traduz o plano de contas do ERP no tipo de pagamento do RH.
@@ -87,8 +115,10 @@ const DE_PARA: [string, string][] = [
  * toda subconta caía em "Outros" — eram 13 delas, incluindo as três de FGTS e
  * o Pró Vida do plano de saúde.
  */
+const codigoDoPlano = (plano: string) => String(plano || "").trim().split("-")[0].trim();
+
 function tipoDoPlano(plano: string): string {
-  const codigo = String(plano || "").trim().split("-")[0].trim();
+  const codigo = codigoDoPlano(plano);
   if (!codigo) return "Outros";
   const partes = codigo.split(".");
   for (let n = partes.length; n >= 1; n--) {
@@ -99,7 +129,14 @@ function tipoDoPlano(plano: string): string {
   return "Outros";
 }
 
-const ehFolha = (plano: string) => String(plano || "").startsWith("2.1.");
+// Compara por CÓDIGO, não pelo texto cru: "2.11.1-Freelancer" não começa por
+// "2.1." (o caractere depois de "2.1" é o segundo "1", não o ponto), então a
+// checagem antiga já estava certa em não deixar o 2.11 entrar de carona — o que
+// faltava era deixar entrar de propósito quem é gente.
+const ehFolha = (plano: string) => {
+  const c = codigoDoPlano(plano);
+  return c.startsWith("2.1.") || FOLHA_FORA_DO_21.some((p) => c === p || c.startsWith(p + "."));
+};
 
 // "Colab: Fulano de Tal" → "Fulano de Tal"
 const limpaNome = (s: string) => String(s || "").replace(/^\s*colab\s*:\s*/i, "").trim();
