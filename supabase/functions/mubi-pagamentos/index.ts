@@ -165,7 +165,23 @@ Deno.serve(async (req) => {
 
     // per_page alto para fazer o mínimo de chamadas: cada uma leva 25-40s.
     const PER_PAGE = 500;
-    const primeira = await buscaPagina(competencia, 1, PER_PAGE);
+
+    // UMA PÁGINA POR CHAMADA, quando o cliente pede.
+    //
+    // A versão anterior varria até a 4ª página aqui dentro e parava — teto de
+    // 2000 títulos por mês, com o resto ficando para trás em silêncio. Subir o
+    // teto não resolve: cada página leva 25-40s e a função tem tempo limitado;
+    // uma varredura longa morreria no meio e perderia TUDO, inclusive as
+    // páginas que já tinham vindo.
+    //
+    // Com o cliente pedindo página por página, cada chamada é curta, o
+    // progresso aparece na tela, dá para cancelar, e um erro numa página não
+    // derruba o que já foi lido. Sem `page` no pedido, o comportamento antigo
+    // continua valendo (compatibilidade com versões do app já publicadas).
+    const paginaPedida = Number(corpo.page ?? 0);
+    const umaPagina = Number.isFinite(paginaPedida) && paginaPedida >= 1;
+
+    const primeira = await buscaPagina(competencia, umaPagina ? paginaPedida : 1, PER_PAGE);
     let itens: Record<string, unknown>[] = primeira?.data ?? [];
     // O Mubisys às vezes devolve a paginação em "pagination", às vezes em "meta"
     // (o cliente do Painel já trata os dois). Lendo só um formato, o total virava
@@ -174,13 +190,15 @@ Deno.serve(async (req) => {
     // sinal é a página ter vindo cheia.
     const pag = primeira?.pagination ?? primeira?.meta ?? {};
     const totalPaginas = Number(
-      pag.last_page ?? pag.total_pages ?? (itens.length >= PER_PAGE ? 2 : 1),
+      pag.last_page ?? pag.total_pages ?? (itens.length >= PER_PAGE ? paginaPedida + 1 : Math.max(1, paginaPedida)),
     ) || 1;
 
-    // Teto de 4 páginas (2000 títulos/mês): protege o tempo limite da função.
-    for (let p = 2; p <= Math.min(totalPaginas, 4); p++) {
-      const prox = await buscaPagina(competencia, p, PER_PAGE);
-      itens = itens.concat(prox?.data ?? []);
+    if (!umaPagina) {
+      // Modo antigo: varre até a 4ª página aqui dentro.
+      for (let p = 2; p <= Math.min(totalPaginas, 4); p++) {
+        const prox = await buscaPagina(competencia, p, PER_PAGE);
+        itens = itens.concat(prox?.data ?? []);
+      }
     }
 
     const folha = itens.filter((i) => ehFolha(String(i.plano_contas)));
@@ -209,7 +227,10 @@ Deno.serve(async (req) => {
       buscadoEm: new Date().toISOString(),
       totalTitulosNoMes: itens.length,
       paginas: totalPaginas,
-      truncado: totalPaginas > 4, // avisa se o mês tinha mais do que coubemos ler
+      // Quem pede página a página nunca é truncado: o cliente vai até o fim.
+      truncado: umaPagina ? false : totalPaginas > 4,
+      pagina: umaPagina ? paginaPedida : 1,
+      temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
       linhas,
     });
   } catch (e) {

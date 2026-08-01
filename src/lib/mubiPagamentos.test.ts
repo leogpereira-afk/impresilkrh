@@ -2,7 +2,9 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, type LinhaMubi } from "./mubiPagamentos";
+import { casarColaborador, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, type LinhaMubi } from "./mubiPagamentos";
+import { conciliarPagamentos } from "./custos";
+import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
 
 const c = (id: string, nome: string) => ({ id, nome }) as Colaborador;
@@ -143,5 +145,115 @@ describe("montarPrevia", () => {
     const linhas = [linha("Adriano Pinheiro Lima", { valor: 10 }), linha("XPTO LTDA", { valor: 20 }), linha("", { valor: 30 })];
     const r = montarPrevia(linhas, CADASTRO, {});
     expect(r.totalVinculado + r.totalSemVinculo + r.totalSemNome).toBe(60);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Não lançar duas vezes + salário sugerido pelo ERP.
+// ---------------------------------------------------------------------------
+describe("ERP: o mesmo título nunca vira dois lançamentos", () => {
+  const colab = [{ id: "c1", nome: "Adriano Pinheiro Lima" } as Colaborador];
+
+  it("mudar a data de vencimento ATUALIZA, não duplica", () => {
+    const antes = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "900", dataVencimento: "2026-07-20" }), "c1");
+    const depois = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "900", dataVencimento: "2026-07-22" }), "c1");
+    const d = conciliarPagamentos([antes], [depois]);
+    expect(d.novos).toHaveLength(0);
+    expect(d.alterados).toHaveLength(1);
+    expect(d.alterados[0].antigo.id).toBe("mubi-900");
+  });
+
+  it("mudar o valor ATUALIZA, não duplica", () => {
+    const antes = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "901", valor: 1000 }), "c1");
+    const depois = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "901", valor: 1200 }), "c1");
+    const d = conciliarPagamentos([antes], [depois]);
+    expect(d.novos).toHaveLength(0);
+    expect(d.alterados).toHaveLength(1);
+    expect(d.alterados[0].novo.valor).toBe(1200);
+  });
+
+  it("correção que ATRAVESSA o dia 15 muda a competência e ainda assim não duplica", () => {
+    // A janela da competência vai do dia 16 ao 15: 15/07 é junho, 16/07 é julho.
+    const antes = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "902", dataVencimento: "2026-07-15" }), "c1");
+    const depois = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "902", dataVencimento: "2026-07-16" }), "c1");
+    expect(antes.competencia).not.toBe(depois.competencia); // o cenário do bug
+    const d = conciliarPagamentos([antes], [depois]);
+    expect(d.novos).toHaveLength(0);
+    expect(d.alterados).toHaveLength(1);
+  });
+
+  it("buscar o mesmo mês de novo, sem nenhuma mudança, não mexe em nada", () => {
+    const p = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "903" }), "c1");
+    const d = conciliarPagamentos([p], [montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "903" }), "c1")]);
+    expect(d.novos).toHaveLength(0);
+    expect(d.alterados).toHaveLength(0);
+    expect(d.iguais).toHaveLength(1);
+  });
+
+  it("título novo de verdade continua entrando", () => {
+    const existente = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "904" }), "c1");
+    const novo = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "905" }), "c1");
+    const d = conciliarPagamentos([existente], [existente, novo]);
+    expect(d.novos.map((x) => x.id)).toEqual(["mubi-905"]);
+  });
+
+  it("lançamento manual (sem id do ERP) não é apagado nem confundido", () => {
+    const manual = { id: "pag-manual", colaboradorId: "c1", competencia: "2026-07", tipo: "Bônus", valor: 500, dataPagamento: "2026-07-20" } as Pagamento;
+    const doErp = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "906" }), "c1");
+    const d = conciliarPagamentos([manual, doErp], [doErp]);
+    expect(d.novos).toHaveLength(0);
+    expect(d.ausentes.map((x) => x.id)).toEqual(["pag-manual"]); // some da busca, mas é mantido por padrão
+  });
+  void colab;
+});
+
+describe("sugerirSalarios", () => {
+  const colabs = [
+    { id: "c1", nome: "Adriano Pinheiro Lima", salario: 2000 } as Colaborador,
+    { id: "c2", nome: "Karen Luiza Rodrigues Duarte" } as Colaborador, // sem salário
+  ];
+
+  it("soma salário + adiantamento da mesma competência", () => {
+    const s = sugerirSalarios([
+      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Adiantamento", valor: 800, dataVencimento: "2026-07-20" }),
+      linha("Adriano Pinheiro Lima", { idMubi: "2", tipo: "Salário", valor: 1400, dataVencimento: "2026-08-05" }),
+    ], colabs, {});
+    expect(s).toHaveLength(1);
+    expect(s[0].sugerido).toBe(2200);
+    expect(s[0].atual).toBe(2000);
+    expect(s[0].diferencaPct).toBe(10);
+  });
+
+  it("quem está SEM salário no cadastro vem primeiro", () => {
+    const s = sugerirSalarios([
+      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Salário", valor: 2000, dataVencimento: "2026-07-20" }),
+      linha("Karen Luiza Rodrigues Duarte", { idMubi: "2", tipo: "Salário", valor: 1600, dataVencimento: "2026-07-20" }),
+    ], colabs, {});
+    expect(s[0].colaborador.id).toBe("c2");
+    expect(s[0].semSalario).toBe(true);
+  });
+
+  it("usa a competência MAIS RECENTE, não a mais antiga", () => {
+    const s = sugerirSalarios([
+      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Salário", valor: 1500, dataVencimento: "2026-03-20" }),
+      linha("Adriano Pinheiro Lima", { idMubi: "2", tipo: "Salário", valor: 2500, dataVencimento: "2026-07-20" }),
+    ], colabs, {});
+    expect(s[0].sugerido).toBe(2500);
+  });
+
+  it("ignora férias, 13º e rescisão — não são salário mensal", () => {
+    const s = sugerirSalarios([
+      linha("Adriano Pinheiro Lima", { idMubi: "1", tipo: "Férias", valor: 3000, dataVencimento: "2026-07-20" }),
+      linha("Adriano Pinheiro Lima", { idMubi: "2", tipo: "13º Salário", valor: 2000, dataVencimento: "2026-07-20" }),
+      linha("Adriano Pinheiro Lima", { idMubi: "3", tipo: "Rescisão", valor: 5000, dataVencimento: "2026-07-20" }),
+    ], colabs, {});
+    expect(s).toHaveLength(0);
+  });
+
+  it("nome que não casa com ninguém não vira sugestão", () => {
+    const s = sugerirSalarios([
+      linha("Fulano Que Nao Existe", { idMubi: "1", tipo: "Salário", valor: 2000, dataVencimento: "2026-07-20" }),
+    ], colabs, {});
+    expect(s).toHaveLength(0);
   });
 });

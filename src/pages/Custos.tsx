@@ -20,13 +20,13 @@ import {
   ChevronRight,
   CalendarDays,
   RefreshCw,
-  Clock,
-} from "lucide-react";
+  Clock, History } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState, Progress } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { Select, Campo, Input } from "@/components/ui/form";
@@ -40,7 +40,7 @@ import { calcularEncargos, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
-import { buscarPagamentosMubi, paraRegistros, norm as normNome, type LinhaMubi, type RespostaMubi } from "@/lib/mubiPagamentos";
+import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -54,6 +54,7 @@ import {
   parsePagamentos,
   parseComissoesPorNome,
   conciliarPagamentos,
+  ehDoMubi,
   ehContaConfidencial,
   type DiffPagamentos,
 } from "@/lib/custos";
@@ -164,6 +165,13 @@ export default function Custos() {
   const [erroMubi, setErroMubi] = useState("");
   // Resultado da busca automática, esperando o RH querer revisar.
   const [respostaMubi, setRespostaMubi] = useState<RespostaMubi | null>(null);
+  // Sugestões de salário para o cadastro (vindas do ERP) e quem o RH marcou.
+  const [salarios, setSalarios] = useState<SugestaoSalario[]>([]);
+  const [salariosMarcados, setSalariosMarcados] = useState<Set<string>>(new Set());
+  // Varredura do histórico: quantos meses para trás, onde está e o cancelamento.
+  const [mesesHistorico, setMesesHistorico] = useState(12);
+  const [varrendo, setVarrendo] = useState<{ feitos: number; total: number; onde: string } | null>(null);
+  const cancelarVarreduraRef = useRef(false);
   // Quantos daqueles lançamentos já casam com alguém do cadastro. É a MESMA
   // contagem gravada em "Última busca" — sem isso o aviso mostra o total do ERP
   // e a linha de baixo mostra os vinculados, dois números diferentes no mesmo card.
@@ -202,17 +210,68 @@ export default function Custos() {
     const { registros, naoCasados, coletivas } = paraRegistros(r.linhas, d.colaboradores, vinculos);
     // Compara contra as competências dos REGISTROS, não contra o mês pedido: uma
     // busca pode gerar lançamentos em mais de uma competência e o que ficasse de
-    // fora da comparação voltaria como "novo" (duplicata). Mesmo critério de
-    // vincularMubi e da importação por planilha.
+    // fora da comparação voltaria como "novo" (duplicata).
+    //
+    // E entram TODOS os títulos já vindos do ERP, de qualquer competência. Sem
+    // isso sobrava um caminho para duplicar: o ERP corrige o vencimento de
+    // 15/07 para 16/07, a competência vira outra (a janela é do 16 ao 15), o
+    // registro antigo fica fora do recorte e o mesmo título é gravado de novo.
     const comps = new Set(registros.map((x) => x.competencia));
-    const existentesDaComp = pagamentos.filter((p: Pagamento) => comps.has(p.competencia));
+    const existentesDaComp = pagamentos.filter(
+      (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
+    );
     setRemoverAusentes(false);
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros),
       naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
       mubi: { linhas: r.linhas, coletivas, truncado: r.truncado },
     });
+    // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
+    // são coisas diferentes e cada uma é aplicada por sua conta.
+    setSalarios(sugerirSalarios(r.linhas, d.colaboradores, vinculos));
     setRespostaMubi(null);
+  };
+
+  /**
+   * Puxa o histórico inteiro do ERP, mês a mês e página a página.
+   *
+   * É a operação mais demorada do sistema (cada consulta ao Mubisys leva 25-40s,
+   * e são várias por mês), por isso mostra onde está e pode ser cancelada. O que
+   * já veio antes do cancelamento é aproveitado — nada se perde.
+   *
+   * Reimportar é seguro: título do ERP casa pelo id, então rodar de novo
+   * ATUALIZA em vez de criar um segundo lançamento.
+   */
+  const buscarHistorico = async () => {
+    cancelarVarreduraRef.current = false;
+    setErroMubi("");
+    setBuscandoMubi(true);
+    const comps = competenciasParaTras(mesesHistorico);
+    try {
+      const r = await buscarHistoricoMubi(
+        comps,
+        (feitos, total, onde) => setVarrendo({ feitos, total, onde }),
+        () => cancelarVarreduraRef.current,
+      );
+      const vinculos = config.vinculosMubi ?? {};
+      if (r.linhas.length === 0) {
+        setErroMubi(`O Mubisys não devolveu lançamento de pessoal nos últimos ${mesesHistorico} meses.`);
+        return;
+      }
+      previaDoMubi(
+        { competencia: comps[comps.length - 1], buscadoEm: r.buscadoEm, totalTitulosNoMes: r.linhas.length, paginas: 0, truncado: r.truncado, linhas: r.linhas },
+        vinculos,
+      );
+      const parcial = cancelarVarreduraRef.current ? " (varredura interrompida)" : "";
+      const falhou = r.falhas.length ? ` ${r.falhas.length} mês(es) falharam: ${r.falhas.map((f) => f.competencia).join(", ")}.` : "";
+      toast(`${r.linhas.length} título(s) lidos em ${r.competenciasLidas.length} competência(s)${parcial}.${falhou}`, r.falhas.length ? "info" : "sucesso");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Falha ao varrer o histórico.";
+      setErroMubi(msg); toast(msg, "erro");
+    } finally {
+      setVarrendo(null);
+      setBuscandoMubi(false);
+    }
   };
 
   const buscarDoMubi = async (competencia: string, abrirPrevia = true) => {
@@ -281,7 +340,9 @@ export default function Custos() {
 
     const { registros, naoCasados, coletivas } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos);
     const comps = new Set(registros.map((r) => r.competencia));
-    const existentesDaComp = pagamentos.filter((p: Pagamento) => comps.has(p.competencia));
+    const existentesDaComp = pagamentos.filter(
+      (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
+    );
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros),
       naoCasados, cpfsAprendidos: [], totalLinhas: registros.length,
@@ -352,6 +413,18 @@ export default function Custos() {
         : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${avisoCpf}`,
       "sucesso",
     );
+    // Salários marcados pelo RH — gravados só onde ele marcou.
+    if (salariosMarcados.size) {
+      let nSal = 0;
+      for (const sug of salarios) {
+        if (!salariosMarcados.has(sug.colaborador.id)) continue;
+        colaboradoresColecao.atualizar(sug.colaborador.id, { salario: sug.sugerido });
+        nSal++;
+      }
+      if (nSal) toast(`Salário do cadastro atualizado em ${nSal} colaborador(es).`, "sucesso");
+    }
+    setSalarios([]);
+    setSalariosMarcados(new Set());
     setFolhaPrev(null);
   };
 
@@ -633,9 +706,49 @@ export default function Custos() {
                   {buscandoMubi ? <Clock className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   {buscandoMubi ? "Buscando no ERP…" : "Buscar do Mubisys"}
                 </button>
+                {/* Histórico: o mês a mês só traz o mês pedido, e o que está mais
+                    para trás no ERP nunca chegava. */}
+                <label className="text-xs text-slate-500">
+                  Histórico
+                  <select
+                    value={mesesHistorico}
+                    onChange={(e) => setMesesHistorico(Number(e.target.value))}
+                    className="mt-0.5 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none"
+                  >
+                    <option value={6}>últimos 6 meses</option>
+                    <option value={12}>últimos 12 meses</option>
+                    <option value={24}>últimos 24 meses</option>
+                    <option value={36}>últimos 36 meses</option>
+                  </select>
+                </label>
+                <button className="btn-outline" onClick={() => void buscarHistorico()} disabled={buscandoMubi}
+                  title="Varre mês a mês e página a página — demora, mas traz tudo o que está lá atrás">
+                  <History className="h-4 w-4" /> Puxar histórico
+                </button>
               </div>
             </div>
-            {buscandoMubi && (
+            {varrendo && (
+              <div className="rounded-lg border border-brand-200 bg-brand-50/50 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-brand-ink">
+                    Varrendo o histórico: {varrendo.feitos} de {varrendo.total} mês(es)
+                    {varrendo.onde ? ` · ${varrendo.onde}` : ""}
+                  </p>
+                  <button className="btn-ghost h-7 px-2 py-0 text-xs text-red-600"
+                    onClick={() => { cancelarVarreduraRef.current = true; }}>
+                    Parar
+                  </button>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
+                  <div className="h-full rounded-full bg-brand transition-all"
+                    style={{ width: `${varrendo.total ? (varrendo.feitos / varrendo.total) * 100 : 0}%` }} />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Cada mês leva de 30s a 1 minuto. O que já veio é aproveitado se você parar.
+                </p>
+              </div>
+            )}
+            {buscandoMubi && !varrendo && (
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 O Mubisys costuma levar de 30 segundos a 1 minuto para responder. Pode deixar a tela aberta.
               </p>
@@ -765,7 +878,9 @@ export default function Custos() {
             rodape={<>
               <button className="btn-outline" onClick={() => setFolhaPrev(null)}>Cancelar</button>
               <button className="btn-primary" onClick={aplicarFolha}>
-                <Coins className="h-4 w-4" /> {mexeu === 0 ? "Nada a alterar" : `Aplicar ${mexeu} alteração(ões)`}
+                <Coins className="h-4 w-4" /> {mexeu + salariosMarcados.size === 0
+                  ? "Nada a alterar"
+                  : `Aplicar ${mexeu} alteração(ões)${salariosMarcados.size ? ` + ${salariosMarcados.size} salário(s)` : ""}`}
               </button>
             </>}
           >
@@ -799,6 +914,75 @@ export default function Custos() {
                   <p className="text-[11px] uppercase tracking-wide text-amber-600">fora da planilha</p>
                 </div>
               </div>
+
+              {/* SALÁRIO DO CADASTRO sugerido pelo ERP.
+                  Fica separado da folha de propósito: pagamento é histórico, o
+                  salário do cadastro é a BASE de todo cálculo de hora extra e de
+                  desconto de falta. Nada aqui é aplicado sem marcar — o pago não
+                  é o contrato (falta desconta, adiantamento divide), e deixar o
+                  ERP sobrescrever sozinho faria um mês com falta rebaixar o
+                  salário e errar o cálculo do mês seguinte. */}
+              {salarios.length > 0 && (
+                <div className="rounded-xl border border-gold-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gold-100 bg-gold-50/50 px-3 py-1.5">
+                    <p className="text-xs font-semibold text-gold-700">
+                      Salário do cadastro sugerido pelo ERP
+                      {salarios.some((x) => x.semSalario) && ` · ${salarios.filter((x) => x.semSalario).length} sem salário hoje`}
+                    </p>
+                    <button
+                      className="text-[11px] font-medium text-gold-700 underline"
+                      onClick={() => setSalariosMarcados((atual) =>
+                        atual.size === salarios.length ? new Set() : new Set(salarios.map((x) => x.colaborador.id)))}
+                    >
+                      {salariosMarcados.size === salarios.length ? "desmarcar todos" : "marcar todos"}
+                    </button>
+                  </div>
+                  <p className="px-3 py-1.5 text-[11px] text-slate-500">
+                    Soma de <b>Salário + Adiantamento</b> da competência mais recente de cada um. Confira antes de marcar:
+                    mês com falta ou rescisão paga menos que o contrato.
+                  </p>
+                  <div className="max-h-48 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {salarios.map((sug) => {
+                          const marcado = salariosMarcados.has(sug.colaborador.id);
+                          return (
+                            <tr key={sug.colaborador.id} className={marcado ? "bg-gold-50/40" : undefined}>
+                              <td className="td w-8">
+                                <input
+                                  type="checkbox"
+                                  checked={marcado}
+                                  onChange={() => setSalariosMarcados((atual) => {
+                                    const n = new Set(atual);
+                                    if (n.has(sug.colaborador.id)) n.delete(sug.colaborador.id); else n.add(sug.colaborador.id);
+                                    return n;
+                                  })}
+                                  aria-label={`Aplicar salário sugerido de ${sug.colaborador.nome}`}
+                                />
+                              </td>
+                              <td className="td font-medium text-slate-700">
+                                {sug.colaborador.nome}
+                                {sug.semSalario && <Badge variant="danger" className="ml-2">sem salário</Badge>}
+                              </td>
+                              <td className="td text-slate-400">{compLabel(sug.competencia)}</td>
+                              <td className="td text-right tabular-nums">
+                                <span className="text-slate-400">{sug.atual != null ? formatBRL(sug.atual) : "—"}</span>
+                                <span className="mx-1 text-slate-300">→</span>
+                                <span className="font-semibold text-gold-700">{formatBRL(sug.sugerido)}</span>
+                                {sug.atual != null && sug.diferencaPct !== 0 && (
+                                  <span className={`ml-1 text-[11px] ${Math.abs(sug.diferencaPct) > 20 ? "font-semibold text-red-600" : "text-slate-400"}`}>
+                                    ({sug.diferencaPct > 0 ? "+" : ""}{sug.diferencaPct}%)
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {diff.alterados.length > 0 && (
                 <div className="rounded-xl border border-blue-200">

@@ -276,8 +276,56 @@ function multimap(itens: Pag[], chave: (p: Pag) => string): Map<string, Pag[]> {
   return m;
 }
 
+/** Título vindo do ERP: o id carrega a identidade do lançamento no Mubisys. */
+export const ehDoMubi = (p: Pag) => String(p.id ?? "").startsWith("mubi-");
+
 // `existentes` deve ser filtrado às competências presentes em `novos` (o resto não entra).
 export function conciliarPagamentos(existentes: Pag[], novos: Pag[]): DiffPagamentos {
+  // 0) TÍTULO DO ERP CASA PELO ID, antes de qualquer outra regra.
+  //
+  // A conciliação por assinatura (pessoa+competência+tipo+data+valor) nasceu para
+  // a PLANILHA, que não tem identificador nenhum. Para o ERP existe algo melhor:
+  // o id do título. E usar a assinatura ali criava duplicata de verdade — basta
+  // o ERP corrigir a data de vencimento entre duas buscas. A data entra na
+  // assinatura, então o mesmo título voltava como "novo" e era gravado outra
+  // vez. Pior quando a correção atravessa o dia 15: a competência muda junto e o
+  // registro antigo nem entrava na comparação.
+  //
+  // Com o id, o mesmo título é sempre o mesmo lançamento — mudou a data, o valor
+  // ou a descrição, é ATUALIZAÇÃO. Nunca uma segunda linha.
+  const porId = new Map(existentes.filter(ehDoMubi).map((p) => [p.id, p]));
+  if (porId.size || novos.some(ehDoMubi)) {
+    const iguaisId: { antigo: Pag; novo: Pag }[] = [];
+    const alteradosId: { antigo: Pag; novo: Pag }[] = [];
+    const restoNovos: Pag[] = [];
+    const casados = new Set<string>();
+    for (const n of novos) {
+      const antigo = ehDoMubi(n) ? porId.get(n.id) : undefined;
+      if (!antigo) { restoNovos.push(n); continue; }
+      casados.add(antigo.id);
+      const mudou =
+        Math.round((antigo.valor ?? 0) * 100) !== Math.round((n.valor ?? 0) * 100) ||
+        dia10(antigo.dataPagamento) !== dia10(n.dataPagamento) ||
+        antigo.competencia !== n.competencia ||
+        antigo.tipo !== n.tipo ||
+        antigo.colaboradorId !== n.colaboradorId;
+      (mudou ? alteradosId : iguaisId).push({ antigo, novo: n });
+    }
+    // O que não veio do ERP (planilha, lançamento manual) segue pela regra antiga.
+    const restoExistentes = existentes.filter((p) => !ehDoMubi(p) || !casados.has(p.id));
+    const d = conciliarPorAssinatura(restoExistentes, restoNovos);
+    return {
+      iguais: [...iguaisId, ...d.iguais],
+      alterados: [...alteradosId, ...d.alterados],
+      novos: d.novos,
+      ausentes: d.ausentes,
+    };
+  }
+  return conciliarPorAssinatura(existentes, novos);
+}
+
+/** Regra da PLANILHA: sem id estável, a identidade é a assinatura da linha. */
+function conciliarPorAssinatura(existentes: Pag[], novos: Pag[]): DiffPagamentos {
   // 1) casa por identidade + valor (multiconjunto). Guarda o par para poder
   //    atualizar a descrição do existente se o texto mudou.
   const porSig = multimap(existentes, sigCompleta);

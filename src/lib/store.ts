@@ -139,13 +139,32 @@ export function obter<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
   return ler(nome);
 }
 
+/**
+ * Cria um registro. Se o item já traz `id`, ele MANDA (é assim que a importação
+ * do ERP carimba `mubi-<id do título>` e a reimportação atualiza em vez de
+ * duplicar).
+ *
+ * REDE DE SEGURANÇA: id que já existe nunca vira um segundo registro — vira
+ * atualização. Antes isso prependava uma cópia com a MESMA id, e o sistema
+ * inteiro passa a se comportar de forma imprevisível: `find` acha a primeira,
+ * `atualizar` mexe só numa, a soma conta as duas, e o sync não sabe qual é a
+ * boa. Em pagamento isso é dinheiro contado em dobro num relatório.
+ */
 export function criarEm<K extends NomeColecao>(
   nome: K,
   item: Partial<ColecaoMap[K]>,
 ): ColecaoMap[K] {
   const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
-  gravar(nome, [novo, ...ler(nome)]);
-  notificar(nome, "upsert", (novo as { id: string }).id);
+  const id = (novo as { id: string }).id;
+  const atuais = ler(nome);
+  const jaExiste = atuais.some((it) => (it as { id: string }).id === id);
+  gravar(
+    nome,
+    jaExiste
+      ? atuais.map((it) => ((it as { id: string }).id === id ? { ...it, ...novo } : it))
+      : [novo, ...atuais],
+  );
+  notificar(nome, "upsert", id);
   return novo;
 }
 
