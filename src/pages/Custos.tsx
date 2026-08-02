@@ -27,7 +27,7 @@ import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, Progress } from "@/components/ui/misc";
+import { Avatar, EmptyState, Progress } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { Select, Campo, Input } from "@/components/ui/form";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
@@ -130,8 +130,16 @@ export default function Custos() {
       .filter((c: Colaborador) => !noQuadro.has(c.id) && comPag.has(c.id))
       .sort((a: Colaborador, b: Colaborador) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [ativosOrdenados, pagamentos, d.colaboradores]);
-  // As setas ‹ › percorrem os dois grupos: primeiro o quadro, depois o resto.
-  const navegaveis = useMemo(() => [...ativosOrdenados, ...foraDoQuadroComLanc], [ativosOrdenados, foraDoQuadroComLanc]);
+  // Seletor no topo da seção individual (pedido de 02/08): por padrão a
+  // navegação fica SÓ no quadro atual — as setas passavam por inativo no meio
+  // dos ativos e parecia erro. Ligando "Com inativos", entram os fora do
+  // quadro que têm lançamento (rescisão, folha histórica).
+  const [mostrarInativos, setMostrarInativos] = useState(false);
+  // As setas ‹ › percorrem o que o seletor mostra: só o quadro, ou tudo.
+  const navegaveis = useMemo(
+    () => (mostrarInativos ? [...ativosOrdenados, ...foraDoQuadroComLanc] : ativosOrdenados),
+    [ativosOrdenados, foraDoQuadroComLanc, mostrarInativos],
+  );
   const [colabId, setColabId] = useState<string>(ativosOrdenados[0]?.id ?? "");
 
   const [comAdiantamento, setComAdiantamento] = useState<boolean>(true);
@@ -774,37 +782,44 @@ export default function Custos() {
             subtitle="A folha real por colaborador — vem do Contas a Pagar do Mubisys."
             icon={<ReceiptText className="h-5 w-5" />}
           />
+          {/* O card vive em metade da tela (grid de 2 colunas). Texto e QUATRO
+              controles na mesma linha faziam o texto virar uma coluna de duas
+              palavras, o botão quebrar em três linhas e o seletor de histórico
+              sair pela borda. Agora: explicação em cima, controles embaixo em
+              duas duplas que quebram juntas — cada ação com seu campo ao lado. */}
           <CardBody className="space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <p className="text-xs text-slate-500">
-                  Busca direto no ERP e mostra a prévia antes de gravar. As competências trazidas são atualizadas; as demais permanecem.
-                </p>
-                {/* Último mês buscado: some a dúvida de "isso já está atualizado?" */}
-                <p className="mt-1 text-[11px] text-slate-400">
-                  {config.ultimaBuscaMubi
-                    ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s) vinculado(s) ao cadastro`
-                    : "Nenhuma busca no Mubisys ainda."}
-                </p>
-              </div>
+            <div>
+              <p className="text-xs text-slate-500">
+                Busca direto no ERP e mostra a prévia antes de gravar. As competências trazidas são atualizadas; as demais permanecem.
+              </p>
+              {/* Último mês buscado: some a dúvida de "isso já está atualizado?" */}
+              <p className="mt-1 text-[11px] text-slate-400">
+                {config.ultimaBuscaMubi
+                  ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s) vinculado(s) ao cadastro`
+                  : "Nenhuma busca no Mubisys ainda."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
               <div className="flex items-end gap-2">
-                <label className="flex flex-col text-[11px] text-slate-500">
+                <label className="flex shrink-0 flex-col text-[11px] text-slate-500">
                   Mês
                   <input type="month" value={compMubi} onChange={(e) => setCompMubi(e.target.value)}
-                    className="mt-0.5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
+                    className="mt-0.5 w-[150px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none" />
                 </label>
-                <button className="btn-primary" onClick={() => void buscarDoMubi(compMubi)} disabled={buscandoMubi}>
+                <button className="btn-primary shrink-0 whitespace-nowrap" onClick={() => void buscarDoMubi(compMubi)} disabled={buscandoMubi}>
                   {buscandoMubi ? <Clock className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   {buscandoMubi ? "Buscando no ERP…" : "Buscar do Mubisys"}
                 </button>
-                {/* Histórico: o mês a mês só traz o mês pedido, e o que está mais
-                    para trás no ERP nunca chegava. */}
-                <label className="text-xs text-slate-500">
+              </div>
+              {/* Histórico: o mês a mês só traz o mês pedido, e o que está mais
+                  para trás no ERP nunca chegava. */}
+              <div className="flex items-end gap-2">
+                <label className="flex shrink-0 flex-col text-[11px] text-slate-500">
                   Histórico
                   <select
                     value={mesesHistorico}
                     onChange={(e) => setMesesHistorico(Number(e.target.value))}
-                    className="mt-0.5 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none"
+                    className="mt-0.5 w-[165px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none"
                   >
                     <option value={6}>últimos 6 meses</option>
                     <option value={12}>últimos 12 meses</option>
@@ -812,7 +827,7 @@ export default function Custos() {
                     <option value={36}>últimos 36 meses</option>
                   </select>
                 </label>
-                <button className="btn-outline" onClick={() => void buscarHistorico()} disabled={buscandoMubi}
+                <button className="btn-outline shrink-0 whitespace-nowrap" onClick={() => void buscarHistorico()} disabled={buscandoMubi}
                   title="Varre mês a mês e página a página — demora, mas traz tudo o que está lá atrás">
                   <History className="h-4 w-4" /> Puxar histórico
                 </button>
@@ -1248,227 +1263,28 @@ export default function Custos() {
         />
       ) : (
         <div className="space-y-8">
-          {/* ===================== SEÇÃO 1 — folha geral do mês (todos) ===================== */}
+          {/* ===================== SEÇÃO 2 — custo individual por colaborador =====================
+              Vem PRIMEIRO (pedido de 02/08): é onde se confere pessoa a pessoa;
+              a folha geral virou o resumo logo abaixo. */}
           <section>
-            <div className="mb-3 flex items-center gap-2">
-              <Users className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Folha geral do mês</h2>
-            </div>
-
-            <Card>
-              <CardHeader
-                title="Resumo do mês"
-                subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
-                icon={<CalendarDays className="h-5 w-5" />}
-                action={
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => irMes(-1)}
-                      disabled={idxComp <= 0}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Mês anterior"
-                      title="Mês anterior"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
-                      {competencias.map((c) => (
-                        <option key={c} value={c}>{compLabelLongo(c)}</option>
-                      ))}
-                    </Select>
-                    <button
-                      type="button"
-                      onClick={() => irMes(1)}
-                      disabled={idxComp < 0 || idxComp >= competencias.length - 1}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Próximo mês"
-                      title="Próximo mês"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                }
-              />
-              <CardBody>
-                {/* Conferência do mês. O buraco que existia aqui: julho/2026
-                    aparecia com 27 adiantamentos e nenhum salário, e a tela não
-                    dizia se aquilo era espera ou perda. */}
-                {conferencia.estado !== "completa" && (
-                  <div
-                    className={
-                      "mb-4 rounded-xl border p-3 " +
-                      (conferencia.estado === "incompleta"
-                        ? "border-amber-200 bg-amber-50/60"
-                        : "border-sky-200 bg-sky-50/60")
-                    }
-                  >
-                    <div className="flex items-start gap-2.5">
-                      {conferencia.estado === "incompleta" ? (
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                      ) : (
-                        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className={"text-sm font-semibold " + (conferencia.estado === "incompleta" ? "text-amber-900" : "text-sky-900")}>
-                          {conferencia.titulo}
-                        </p>
-                        <p className={"mt-0.5 text-xs " + (conferencia.estado === "incompleta" ? "text-amber-800" : "text-sky-800")}>
-                          {conferencia.detalhe}
-                        </p>
-                        {/* Nome, não contagem: "3 pessoas" não diz a quem ir
-                            perguntar. Até 8, cada nome abre a ficha; acima
-                            disso vira um clique só, senão o aviso vira parede
-                            de nomes justo no mês em que falta a folha toda. */}
-                        {conferencia.semSalario.length > 0 && (
-                          <p className="mt-1.5 flex flex-wrap gap-1">
-                            {conferencia.semSalario.length <= 8 ? (
-                              conferencia.semSalario.map((s) => (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const c = d.colabById.get(s.id);
-                                    if (c) drill.abrir("Sem salário nesta competência", [c], compLabelLongo(compAtiva));
-                                  }}
-                                  className={
-                                    "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
-                                    (conferencia.estado === "incompleta"
-                                      ? "border-amber-300 bg-white/70 text-amber-900"
-                                      : "border-sky-300 bg-white/70 text-sky-900")
-                                  }
-                                  title="Ver a ficha"
-                                >
-                                  {s.nome}
-                                </button>
-                              ))
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  drill.abrir(
-                                    "Sem salário nesta competência",
-                                    conferencia.semSalario
-                                      .map((s) => d.colabById.get(s.id))
-                                      .filter((c): c is Colaborador => !!c),
-                                    compLabelLongo(compAtiva),
-                                  )
-                                }
-                                className={
-                                  "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
-                                  (conferencia.estado === "incompleta"
-                                    ? "border-amber-300 bg-white/70 text-amber-900"
-                                    : "border-sky-300 bg-white/70 text-sky-900")
-                                }
-                              >
-                                Ver as {conferencia.semSalario.length} pessoas
-                              </button>
-                            )}
-                          </p>
-                        )}
-                        {conferencia.estado === "incompleta" && (
-                          <button
-                            type="button"
-                            className="btn-outline mt-2 h-8 px-2.5 text-xs"
-                            onClick={() => void buscarHistorico()}
-                            disabled={buscandoMubi}
-                            title="Varre o histórico do Mubisys e mostra a prévia antes de gravar"
-                          >
-                            <History className="h-3.5 w-3.5" /> Puxar histórico do ERP
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Folha lançada antes de o contador mandar a planilha do mês:
-                    o rateio e os encargos ficam em zero e isso tem de estar
-                    escrito — zero sem explicação passa por número real. */}
-                {semPlanoNaComp && (
-                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p className="text-xs text-slate-600">
-                      <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
-                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam zerados até você enviar a planilha do contador deste mês.
-                    </p>
-                  </div>
-                )}
-
-                {pagsDoMes.length === 0 ? (
-                  <EmptyState
-                    title="Sem pagamentos neste mês"
-                    description="Não há folha lançada nesta competência."
-                    icon={<Coins className="h-8 w-8" />}
-                  />
-                ) : (
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    {/* Tabela por tipo (mês inteiro) */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="border-b border-slate-100 bg-slate-50/50">
-                          <tr>
-                            <th className="th">Tipo de pagamento</th>
-                            <th className="th text-right">Valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {linhasMes.map((l) => (
-                            /* Ver "Comissão R$ 42.310" e não saber quem recebeu
-                               era o buraco da conferência do mês — os dois cards
-                               vizinhos já abrem a lista. */
-                            <tr key={l.tipo} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirDrillTipo(l.tipo)} title={`Ver quem recebeu ${l.tipo}`}>
-                              <td className="td">
-                                <span className="flex items-center gap-2">
-                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
-                                  {l.tipo}
-                                </span>
-                              </td>
-                              <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
-                            </tr>
-                          ))}
-                          <tr className="bg-slate-50/60">
-                            <td className="td font-semibold text-brand-ink">Total pago no mês</td>
-                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totalMes)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Destaques do mês */}
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
-                      <StatCard
-                        label="Colaboradores pagos"
-                        value={pessoasNoMes}
-                        accent="blue"
-                        icon={<Users className="h-4 w-4" />}
-                        hint="Com lançamento no mês"
-                        title="Ver quem recebeu neste mês"
-                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
-                      />
-                      <StatCard
-                        label="Média por colaborador"
-                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
-                        accent="gold"
-                        icon={<Coins className="h-4 w-4" />}
-                        hint="Total ÷ pagos"
-                        title="Ver quem entra no divisor da média"
-                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
-                      />
-                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
-                    </div>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </section>
-
-          {/* ===================== SEÇÃO 2 — custo individual por colaborador ===================== */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <UserCircle2 className="h-5 w-5 text-brand" />
               <h2 className="text-base font-semibold text-brand-ink">Custo individual por colaborador</h2>
+              <div className="ml-auto">
+                <SegToggle
+                  opcoes={[{ v: false, label: `Quadro atual (${ativosOrdenados.length})` }, { v: true, label: `Com inativos (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
+                  valor={mostrarInativos}
+                  onChange={(v) => {
+                    setMostrarInativos(v);
+                    // Escondeu os inativos com um inativo selecionado? Volta
+                    // para o primeiro do quadro — senão a tela mostra alguém
+                    // que o seletor diz não existir.
+                    if (!v && colabId && !ativosOrdenados.some((c) => c.id === colabId)) {
+                      setColabId(ativosOrdenados[0]?.id ?? "");
+                    }
+                  }}
+                />
+              </div>
             </div>
 
             <Card>
@@ -1484,6 +1300,9 @@ export default function Custos() {
                 icon={<Users className="h-5 w-5" />}
                 action={
                   <div className="flex items-center gap-1.5">
+                    {/* A foto sai do cadastro (fotoDataUrl) — dá rosto ao número
+                        e denuncia na hora se o mês aberto é da pessoa errada. */}
+                    <Avatar nome={colabSel?.nome ?? "?"} foto={d.fotoColab(colabId)} size="sm" className="mr-1" />
                     <button
                       type="button"
                       onClick={() => irColab(-1)}
@@ -1507,10 +1326,11 @@ export default function Custos() {
                           </option>
                         ))}
                       </optgroup>
-                      {/* Quem saiu (ou está fora do quadro) mas tem folha:
-                          o lançamento existe, então a pessoa tem que existir
-                          aqui também — senão o valor fica órfão na tela. */}
-                      {foraDoQuadroComLanc.length > 0 && (
+                      {/* Quem saiu (ou está fora do quadro) mas tem folha: só
+                          aparece com o seletor "Com inativos" ligado — mas se a
+                          pessoa selecionada É inativa, a opção dela fica para o
+                          Select não apontar para o vazio. */}
+                      {mostrarInativos && foraDoQuadroComLanc.length > 0 && (
                         <optgroup label="Fora do quadro (com lançamentos)">
                           {foraDoQuadroComLanc.map((c) => (
                             <option key={c.id} value={c.id}>
@@ -1518,6 +1338,9 @@ export default function Custos() {
                             </option>
                           ))}
                         </optgroup>
+                      )}
+                      {!mostrarInativos && colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id) && (
+                        <option value={colabSel.id}>{colabSel.nome} · {d.nomeStatus(colabSel.statusId)}</option>
                       )}
                     </Select>
                     <button
@@ -1741,6 +1564,221 @@ export default function Custos() {
                   </div>
                   <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
                 </div>
+              </CardBody>
+            </Card>
+          </section>
+          {/* ===================== SEÇÃO 1 — folha geral do mês (todos) ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <Users className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Folha geral do mês</h2>
+            </div>
+
+            <Card>
+              <CardHeader
+                title="Resumo do mês"
+                subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
+                icon={<CalendarDays className="h-5 w-5" />}
+                action={
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => irMes(-1)}
+                      disabled={idxComp <= 0}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Mês anterior"
+                      title="Mês anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
+                      {competencias.map((c) => (
+                        <option key={c} value={c}>{compLabelLongo(c)}</option>
+                      ))}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => irMes(1)}
+                      disabled={idxComp < 0 || idxComp >= competencias.length - 1}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Próximo mês"
+                      title="Próximo mês"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                }
+              />
+              <CardBody>
+                {/* Conferência do mês. O buraco que existia aqui: julho/2026
+                    aparecia com 27 adiantamentos e nenhum salário, e a tela não
+                    dizia se aquilo era espera ou perda. */}
+                {conferencia.estado !== "completa" && (
+                  <div
+                    className={
+                      "mb-4 rounded-xl border p-3 " +
+                      (conferencia.estado === "incompleta"
+                        ? "border-amber-200 bg-amber-50/60"
+                        : "border-sky-200 bg-sky-50/60")
+                    }
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {conferencia.estado === "incompleta" ? (
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      ) : (
+                        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className={"text-sm font-semibold " + (conferencia.estado === "incompleta" ? "text-amber-900" : "text-sky-900")}>
+                          {conferencia.titulo}
+                        </p>
+                        <p className={"mt-0.5 text-xs " + (conferencia.estado === "incompleta" ? "text-amber-800" : "text-sky-800")}>
+                          {conferencia.detalhe}
+                        </p>
+                        {/* Nome, não contagem: "3 pessoas" não diz a quem ir
+                            perguntar. Até 8, cada nome abre a ficha; acima
+                            disso vira um clique só, senão o aviso vira parede
+                            de nomes justo no mês em que falta a folha toda. */}
+                        {conferencia.semSalario.length > 0 && (
+                          <p className="mt-1.5 flex flex-wrap gap-1">
+                            {conferencia.semSalario.length <= 8 ? (
+                              conferencia.semSalario.map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const c = d.colabById.get(s.id);
+                                    if (c) drill.abrir("Sem salário nesta competência", [c], compLabelLongo(compAtiva));
+                                  }}
+                                  className={
+                                    "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
+                                    (conferencia.estado === "incompleta"
+                                      ? "border-amber-300 bg-white/70 text-amber-900"
+                                      : "border-sky-300 bg-white/70 text-sky-900")
+                                  }
+                                  title="Ver a ficha"
+                                >
+                                  {s.nome}
+                                </button>
+                              ))
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  drill.abrir(
+                                    "Sem salário nesta competência",
+                                    conferencia.semSalario
+                                      .map((s) => d.colabById.get(s.id))
+                                      .filter((c): c is Colaborador => !!c),
+                                    compLabelLongo(compAtiva),
+                                  )
+                                }
+                                className={
+                                  "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
+                                  (conferencia.estado === "incompleta"
+                                    ? "border-amber-300 bg-white/70 text-amber-900"
+                                    : "border-sky-300 bg-white/70 text-sky-900")
+                                }
+                              >
+                                Ver as {conferencia.semSalario.length} pessoas
+                              </button>
+                            )}
+                          </p>
+                        )}
+                        {conferencia.estado === "incompleta" && (
+                          <button
+                            type="button"
+                            className="btn-outline mt-2 h-8 px-2.5 text-xs"
+                            onClick={() => void buscarHistorico()}
+                            disabled={buscandoMubi}
+                            title="Varre o histórico do Mubisys e mostra a prévia antes de gravar"
+                          >
+                            <History className="h-3.5 w-3.5" /> Puxar histórico do ERP
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Folha lançada antes de o contador mandar a planilha do mês:
+                    o rateio e os encargos ficam em zero e isso tem de estar
+                    escrito — zero sem explicação passa por número real. */}
+                {semPlanoNaComp && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p className="text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
+                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam zerados até você enviar a planilha do contador deste mês.
+                    </p>
+                  </div>
+                )}
+
+                {pagsDoMes.length === 0 ? (
+                  <EmptyState
+                    title="Sem pagamentos neste mês"
+                    description="Não há folha lançada nesta competência."
+                    icon={<Coins className="h-8 w-8" />}
+                  />
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {/* Tabela por tipo (mês inteiro) */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="border-b border-slate-100 bg-slate-50/50">
+                          <tr>
+                            <th className="th">Tipo de pagamento</th>
+                            <th className="th text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {linhasMes.map((l) => (
+                            /* Ver "Comissão R$ 42.310" e não saber quem recebeu
+                               era o buraco da conferência do mês — os dois cards
+                               vizinhos já abrem a lista. */
+                            <tr key={l.tipo} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirDrillTipo(l.tipo)} title={`Ver quem recebeu ${l.tipo}`}>
+                              <td className="td">
+                                <span className="flex items-center gap-2">
+                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
+                                  {l.tipo}
+                                </span>
+                              </td>
+                              <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-50/60">
+                            <td className="td font-semibold text-brand-ink">Total pago no mês</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totalMes)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Destaques do mês */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
+                      <StatCard
+                        label="Colaboradores pagos"
+                        value={pessoasNoMes}
+                        accent="blue"
+                        icon={<Users className="h-4 w-4" />}
+                        hint="Com lançamento no mês"
+                        title="Ver quem recebeu neste mês"
+                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard
+                        label="Média por colaborador"
+                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
+                        accent="gold"
+                        icon={<Coins className="h-4 w-4" />}
+                        hint="Total ÷ pagos"
+                        title="Ver quem entra no divisor da média"
+                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
+                    </div>
+                  </div>
+                )}
               </CardBody>
             </Card>
           </section>
