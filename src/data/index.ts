@@ -4,7 +4,7 @@
 import type {
   Area, Nivel, Cargo, StatusColaborador, Colaborador, Documento, DocumentoInstitucional,
   GuiaComunicacao, POP, Ferias, Movimentacao, CicloAvaliacao, Avaliacao, Meta, PDI,
-  Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Aceite, Config,
+  Feedback, Viagem, Tarefa, ModeloChecklist, ConsentimentoLGPD, AccessLog, Alteracao, Aceite, Config,
   Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
   Treinamento, EtapaEvolucao, Usuario, Pagamento, ContaPlano, ClassificacaoConta, EventoCalendario,
   CertificacaoNR, Pesquisa, RespostaPesquisa, Vaga, Candidato, Ponto, Lancamento, FechamentoFolha,
@@ -57,6 +57,7 @@ export interface ColecaoMap {
   modelosChecklist: ModeloChecklist;
   consentimentos: ConsentimentoLGPD;
   acessos: AccessLog;
+  alteracoes: Alteracao;
   aceites: Aceite;
   advertencias: Advertencia;
   ausencias: Ausencia;
@@ -121,6 +122,7 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     modelosChecklist: MODELOS_CHECKLIST,
     consentimentos: [],
     acessos: [],
+    alteracoes: [],
     aceites: [],
     advertencias: [],
     ausencias: [],

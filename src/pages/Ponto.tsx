@@ -16,6 +16,7 @@ import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais, BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
+import { emLote } from "@/lib/auditoria";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeGerir } from "@/lib/rbac";
@@ -352,6 +353,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     // este conjunto, duas linhas com o mesmo id cairiam as duas em `criar` e o
     // mês ficaria com dois registros de id idêntico.
     const gravados = new Set(pontos.map((p) => p.id));
+    // Importar o ponto são ~26 fichas escritas em sequência — uma linha de
+    // histórico por ficha enterraria o resto do dia. É UMA ação: vira uma linha.
+    emLote(`Importou o ponto de ${labelMes(competencia)}`, () => {
     for (const l of previa.linhas) {
       const chave = chavePonto(l);
       const id = `${competencia}::${chave}`;
@@ -380,6 +384,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       for (const antigo of pontos.filter(mesmaPessoa)) { remover(antigo.id); gravados.delete(antigo.id); duplicadasRemovidas++; }
       n++;
     }
+    });
     toast(
       `${n} ficha(s) de ponto gravada(s) em ${labelMes(competencia)}` +
       (duplicadasRemovidas ? ` · ${duplicadasRemovidas} ficha(s) repetida(s) do mesmo mês foram substituídas.` : "."),

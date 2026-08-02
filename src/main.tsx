@@ -13,6 +13,12 @@ import "@/lib/sync";
 // do primeiro render e empurram o que foi corrigido para a nuvem.
 import { rodarMigracoes } from "@/lib/migracoes";
 rodarMigracoes();
+// Histórico de alterações: liga o store ao módulo de auditoria. Fica AQUI, e não
+// dentro do store, porque o store não pode importar quem o escuta (viraria
+// ciclo). Depois das migrações de propósito — o que o app conserta sozinho no
+// boot não é "alguém mexeu".
+import { ligarHistorico } from "@/lib/historico";
+ligarHistorico();
 
 // basename = o caminho onde o app é servido (BASE_URL vem do `base` do Vite:
 // "/impresilkrh/" no GitHub Pages, "/" num domínio próprio). Sem isto, o React

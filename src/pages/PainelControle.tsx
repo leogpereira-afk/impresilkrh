@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
   ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock, Eye, EyeOff,
-  KeyRound, ChevronDown,
+  KeyRound, ChevronDown, History,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Badge, DotBadge } from "@/components/ui/badge";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Toggle } from "@/components/ui/form";
 import { ConteudoManager } from "@/components/painel/conteudo-manager";
+import { HistoricoSecao } from "@/components/painel/historico-secao";
 import { DadosControls } from "@/components/layout/dados-controls";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { enviarConfigNuvem } from "@/lib/sync";
@@ -43,6 +44,7 @@ export default function PainelControle() {
           { id: "aval", label: "Avaliação & Checklists", icon: <Award className="h-4 w-4" />, conteudo: <AvaliacaoSecao /> },
           { id: "usuarios", label: "Usuários e Permissões", icon: <UserCog className="h-4 w-4" />, conteudo: <UsuariosSecao /> },
           ...(master ? [{ id: "confidencial", label: "Confidencial", icon: <Lock className="h-4 w-4" />, conteudo: <ConfidencialSecao /> }] : []),
+          { id: "historico", label: "Histórico", icon: <History className="h-4 w-4" />, conteudo: <HistoricoSecao /> },
           { id: "marca", label: "Marca & Backup", icon: <Palette className="h-4 w-4" />, conteudo: <MarcaSecao /> },
         ]}
       />

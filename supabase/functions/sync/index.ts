@@ -77,6 +77,14 @@ Deno.serve(async (req) => {
       return { ...env, registro: r };
     }
     if (env.colecao === "pagamentos" && env.registro.colaboradorId !== meuId) return null;
+    // Histórico de alterações: SÓ o RH baixa.
+    //
+    // Sem esta linha o histórico vira a porta dos fundos da folha: ele diz
+    // "Fulano alterou o Colaborador X", cita cargo, status e admissão, e chega
+    // ao disco de qualquer pessoa logada pelo pull — contornando o mascaramento
+    // que existe logo acima para `colaboradores` e `pagamentos`. Descoberto na
+    // revisão de 02/08/2026, antes de ir para produção.
+    if (env.colecao === "alteracoes") return null;
     return env;
   };
   // Escopo de escrita: espelha o de leitura.
@@ -84,6 +92,9 @@ Deno.serve(async (req) => {
     if (ehAdmin) return true;
     if (colecao === "colaboradores") return reg?.id === meuId;
     if (colecao === "pagamentos") return reg?.colaboradorId === meuId;
+    // Todo mundo ESCREVE no histórico (é o registro do que a pessoa fez), mas
+    // só em nome de si mesmo — senão dá para forjar linha com o nome de outro.
+    if (colecao === "alteracoes") return reg?.usuarioColaboradorId === meuId;
     return true;
   };
 
@@ -173,6 +184,9 @@ Deno.serve(async (req) => {
         if (!ehAdmin) {
           if (colecao === "colaboradores" && id !== meuId) return json({ erro: "Sem permissão." }, 403);
           if (colecao === "pagamentos") return json({ erro: "Sem permissão." }, 403);
+          // Trilha de auditoria não se apaga: quem pode apagar o próprio rastro
+          // não deixa rastro. Só o RH poda o histórico.
+          if (colecao === "alteracoes" || colecao === "acessos") return json({ erro: "Sem permissão." }, 403);
         }
         const agora = new Date().toISOString();
         const { error } = await admin.from("registros").upsert({ colecao, id, registro: { id, _apagado: true, atualizadoEm: agora }, apagado: true, atualizado_em: agora });

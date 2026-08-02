@@ -139,6 +139,35 @@ export function obter<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
   return ler(nome);
 }
 
+// ---- Auditoria (histórico de "quem mexeu no quê") ----
+//
+// O store não conhece o módulo de auditoria: ele apenas AVISA. Quem escuta é
+// injetado no main.tsx. Assim não há ciclo de import (auditoria → store), e o
+// store continua funcionando inteiro se ninguém estiver escutando.
+//
+// O aviso vai dentro de try/catch de propósito: este é o ponto por onde TODA
+// escrita do sistema passa. Um erro no histórico não pode impedir alguém de
+// salvar um cadastro — o log é testemunha, não porteiro.
+type EventoStore = {
+  colecao: string;
+  acao: "criou" | "alterou" | "removeu";
+  id: string;
+  antes?: Record<string, unknown> | null;
+  depois?: Record<string, unknown> | null;
+};
+let auditor: ((ev: EventoStore) => void) | null = null;
+export function definirAuditor(fn: ((ev: EventoStore) => void) | null): void {
+  auditor = fn;
+}
+function avisarAuditor(ev: EventoStore): void {
+  if (!auditor) return;
+  try {
+    auditor(ev);
+  } catch {
+    /* histórico nunca derruba a escrita */
+  }
+}
+
 /**
  * Cria um registro. Se o item já traz `id`, ele manda.
  *
@@ -154,6 +183,7 @@ export function criarEm<K extends NomeColecao>(
   const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
   gravar(nome, [novo, ...ler(nome)]);
   notificar(nome, "upsert", (novo as { id: string }).id);
+  avisarAuditor({ colecao: nome, acao: "criou", id: (novo as { id: string }).id, depois: novo as unknown as Record<string, unknown> });
   return novo;
 }
 
@@ -168,7 +198,8 @@ export function criarOuAtualizarEm<K extends NomeColecao>(
   const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
   const id = (novo as { id: string }).id;
   const atuais = ler(nome);
-  const jaExiste = atuais.some((it) => (it as { id: string }).id === id);
+  const anterior = atuais.find((it) => (it as { id: string }).id === id);
+  const jaExiste = !!anterior;
   gravar(
     nome,
     jaExiste
@@ -176,6 +207,13 @@ export function criarOuAtualizarEm<K extends NomeColecao>(
       : [novo, ...atuais],
   );
   notificar(nome, "upsert", id);
+  avisarAuditor({
+    colecao: nome,
+    acao: jaExiste ? "alterou" : "criou",
+    id,
+    antes: anterior as unknown as Record<string, unknown> | undefined,
+    depois: (jaExiste ? { ...anterior, ...novo } : novo) as unknown as Record<string, unknown>,
+  });
   return novo;
 }
 
@@ -185,16 +223,29 @@ export function atualizarEm<K extends NomeColecao>(
   patch: Partial<ColecaoMap[K]>,
 ): void {
   const carimbo = agora();
+  const atuais = ler(nome);
+  const anterior = atuais.find((it) => (it as { id: string }).id === id);
   gravar(
     nome,
-    ler(nome).map((it) => ((it as { id: string }).id === id ? { ...it, ...patch, atualizadoEm: carimbo } : it)),
+    atuais.map((it) => ((it as { id: string }).id === id ? { ...it, ...patch, atualizadoEm: carimbo } : it)),
   );
   notificar(nome, "upsert", id);
+  if (anterior) {
+    avisarAuditor({
+      colecao: nome,
+      acao: "alterou",
+      id,
+      antes: anterior as unknown as Record<string, unknown>,
+      depois: { ...anterior, ...patch } as unknown as Record<string, unknown>,
+    });
+  }
 }
 
 export function removerEm<K extends NomeColecao>(nome: K, id: string): void {
+  const anterior = ler(nome).find((it) => (it as { id: string }).id === id);
   gravar(nome, ler(nome).filter((it) => (it as { id: string }).id !== id));
   notificar(nome, "delete", id);
+  if (anterior) avisarAuditor({ colecao: nome, acao: "removeu", id, antes: anterior as unknown as Record<string, unknown> });
 }
 
 export function definirColecao<K extends NomeColecao>(nome: K, itens: ColecaoMap[K][]): void {

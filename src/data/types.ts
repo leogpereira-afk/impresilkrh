@@ -333,11 +333,53 @@ export interface AccessLog {
   usuarioColaboradorId: string;
   usuarioNome: string;
   perfil: string;
+  /** VISUALIZAR_DADOS_SENSIVEIS (LGPD), CRIOU, ALTEROU, REMOVEU ou LOTE. */
   acao: string;
   recurso: string;
   colaboradorId?: string | null;
   detalhe?: string;
   criadoEm: string;
+}
+
+/**
+ * Histórico de alterações — quem mexeu no quê, quando.
+ *
+ * Coleção PRÓPRIA, e não um apêndice de `acessos`, por três motivos que a
+ * revisão de 02/08/2026 tornou concretos: (1) `acessos` é a trilha de LGPD e
+ * aparece inteira na tela de LGPD — misturar afogava a trilha de verdade;
+ * (2) `acessos` conta como "dado da pessoa" e impedia excluir um cadastro
+ * criado por engano; (3) as duas precisam de regras DIFERENTES no servidor.
+ *
+ * O que NUNCA entra aqui: valor de campo sensível. O histórico diz que o
+ * salário mudou, não para quanto — quem precisa do número abre a ficha, que
+ * tem controle de acesso. Guardar o valor aqui contornaria, por uma coleção
+ * lateral, exatamente o que o servidor protege em `colaboradores`.
+ */
+export interface Alteracao {
+  id: string;
+  /** Quem fez. */
+  usuarioColaboradorId: string;
+  usuarioNome: string;
+  perfil: string;
+  /** CRIOU | ALTEROU | REMOVEU | LOTE */
+  acao: string;
+  /** "Colaborador: Ana Lima" — o que foi mexido, em português. */
+  recurso: string;
+  /** Pessoa a que o registro se refere, quando houver. */
+  colaboradorId?: string | null;
+  /** Texto de apoio (resumo do lote). */
+  detalhe?: string;
+  /** Nome CRU da coleção (o rótulo é aplicado só na exibição). */
+  colecao?: string;
+  registroId?: string;
+  /** Campos que mudaram. Valor sensível vem como "•••". */
+  mudancas?: { campo: string; de: string; para: string }[];
+  /** Total de campos alterados — pode ser maior que `mudancas.length`. */
+  totalCampos?: number;
+  /** Quantas escritas o lote agrupou. */
+  qtd?: number;
+  criadoEm: string;
+  atualizadoEm?: string;
 }
 
 // Modelos de checklist editáveis (Painel de Controle)

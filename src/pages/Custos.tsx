@@ -61,6 +61,7 @@ import {
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
 import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
+import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import type {
   ClassificacaoConta,
   ClasseCusto,
@@ -273,6 +274,8 @@ export default function Custos() {
       apagarRegistrosNuvem("planoContas", removidos); // lápide nas contas substituídas
       void enviarColecao("planoContas"); // sobe pra nuvem na hora
       setComp(compUpload);
+      // `definir` troca a coleção inteira e não passa pelo auditor — registra na mão.
+      registrarAcaoManual(`Enviou o plano de contas de ${compLabelLongo(compUpload)}`, `${novos.length} conta(s)`, "planoContas");
       toast(`Plano de contas importado: ${novos.length} contas em ${compLabel(compUpload)}.`);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
@@ -455,6 +458,17 @@ export default function Custos() {
   // descrições) e, opcionalmente, remove os ausentes. Iguais sem mudança não são tocados.
   const aplicarFolha = () => {
     if (!folhaPrev) return;
+    // Tudo daqui para baixo é UMA ação para quem lê o histórico: aplicar a
+    // folha são centenas de escritas, e cada uma virando linha enterraria o
+    // trabalho humano do dia embaixo do log da máquina.
+    // Só a parte MECÂNICA entra no lote. A aplicação de salário é decisão
+    // humana e merece linha própria no histórico — engolida no resumo do lote,
+    // o campo mais sensível do sistema mudaria sem deixar rastro individual.
+    emLote(`Aplicou a folha do ERP (${compLabel(folhaPrev.diff.novos[0]?.competencia ?? compAtiva)}…)`, () => aplicarFolhaAgora());
+  };
+
+  const aplicarFolhaAgora = () => {
+    if (!folhaPrev) return;
     const { diff } = folhaPrev;
     const nd = (s?: string) => (s ?? "").trim();
     // Linhas iguais (mesmo valor) cuja DESCRIÇÃO mudou — atualiza só o texto.
@@ -508,7 +522,11 @@ export default function Custos() {
         if (cpf && !String(c.cpf ?? "").replace(/\D/g, "")) { cpfsPreenchidos++; return { ...c, cpf }; }
         return c;
       });
-      if (cpfsPreenchidos) { colaboradoresColecao.definir(atualizados); void enviarColecao("colaboradores"); }
+      if (cpfsPreenchidos) {
+        colaboradoresColecao.definir(atualizados);
+        registrarAcaoManual("Preencheu CPF a partir do ERP", `${cpfsPreenchidos} colaborador(es)`, "colaboradores");
+        void enviarColecao("colaboradores");
+      }
     }
     const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es) — o próximo mês casa sozinho.` : "";
 
