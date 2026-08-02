@@ -13,11 +13,20 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
-import { tempoDeCasa, parseData } from "@/lib/format";
+import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
+import { TIPOS_ENCARGO, corDoTipo, competenciaLabel } from "@/lib/folha";
 import { situacaoExperiencia, type SituacaoExperiencia } from "@/lib/clt";
 import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
-import type { Colaborador } from "@/data/types";
+import type { Colaborador, Pagamento } from "@/data/types";
+
+// Cor do selo de perfil comportamental (temperamentos). Sem perfil = neutro.
+const COR_PERFIL: Record<string, string> = {
+  "Colérico": "bg-red-50 text-red-700 ring-red-200",
+  "Sanguíneo": "bg-amber-50 text-amber-700 ring-amber-200",
+  "Fleumático": "bg-sky-50 text-sky-700 ring-sky-200",
+  "Melancólico": "bg-violet-50 text-violet-700 ring-violet-200",
+};
 
 const varianteEnq: Record<string, "danger" | "warning" | "success" | "info"> = {
   Crítico: "danger", Abaixo: "warning", Dentro: "success", Acima: "info",
@@ -26,7 +35,7 @@ const varianteEnq: Record<string, "danger" | "warning" | "success" | "info"> = {
 // Ordenação da lista. A tabela vinha SEMPRE em ordem alfabética, sem como trocar:
 // para achar quem está há mais tempo de casa ou quem está com salário crítico,
 // era preciso ler linha por linha. Agora cada coluna ordena ao ser clicada.
-type CampoOrdem = "nome" | "area" | "nivel" | "tempo" | "enquadramento" | "status";
+type CampoOrdem = "nome" | "area" | "nivel" | "tempo" | "enquadramento" | "status" | "custo" | "perfil" | "motivacao";
 interface Ordem { campo: CampoOrdem; asc: boolean }
 const ORDEM_ENQUADRAMENTO: Record<string, number> = { Crítico: 0, Abaixo: 1, Dentro: 2, Acima: 3 };
 
@@ -94,6 +103,40 @@ export default function Colaboradores() {
     () => new Set(areasNav.length ? [areasNav[0].id] : []),
   );
   const [subsAbertas, setSubsAbertas] = useState<Set<string>>(() => new Set());
+
+  // O que cada LINHA da lista mostra (pedido de 02/08): a mesma lista, três
+  // lentes — cadastro (a de sempre), custo do mês e perfil comportamental.
+  const [visaoLinha, setVisaoLinha] = useState<"cadastro" | "custo" | "comportamental">("cadastro");
+  // Mês da lente de custo. Nasce no último mês FECHADO: o corrente está pela
+  // metade até a folha vencer e pareceria que todo mundo custou menos.
+  const [mesCusto, setMesCusto] = useState<string>(() => {
+    const h = new Date();
+    const m = h.getMonth() === 0 ? 12 : h.getMonth();
+    const y = h.getMonth() === 0 ? h.getFullYear() - 1 : h.getFullYear();
+    return `${y}-${String(m).padStart(2, "0")}`;
+  });
+  const pagamentos = useColecao("pagamentos").items as Pagamento[];
+  // Custo por pessoa no mês escolhido: o que foi PAGO à pessoa (FGTS/INSS
+  // lançados ficam de fora — são custo da empresa, não recebimento).
+  const custoPorColab = useMemo(() => {
+    const m = new Map<string, { total: number; n: number; tipos: { tipo: string; valor: number }[] }>();
+    for (const p of pagamentos) {
+      if (p.competencia !== mesCusto || TIPOS_ENCARGO.includes(p.tipo)) continue;
+      const atual = m.get(p.colaboradorId) ?? { total: 0, n: 0, tipos: [] };
+      atual.total += p.valor || 0;
+      atual.n += 1;
+      const t = atual.tipos.find((x) => x.tipo === p.tipo);
+      if (t) t.valor += p.valor || 0;
+      else atual.tipos.push({ tipo: p.tipo, valor: p.valor || 0 });
+      m.set(p.colaboradorId, atual);
+    }
+    for (const v of m.values()) v.tipos.sort((a, b) => b.valor - a.valor);
+    return m;
+  }, [pagamentos, mesCusto]);
+  // Resumo do quadro recolhido por padrão — a lista é o trabalho do dia a dia
+  // e vinha depois de uma tela inteira de cards. null = "o usuário ainda não
+  // mexeu": aí ele abre sozinho SÓ se houver experiência urgente para decidir.
+  const [resumoAberto, setResumoAberto] = useState<boolean | null>(null);
 
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
   const { items: ferias } = useColecao("ferias");
@@ -188,10 +231,22 @@ export default function Colaboradores() {
           return sinal * ((ea - eb) || porNome);
         }
         case "status": return sinal * (d.nomeStatus(a.statusId).localeCompare(d.nomeStatus(b.statusId), "pt-BR") || porNome);
+        // Lente de custo: maior custo primeiro no 1º clique (é o que se procura).
+        case "custo": {
+          const ca = custoPorColab.get(a.id)?.total ?? 0;
+          const cb = custoPorColab.get(b.id)?.total ?? 0;
+          return sinal * ((cb - ca) || porNome);
+        }
+        case "perfil": return sinal * (((a.perfilComportamental ?? "zzz").localeCompare(b.perfilComportamental ?? "zzz", "pt-BR")) || porNome);
+        case "motivacao": {
+          const ma = a.motivacao ?? -1;
+          const mb = b.motivacao ?? -1;
+          return sinal * ((mb - ma) || porNome);
+        }
         default: return sinal * porNome;
       }
     },
-    [ordem, d],
+    [ordem, d, custoPorColab],
   );
 
   // Lista filtrada (busca + filtros + chips). Compartilhada pelas duas visões.
@@ -291,6 +346,43 @@ export default function Colaboradores() {
         )}
       </PageHeader>
 
+      {/* Resumo do quadro — RECOLHÍVEL (pedido de 02/08): a lista é o trabalho
+          do dia a dia e vinha depois de uma tela inteira de cards; agora ela
+          sobe e o panorama abre num clique. Exceção que abre sozinha: contrato
+          de experiência com prazo URGENTE — perder os 90 dias vira contrato
+          por tempo indeterminado, isso não pode ficar atrás de um recolher. */}
+      {(() => {
+        const urgente = emExperiencia.some((e) => e.sit.diasParaFim <= 15);
+        const aberto = resumoAberto ?? urgente;
+        return (
+          <Card className="mb-4 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setResumoAberto(!aberto)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60"
+              title={aberto ? "Recolher o resumo" : "Abrir o resumo do quadro"}
+            >
+              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                {aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                <span className="font-semibold text-slate-800">Resumo do quadro</span>
+                <span className="truncate text-xs text-slate-500">
+                  {resumo.ativos} ativos · {resumo.afastados} afastados · {resumo.ferias} em férias · {resumo.desligados} desligados
+                </span>
+                {emExperiencia.length > 0 && (
+                  <span className={cn(
+                    "rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1",
+                    urgente ? "bg-red-50 text-red-700 ring-red-200" : "bg-amber-50 text-amber-700 ring-amber-200",
+                  )}>
+                    {emExperiencia.length} em experiência{urgente ? " · decidir!" : ""}
+                  </span>
+                )}
+                {(foco || chips.size > 0) && (
+                  <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand">filtros ativos aqui dentro</span>
+                )}
+              </span>
+            </button>
+            {aberto && (
+              <div className="border-t border-slate-100 p-4">
       {/* AVISO DE EXPERIÊNCIA — perder o prazo dos 90 dias transforma o contrato
           em indeterminado sozinho, e aí desligar custa aviso prévio e multa do
           FGTS. Por isso este bloco é grande, fica no topo e não some. */}
@@ -436,6 +528,12 @@ export default function Colaboradores() {
           );
         })}
       </div>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
+
 
       <Card className="mb-4 p-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -472,6 +570,26 @@ export default function Colaboradores() {
             />
             Incluir inativos
           </label>
+          {/* O que cada linha mostra: cadastro, custo do mês ou comportamental.
+              Só faz sentido na visão em lista — por setor são mini-cards. */}
+          {visao === "lista" && (
+            <>
+              <Select value={visaoLinha} onChange={(e) => setVisaoLinha(e.target.value as typeof visaoLinha)} className="sm:w-52" title="O que cada linha da lista mostra">
+                <option value="cadastro">Ver: Cadastro</option>
+                <option value="custo">Ver: Custo do mês</option>
+                <option value="comportamental">Ver: Comportamental</option>
+              </Select>
+              {visaoLinha === "custo" && (
+                <input
+                  type="month"
+                  value={mesCusto}
+                  onChange={(e) => e.target.value && setMesCusto(e.target.value)}
+                  className="shrink-0 rounded-lg border border-slate-200 px-2 py-2 text-sm focus:border-brand-300 focus:outline-none"
+                  title="Competência do custo mostrado na lista"
+                />
+              )}
+            </>
+          )}
           {/* Alternador de visão */}
           <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
             <button
@@ -507,16 +625,36 @@ export default function Colaboradores() {
               <thead className="border-b border-slate-100 bg-slate-50/50">
                 <tr>
                   <ThOrdenavel campo="nome" ordem={ordem} setOrdem={setOrdem}>Colaborador</ThOrdenavel>
-                  <ThOrdenavel campo="area" ordem={ordem} setOrdem={setOrdem} className="hidden md:table-cell">Área</ThOrdenavel>
-                  <ThOrdenavel campo="nivel" ordem={ordem} setOrdem={setOrdem} className="hidden sm:table-cell">Nível</ThOrdenavel>
-                  <ThOrdenavel campo="tempo" ordem={ordem} setOrdem={setOrdem} className="hidden lg:table-cell">Tempo de casa</ThOrdenavel>
-                  <ThOrdenavel campo="enquadramento" ordem={ordem} setOrdem={setOrdem}>Enquadramento</ThOrdenavel>
+                  {visaoLinha === "cadastro" && (
+                    <>
+                      <ThOrdenavel campo="area" ordem={ordem} setOrdem={setOrdem} className="hidden md:table-cell">Área</ThOrdenavel>
+                      <ThOrdenavel campo="nivel" ordem={ordem} setOrdem={setOrdem} className="hidden sm:table-cell">Nível</ThOrdenavel>
+                      <ThOrdenavel campo="tempo" ordem={ordem} setOrdem={setOrdem} className="hidden lg:table-cell">Tempo de casa</ThOrdenavel>
+                      <ThOrdenavel campo="enquadramento" ordem={ordem} setOrdem={setOrdem}>Enquadramento</ThOrdenavel>
+                    </>
+                  )}
+                  {visaoLinha === "custo" && (
+                    <>
+                      <ThOrdenavel campo="custo" ordem={ordem} setOrdem={setOrdem}>Custo de {competenciaLabel(mesCusto)}</ThOrdenavel>
+                      <th className="th hidden md:table-cell">Composição (maiores)</th>
+                      <th className="th hidden sm:table-cell">Lançamentos</th>
+                    </>
+                  )}
+                  {visaoLinha === "comportamental" && (
+                    <>
+                      <ThOrdenavel campo="perfil" ordem={ordem} setOrdem={setOrdem}>Perfil</ThOrdenavel>
+                      <ThOrdenavel campo="motivacao" ordem={ordem} setOrdem={setOrdem} className="hidden sm:table-cell">Motivação</ThOrdenavel>
+                      <th className="th hidden md:table-cell">Área</th>
+                    </>
+                  )}
                   <ThOrdenavel campo="status" ordem={ordem} setOrdem={setOrdem}>Status</ThOrdenavel>
                   <th className="th" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {lista.map((c) => (
+                {lista.map((c) => {
+                  const custo = custoPorColab.get(c.id);
+                  return (
                   <tr key={c.id} className="group transition hover:bg-slate-50/60">
                     <td className="td">
                       <Link to={`/colaboradores/${c.id}`} className="flex items-center gap-3">
@@ -527,12 +665,63 @@ export default function Colaboradores() {
                         </div>
                       </Link>
                     </td>
-                    <td className="td hidden md:table-cell text-slate-500">{d.nomeArea(c.areaId)}</td>
-                    <td className="td hidden sm:table-cell">{d.nomeNivel(c.nivelId)}</td>
-                    <td className="td hidden lg:table-cell text-slate-500">{tempoDeCasa(c.dataAdmissao)}</td>
-                    <td className="td">
-                      <Badge variant={varianteEnq[d.enquadrarColab(c)] ?? "neutral"}>{d.enquadrarColab(c)}</Badge>
-                    </td>
+                    {visaoLinha === "cadastro" && (
+                      <>
+                        <td className="td hidden md:table-cell text-slate-500">{d.nomeArea(c.areaId)}</td>
+                        <td className="td hidden sm:table-cell">{d.nomeNivel(c.nivelId)}</td>
+                        <td className="td hidden lg:table-cell text-slate-500">{tempoDeCasa(c.dataAdmissao)}</td>
+                        <td className="td">
+                          <Badge variant={varianteEnq[d.enquadrarColab(c)] ?? "neutral"}>{d.enquadrarColab(c)}</Badge>
+                        </td>
+                      </>
+                    )}
+                    {visaoLinha === "custo" && (
+                      <>
+                        <td className="td font-semibold tabular-nums text-slate-800">
+                          {custo ? formatBRL(custo.total) : <span className="font-normal text-slate-300">—</span>}
+                        </td>
+                        <td className="td hidden md:table-cell">
+                          {custo ? (
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                              {custo.tipos.slice(0, 3).map((t) => (
+                                <span key={t.tipo} className="inline-flex items-center gap-1 whitespace-nowrap">
+                                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: corDoTipo(t.tipo) }} />
+                                  {t.tipo} {formatBRL(t.valor)}
+                                </span>
+                              ))}
+                              {custo.tipos.length > 3 && <span className="text-slate-400">+{custo.tipos.length - 3}</span>}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300">sem lançamento no mês</span>
+                          )}
+                        </td>
+                        <td className="td hidden sm:table-cell text-slate-500">{custo?.n ?? 0}</td>
+                      </>
+                    )}
+                    {visaoLinha === "comportamental" && (
+                      <>
+                        <td className="td">
+                          {c.perfilComportamental ? (
+                            <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium ring-1", COR_PERFIL[c.perfilComportamental] ?? "bg-slate-50 text-slate-600 ring-slate-200")}>
+                              {c.perfilComportamental}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300">sem perfil</span>
+                          )}
+                        </td>
+                        <td className="td hidden sm:table-cell">
+                          {podeVerGestao(sessao, c.id, d.colaboradores) && c.motivacao != null ? (
+                            <span className="inline-flex items-center gap-2">
+                              <MotivacaoRosto score={c.motivacao} tamanho="sm" comTexto={false} />
+                              <span className="text-xs tabular-nums text-slate-500">{c.motivacao}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="td hidden md:table-cell text-slate-500">{d.nomeArea(c.areaId)}</td>
+                      </>
+                    )}
                     <td className="td"><DotBadge label={d.nomeStatus(c.statusId)} cor={d.corStatus(c.statusId)} /></td>
                     <td className="td text-right">
                       <Link to={`/colaboradores/${c.id}`} className="inline-flex text-slate-300 transition group-hover:text-brand">
@@ -540,7 +729,8 @@ export default function Colaboradores() {
                       </Link>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
