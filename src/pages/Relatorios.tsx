@@ -36,7 +36,7 @@ import {
   Rosca,
 } from "@/components/charts/charts";
 import { cn } from "@/lib/cn";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { formatBRL, formatPercent, mesesDeCasa, parseData, MESES_PT } from "@/lib/format";
@@ -182,7 +182,7 @@ export default function Relatorios() {
   // afastado — usar aquele conjunto aqui apagava a folha dessas pessoas do
   // gráfico e do total (R$ 49 mil em 2026), como se nunca tivessem sido pagas.
   const idsFolha = useMemo(
-    () => new Set(colaboradores.filter((c) => !c.ehDirecao && !c.dataDesligamento && c.statusId !== "inativo").map((c) => c.id)),
+    () => new Set(colaboradores.filter((c) => !c.ehDirecao && noQuadro(c)).map((c) => c.id)),
     [colaboradores],
   );
   const [baseFolha, setBaseFolha] = useState<"caixa" | "competencia">("caixa");
@@ -418,7 +418,7 @@ export default function Relatorios() {
   // Mesma população do módulo Desempenho (não-inativos, fora da direção),
   // para a média por setor bater exatamente entre as duas telas.
   const baseDesemp = useMemo(
-    () => d.colaboradores.filter((c) => !c.ehDirecao && c.statusId !== "inativo"),
+    () => d.colaboradores.filter((c) => !c.ehDirecao && noQuadro(c)),
     [d.colaboradores],
   );
 

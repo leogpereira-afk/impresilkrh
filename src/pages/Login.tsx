@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { LogIn, Eye, EyeOff, User, Loader2 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import type { Perfil } from "@/data/types";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
 import { MASTER_COLAB_ID } from "@/lib/rbac";
 import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
@@ -33,7 +33,7 @@ export default function Login() {
 
   // Quem pode entrar: colaboradores ativos (inclui diretoria). O perfil de acesso
   // vem do próprio cadastro de cada pessoa.
-  const pessoas = useMemo(() => colaboradores.filter((c) => c.statusId !== "inativo"), [colaboradores]);
+  const pessoas = useMemo(() => colaboradores.filter(noQuadro), [colaboradores]);
 
   if (sessao) return <Navigate to="/painel" replace />;
 

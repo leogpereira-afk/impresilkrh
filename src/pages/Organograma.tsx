@@ -28,7 +28,7 @@ import { comprimirImagem } from "@/lib/imagem";
 import { vinculosDoColaborador, resumirVinculos } from "@/lib/vinculos";
 import { diaLocalISO } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { useSessao } from "@/lib/session";
 import { idsDaEquipe, ehRH } from "@/lib/rbac";
@@ -68,8 +68,7 @@ export default function Organograma() {
   const fotoAlvoRef = useRef<string | null>(null);
 
   // Filtro "só ativos" (desligados/inativos fora) — padrão do sistema.
-  const ehAtivo = (c: Colaborador) => c.statusId !== "inativo" && !c.dataDesligamento;
-  const visiveis = useMemo(() => (soAtivos ? d.colaboradores.filter(ehAtivo) : d.colaboradores), [d.colaboradores, soAtivos]);
+  const visiveis = useMemo(() => (soAtivos ? d.colaboradores.filter(noQuadro) : d.colaboradores), [d.colaboradores, soAtivos]);
   const visIds = useMemo(() => new Set(visiveis.map((c) => c.id)), [visiveis]);
 
   // Pai EFETIVO: ao ocultar inativos, quem ficou sem gestor sobe na cadeia até o

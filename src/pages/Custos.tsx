@@ -34,7 +34,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { calcularEncargos, separarRecebido, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
@@ -229,7 +229,7 @@ export default function Custos() {
   const opcoesVinculo = useMemo(() => {
     const ordena = (arr: Colaborador[]) => [...arr].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     return {
-      quadro: ordena(d.colaboradores.filter((c: Colaborador) => c.statusId !== "inativo")),
+      quadro: ordena(d.colaboradores.filter((c: Colaborador) => noQuadro(c))),
       inativos: ordena(d.colaboradores.filter((c: Colaborador) => c.statusId === "inativo")),
     };
   }, [d.colaboradores]);

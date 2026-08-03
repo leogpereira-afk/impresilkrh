@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { BarrasColoridas, BarrasVerticais } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, parseData, diaLocalISO } from "@/lib/format";
@@ -89,7 +89,7 @@ export default function Ferias() {
   const escopo = useMemo(
     () =>
       colaboradoresVisiveis(sessao, d.colaboradores)
-        .filter((c) => !c.ehDirecao && c.statusId !== "inativo"),
+        .filter((c) => !c.ehDirecao && noQuadro(c)),
     [sessao, d.colaboradores],
   );
   const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);

@@ -18,7 +18,7 @@ import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
-import { useDominio, senioridadeDe as senioridade, enquadrar } from "@/lib/dominio";
+import { useDominio, senioridadeDe as senioridade, enquadrar, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
@@ -119,7 +119,7 @@ export default function ColaboradorFicha() {
   // alfabética, só ativos (mantém o "ver apenas ativos"). Se a ficha aberta for de
   // um inativo, ele entra na lista para a navegação funcionar a partir dele.
   const { anterior, proximo } = useMemo(() => {
-    const vis = colaboradoresVisiveis(sessao, d.colaboradores).filter((x) => x.statusId !== "inativo" && !x.dataDesligamento);
+    const vis = colaboradoresVisiveis(sessao, d.colaboradores).filter(noQuadro);
     if (c && !vis.some((x) => x.id === c.id)) vis.push(c);
     vis.sort((a, b) => a.nome.localeCompare(b.nome, "pt"));
     const i = vis.findIndex((x) => x.id === id);
@@ -596,7 +596,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
   // reporta a alguém que saiu abria o campo mostrando "— sem gestor —", como se
   // já não houvesse chefe: o editor mentia sobre o dado gravado.
   const opcoesColab = [{ valor: "", rotulo: "— sem gestor —" }].concat(
-    d.colaboradores.filter((x) => x.id !== c.id && (x.statusId !== "inativo" || x.id === c.gestorId))
+    d.colaboradores.filter((x) => x.id !== c.id && (noQuadro(x) || x.id === c.gestorId))
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt"))
       .map((x) => ({ valor: x.id, rotulo: x.statusId === "inativo" ? `${x.nome} (desligado)` : x.nome })),
   );

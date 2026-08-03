@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, formatPercent } from "@/lib/format";
@@ -60,7 +60,7 @@ export default function Treinamento() {
   const escopo = useMemo(
     () =>
       colaboradoresVisiveis(sessao, d.colaboradores)
-        .filter((c) => c.statusId !== "inativo")
+        .filter(noQuadro)
         .sort((a, b) => a.nome.localeCompare(b.nome)),
     [sessao, d.colaboradores],
   );

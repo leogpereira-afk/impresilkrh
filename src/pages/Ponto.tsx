@@ -17,7 +17,7 @@ import { BarrasVerticais, BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { emLote } from "@/lib/auditoria";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeGerir } from "@/lib/rbac";
 import { formatDate, formatNumber, formatPercent, formatBRL, diaLocalISO } from "@/lib/format";
@@ -168,7 +168,7 @@ export default function Ponto() {
   const escopo = useMemo(
     () =>
       colaboradoresVisiveis(sessao, d.colaboradores)
-        .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
+        .filter((c) => !c.ehDirecao && noQuadro(c))
         .sort((a, b) => a.nome.localeCompare(b.nome)),
     [sessao, d.colaboradores],
   );
@@ -490,7 +490,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     () => visiveisRbac
       // Afastado (INSS, licença) não bate ponto por definição — cobrar a ficha
       // dele seria ruído todo mês.
-      .filter((c) => !c.ehDirecao && !c.naoBatePonto && c.statusId !== "inativo" && c.statusId !== "afastado" && !presentesIds.has(c.id))
+      .filter((c) => !c.ehDirecao && !c.naoBatePonto && noQuadro(c) && c.statusId !== "afastado" && !presentesIds.has(c.id))
       .sort((a, b) => a.nome.localeCompare(b.nome)),
     [visiveisRbac, presentesIds],
   );
@@ -503,7 +503,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     const m = /^(\d{4})-(\d{2})$/.exec(competencia || "");
     if (!m) return [];
     return visiveisRbac
-      .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
+      .filter((c) => !c.ehDirecao && noQuadro(c))
       .filter((c) => String(c.dataAdmissao ?? "").slice(0, 7) === competencia)
       .sort((a, b) => a.nome.localeCompare(b.nome))
       .map((c) => `${c.nome} — admitido em ${diaData(c.dataAdmissao)}`);
@@ -1020,7 +1020,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       {manual && (
         <ModalPontoManual
           competencia={competencia}
-          colaboradores={visiveisRbac.filter((c) => c.statusId !== "inativo")}
+          colaboradores={visiveisRbac.filter(noQuadro)}
           inicial={manual}
           existente={manual.existente}
           onFechar={() => setManual(null)}
@@ -1074,7 +1074,7 @@ function NaoBatePontoModal({
   const lista = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return colaboradores
-      .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
+      .filter((c) => !c.ehDirecao && noQuadro(c))
       .filter((c) => (t ? c.nome.toLowerCase().includes(t) : true))
       .sort((a, b) => Number(!!b.naoBatePonto) - Number(!!a.naoBatePonto) || a.nome.localeCompare(b.nome));
   }, [colaboradores, busca]);

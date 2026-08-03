@@ -12,7 +12,7 @@ import { Campo, Input, Select } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
 import { useColecao, useConfig } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
@@ -77,7 +77,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   );
   const escopo = useMemo(
     () => todos
-      .filter((c) => c.statusId !== "inativo" || incluirInativos || comVerbaNoMes.has(c.id))
+      .filter((c) => noQuadro(c) || incluirInativos || comVerbaNoMes.has(c.id))
       .sort((a, b) => a.nome.localeCompare(b.nome)),
     [todos, incluirInativos, comVerbaNoMes],
   );

@@ -16,7 +16,7 @@ import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { HumorIndicador, PerfilComportamentalBadge } from "@/components/ui/indicadores";
 import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
-import { useDominio, contaHeadcount } from "@/lib/dominio";
+import { useDominio, contaHeadcount, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
 import { formatBRL, formatPercent, formatDate, parseData, MESES_PT } from "@/lib/format";
@@ -102,7 +102,7 @@ export default function Painel() {
   const rotuloPeriodo = filtroMes === 0 ? `Ano inteiro · ${filtroAno}` : `${MESES_PT[filtroMes - 1]}/${filtroAno}`;
 
   // Escopo visível: por padrão NENHUM inativo aparece. Só inclui quando o toggle está ligado.
-  const escopo = incluirInativos ? escopoBruto : escopoBruto.filter((c) => c.statusId !== "inativo");
+  const escopo = incluirInativos ? escopoBruto : escopoBruto.filter(noQuadro);
   const inativos = escopoBruto.filter((c) => c.statusId === "inativo");
 
   const ids = new Set(escopo.map((c) => c.id));
