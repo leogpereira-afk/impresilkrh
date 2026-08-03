@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
-  Sun, Moon,
+  Sun, Moon, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -67,6 +67,9 @@ const NAV: ItemNav[] = [
 ];
 
 const GRUPOS = ["Visão geral", "Pessoas", "Cargos & Custos", "Comunicação & Conteúdo", "Administração", "Conta"];
+// Preferência de quem usa (grupos recolhidos na barra), não dado do sistema:
+// mora no navegador e não entra no backup nem na sincronização.
+const CHAVE_NAV_RECOLHIDOS = "impresilk.rh.v1:nav-recolhidos";
 
 export function AppShell() {
   const location = useLocation();
@@ -77,6 +80,35 @@ export function AppShell() {
   const { items: usuarios } = useColecao("usuarios");
   const toast = useToast();
   const [aberto, setAberto] = useState(false);
+
+  // Grupos recolhidos da barra lateral. Guardado no navegador porque é
+  // preferência de quem usa, não estado da sessão — recolher "Administração"
+  // toda vez que abre o sistema seria pior do que não ter o recurso.
+  //
+  // O grupo da tela ATUAL nunca começa recolhido: dar F5 numa página e não
+  // encontrá-la no menu faz o usuário achar que a tela sumiu.
+  const [recolhidos, setRecolhidos] = useState<Set<string>>(() => {
+    try {
+      const salvo = JSON.parse(window.localStorage.getItem(CHAVE_NAV_RECOLHIDOS) ?? "[]") as string[];
+      const atual = NAV.find((i) => location.pathname === i.href || location.pathname.startsWith(i.href + "/"))?.grupo;
+      return new Set(salvo.filter((g) => g !== atual));
+    } catch {
+      return new Set();
+    }
+  });
+  const alternarGrupo = (grupo: string) => {
+    setRecolhidos((s) => {
+      const x = new Set(s);
+      if (x.has(grupo)) x.delete(grupo);
+      else x.add(grupo);
+      try {
+        window.localStorage.setItem(CHAVE_NAV_RECOLHIDOS, JSON.stringify([...x]));
+      } catch {
+        /* sem espaço: a preferência não persiste, mas a tela continua funcionando */
+      }
+      return x;
+    });
+  };
 
   // Aviso quando o armazenamento do navegador encher (cota do localStorage).
   // Sem isto, gravações falhavam em silêncio e os dados "sumiam" ao recarregar.
@@ -108,12 +140,26 @@ export function AppShell() {
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
         if (!itens.length) return null;
+        const recolhido = recolhidos.has(grupo);
         return (
           <div key={grupo}>
-            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-              {grupo}
-            </p>
-            <div className="space-y-0.5">
+            {/* O título do grupo virou botão: em tela baixa (ou com o menu
+                inteiro liberado) a barra passa de 20 itens e o rodapé fica
+                fora de alcance. Recolher o que não se usa encurta a lista, e
+                a escolha fica guardada entre sessões. */}
+            <button
+              type="button"
+              onClick={() => alternarGrupo(grupo)}
+              aria-expanded={!recolhido}
+              className="mb-1.5 flex w-full items-center gap-1.5 rounded-lg px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 transition hover:bg-white/5 hover:text-white/70"
+            >
+              <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform duration-200", !recolhido && "rotate-90")} />
+              <span className="flex-1 text-left">{grupo}</span>
+              {/* Quantos itens sumiram: um grupo recolhido sem contador some da
+                  cabeça de quem usa e vira "o sistema perdeu a tela". */}
+              {recolhido && <span className="rounded-full bg-white/10 px-1.5 text-[10px] tracking-normal text-white/50">{itens.length}</span>}
+            </button>
+            <div className={cn("space-y-0.5", recolhido && "hidden")}>
               {itens.map((item) => {
                 const ativo = location.pathname === item.href || location.pathname.startsWith(item.href + "/");
                 const Icon = item.icon;
