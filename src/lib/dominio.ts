@@ -33,6 +33,25 @@ export function faixaNoNivel(cargo?: Cargo, nivelId?: string | null): number | n
   return cargo.faixas[i] ?? null;
 }
 
+/**
+ * A pessoa ainda pode ser COBRADA por uma pendência (exame, certificação,
+ * treinamento, termo, férias)?
+ *
+ * Regra: só sai quem DESLIGOU. Diferente de `contaHeadcount`, que serve para
+ * contar o quadro e por isso tira também a direção e quem não conta como
+ * ativo — ali a pergunta é "quantas pessoas temos"; aqui é "de quem ainda faz
+ * sentido cobrar". Afastado continua entrando: ele volta, e o exame dele tem de
+ * estar em dia quando voltar. Direção também: sócio faz exame ocupacional.
+ *
+ * Existe porque cada tela vinha inventando a sua: SST cobrava exame de quem
+ * saiu (23 "vencidos" numa lista em que boa parte já não trabalha aqui),
+ * enquanto a aba de Certificações da MESMA tela filtrava — duas regras
+ * diferentes a dois cliques de distância.
+ */
+export function noQuadro(c: Colaborador): boolean {
+  return c.statusId !== "inativo" && !c.dataDesligamento;
+}
+
 export function contaHeadcount(c: Colaborador, statusById: Map<string, StatusColaborador>): boolean {
   if (c.ehDirecao) return false;
   if (c.dataDesligamento) return false;

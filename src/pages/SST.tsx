@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil } from "lucide-react";
+import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil, MessageCircle, CalendarClock } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -12,12 +12,13 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
-import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useColecao, useConfig } from "@/lib/store";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, parseData } from "@/lib/format";
 import { CATEGORIAS_SST, JANELA_ALERTA_DIAS } from "@/lib/constants";
+import { mensagemAgendamento, telefoneWhatsApp, linkWhatsApp, quandoLegivel } from "@/lib/agendamentoExame";
 import { CATALOGO_NR, nomeNR, calcularValidadeNR } from "@/data/nrs";
 import { HOJE } from "@/data/_gen";
 
@@ -43,6 +44,7 @@ export default function SST() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
+  const config = useConfig();
   const gere = podeGerir(sessao);
   const { items: institucionais } = useColecao("institucionais");
   const { items: documentos, atualizar: atualizarDoc, remover: removerDoc } = useColecao("documentos");
@@ -55,8 +57,14 @@ export default function SST() {
     [institucionais],
   );
 
+  // Quem SAIU não é cobrado por exame. `colaboradoresVisiveis` é permissão
+  // ("quem eu posso ver"), não status — as duas eram confundidas aqui, e a
+  // lista pedia ASO de gente que não trabalha mais na empresa, inflando o
+  // contador de vencidos. O seletor deixa reabrir para conferência/auditoria.
+  const [incluirSaiu, setIncluirSaiu] = useState(false);
   const exames = useMemo(() => {
-    const idsVisiveis = new Set(colaboradoresVisiveis(sessao, d.colaboradores).map((c) => c.id));
+    const escopo = colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => incluirSaiu || noQuadro(c));
+    const idsVisiveis = new Set(escopo.map((c) => c.id));
     const cats = new Set<string>(CATEGORIAS_SST);
     return documentos
       .filter((doc) => cats.has(doc.categoria) && idsVisiveis.has(doc.colaboradorId))
@@ -67,6 +75,14 @@ export default function SST() {
         if (isNaN(db)) return -1;
         return da - db;
       });
+  }, [documentos, sessao, d.colaboradores, incluirSaiu]);
+
+  // Quantos exames ficaram de fora: um filtro que esconde sem dizer quanto
+  // escondeu vira "o sistema perdeu exames".
+  const deQuemSaiu = useMemo(() => {
+    const saiu = new Set(colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !noQuadro(c)).map((c) => c.id));
+    const cats = new Set<string>(CATEGORIAS_SST);
+    return documentos.filter((doc) => cats.has(doc.categoria) && saiu.has(doc.colaboradorId)).length;
   }, [documentos, sessao, d.colaboradores]);
 
   const total = exames.length;
@@ -133,6 +149,14 @@ export default function SST() {
           title="Exames ocupacionais"
           subtitle="ASO e exames periódicos por colaborador"
           icon={<Stethoscope className="h-[18px] w-[18px]" />}
+          action={
+            deQuemSaiu > 0 ? (
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500">
+                <input type="checkbox" checked={incluirSaiu} onChange={(e) => setIncluirSaiu(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                Incluir quem saiu <span className="text-slate-400">({deQuemSaiu})</span>
+              </label>
+            ) : undefined
+          }
         />
         {examesVisiveis.length === 0 ? (
           <CardBody>
@@ -153,6 +177,7 @@ export default function SST() {
                   <th className="th">Tipo</th>
                   <th className="th">Emissão</th>
                   <th className="th">Vencimento</th>
+                  <th className="th">Agendamento</th>
                   <th className="th text-right">Situação</th>
                   {gere && <th className="th" />}
                 </tr>
@@ -166,6 +191,32 @@ export default function SST() {
                       <td className="td text-slate-600">{doc.categoria}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataEmissao)}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataVencimento)}</td>
+                      {/* O agendamento fica NA LINHA: era a informação que o RH
+                          combinava por telefone e não tinha onde guardar — quando
+                          o colaborador ligava perguntando onde comparecer,
+                          ninguém sabia responder. */}
+                      <td className="td text-xs text-slate-600">
+                        {doc.agendadoPara ? (
+                          <span className="flex flex-col">
+                            <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                              <CalendarClock className="h-3.5 w-3.5 text-brand" />
+                              {quandoLegivel(doc.agendadoPara)}
+                              {doc.avisadoEm && (
+                                <span className="rounded-full bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-200" title={`Avisado em ${formatDate(doc.avisadoEm)}`}>
+                                  avisado
+                                </span>
+                              )}
+                            </span>
+                            {(doc.clinica || doc.localExame) && (
+                              <span className="text-[11px] text-slate-400">
+                                {[doc.clinica, doc.localExame].filter(Boolean).join(" · ")}
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                       <td className="td text-right">
                         <Badge variant={VARIANTE_SITUACAO[situacao]}>{situacao}</Badge>
                       </td>
@@ -222,10 +273,18 @@ export default function SST() {
         <ModalEditarExame
           doc={editarExame}
           nome={d.nomeColab(editarExame.colaboradorId)}
+          telefone={d.colabById.get(editarExame.colaboradorId)?.telefone}
+          empresa={config.empresaNome}
           onFechar={() => setEditarExame(null)}
           onSalvar={(patch) => {
             atualizarDoc(editarExame.id, patch);
             toast("Exame atualizado.");
+          }}
+          onAvisou={() => {
+            // Carimbo de quando o aviso saiu: a lista mostra "avisado" e ninguém
+            // manda a mesma convocação duas vezes para a mesma pessoa.
+            atualizarDoc(editarExame.id, { avisadoEm: new Date().toISOString() });
+            toast("Agendamento salvo. Abrindo o WhatsApp…");
           }}
         />
       )}
@@ -255,17 +314,29 @@ export default function SST() {
 // Corrigir um exame já lançado: tipo e datas. O anexo (quando existe) não é
 // tocado aqui — para trocar o arquivo, use a ficha do colaborador.
 function ModalEditarExame({
-  doc, nome, onSalvar, onFechar,
+  doc, nome, telefone, empresa, onSalvar, onAvisou, onFechar,
 }: {
-  doc: { id: string; categoria: string; dataEmissao?: string | null; dataVencimento?: string | null };
+  doc: { id: string; categoria: string; dataEmissao?: string | null; dataVencimento?: string | null; agendadoPara?: string | null; clinica?: string | null; localExame?: string | null };
   nome: string;
-  onSalvar: (patch: { categoria: string; dataEmissao: string | null; dataVencimento: string | null }) => void;
+  telefone?: string | null;
+  empresa?: string | null;
+  onSalvar: (patch: { categoria: string; dataEmissao: string | null; dataVencimento: string | null; agendadoPara: string | null; clinica: string | null; localExame: string | null }) => void;
+  onAvisou: () => void;
   onFechar: () => void;
 }) {
   const toast = useToast();
   const [categoria, setCategoria] = useState(doc.categoria);
   const [emissao, setEmissao] = useState((doc.dataEmissao ?? "").slice(0, 10));
   const [vencimento, setVencimento] = useState((doc.dataVencimento ?? "").slice(0, 10));
+  const [agendado, setAgendado] = useState((doc.agendadoPara ?? "").slice(0, 16));
+  const [clinica, setClinica] = useState(doc.clinica ?? "");
+  const [local, setLocal] = useState(doc.localExame ?? "");
+  const [obsAviso, setObsAviso] = useState("");
+
+  const tel = telefoneWhatsApp(telefone);
+  const mensagem = mensagemAgendamento({
+    nome, tipo: categoria, quando: agendado, clinica, local, observacao: obsAviso, empresa,
+  });
 
   const salvar = () => {
     // Vencimento antes da emissão quase sempre é dedo trocado — e deixaria o
@@ -274,7 +345,24 @@ function ModalEditarExame({
       toast("O vencimento não pode ser antes da emissão.", "erro");
       return;
     }
-    onSalvar({ categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null });
+    onSalvar({
+      categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null,
+      agendadoPara: agendado || null, clinica: clinica.trim() || null, localExame: local.trim() || null,
+    });
+    onFechar();
+  };
+
+  // Grava ANTES de abrir o WhatsApp: se a pessoa mandar a mensagem e o
+  // agendamento não estiver salvo, o combinado existe só na conversa dela.
+  const avisar = () => {
+    if (!tel) return toast("Este colaborador não tem um telefone válido no cadastro.", "erro");
+    if (!agendado) return toast("Informe a data e a hora antes de avisar.", "erro");
+    onSalvar({
+      categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null,
+      agendadoPara: agendado || null, clinica: clinica.trim() || null, localExame: local.trim() || null,
+    });
+    onAvisou();
+    window.open(linkWhatsApp(tel, mensagem), "_blank", "noopener,noreferrer");
     onFechar();
   };
 
@@ -282,10 +370,23 @@ function ModalEditarExame({
     <Modal
       aberto
       onFechar={onFechar}
-      titulo="Corrigir exame"
+      titulo="Exame e agendamento"
       descricao={nome}
       largura="max-w-md"
-      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}><CheckCircle2 className="h-4 w-4" /> Salvar</button></>}
+      rodape={
+        <>
+          <button className="btn-outline" onClick={onFechar}>Cancelar</button>
+          <button
+            className="btn-outline text-green-700"
+            onClick={avisar}
+            disabled={!tel || !agendado}
+            title={!tel ? "Sem telefone válido no cadastro" : !agendado ? "Informe a data e a hora" : "Salva e abre a conversa com o texto pronto"}
+          >
+            <MessageCircle className="h-4 w-4" /> Salvar e avisar no WhatsApp
+          </button>
+          <button className="btn-primary" onClick={salvar}><CheckCircle2 className="h-4 w-4" /> Salvar</button>
+        </>
+      }
     >
       <div className="space-y-3">
         <Campo label="Tipo">
@@ -296,6 +397,45 @@ function ModalEditarExame({
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Emissão"><Input type="date" value={emissao} onChange={(e) => setEmissao(e.target.value)} /></Campo>
           <Campo label="Vencimento"><Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} /></Campo>
+        </div>
+
+        {/* Agendamento: onde e quando a pessoa deve comparecer. Combinado por
+            telefone com a clínica, isso vivia só na cabeça de quem marcou —
+            quando o colaborador ligava perguntando, ninguém sabia responder. */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <CalendarClock className="h-3.5 w-3.5" /> Agendamento
+          </p>
+          <div className="space-y-3">
+            <Campo label="Data e hora">
+              <Input type="datetime-local" value={agendado} onChange={(e) => setAgendado(e.target.value)} />
+            </Campo>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Clínica / empresa">
+                <Input value={clinica} onChange={(e) => setClinica(e.target.value)} placeholder="Ex.: Clínica Vida" />
+              </Campo>
+              <Campo label="Local">
+                <Input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="Ex.: Av. Brasil, 100 — Centro" />
+              </Campo>
+            </div>
+            <Campo label="Observação para o colaborador (opcional)">
+              <Input value={obsAviso} onChange={(e) => setObsAviso(e.target.value)} placeholder="Ex.: comparecer em jejum de 8h" />
+            </Campo>
+          </div>
+
+          {/* A mensagem aparece ANTES de enviar. Botão que abre o WhatsApp com
+              um texto que ninguém leu é como assinar sem ler. */}
+          {agendado && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">Mensagem que será enviada</p>
+              <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-600">{mensagem}</pre>
+              {!tel && (
+                <p className="mt-2 text-[11px] text-red-600">
+                  Sem telefone válido no cadastro de {nome} — preencha o telefone na ficha para poder avisar.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Modal>
@@ -315,7 +455,9 @@ function AbaCertificacoesNR() {
   const [form, setForm] = useState(FORM_VAZIO);
 
   const escopo = useMemo(
-    () => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => c.statusId !== "inativo"),
+    // Mesma régua da aba de Exames (noQuadro): antes esta aba filtrava só por
+    // `statusId` e deixava passar quem tinha data de desligamento.
+    () => colaboradoresVisiveis(sessao, d.colaboradores).filter(noQuadro),
     [sessao, d.colaboradores],
   );
   const idsVisiveis = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);

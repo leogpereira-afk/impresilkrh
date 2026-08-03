@@ -62,11 +62,15 @@ export function useNotificacoes(): Notificacao[] {
     // cobrar exame, treinamento ou avaliação de quem está afastado é ruído.
     const TRABALHANDO = new Set(["ativo", "experiencia", "aviso"]);
     const ativos = escopo.filter((c) => TRABALHANDO.has(c.statusId ?? "") && !c.dataDesligamento);
+    const idsAtivos = new Set(ativos.map((c) => c.id));
     const out: Notificacao[] = [];
 
     // Documentos a vencer / vencidos
     for (const doc of documentos) {
-      if (!ids.has(doc.colaboradorId) || !doc.dataVencimento) continue;
+      // `ativos`, não `ids`: o sino tocava por ASO vencido de quem já saiu — a
+      // pessoa nunca vai renovar, então o alerta não tem conserto e vira ruído
+      // permanente no topo da lista (mesmo defeito que a tela de SST tinha).
+      if (!idsAtivos.has(doc.colaboradorId) || !doc.dataVencimento) continue;
       const dd = diasAte(doc.dataVencimento);
       if (isNaN(dd) || dd > JANELA_ALERTA_DIAS) continue;
       const vencido = dd < 0;

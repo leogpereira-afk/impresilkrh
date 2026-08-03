@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
-import { useDominio, indiceNivel } from "@/lib/dominio";
+import { useDominio, indiceNivel, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, diaLocalISO } from "@/lib/format";
@@ -162,7 +162,7 @@ export default function Desempenho() {
   const escopo = useMemo(
     () =>
       colaboradoresVisiveis(sessao, d.colaboradores)
-        .filter((c) => !c.ehDirecao && c.statusId !== "inativo")
+        .filter((c) => !c.ehDirecao && noQuadro(c))
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     [sessao, d.colaboradores],
   );

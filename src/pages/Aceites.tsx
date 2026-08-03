@@ -9,7 +9,7 @@ import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { formatDate, formatDateLong } from "@/lib/format";
@@ -202,15 +202,21 @@ function AcompanhamentoCard() {
   const d = useDominio();
   const { items: aceites } = useColecao("aceites");
 
+  // Só quem ainda pode assinar. O aceite é criado pela PRÓPRIA pessoa logada,
+  // então quem saiu nunca vai assinar: eram 53 linhas "Pendente" permanentes,
+  // e o selo verde do cabeçalho (aceitos === total) virava matematicamente
+  // inalcançável — o card ficava laranja para sempre mesmo com o quadro
+  // inteiro em dia. Quem saiu continua com o aceite guardado na ficha dele.
+  const [incluirSaiu, setIncluirSaiu] = useState(false);
   const linhas = useMemo(() => {
     const colabs = d.colaboradores
-      .filter((c) => !c.ehDirecao)
+      .filter((c) => !c.ehDirecao && (incluirSaiu || noQuadro(c)))
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     return colabs.map((c) => ({
       colab: c,
       aceite: aceites.find((a) => a.colaboradorId === c.id && a.tipo === TIPO_ETICA),
     }));
-  }, [d.colaboradores, aceites]);
+  }, [d.colaboradores, aceites, incluirSaiu]);
 
   const aceitos = linhas.filter((l) => l.aceite).length;
 
@@ -220,7 +226,15 @@ function AcompanhamentoCard() {
         title="Acompanhamento de aceites"
         subtitle={`${aceitos} de ${linhas.length} colaboradores aceitaram o Código de Ética.`}
         icon={<ShieldCheck className="h-[18px] w-[18px]" />}
-        action={<Badge variant={aceitos === linhas.length ? "success" : "warning"}><ClipboardCheck className="h-3.5 w-3.5" /> {aceitos}/{linhas.length}</Badge>}
+        action={
+          <div className="flex items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+              <input type="checkbox" checked={incluirSaiu} onChange={(e) => setIncluirSaiu(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+              Incluir quem saiu
+            </label>
+            <Badge variant={aceitos === linhas.length ? "success" : "warning"}><ClipboardCheck className="h-3.5 w-3.5" /> {aceitos}/{linhas.length}</Badge>
+          </div>
+        }
       />
       <CardBody>
         {linhas.length === 0 ? (

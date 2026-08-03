@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatBRL, formatDate, formatNumber } from "@/lib/format";
@@ -60,13 +60,28 @@ export function ViagensPainel() {
 
   const podeEditar = podeGerir(sessao);
 
-  // Escopo: equipe de campo visível, sem direção e sem inativos.
+  // Escopo: equipe de campo visível, sem direção.
+  //
+  // Aqui o filtro de quem saiu é o INVERSO do problema do SST: esta é tela de
+  // DINHEIRO, e a diária de quem saiu foi paga de verdade. Escondê-la calado
+  // fazia o gasto do mês encolher sozinho quando alguém era desligado no dia
+  // 20 — e o instalador de campo, que é quem mais viaja, sumia do ranking sem
+  // aviso. Por isso: escondido por padrão (o dia a dia é sobre quem está em
+  // campo), mas com seletor e contador para reabrir o histórico.
+  const [incluirSaiu, setIncluirSaiu] = useState(false);
   const escopo = useMemo(
     () =>
       colaboradoresVisiveis(sessao, d.colaboradores)
-        .filter((c) => !c.ehDirecao && c.statusId !== "inativo"),
-    [sessao, d.colaboradores],
+        .filter((c) => !c.ehDirecao && (incluirSaiu || noQuadro(c))),
+    [sessao, d.colaboradores, incluirSaiu],
   );
+  // Quantas viagens ficam de fora — sem o número, o total encolhe em silêncio.
+  const viagensDeQuemSaiu = useMemo(() => {
+    const saiu = new Set(
+      colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !c.ehDirecao && !noQuadro(c)).map((c) => c.id),
+    );
+    return viagens.filter((v) => saiu.has(v.colaboradorId)).length;
+  }, [viagens, sessao, d.colaboradores]);
   const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
 
   const lista = useMemo(
@@ -365,7 +380,14 @@ export function ViagensPainel() {
           subtitle={`${listaFiltrada.length} viagem(ns) · ${formatBRL(totalGeral)} no total`}
           icon={<Plane className="h-[18px] w-[18px]" />}
           action={
-            podeEditar ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {viagensDeQuemSaiu > 0 && (
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+                  <input type="checkbox" checked={incluirSaiu} onChange={(e) => setIncluirSaiu(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                  Incluir quem saiu <span className="text-slate-400">({viagensDeQuemSaiu})</span>
+                </label>
+              )}
+            {podeEditar ? (
               <>
                 <input
                   ref={fileRef}
@@ -382,7 +404,8 @@ export function ViagensPainel() {
                   <Upload className="h-4 w-4" /> Importar
                 </button>
               </>
-            ) : undefined
+            ) : null}
+            </div>
           }
         />
         {listaFiltrada.length === 0 ? (

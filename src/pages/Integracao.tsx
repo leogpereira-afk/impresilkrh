@@ -31,7 +31,7 @@ import { useToast } from "@/components/ui/toast";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { BarrasColoridas } from "@/components/charts/charts";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
@@ -86,9 +86,11 @@ export default function Integracao() {
   const gere = podeGerir(sessao);
   const [iniciar, setIniciar] = useState(false);
 
-  // Inativos não entram em estatística/jornada/drill (alinhado aos demais módulos).
+  // Quem ainda está na casa. Régua canônica (noQuadro): a versão anterior
+  // olhava só `statusId` e deixava passar quem tem data de desligamento com o
+  // status ainda em "aviso"/"afastado".
   const escopo = useMemo(
-    () => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => c.statusId !== "inativo"),
+    () => colaboradoresVisiveis(sessao, d.colaboradores).filter(noQuadro),
     [sessao, d.colaboradores],
   );
   const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
@@ -129,6 +131,10 @@ export default function Integracao() {
     const idsOff = new Set<string>();
     for (const g of grupos.values()) {
       if (g.tipo === "Admissão") {
+        // Onboarding é COBRANÇA: quem foi admitido e saiu com o checklist pela
+        // metade ficava somado a "em andamento" para sempre, e ninguém pode
+        // concluir a integração de quem não trabalha mais aqui.
+        if (!idsEscopo.has(g.colaboradorId)) continue;
         if (g.feitas >= g.total) idsConcluidos.add(g.colaboradorId);
         else idsAndamento.add(g.colaboradorId);
       } else if (g.tipo === "Desligamento") {
@@ -143,7 +149,7 @@ export default function Integracao() {
       idsConcluidos,
       idsOff,
     };
-  }, [tarefasEscopo]);
+  }, [tarefasEscopo, idsEscopo]);
 
   const drill = useDrill();
 
@@ -318,7 +324,10 @@ export default function Integracao() {
           onIniciar={() => setIniciar(true)}
                   tipo="Desligamento"
                   tarefas={tarefasEscopo}
-                  escopoIds={idsEscopo}
+                  // Aqui o desligado É o assunto. Passar `idsEscopo` (que tira
+                  // inativo) esvaziava a aba: o cartão "Offboardings" contava N
+                  // e a lista abaixo dizia "Nenhum offboarding em aberto".
+                  escopoIds={idsComInativos}
                   onAlternar={alternar}
                 />
               ),

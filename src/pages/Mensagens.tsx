@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
 import { formatDate, formatDateLong } from "@/lib/format";
@@ -42,6 +42,27 @@ function telefoneWhats(tel?: string | null): string | null {
   if (n.startsWith("55") && n.length >= 12) return n;
   return `55${n}`;
 }
+/**
+ * Quem já saiu da empresa, para não receber comunicado interno.
+ *
+ * A lista de contatos é uma FOTOGRAFIA: "Sincronizar do quadro" copia o
+ * telefone de quem estava ativo naquele dia, e nada apaga depois. Sem esta
+ * conferência, o desligado de março continua contando como destinatário — e o
+ * comunicado interno sai para ele.
+ *
+ * Contato SEM `colaboradorId` nunca é filtrado: é cadastro manual (fornecedor,
+ * terceiro, contato de emergência) e não tem status para consultar.
+ */
+function useSaiuIds(): Set<string> {
+  const d = useDominio();
+  return useMemo(
+    () => new Set(d.colaboradores.filter((c) => !noQuadro(c)).map((c) => c.id)),
+    [d.colaboradores],
+  );
+}
+const contatoAtivo = (c: { colaboradorId?: string | null }, saiu: Set<string>) =>
+  !c.colaboradorId || !saiu.has(c.colaboradorId);
+
 /** Abre a conversa no WhatsApp com o texto já escrito (Web ou app, o SO decide). */
 function abrirWhatsApp(tel: string, texto: string) {
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
@@ -148,6 +169,7 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
   const toast = useToast();
   const d = useDominio();
   const { items: contatos, criar, atualizar, remover } = useColecao("contatos");
+  const saiu = useSaiuIds();
 
   const [busca, setBusca] = useState("");
   const [modal, setModal] = useState(false);
@@ -178,12 +200,12 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
   // Resumo por grupo (todos os contatos, independente da busca).
   const resumoGrupos = useMemo(() => {
     const mapa = new Map<string, number>();
-    for (const c of contatos) {
+    for (const c of contatos.filter((x) => contatoAtivo(x, saiu))) {
       const g = c.grupo?.trim() || SEM_GRUPO;
       mapa.set(g, (mapa.get(g) ?? 0) + 1);
     }
     return [...mapa.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [contatos]);
+  }, [contatos, saiu]);
 
   const abrirNovo = () => {
     setEditando(null);
@@ -311,7 +333,15 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
                 {lista.map((c) => (
                   <tr key={c.id} className="transition hover:bg-slate-50/60">
                     <td className="td">
-                      <p className="font-medium text-slate-800"><LinkFicha id={c.colaboradorId}>{c.nome}</LinkFicha></p>
+                      <p className="flex items-center gap-1.5 font-medium text-slate-800">
+                        <LinkFicha id={c.colaboradorId}>{c.nome}</LinkFicha>
+                        {/* Sem o selo, a única pista de que este contato não
+                            deve mais receber nada estaria na ficha, a dois
+                            cliques — e a lista continuaria parecendo em dia. */}
+                        {!contatoAtivo(c, saiu) && (
+                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200">saiu</span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-400 sm:hidden">{c.telefone}</p>
                     </td>
                     <td className="td hidden sm:table-cell text-slate-500">{c.telefone}</td>
@@ -593,6 +623,7 @@ const AGENDAMENTO_VAZIO: FormAgendamento = {
 function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   const toast = useToast();
   const { items: contatos } = useColecao("contatos");
+  const saiu = useSaiuIds();
   const { items: templates } = useColecao("templatesMensagem");
   const { items: agendamentos, criar, atualizar, remover } = useColecao("agendamentos");
 
@@ -629,9 +660,12 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
   }, [contatos]);
 
   // Quantos contatos correspondem a um grupo-alvo (ou "Todos").
+  // Só conta quem ainda está na empresa: "12 contato(s)" quando 3 já saíram
+  // faz o RH planejar um comunicado para um público que não existe.
   const contar = (grupoAlvo?: string) => {
-    if (!grupoAlvo || grupoAlvo === TODOS) return contatos.length;
-    return contatos.filter((c) => (c.grupo?.trim() || "") === grupoAlvo).length;
+    const vivos = contatos.filter((c) => contatoAtivo(c, saiu));
+    if (!grupoAlvo || grupoAlvo === TODOS) return vivos.length;
+    return vivos.filter((c) => (c.grupo?.trim() || "") === grupoAlvo).length;
   };
 
   const lista = useMemo(
@@ -737,7 +771,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
           onClick={() => alternarFoco("Enviada")} ativo={foco === "Enviada"} title="Ver só os envios já disparados" />
         {/* Sem clique: os contatos não estão nesta aba e a aba de Contatos não pode
             ser aberta de fora — o número aqui é só referência da base. */}
-        <StatCard label="Total de contatos" value={contatos.length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Base disponível" />
+        <StatCard label="Total de contatos" value={contatos.filter((c) => contatoAtivo(c, saiu)).length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Quem ainda está na empresa" />
       </div>
 
       <div className="mb-4 flex items-center justify-end">

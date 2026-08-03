@@ -142,6 +142,18 @@ export interface Documento {
   observacao?: string | null;
   enviadoPor?: string;
   criadoEm: string;
+  // ---- Agendamento do exame (SST) ----
+  // O RH marca por telefone com a clínica; sem guardar aqui, a informação de
+  // ONDE a pessoa deve comparecer não ficava em lugar nenhum e ninguém sabia
+  // responder quando ela ligava perguntando.
+  /** Data e hora combinadas (ISO local: "2026-08-14T09:30"). */
+  agendadoPara?: string | null;
+  /** Clínica/empresa que faz o exame. */
+  clinica?: string | null;
+  /** Endereço ou ponto de referência. */
+  localExame?: string | null;
+  /** Carimbo de quando o aviso foi enviado ao colaborador. */
+  avisadoEm?: string | null;
 }
 
 // Bloco de conteúdo rico (editável no Painel de Controle)
