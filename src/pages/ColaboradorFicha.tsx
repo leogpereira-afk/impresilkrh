@@ -1251,7 +1251,8 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   );
 }
 
-function enqVar(e: string): "danger" | "warning" | "success" | "info" {
+function enqVar(e: string): "danger" | "warning" | "success" | "info" | "neutral" {
+  if (e === "Sem dados") return "neutral";
   return e === "Crítico" ? "danger" : e === "Abaixo" ? "warning" : e === "Acima" ? "info" : "success";
 }
 
@@ -1807,6 +1808,16 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
 
 function AbaHistorico({ colaboradorId }: { colaboradorId: string }) {
   const { items } = useColecao("movimentacoes");
+  const sessao = useSessao();
+  // A descrição da movimentação guarda o salário EM TEXTO
+  // ("salário R$ 2.500,00 → R$ 2.800,00", ver lib/movimentacoes.ts). A ficha
+  // esconde o campo salário de quem não pode ver — e esta linha do tempo
+  // entregava o mesmo número pela porta dos fundos, inclusive o histórico de
+  // reajustes. A regra escrita no próprio RBAC é que gestor NÃO vê salário de
+  // subordinado; aqui ela passa a valer também.
+  const podeVerValor = podeVerDadosSensiveis(sessao, colaboradorId);
+  const semDinheiro = (t: string) =>
+    podeVerValor ? t : t.replace(/R\$\s*-?[\d.]+(?:,\d{2})?/g, "R$ •••");
   // Ordena por data saneada: `new Date("")` dá NaN, e comparador que devolve NaN
   // faz o sort virar ordem indefinida — a linha do tempo inteira embaralhava por
   // causa de um único registro sem data. Sem data vai para o fim.
@@ -1823,7 +1834,7 @@ function AbaHistorico({ colaboradorId }: { colaboradorId: string }) {
                   <Badge variant={m.tipo === "Promoção" ? "success" : m.tipo === "Admissão" ? "info" : "neutral"}>{m.tipo}</Badge>
                   <span className="text-xs text-slate-400">{formatDate(m.data)}</span>
                 </div>
-                <p className="mt-1 text-sm text-slate-600">{m.descricao}</p>
+                <p className="mt-1 text-sm text-slate-600">{semDinheiro(String(m.descricao ?? ""))}</p>
               </li>
             ))}
           </ol>

@@ -19,13 +19,16 @@ import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, contaHeadcount, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { formatBRL, formatPercent, formatDate, parseData, MESES_PT } from "@/lib/format";
-import { somaPorTipo, serieMensal, corDoTipo, totalDe } from "@/lib/folha";
+import { formatBRL, formatPercent, formatDate, parseData, MESES_PT, diasDeCalendario } from "@/lib/format";
+import { somaPorTipo, serieMensal, corDoTipo, totalDe, TIPOS_ENCARGO } from "@/lib/folha";
 import { feriasEmCurso } from "@/lib/ferias";
 import { ARQUETIPOS, COR_POSICAO_FAIXA, COR_RISCO, JANELA_ALERTA_DIAS, COR_HUMOR, COR_PERFIL_COMPORTAMENTAL, HUMORES, PERFIS_COMPORTAMENTAIS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
-const dias = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
+// Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
+// milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
+// documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
+const dias = (d?: string | null) => diasDeCalendario(d, HOJE);
 const mesesAtras = (d?: string | null) => { const dt = parseData(d); return dt ? (HOJE.getTime() - dt.getTime()) / (86400000 * 30.44) : Infinity; };
 
 // dd/MM (dois dígitos) a partir de uma data ISO. Ex.: 02/06.
@@ -46,6 +49,7 @@ export default function Painel() {
   const { items: documentos } = useColecao("documentos");
   const { items: ferias } = useColecao("ferias");
   const { items: avaliacoes } = useColecao("avaliacoes");
+  const { items: ciclos } = useColecao("ciclos");
   const { items: advertencias } = useColecao("advertencias");
   const { items: treinamentos } = useColecao("treinamentos");
   const { items: pagamentos } = useColecao("pagamentos");
@@ -141,7 +145,16 @@ export default function Painel() {
     .filter((f) => ids.has(f.colaboradorId) && feriasEmCurso(f) && f.dataRetorno && dias(f.dataRetorno) >= 0)
     .sort((a, b) => dias(a.dataRetorno) - dias(b.dataRetorno));
 
-  const cicloAvaliados = new Set(avaliacoes.filter((a) => a.tipo === "GESTOR").map((a) => a.colaboradorId));
+  // Sem filtrar o ciclo, a capa dizia "0 pendente · tudo em dia" no dia seguinte
+  // à abertura de um ciclo novo, porque todo mundo tinha avaliação do ciclo
+  // ANTERIOR — enquanto a tela de Desempenho listava as 40 pessoas pendentes.
+  // Mesma régua da outra tela: vale a avaliação do ciclo vigente.
+  const cicloVigente = ciclos.find((x) => x.status === "Aberto") ?? ciclos[0];
+  const cicloAvaliados = new Set(
+    avaliacoes
+      .filter((a) => a.tipo === "GESTOR" && (!cicloVigente || a.cicloId === cicloVigente.id))
+      .map((a) => a.colaboradorId),
+  );
   const avaliacoesPendentes = ativos.filter((c) => !cicloAvaliados.has(c.id));
   const elegiveis = avaliacoes.filter((a) => a.elegivelPromocao && ids.has(a.colaboradorId));
 
@@ -172,7 +185,14 @@ export default function Painel() {
   // Competência = mês de referência do filtro. "Ano inteiro" soma o ano todo.
   // Regra: pagto até o dia 15 fecha o mês anterior; do dia 16 conta no mês corrente.
   const compFiltro = filtroMes === 0 ? null : `${filtroAno}-${String(filtroMes).padStart(2, "0")}`;
-  const pagsEscopo = pagamentos.filter((p) => ids.has(p.colaboradorId));
+  // FGTS e INSS existem como pagamento POR PESSOA (o importador só manda a guia
+  // para "coletivas" quando ela vem sem CPF, e a importação de planilha grava
+  // "FGTS Fulano" com colaboradorId). Somar isso em "Folha paga" e em "Total
+  // recebido por pessoa" transforma encargo da EMPRESA em dinheiro que a pessoa
+  // teria recebido — e ela nunca viu esse dinheiro. A ficha, a tela de Custos e
+  // a lente de custo em Colaboradores já descontavam; só a capa não descontava,
+  // então a mesma competência mostrava um número aqui e outro na ficha.
+  const pagsEscopo = pagamentos.filter((p) => ids.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo));
   const pagsPeriodo = compFiltro
     ? pagsEscopo.filter((p) => p.competencia === compFiltro)
     : pagsEscopo.filter((p) => p.competencia.startsWith(`${filtroAno}-`));
@@ -275,7 +295,7 @@ export default function Painel() {
     .map((a) => ({ nome: a.nome.split(" ")[0], valor: ativos.filter((c) => c.areaId === a.id).length }))
     .filter((x) => x.valor > 0);
   const porNivel = d.niveis.map((n) => ({ nome: n.codigo, valor: ativos.filter((c) => c.nivelId === n.id).length }));
-  const enquadCont: Record<string, number> = { Crítico: 0, Abaixo: 0, Dentro: 0, Acima: 0 };
+  const enquadCont: Record<string, number> = { Crítico: 0, Abaixo: 0, Dentro: 0, Acima: 0, "Sem dados": 0 };
   ativos.forEach((c) => {
     const e = d.enquadrarColab(c);
     enquadCont[e] = (enquadCont[e] ?? 0) + 1;
@@ -876,7 +896,9 @@ function PainelPessoal() {
   const meusPdis = pdis.filter((p) => p.colaboradorId === c.id);
   const meusDocsAlerta = documentos.filter((doc) => doc.colaboradorId === c.id && doc.dataVencimento && dias(doc.dataVencimento) <= JANELA_ALERTA_DIAS);
   const anoAtual = String(HOJE.getFullYear());
-  const meusPagamentos = pagamentos.filter((p) => p.colaboradorId === c.id);
+  // Mesmo motivo: "Meus ganhos no ano" é o que a PESSOA recebeu, e o botão ao
+  // lado gera comprovante — encargo da empresa não entra.
+  const meusPagamentos = pagamentos.filter((p) => p.colaboradorId === c.id && !TIPOS_ENCARGO.includes(p.tipo));
   const ganhoAno = meusPagamentos.filter((p) => p.competencia.startsWith(anoAtual)).reduce((s, p) => s + p.valor, 0);
 
   return (

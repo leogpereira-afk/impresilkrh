@@ -15,7 +15,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, parseData, diaLocalISO } from "@/lib/format";
+import { formatDate, parseData, diaLocalISO, diasDeCalendario } from "@/lib/format";
 import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { feriasEmCurso } from "@/lib/ferias";
 import { situacaoFerias, inicioDoHistorico, DIAS_FERIAS } from "@/lib/clt";
@@ -27,7 +27,10 @@ import { HOJE } from "@/data/_gen";
 import type { Ferias as TFerias, Colaborador } from "@/data/types";
 
 const MS_DIA = 86400000;
-const diasAte = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / MS_DIA) : NaN; };
+// Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
+// milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
+// documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
+const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 // ISO -> "yyyy-MM-dd" para inputs type="date" (e o caminho inverso).
 const isoParaInput = (iso?: string | null) => { const d = parseData(iso); return d ? diaLocalISO(d) : ""; };
 const inputParaIso = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);

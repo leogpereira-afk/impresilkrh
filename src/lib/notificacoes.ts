@@ -7,7 +7,7 @@ import { useMemo } from "react";
 import { useColecao } from "@/lib/store";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { parseData } from "@/lib/format";
+import { parseData, diasDeCalendario } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import { JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
@@ -24,7 +24,11 @@ export interface Notificacao {
   href: string;
 }
 
-const diasAte = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
+// Ancorada no início do dia — o próprio diasAteAniversario aqui embaixo já
+// fazia certo com `hojeBase`. Com a conta crua, o sino dizia "vencido há 1
+// dia" depois das 12h sobre um documento que a ficha mostrava como "vence
+// hoje": duas telas discordando sobre o mesmo papel, no mesmo instante.
+const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 const hojeBase = new Date(HOJE.getFullYear(), HOJE.getMonth(), HOJE.getDate());
 function diasAteAniversario(nasc?: string | null): number {
   const d = parseData(nasc);

@@ -37,9 +37,10 @@ export const CATEGORIAS_INSTITUCIONAL = [
 ] as const;
 
 // Posições de enquadramento salarial
-export const POSICOES_FAIXA = ["Crítico", "Abaixo", "Dentro", "Acima"] as const;
+export const POSICOES_FAIXA = ["Crítico", "Abaixo", "Dentro", "Acima", "Sem dados"] as const;
 
 export const COR_POSICAO_FAIXA: Record<string, string> = {
+  "Sem dados": "#94a3b8",
   Crítico: "#dc2626",
   Abaixo: "#d97706",
   Dentro: "#16a34a",

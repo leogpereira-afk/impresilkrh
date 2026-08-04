@@ -16,13 +16,16 @@ import { useColecao, useConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, parseData } from "@/lib/format";
+import { formatDate, parseData, diasDeCalendario } from "@/lib/format";
 import { CATEGORIAS_SST, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { mensagemAgendamento, telefoneWhatsApp, linkWhatsApp, quandoLegivel } from "@/lib/agendamentoExame";
 import { CATALOGO_NR, nomeNR, calcularValidadeNR } from "@/data/nrs";
 import { HOJE } from "@/data/_gen";
 
-const dias = (d?: string | null) => { const dt = parseData(d); return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN; };
+// Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
+// milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
+// documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
+const dias = (d?: string | null) => diasDeCalendario(d, HOJE);
 
 type Situacao = "Vencido" | "A vencer" | "Válido";
 

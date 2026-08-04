@@ -21,15 +21,15 @@ import { useSessao } from "@/lib/session";
 import { logadoNoServidor, trocarMinhaSenha } from "@/lib/auth";
 import { Campo, Input } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
-import { formatBRL, formatCPF, formatDate, tempoDeCasa, parseData } from "@/lib/format";
+import { formatBRL, formatCPF, formatDate, tempoDeCasa, parseData, diasDeCalendario } from "@/lib/format";
 import { COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
 
-const diasAte = (d?: string | null) => {
-  const dt = parseData(d);
-  return dt ? Math.round((dt.getTime() - HOJE.getTime()) / 86400000) : NaN;
-};
+// Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
+// milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
+// documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
+const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 
 function enqVar(e: string): "danger" | "warning" | "success" | "info" {
   return e === "Crítico" ? "danger" : e === "Abaixo" ? "warning" : e === "Acima" ? "info" : "success";

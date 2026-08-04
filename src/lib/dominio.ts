@@ -4,11 +4,16 @@ import { useColecao } from "./store";
 import type { Cargo, Colaborador, StatusColaborador } from "@/data/types";
 import { MAPA_SENIORIDADE } from "./constants";
 
-export type Enquadramento = "Crítico" | "Abaixo" | "Dentro" | "Acima";
+/* "Sem dados" não é uma posição na faixa — é a ausência dela. Antes, quem não
+   tinha salário ou cargo caía no `return "Dentro"` e ganhava selo VERDE, como
+   se o salário tivesse sido conferido e estivesse na faixa. São 3 pessoas no
+   quadro hoje. Dizer "não sei" é mais honesto e é acionável: aparece na tela
+   como cadastro a completar, em vez de sumir no meio do que está certo. */
+export type Enquadramento = "Crítico" | "Abaixo" | "Dentro" | "Acima" | "Sem dados";
 
 // Enquadramento do salário frente à faixa do cargo (N1→N5). Apêndice C.
 export function enquadrar(salario: number | null | undefined, faixas?: number[]): Enquadramento {
-  if (salario == null || !faixas || faixas.length === 0) return "Dentro";
+  if (salario == null || !faixas || faixas.length === 0) return "Sem dados";
   const min = faixas[0];
   const max = faixas[faixas.length - 1];
   if (salario < min * 0.92) return "Crítico";

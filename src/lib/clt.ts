@@ -24,7 +24,15 @@ import type { Colaborador, Ferias } from "@/data/types";
 const DIA = 86_400_000;
 /** Dias de férias por período aquisitivo completo (CLT art. 130, I). */
 export const DIAS_FERIAS = 30;
-const dias = (de: Date, ate: Date) => Math.round((ate.getTime() - de.getTime()) / DIA);
+/* Ancorado no início do dia dos DOIS lados. Com a conta crua, `HOJE` carrega a
+   hora atual e o prazo mudava de resposta ao longo do dia: no 90º dia do
+   contrato de experiência, de manhã faltava 1 dia para decidir e depois das 12h
+   o app já declarava EXPIRADO — no dia em que ainda dava para agir. */
+const dias = (de: Date, ate: Date) => {
+  const a = new Date(de.getFullYear(), de.getMonth(), de.getDate()).getTime();
+  const b = new Date(ate.getFullYear(), ate.getMonth(), ate.getDate()).getTime();
+  return Math.round((b - a) / DIA);
+};
 const somaMeses = (d: Date, m: number) => {
   const r = new Date(d.getTime());
   r.setMonth(r.getMonth() + m);

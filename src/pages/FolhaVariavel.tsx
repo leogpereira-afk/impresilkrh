@@ -18,7 +18,7 @@ import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatBRL } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { minParaHora } from "@/lib/pontoImport";
-import { calcularHoraExtra, minutosEntre, horasDecimais, valorDigitado, ADICIONAIS_HE, FATOR_HE_PADRAO } from "@/lib/pontoFolha";
+import { calcularHoraExtra, minutosEntre, horasDecimais, valorDigitado, ADICIONAIS_HE, FATOR_HE_PADRAO, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { slug } from "@/data/_gen";
 import type { Colaborador, Lancamento, TipoLancamento } from "@/data/types";
 
@@ -379,6 +379,14 @@ function DetalheColaborador({
   };
 
   const salvar = () => {
+    // "2.500.38" (dois pontos, digitação natural no teclado numérico) era lido
+    // como 250038 — cem vezes o valor, gravado na folha e exportado para a
+    // contabilidade. A trava já existia e estava ligada só no campo de SALÁRIO;
+    // o campo que de fato manda dinheiro para a folha estava sem ela.
+    if (dinheiroAmbiguo(valorEfetivo)) {
+      toast("Formato ambíguo. Escreva assim: 2.500,38", "erro");
+      return;
+    }
     const v = valorDigitado(valorEfetivo);
     if (!v || v <= 0) {
       toast(ehHoraExtra && minutosHE === 0 ? "Informe o horário de início e fim (ou o valor)." : "Informe um valor válido.", "erro");

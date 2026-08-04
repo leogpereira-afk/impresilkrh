@@ -384,7 +384,10 @@ function AvaliacaoSecao() {
     criarCiclo({
       nome: `Ciclo ${ano}.${semestre}`, status: "Aberto",
       pesoTecnico: 0.4, pesoComportamental: 0.3, pesoResultado: 0.3,
-      notaMinPromocao: 7, mesesMinNivel: 12,
+      // As notas do app vão de 0 a 100 (statusDesempenhoDe: >=80 apto, >=60 em
+      // desenvolvimento) e o ciclo semeado usa 80. Nascer com 7 fazia TODO
+      // mundo com nota acima de 7 virar "elegível a promoção" no ciclo novo.
+      notaMinPromocao: 80, mesesMinNivel: 12,
     });
     toastPC(`Ciclo ${ano}.${semestre} criado e aberto.`);
   };
@@ -420,7 +423,7 @@ function AvaliacaoSecao() {
                 <Campo label="Peso técnico"><Input type="number" step="0.05" value={c.pesoTecnico} onChange={(e) => atualizar(c.id, { pesoTecnico: Number(e.target.value) })} /></Campo>
                 <Campo label="Peso comp."><Input type="number" step="0.05" value={c.pesoComportamental} onChange={(e) => atualizar(c.id, { pesoComportamental: Number(e.target.value) })} /></Campo>
                 <Campo label="Peso result."><Input type="number" step="0.05" value={c.pesoResultado} onChange={(e) => atualizar(c.id, { pesoResultado: Number(e.target.value) })} /></Campo>
-                <Campo label="Nota mín. promo"><Input type="number" value={c.notaMinPromocao} onChange={(e) => atualizar(c.id, { notaMinPromocao: Number(e.target.value) })} /></Campo>
+                <Campo label="Nota mín. promo" hint="0 a 100"><Input type="number" min={0} max={100} value={c.notaMinPromocao} onChange={(e) => atualizar(c.id, { notaMinPromocao: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} /></Campo>
                 <Campo label="Meses mín."><Input type="number" value={c.mesesMinNivel} onChange={(e) => atualizar(c.id, { mesesMinNivel: Number(e.target.value) })} /></Campo>
               </div>
             </div>
