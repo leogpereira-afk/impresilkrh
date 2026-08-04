@@ -618,6 +618,10 @@ export default function Custos() {
     const m = new Map<string, number>();
     for (const p of pagamentos as Pagamento[]) {
       if (p.colaboradorId !== colabId) continue;
+      // FGTS/INSS lançados por pessoa são encargo da EMPRESA — a pessoa nunca
+      // viu esse dinheiro. Este histórico é "quanto ela recebeu", então eles
+      // ficam de fora, como já fica no custoPago logo acima e na ficha.
+      if (TIPOS_ENCARGO.includes(p.tipo)) continue;
       m.set(p.competencia, (m.get(p.competencia) ?? 0) + p.valor);
     }
     return [...m.keys()].sort().map((c) => ({ competencia: c, nome: compLabel(c), valor: m.get(c) ?? 0 }));

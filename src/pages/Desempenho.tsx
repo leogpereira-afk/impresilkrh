@@ -21,6 +21,7 @@ import { useDominio, indiceNivel, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, diaLocalISO } from "@/lib/format";
+import { uid } from "@/data/_gen";
 import {
   COR_POTENCIAL_DESEMPENHO, COR_RISCO, STATUS_DESEMPENHO, TIPOS_FEEDBACK,
   STATUS_META, STATUS_PDI, faixaMotivacao,
@@ -1835,9 +1836,13 @@ function PesquisaEditor({ pesquisa, tipoInicial, onFechar, onSalvar }: {
   const [publico, setPublico] = useState(pesquisa?.publico ?? "");
   const [descricao, setDescricao] = useState(pesquisa?.descricao ?? "");
   const [perguntas, setPerguntas] = useState<PerguntaPesquisa[]>(pesquisa?.perguntas ?? []);
-  const [seq, setSeq] = useState(0);
 
-  const novaPergunta = () => { setPerguntas((ps) => [...ps, { id: `q_${ps.length}_${seq}`, texto: "", tipo: "Escala" }]); setSeq((s) => s + 1); };
+  /* O id era `q_${ps.length}_${seq}`, e `seq` recomeçava do zero toda vez que o
+     modal abria: numa edição, apagar a primeira pergunta e criar outra devolvia
+     exatamente `q_0_0`. As respostas já gravadas contra o id antigo passavam a
+     aparecer sob a pergunta NOVA — resposta de uma pergunta exibida como
+     resposta de outra. Id único de verdade resolve. */
+  const novaPergunta = () => setPerguntas((ps) => [...ps, { id: uid("q"), texto: "", tipo: "Escala" }]);
   const mudarPergunta = (id: string, patch: Partial<PerguntaPesquisa>) => setPerguntas((ps) => ps.map((q) => (q.id === id ? { ...q, ...patch } : q)));
   const removerPergunta = (id: string) => setPerguntas((ps) => ps.filter((q) => q.id !== id));
 

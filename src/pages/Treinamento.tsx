@@ -320,8 +320,13 @@ export default function Treinamento() {
                             onChange={(e) => {
                               const progresso = Number(e.target.value);
                               const patch: Partial<Treinamento> = { progresso };
+                              // Só subia de status. Arrastar a barra de 100% para
+                              // 60% deixava o treinamento em "Concluído" com 60%
+                              // na tela — e ele seguia contado como concluído no
+                              // painel e no indicador de quem precisa treinar.
                               if (progresso >= 100) patch.status = "Concluído";
-                              else if (progresso > 0 && t.status === "Pendente") patch.status = "Em andamento";
+                              else if (progresso > 0) patch.status = "Em andamento";
+                              else patch.status = "Pendente";
                               atualizar(t.id, patch);
                             }}
                             className="h-1.5 w-24 cursor-pointer p-0"

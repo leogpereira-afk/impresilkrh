@@ -1147,7 +1147,9 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
           <Card><CardBody>
             <p className="text-xs uppercase tracking-wide text-slate-400">Ganho médio por mês</p>
             <p className="mt-1 text-2xl font-semibold text-brand-ink">{formatBRL(mediaMensal)}</p>
-            <p className="mt-1 text-xs text-slate-400">Tudo: salário, comissão, férias e extras · {comps.length} mês(es)</p>
+            {/* Dizia comps.length, mas a média divide por baseMedia — que tira o
+                mês corrente ainda em curso. O número exibido não era o divisor. */}
+            <p className="mt-1 text-xs text-slate-400">Tudo: salário, comissão, férias e extras · {baseMedia.length} mês(es) fechado(s)</p>
             <p className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">Só salário + adiantamento: <span className="font-semibold text-slate-700">{formatBRL(mediaSalario)}</span>/mês</p>
           </CardBody></Card>
           <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Salário de referência (cadastro)</p><p className="mt-1 text-2xl font-semibold text-gold-700">{formatBRL(salarioRef)}</p></CardBody></Card>

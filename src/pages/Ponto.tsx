@@ -20,7 +20,7 @@ import { emLote } from "@/lib/auditoria";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeGerir } from "@/lib/rbac";
-import { formatDate, formatNumber, formatPercent, formatBRL, diaLocalISO } from "@/lib/format";
+import { formatDate, formatNumber, formatPercent, formatBRL, diaLocalISO, parseData } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { calcularHoraExtra, calcularFalta, horasDecimais } from "@/lib/pontoFolha";
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
@@ -487,12 +487,30 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
     [doMes],
   );
   const faltandoNoPonto = useMemo(
-    () => visiveisRbac
-      // Afastado (INSS, licença) não bate ponto por definição — cobrar a ficha
-      // dele seria ruído todo mês.
-      .filter((c) => !c.ehDirecao && !c.naoBatePonto && noQuadro(c) && c.statusId !== "afastado" && !presentesIds.has(c.id))
-      .sort((a, b) => a.nome.localeCompare(b.nome)),
-    [visiveisRbac, presentesIds],
+    () => {
+      // Quem ainda não estava na empresa não "deixou de aparecer no ponto".
+      // A competência do RH vai do dia 16 do mês anterior ao 15 deste, então o
+      // corte é o dia 16: admitido depois disso não tinha como bater ponto no
+      // período, e aparecia todo mês na lista de cobrança como se tivesse
+      // sumido. Desligado antes do início do período, idem.
+      const m = /^(\d{4})-(\d{2})$/.exec(competencia || "");
+      const fimDoPeriodo = m ? new Date(Number(m[1]), Number(m[2]) - 1, 15) : null;
+      const inicioDoPeriodo = m ? new Date(Number(m[1]), Number(m[2]) - 2, 16) : null;
+      return visiveisRbac
+        // Afastado (INSS, licença) não bate ponto por definição — cobrar a ficha
+        // dele seria ruído todo mês.
+        .filter((c) => !c.ehDirecao && !c.naoBatePonto && noQuadro(c) && c.statusId !== "afastado" && !presentesIds.has(c.id))
+        .filter((c) => {
+          if (!fimDoPeriodo || !inicioDoPeriodo) return true;
+          const adm = parseData(c.dataAdmissao);
+          if (adm && adm.getTime() > fimDoPeriodo.getTime()) return false;
+          const saida = parseData(c.dataDesligamento);
+          if (saida && saida.getTime() < inicioDoPeriodo.getTime()) return false;
+          return true;
+        })
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+    },
+    [visiveisRbac, presentesIds, competencia],
   );
 
   // Expandir/recolher todos os extratos (modo Tudo) — para varrer o mês inteiro.

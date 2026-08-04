@@ -455,7 +455,9 @@ function Repositorio() {
         </div>
       )}
 
-      {novo && (
+      {/* Era `{novo && ...}`: com `editar` preenchido e `novo` falso, o modal nem
+          era montado — o lápis e o "Anexar arquivo" não abriam nada, sem erro. */}
+      {(novo || !!editar) && (
         <NovoArquivoModal
           aberto={novo || !!editar}
           registro={editar}

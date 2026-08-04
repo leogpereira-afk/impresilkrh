@@ -241,8 +241,15 @@ export default function Painel() {
     .sort((a, b) => b.folha - a.folha);
   const folhaBarras = folhaPorArea.map((x) => ({ nome: x.nome, valor: x.folha }));
   const totalPessoasFolha = new Set(pagsPeriodo.map((p) => p.colaboradorId)).size;
-  const abrirFolhaArea = (id: string, nomeCompleto: string) =>
-    drill.abrir(`Folha · ${nomeCompleto}`, ativos.filter((c) => c.areaId === id), "Composição da folha");
+  /* Abre EXATAMENTE quem foi contado na barra. Abrir `ativos da área` trazia
+     gente sem pagamento no período (e deixava de fora quem foi pago e já saiu):
+     a barra dizia "8 pessoas · R$ 42.000" e a lista abria com 11 nomes, alguns
+     com zero na competência. */
+  const abrirFolhaArea = (id: string, nomeCompleto: string) => {
+    const pagos = pessoasAreaMap.get(id) ?? new Set<string>();
+    const gente = d.colaboradores.filter((c) => pagos.has(c.id));
+    drill.abrir(`Folha · ${nomeCompleto}`, gente, "Quem teve pagamento nesta competência");
+  };
   const abrirFolhaPorRotulo = (nome: string) => {
     const area = folhaPorArea.find((x) => x.nome === nome);
     if (area) abrirFolhaArea(area.id, area.nomeCompleto);
@@ -285,9 +292,16 @@ export default function Painel() {
   const treinosAbertos = treinosEscopo.filter((t) => t.status !== "Concluído");
   const idsEmTreinamento = new Set(treinosAbertos.map((t) => t.colaboradorId));
   const emTreinamento = ativos.filter((c) => idsEmTreinamento.has(c.id));
-  // "O que precisa treinar" — top títulos com treinamentos ainda não concluídos.
+  /* "O que precisa treinar" — só os PENDENTES, que é o que o subtítulo deste
+     card promete e é a régua do card de mesmo nome na tela de Treinamento.
+     Contando "tudo que não está concluído", os dois cards com o mesmo título
+     mostravam números diferentes: aqui entrava também quem já começou.
+     (`treinosAbertos` continua valendo para o indicador "Em treinamento", que
+     é outra pergunta: quem tem treinamento em curso.) */
   const treinoPorTitulo = new Map<string, number>();
-  treinosAbertos.forEach((t) => treinoPorTitulo.set(t.titulo, (treinoPorTitulo.get(t.titulo) ?? 0) + 1));
+  treinosEscopo
+    .filter((t) => t.status === "Pendente")
+    .forEach((t) => treinoPorTitulo.set(t.titulo, (treinoPorTitulo.get(t.titulo) ?? 0) + 1));
   const topTreinos = [...treinoPorTitulo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
   const porArea = d.areas
