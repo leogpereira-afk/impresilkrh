@@ -30,5 +30,14 @@ export function feriasEmCurso(f: Ferias, hoje: Date = HOJE): boolean {
   const inicio = parseData(f.dataInicio);
   const retorno = parseData(f.dataRetorno);
   if (!inicio || !retorno) return false;
-  return inicio.getTime() <= hoje.getTime() && hoje.getTime() < retorno.getTime();
+  /* Compara DIA com DIA, não instante com instante.
+     "Está de férias hoje?" é pergunta de calendário: ou o dia está dentro do
+     período, ou não está — a hora em que alguém abriu a tela não muda isso.
+     Comparando instantes, o banco (que guarda "2026-08-04T12:00:00.000Z", ou
+     seja 09:00 em Brasília) respondia SIM às 10h; e o mesmo registro, depois de
+     salvo pela tela (que gravava meio-dia local = 15:00Z, ou seja 12:00 aqui),
+     respondia NÃO no mesmo horário. O cartão "De férias agora" caía de 1 para 0
+     sem ninguém editar nada de visível. */
+  const dia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return dia(inicio) <= dia(hoje) && dia(hoje) < dia(retorno);
 }

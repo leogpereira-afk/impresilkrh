@@ -18,6 +18,7 @@ import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, parseData, diaLocalISO, diasDeCalendario } from "@/lib/format";
 import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { feriasEmCurso } from "@/lib/ferias";
+import { HistoricoFerias } from "@/components/ferias/historico-ferias";
 import { situacaoFerias, inicioDoHistorico, DIAS_FERIAS } from "@/lib/clt";
 import {
   validarAgendamento, validarPeriodo, retornoDe, diasEntre, temErro,
@@ -33,7 +34,24 @@ const MS_DIA = 86400000;
 const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 // ISO -> "yyyy-MM-dd" para inputs type="date" (e o caminho inverso).
 const isoParaInput = (iso?: string | null) => { const d = parseData(iso); return d ? diaLocalISO(d) : ""; };
-const inputParaIso = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
+
+/* Grava DATA PURA ("2026-08-04"), a mesma convenção do período aquisitivo.
+   Antes montava `new Date(v + "T12:00:00").toISOString()`, meio-dia LOCAL, que
+   em Brasília vira 15:00Z. Como o banco guarda 12:00Z em 17 dos 31 registros,
+   abrir e salvar SEM TOCAR NA DATA movia o instante em 3 horas — e ainda criava
+   uma convenção nova por fuso de quem editasse. Data de férias não tem hora:
+   guardar só o dia acaba com o problema na origem, e a ida e volta vira
+   identidade. */
+const inputParaIso = (v: string) => (v ? v : null);
+
+/* Salvar SEM MEXER na data não pode alterar o que está gravado.
+   O banco guarda a mesma data em formatos diferentes ("2026-09-07T12:00:00.000Z"
+   e "2026-09-07"), e reescrever no formato novo gerava uma alteração de valor
+   com o MESMO dia — que ia parar no histórico como "07/09/2026 → 07/09/2026" e
+   ainda oferecia um "Desfazer" que não desfazia nada. Se o dia é o mesmo, o
+   valor guardado fica como está; só troca quando a pessoa realmente mudou. */
+const manterSeMesmoDia = (guardado: string | null | undefined, noCampo: string) =>
+  isoParaInput(guardado) === noCampo ? (guardado ?? null) : inputParaIso(noCampo);
 
 // Paleta dos status de férias (alinhada às variantes de Badge / Quadro de Comando).
 const CORES_STATUS: Record<string, string> = {
@@ -61,13 +79,24 @@ type Alerta = "vencido" | "a-vencer" | null;
    `desde` é a data a partir da qual o sistema tem histórico de férias: período
    cujo prazo acabou antes disso não é "vencido", é desconhecido — ver o comentário
    de inicioDoHistorico em lib/clt.ts. */
+/* O prazo de conceder é 12 meses DEPOIS do fim do período aquisitivo (art. 134).
+   Ancorado no meio-dia para a soma de meses não escorregar de dia por causa de
+   fuso, e usando setMonth, que já normaliza 31/05 + 12 => 31/05 do ano seguinte
+   e 31/01 + 1 => 03/03 (o JS transborda o mês curto — por isso a conta anda
+   sempre a partir do FIM do aquisitivo, que é a data que a lei manda usar). */
+export function limiteDeConcessao(fimDoAquisitivo: string | Date | null | undefined): string {
+  const d = parseData(fimDoAquisitivo);
+  if (!d) return "";
+  const l = new Date(d.getTime());
+  l.setHours(12, 0, 0, 0);
+  l.setMonth(l.getMonth() + 12);
+  return l.toISOString();
+}
+
 function alertaCLT(f: TFerias, desde: Date | null): Alerta {
   if (f.status !== "Em aberto" && f.status !== "Agendada") return null;
-  const nasceu = parseData(f.periodoAquisitivoFim);
-  if (!nasceu) return null;
-  const limite = new Date(nasceu.getTime());
-  limite.setHours(12, 0, 0, 0);
-  limite.setMonth(limite.getMonth() + 12);
+  const limite = parseData(limiteDeConcessao(f.periodoAquisitivoFim));
+  if (!limite) return null;
   if (desde && limite.getTime() < desde.getTime()) return null;
   const d = Math.round((limite.getTime() - HOJE.getTime()) / MS_DIA);
   if (d < 0) return "vencido";
@@ -93,6 +122,8 @@ export default function Ferias() {
   // CRUD — edição/exclusão de um registro de férias (Quadro de Comando).
   const [editando, setEditando] = useState<TFerias | null>(null);
   const [edForm, setEdForm] = useState({
+    aqInicio: "",
+    aqFim: "",
     dataInicio: "",
     dataRetorno: "",
     diasGozados: "0",
@@ -288,6 +319,8 @@ export default function Ferias() {
   const abrirEdicao = (f: TFerias) => {
     setEditando(f);
     setEdForm({
+      aqInicio: isoParaInput(f.periodoAquisitivoInicio),
+      aqFim: isoParaInput(f.periodoAquisitivoFim),
       dataInicio: isoParaInput(f.dataInicio),
       dataRetorno: isoParaInput(f.dataRetorno),
       diasGozados: String(f.diasGozados ?? 0),
@@ -317,6 +350,16 @@ export default function Ferias() {
     if (Number.isFinite(g) && Number.isFinite(sa) && g + sa > DIAS_FERIAS) {
       a.push({ nivel: "aviso", texto: `Gozados + saldo dão ${g + sa} — um período aquisitivo tem ${DIAS_FERIAS} dias.` });
     }
+    // O período aquisitivo também é um par: um sem o outro deixa a coluna CLT
+    // muda, e invertido faria o prazo de concessão nascer antes do direito.
+    const aqI = edForm.aqInicio ? new Date(`${edForm.aqInicio}T12:00:00`) : null;
+    const aqF = edForm.aqFim ? new Date(`${edForm.aqFim}T12:00:00`) : null;
+    if (aqI && aqF && aqF.getTime() <= aqI.getTime()) {
+      a.push({ nivel: "erro", texto: "O fim do período aquisitivo precisa ser depois do início." });
+    }
+    if (!!aqI !== !!aqF) {
+      a.push({ nivel: "aviso", texto: "Preencha as duas datas do período aquisitivo — só com as duas o alerta da CLT funciona." });
+    }
     if (edInicio && edRetorno) {
       const doPeriodo = diasEntre(edInicio, edRetorno);
       if (doPeriodo > 0 && Number.isFinite(g) && g !== doPeriodo) {
@@ -324,7 +367,7 @@ export default function Ferias() {
       }
     }
     return a;
-  }, [editando, edInicio, edRetorno, edForm.diasGozados, edForm.saldoDias]);
+  }, [editando, edInicio, edRetorno, edForm.diasGozados, edForm.saldoDias, edForm.aqInicio, edForm.aqFim]);
 
   const salvarEdicao = () => {
     if (!editando) return;
@@ -333,8 +376,13 @@ export default function Ferias() {
       return;
     }
     atualizar(editando.id, {
-      dataInicio: inputParaIso(edForm.dataInicio),
-      dataRetorno: inputParaIso(edForm.dataRetorno),
+      // O período aquisitivo é gravado como DATA PURA ("AAAA-MM-DD"), que é como
+      // ele já está no banco nos 31 registros. Guardar hora aqui só criaria uma
+      // terceira convenção para as mesmas datas.
+      periodoAquisitivoInicio: manterSeMesmoDia(editando.periodoAquisitivoInicio, edForm.aqInicio),
+      periodoAquisitivoFim: manterSeMesmoDia(editando.periodoAquisitivoFim, edForm.aqFim),
+      dataInicio: manterSeMesmoDia(editando.dataInicio, edForm.dataInicio),
+      dataRetorno: manterSeMesmoDia(editando.dataRetorno, edForm.dataRetorno),
       diasGozados: Math.max(0, Number(edForm.diasGozados) || 0),
       saldoDias: Math.max(0, Number(edForm.saldoDias) || 0),
       status: edForm.status,
@@ -551,6 +599,14 @@ export default function Ferias() {
         )}
       </Card>
 
+      {/* O log já existia, mas só no Painel de Controle. Quem erra um lançamento
+          precisa do valor ANTERIOR para desfazer, e precisa dele aqui. */}
+      {podeEditar && (
+        <div className="mt-6">
+          <HistoricoFerias nomeDe={(id) => d.nomeColab(id)} />
+        </div>
+      )}
+
       {podeEditar && (
         <Modal
           aberto={novo}
@@ -642,6 +698,25 @@ export default function Ferias() {
           }
         >
           <div className="space-y-4">
+            {/* O período aquisitivo não tinha campo nenhum: era gravado só no
+                agendamento e nunca mais dava para corrigir — e é ele que manda
+                na coluna CLT e no alerta de férias vencidas. */}
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Período aquisitivo</p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Campo label="Início" hint="12 meses de trabalho que geraram o direito.">
+                  <Input type="date" value={edForm.aqInicio} onChange={(e) => setEdForm((s) => ({ ...s, aqInicio: e.target.value }))} />
+                </Campo>
+                <Campo label="Fim" hint="Quando o direito nasceu. Conceder em até 12 meses.">
+                  <Input type="date" value={edForm.aqFim} onChange={(e) => setEdForm((s) => ({ ...s, aqFim: e.target.value }))} />
+                </Campo>
+              </div>
+              {edForm.aqFim && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Conceder até <b>{formatDate(limiteDeConcessao(edForm.aqFim))}</b>, senão as férias são pagas em dobro (art. 134).
+                </p>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Campo label="Início do gozo">
                 <Input type="date" value={edForm.dataInicio} onChange={(e) => setEdForm((s) => ({ ...s, dataInicio: e.target.value }))} />

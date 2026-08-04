@@ -177,6 +177,13 @@ describe("validarPeriodo — o par de datas da edição", () => {
     expect(temErro(validarPeriodo(dia("2026-09-01"), dia("2026-10-15")))).toBe(true);
   });
 
+  it("AS DUAS VAZIAS é período em aberto — não trava a gravação", () => {
+    // 13 dos 31 registros da empresa estão assim: saldo de 30 dias, nenhum gozo
+    // agendado. Exigir as datas deixava esses registros impossíveis de salvar.
+    expect(validarPeriodo(null, null)).toEqual([]);
+    expect(temErro(validarPeriodo(null, null))).toBe(false);
+  });
+
   it("cobra as duas datas quando falta alguma", () => {
     expect(erros(validarPeriodo(null, dia("2026-10-01")))).toHaveLength(1);
     expect(erros(validarPeriodo(dia("2026-09-01"), null))).toHaveLength(1);

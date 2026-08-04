@@ -186,11 +186,19 @@ export function validarAgendamento(d: DadosAgendamento): Achado[] {
   return achados;
 }
 
-/** Confere o par de datas do formulário de edição. */
+/** Confere o par de datas do formulário de edição.
+ *
+ * As DUAS vazias é um estado legítimo e comum: período aquisitivo em aberto,
+ * com saldo de 30 dias e nenhum gozo agendado ainda — 13 dos 31 registros da
+ * empresa estão assim. Exigir as datas nesse caso travava o botão Salvar e
+ * deixava esses registros impossíveis de editar, inclusive para trocar o
+ * status. Só cobra o par quando UMA delas foi preenchida: aí sim é um gozo
+ * pela metade. */
 export function validarPeriodo(inicio: Date | null, retorno: Date | null): Achado[] {
   const achados: Achado[] = [];
-  if (!inicio) achados.push({ nivel: "erro", texto: "Informe o início do gozo." });
-  if (!retorno) achados.push({ nivel: "erro", texto: "Informe a data de retorno." });
+  if (!inicio && !retorno) return achados;
+  if (!inicio) achados.push({ nivel: "erro", texto: "Informe o início do gozo (ou apague o retorno para deixar o período em aberto)." });
+  if (!retorno) achados.push({ nivel: "erro", texto: "Informe a data de retorno (ou apague o início para deixar o período em aberto)." });
   if (!inicio || !retorno) return achados;
 
   const dias = diasEntre(inicio, retorno);
