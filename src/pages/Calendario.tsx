@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   CalendarDays, Cake, PartyPopper, Flag, Sparkles, CalendarClock, Building2,
   Plus, ChevronLeft, ChevronRight, Pencil, Trash2, FileText, ShieldAlert, UserCheck, Palmtree,
+  Banknote,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import { podeGerir } from "@/lib/rbac";
 import { cn } from "@/lib/cn";
 import { parseData, MESES_PT, formatDate } from "@/lib/format";
 import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/clt";
+import { diaDoPagamento, diaDoAdiantamento, feriadosDe, DIAS_UTEIS_PAGAMENTO } from "@/lib/diaPagamento";
 import { HOJE } from "@/data/_gen";
 import type { EventoCalendario, TipoEvento } from "@/data/types";
 
@@ -33,6 +35,8 @@ const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?
   { tipo: "NR vence", cor: "#b91c1c", Icon: ShieldAlert },
   { tipo: "Experiência", cor: "#7c3aed", Icon: UserCheck },
   { tipo: "Férias — prazo CLT", cor: "#0891b2", Icon: Palmtree },
+  // Os dois dias de dinheiro do mês, que a equipe inteira tem na cabeça.
+  { tipo: "Pagamento", cor: "#047857", Icon: Banknote },
 ];
 const corDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.cor ?? "#64748b";
 const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarDays;
@@ -144,6 +148,25 @@ export default function Calendario() {
         sub: `Último dia para conceder ${sit.diasEmAberto} dia(s) sem pagar em dobro`,
       });
     }
+
+    /* ── Dinheiro: os dois dias que todo mundo pergunta ────────────────────
+       O 5º dia útil não é "dia 5": depende de onde caem sábado, domingo e os
+       feriados daquele mês. Os feriados saem do próprio calendário (eventos do
+       tipo "Feriado", inclusive os que se repetem todo ano), então cadastrar um
+       feriado novo já corrige a data do pagamento sozinho. */
+    const feriados = feriadosDe(eventos);
+    const pag = diaDoPagamento(ano, mes, feriados);
+    if (pag) out.push({
+      dia: pag.getDate(), tipo: "Pagamento",
+      titulo: "Pagamento do salário",
+      sub: `${DIAS_UTEIS_PAGAMENTO}º dia útil — prazo da CLT (art. 459)`,
+    });
+    const adi = diaDoAdiantamento(ano, mes, feriados);
+    out.push({
+      dia: adi.getDate(), tipo: "Pagamento",
+      titulo: "Adiantamento",
+      sub: adi.getDate() === 20 ? "Dia 20" : `Dia 20 caiu sem expediente — antecipado para ${adi.getDate()}`,
+    });
 
     return out.sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
   }, [d, eventos, documentos, certificacoes, ferias, ano, mes]);
