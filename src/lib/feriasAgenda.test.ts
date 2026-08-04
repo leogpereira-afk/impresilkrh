@@ -5,6 +5,15 @@ import {
 } from "@/lib/feriasAgenda";
 import type { Ferias } from "@/data/types";
 
+/* Compara pelo dia LOCAL, nunca por toISOString().
+   toISOString() converte para UTC: em fuso à frente de UTC, a meia-noite local
+   de 20/08 vira 19/08 e o teste reprova sem que nada esteja errado no código.
+   Foi assim que a CI (que roda em UTC) ficou vermelha enquanto tudo passava
+   aqui. O app já tem diaLocalISO para isso — o teste usa a mesma régua. */
+const localISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+
 // Segunda-feira, para os casos que não são sobre dia da semana.
 const SEG = new Date("2026-09-07T12:00:00");
 const dia = (s: string) => new Date(`${s}T12:00:00`);
@@ -17,17 +26,17 @@ const periodo = (inicio: string, retorno: string, extra: Partial<Ferias> = {}): 
 
 describe("contas de data", () => {
   it("30 dias a partir de 01/09 devolvem ao trabalho em 01/10", () => {
-    expect(retornoDe(dia("2026-09-01"), 30).toISOString().slice(0, 10)).toBe("2026-10-01");
+    expect(localISO(retornoDe(dia("2026-09-01"), 30))).toBe("2026-10-01");
   });
 
   it("atravessa a virada do ano sem perder um dia", () => {
-    expect(retornoDe(dia("2026-12-20"), 30).toISOString().slice(0, 10)).toBe("2027-01-19");
+    expect(localISO(retornoDe(dia("2026-12-20"), 30))).toBe("2027-01-19");
   });
 
   it("atravessa o horário de verão sem cair no dia anterior", () => {
     // A conta antiga somava dias com o relógio na meia-noite; numa virada de
     // fuso isso devolvia o dia anterior. Ancorada no meio-dia, não acontece.
-    expect(retornoDe(dia("2026-02-01"), 15).toISOString().slice(0, 10)).toBe("2026-02-16");
+    expect(localISO(retornoDe(dia("2026-02-01"), 15))).toBe("2026-02-16");
   });
 
   it("mede os dias entre as duas datas", () => {

@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { parseData } from "@/lib/format";
 
+/* Compara pelo dia LOCAL, nunca por toISOString().
+   toISOString() converte para UTC: em fuso à frente de UTC, a meia-noite local
+   de 20/08 vira 19/08 e o teste reprova sem que nada esteja errado no código.
+   Foi assim que a CI (que roda em UTC) ficou vermelha enquanto tudo passava
+   aqui. O app já tem diaLocalISO para isso — o teste usa a mesma régua. */
+const localISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+
 /* O calendário passou a mostrar TODO vencimento do sistema: documento, NR,
    contrato de experiência e o prazo da CLT para conceder férias. Antes cada um
    vivia só na sua tela e quem abria o calendário para planejar o mês não via
@@ -75,8 +84,8 @@ describe("as duas marcas do contrato de experiência", () => {
 
   it("admitido em 06/07/2026: 45 dias em 20/08 e 90 em 04/10", () => {
     const { fim, meio } = marcas("2026-07-06");
-    expect(meio.toISOString().slice(0, 10)).toBe("2026-08-20");
-    expect(fim.toISOString().slice(0, 10)).toBe("2026-10-04");
+    expect(localISO(meio)).toBe("2026-08-20");
+    expect(localISO(fim)).toBe("2026-10-04");
   });
 
   it("a marca do meio é sempre 45 dias depois da admissão", () => {
@@ -84,12 +93,12 @@ describe("as duas marcas do contrato de experiência", () => {
       const { meio } = marcas(adm);
       const esperado = new Date(parseData(adm)!.getTime());
       esperado.setDate(esperado.getDate() + 45);
-      expect(meio.toISOString().slice(0, 10), adm).toBe(esperado.toISOString().slice(0, 10));
+      expect(localISO(meio), adm).toBe(localISO(esperado));
     }
   });
 
   it("atravessa a virada do ano sem perder dia", () => {
     const { fim } = marcas("2026-11-15");
-    expect(fim.toISOString().slice(0, 10)).toBe("2027-02-13");
+    expect(localISO(fim)).toBe("2027-02-13");
   });
 });

@@ -1,11 +1,20 @@
 import { describe, it, expect } from "vitest";
+
+/* Compara pelo dia LOCAL, nunca por toISOString().
+   toISOString() converte para UTC: em fuso à frente de UTC, a meia-noite local
+   de 20/08 vira 19/08 e o teste reprova sem que nada esteja errado no código.
+   Foi assim que a CI (que roda em UTC) ficou vermelha enquanto tudo passava
+   aqui. O app já tem diaLocalISO para isso — o teste usa a mesma régua. */
+const localISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 import {
   nEsimoDiaUtil, diaDoPagamento, diaDoAdiantamento, feriadosDe, ehDiaUtil,
   DIA_ADIANTAMENTO,
 } from "@/lib/diaPagamento";
 
 const semFeriado = feriadosDe([]);
-const dia = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+const dia = (d: Date | null) => (d ? localISO(d) : null);
 
 describe("5º dia útil — a data do salário (art. 459)", () => {
   it("agosto/2026 começa num sábado: o 5º útil é dia 7", () => {

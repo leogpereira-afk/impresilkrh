@@ -17,6 +17,13 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    /* Fuso FIXO na suíte. O app serve uma empresa em Montes Claros, e boa parte
+       dos testes trata de data — inclusive com valores reais do banco, que foram
+       gravados em UTC-3. Sem fixar, o mesmo teste passa na máquina de quem
+       escreveu e reprova na CI, que roda em UTC: foi exatamente o que aconteceu
+       e deixou a CI vermelha por três commits. Fixando, o teste quer dizer a
+       mesma coisa em qualquer máquina. */
+    env: { TZ: "America/Sao_Paulo" },
   },
   resolve: {
     alias: {

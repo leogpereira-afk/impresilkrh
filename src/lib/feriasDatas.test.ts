@@ -51,7 +51,20 @@ describe("ida e volta das datas de férias", () => {
     // (UTC-3) isso é 21:00 do dia 12 e o campo mostraria o dia ERRADO. Nenhum
     // registro está assim hoje; o teste existe para o dia em que alguém gravar
     // com meia-noite achando que tanto faz.
-    expect(isoParaInput("2026-02-13T00:00:00.000Z")).toBe("2026-02-12");
+    //
+    // A expectativa é CALCULADA a partir do fuso de quem roda o teste, e não
+    // chumbada: a primeira versão afirmava "2026-02-12" e passava na minha
+    // máquina (UTC-3) mas reprovava na CI, que roda em UTC. Teste que só vale
+    // num fuso é teste que quebra sozinho quando muda de máquina.
+    const atrasadoDeUTC = new Date("2026-02-13T00:00:00.000Z").getTimezoneOffset() > 0;
+    expect(isoParaInput("2026-02-13T00:00:00.000Z"))
+      .toBe(atrasadoDeUTC ? "2026-02-12" : "2026-02-13");
+  });
+
+  it("meio-dia UTC sobrevive a QUALQUER fuso — é por isso que é a âncora certa", () => {
+    // O ponto da âncora do meio-dia: de UTC-11 a UTC+11 o dia não muda. É o que
+    // torna "T12:00:00.000Z" seguro e "T00:00:00.000Z" perigoso.
+    expect(isoParaInput("2026-02-13T12:00:00.000Z")).toBe("2026-02-13");
   });
 });
 
