@@ -47,14 +47,45 @@ export interface SituacaoFerias {
   diasGozados: number;
   /** Dias que ainda faltam conceder — é o que vira pagamento em dobro. */
   diasEmAberto: number;
-  situacao: "em-dia" | "a-vencer" | "vencida";
+  situacao: "em-dia" | "a-vencer" | "vencida" | "sem-registro";
+}
+
+/**
+ * A partir de quando este sistema TEM histórico de férias.
+ *
+ * Existe porque a conta acima só sabe o que está lançado, e o app começou a
+ * guardar férias muito depois de a empresa existir. Sem esse corte, quem tem
+ * dez anos de casa aparecia com "férias VENCIDAS há 3.847 dias" — não porque
+ * nunca tirou, mas porque as férias de 2015 nunca foram digitadas aqui.
+ *
+ * Medido em produção: das 12 pessoas apontadas como vencidas, TODAS as 12
+ * tinham o limite de concessão anterior ao primeiro registro do banco. Ou seja,
+ * o alerta era 100% ruído — e ruído em alerta de multa é pior que alerta
+ * nenhum, porque ensina a ignorar.
+ *
+ * O corte sai do próprio dado: o registro de férias mais antigo que existe.
+ * Conforme a empresa lançar histórico para trás, o corte anda junto sozinho.
+ */
+export function inicioDoHistorico(ferias: Ferias[]): Date | null {
+  let menor: Date | null = null;
+  for (const f of ferias) {
+    const d = parseData(f.dataInicio);
+    if (d && (!menor || d.getTime() < menor.getTime())) menor = d;
+  }
+  return menor;
 }
 
 /**
  * Situação das férias de uma pessoa hoje.
  * `null` quando não dá para calcular (sem admissão) ou ainda não completou 1 ano.
  */
-export function situacaoFerias(c: Colaborador, feriasDaPessoa: Ferias[], hoje = HOJE): SituacaoFerias | null {
+export function situacaoFerias(
+  c: Colaborador,
+  feriasDaPessoa: Ferias[],
+  hoje = HOJE,
+  /** Antes desta data o sistema não tem histórico — ver inicioDoHistorico(). */
+  desde: Date | null = null,
+): SituacaoFerias | null {
   const adm = parseData(c.dataAdmissao);
   if (!adm) return null;
   // Quem saiu tem o relógio parado no último dia. Sem isto a ficha de um
@@ -102,8 +133,14 @@ export function situacaoFerias(c: Colaborador, feriasDaPessoa: Ferias[], hoje = 
     const semRegistroDeDias = naJanela.length > 0 && diasGozados === 0;
     const jaGozou = semRegistroDeDias || diasGozados >= DIAS_FERIAS;
     const diasParaLimite = dias(ate, limiteConcessao);
+    // Período cujo prazo de concessão acabou ANTES de o sistema ter qualquer
+    // registro de férias: não dá para dizer que venceu, só que não está aqui.
+    // Afirmar "venceu" seria inventar; some do alerta e vira informação.
+    const foraDoHistorico = !jaGozou && !!desde &&
+      naJanela.length === 0 && limiteConcessao.getTime() < desde.getTime();
     const situacao: SituacaoFerias["situacao"] = jaGozou
       ? "em-dia"
+      : foraDoHistorico ? "sem-registro"
       : diasParaLimite < 0 ? "vencida" : diasParaLimite <= 90 ? "a-vencer" : "em-dia";
     const atual: SituacaoFerias = {
       aquisitivoInicio: somaMeses(adm, (i - 1) * 12),
@@ -115,7 +152,10 @@ export function situacaoFerias(c: Colaborador, feriasDaPessoa: Ferias[], hoje = 
       diasEmAberto: Math.max(0, DIAS_FERIAS - (semRegistroDeDias ? DIAS_FERIAS : diasGozados)),
       situacao,
     };
-    if (!jaGozou) return atual; // o mais antigo em aberto é o que importa
+    // O mais antigo EM ABERTO é o que importa — mas um período sem histórico
+    // não é "em aberto", é desconhecido. Parar nele escondia o período seguinte,
+    // que o sistema tem como julgar de verdade.
+    if (!jaGozou && situacao !== "sem-registro") return atual;
     ultimo = atual;
   }
   return ultimo; // todos gozados: devolve o último, marcado como em dia

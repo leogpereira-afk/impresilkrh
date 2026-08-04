@@ -10,7 +10,7 @@ import { colaboradoresVisiveis } from "@/lib/rbac";
 import { parseData } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import { JANELA_ALERTA_DIAS } from "@/lib/constants";
-import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
+import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
 import { feriasEmCurso } from "@/lib/ferias";
 
 export type SeveridadeNotif = "alta" | "media" | "baixa";
@@ -134,9 +134,12 @@ export function useNotificacoes(): Notificacao[] {
         arr.push(f);
         feriasPorPessoa.set(f.colaboradorId, arr);
       }
+      // Antes do primeiro registro de férias do banco o sistema não sabe nada —
+      // e avisar "VENCIDAS há 10 anos" sobre isso enchia o sino de alarme falso.
+      const desde = inicioDoHistorico(ferias);
       for (const c of ativos) {
-        const s = situacaoFerias(c, feriasPorPessoa.get(c.id) ?? []);
-        if (!s || s.situacao === "em-dia") continue;
+        const s = situacaoFerias(c, feriasPorPessoa.get(c.id) ?? [], undefined, desde);
+        if (!s || s.situacao === "em-dia" || s.situacao === "sem-registro") continue;
         const venceu = s.situacao === "vencida";
         out.push({
           id: `clt-fer-${c.id}`,

@@ -18,7 +18,7 @@ import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, parseData, diaLocalISO } from "@/lib/format";
 import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { feriasEmCurso } from "@/lib/ferias";
-import { situacaoFerias, DIAS_FERIAS } from "@/lib/clt";
+import { situacaoFerias, inicioDoHistorico, DIAS_FERIAS } from "@/lib/clt";
 import {
   validarAgendamento, validarPeriodo, retornoDe, diasEntre, temErro,
   MAX_ABONO_DIAS, type Achado,
@@ -50,11 +50,23 @@ function varianteStatus(status: string): "neutral" | "success" | "info" | "warni
 
 // Alerta CLT: período aquisitivo vencido ou a vencer (60 dias) e ainda não gozado.
 type Alerta = "vencido" | "a-vencer" | null;
-function alertaCLT(f: TFerias): Alerta {
+/* O prazo que interessa NÃO é o fim do período aquisitivo — é doze meses depois
+   dele (art. 134: a empresa tem os 12 meses seguintes para conceder). Comparar
+   com `periodoAquisitivoFim` direto marcava "vencido" assim que o direito
+   nascia, um ano inteiro antes de existir qualquer risco de pagar em dobro.
+
+   `desde` é a data a partir da qual o sistema tem histórico de férias: período
+   cujo prazo acabou antes disso não é "vencido", é desconhecido — ver o comentário
+   de inicioDoHistorico em lib/clt.ts. */
+function alertaCLT(f: TFerias, desde: Date | null): Alerta {
   if (f.status !== "Em aberto" && f.status !== "Agendada") return null;
-  if (!f.periodoAquisitivoFim) return null;
-  const d = diasAte(f.periodoAquisitivoFim);
-  if (isNaN(d)) return null;
+  const nasceu = parseData(f.periodoAquisitivoFim);
+  if (!nasceu) return null;
+  const limite = new Date(nasceu.getTime());
+  limite.setHours(12, 0, 0, 0);
+  limite.setMonth(limite.getMonth() + 12);
+  if (desde && limite.getTime() < desde.getTime()) return null;
+  const d = Math.round((limite.getTime() - HOJE.getTime()) / MS_DIA);
   if (d < 0) return "vencido";
   if (d <= JANELA_ALERTA_DIAS) return "a-vencer";
   return null;
@@ -137,7 +149,13 @@ export default function Ferias() {
     [lista],
   );
 
-  const alertasCLT = useMemo(() => lista.filter((f) => alertaCLT(f) !== null), [lista]);
+  // O corte vem de TODA a base de férias, não só do escopo visível: o que
+  // define até onde o sistema enxerga é quando a empresa começou a lançar.
+  const desdeHistorico = useMemo(() => inicioDoHistorico(ferias), [ferias]);
+  const alertasCLT = useMemo(
+    () => lista.filter((f) => alertaCLT(f, desdeHistorico) !== null),
+    [lista, desdeHistorico],
+  );
 
   // Os 4 indicadores são recortes da tabela "Controle de férias", então clicar filtra a tabela.
   const [foco, setFoco] = useState<string | null>(null);
@@ -145,7 +163,7 @@ export default function Ferias() {
 
   const tabela = useMemo(() => {
     const base =
-      foco === "alertas" ? lista.filter((f) => alertaCLT(f) !== null)
+      foco === "alertas" ? lista.filter((f) => alertaCLT(f, desdeHistorico) !== null)
       // "agora" tem chave própria porque não é um status: é o cálculo por datas
       // do card. Filtrar por texto aqui mostraria uma lista diferente do número.
       : foco === "agora" ? lista.filter((f) => feriasEmCurso(f))
@@ -471,7 +489,7 @@ export default function Ferias() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {tabela.map((f) => {
-                  const alerta = alertaCLT(f);
+                  const alerta = alertaCLT(f, desdeHistorico);
                   return (
                     <tr key={f.id} className="transition hover:bg-slate-50/60">
                       <td className="td">

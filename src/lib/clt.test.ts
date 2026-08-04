@@ -2,7 +2,7 @@
 // dobro, contrato que vira indeterminado). Os testes fixam a data de "hoje" para
 // o resultado não mudar conforme o dia em que rodarem.
 import { describe, it, expect } from "vitest";
-import { situacaoFerias, situacaoExperiencia } from "./clt";
+import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "./clt";
 import type { Colaborador, Ferias } from "@/data/types";
 
 const pessoa = (dataAdmissao: string): Colaborador =>
@@ -139,5 +139,61 @@ describe("clt — correções da conferência", () => {
   it("desligado não recebe mais aviso de contrato de experiência", () => {
     const hoje = new Date(2026, 7, 5);
     expect(situacaoExperiencia(pessoa({ dataAdmissao: "2026-05-20", dataDesligamento: "2026-07-15", statusId: "inativo" }), hoje)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Corte de histórico: o sistema não pode afirmar "venceu" sobre um período do
+// qual ele não tem registro nenhum. Medido em produção: das 12 pessoas
+// apontadas como vencidas, as 12 tinham o limite anterior ao primeiro registro
+// do banco — o alerta era 100% ruído.
+// ---------------------------------------------------------------------------
+describe("situacaoFerias — sem histórico no sistema", () => {
+  const HOJE_TESTE = new Date(2026, 7, 4);          // 04/08/2026
+  const inicioBase = new Date(2025, 11, 6);         // 06/12/2025, como na produção
+
+  it("dez anos de casa e nenhum registro antigo: NÃO diz que venceu", () => {
+    const adilson = pessoa("2014-01-13");
+    const s = situacaoFerias(adilson, [feriasEm("2026-02-13")], HOJE_TESTE, inicioBase)!;
+    expect(s.situacao).not.toBe("vencida");
+  });
+
+  it("sem o corte, o mesmo caso continua acusando vencida (o bug de antes)", () => {
+    const adilson = pessoa("2014-01-13");
+    const s = situacaoFerias(adilson, [feriasEm("2026-02-13")], HOJE_TESTE)!;
+    expect(s.situacao).toBe("vencida");
+  });
+
+  it("período DENTRO do histórico continua vencendo normalmente", () => {
+    // Admitido em 2024: direito em 2025, limite em 2026 — tudo depois do corte.
+    const novato = pessoa("2024-01-10");
+    const s = situacaoFerias(novato, [], new Date(2026, 6, 1), new Date(2023, 0, 1))!;
+    expect(s.situacao).toBe("vencida");
+  });
+
+  it("sem corte informado, o comportamento é o de sempre", () => {
+    const s = situacaoFerias(pessoa("2024-01-10"), [], new Date(2026, 6, 1))!;
+    expect(s.situacao).toBe("vencida");
+  });
+
+  it("quem gozou de verdade segue em dia, com ou sem corte", () => {
+    const c = pessoa("2024-01-10");
+    const gozo = [feriasEm("2025-03-01"), feriasEm("2025-03-01")];
+    const s = situacaoFerias(c, gozo, new Date(2026, 6, 1), inicioBase)!;
+    expect(["em-dia", "sem-registro"]).toContain(s.situacao);
+  });
+});
+
+describe("inicioDoHistorico", () => {
+  it("é o registro de férias mais antigo que existe", () => {
+    const fs = [feriasEm("2026-02-13"), feriasEm("2025-12-06"), feriasEm("2026-01-06")];
+    expect(inicioDoHistorico(fs)!.toISOString().slice(0, 10)).toBe("2025-12-06");
+  });
+  it("base vazia não tem histórico", () => {
+    expect(inicioDoHistorico([])).toBeNull();
+  });
+  it("registro sem data não atrapalha", () => {
+    const f = { ...feriasEm("2026-02-13"), dataInicio: null } as never;
+    expect(inicioDoHistorico([f, feriasEm("2025-12-06")])!.toISOString().slice(0, 10)).toBe("2025-12-06");
   });
 });

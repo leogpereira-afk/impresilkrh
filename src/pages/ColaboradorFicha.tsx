@@ -33,7 +33,7 @@ import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
 import { STATUS_FERIAS, CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
-import { situacaoFerias, situacaoExperiencia } from "@/lib/clt";
+import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
 import { vinculosDoColaborador } from "@/lib/vinculos";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import type { Colaborador } from "@/data/types";
@@ -379,7 +379,9 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
   const { items: avaliacoes } = useColecao("avaliacoes");
 
   const meus = <T extends { colaboradorId: string }>(arr: T[]) => arr.filter((x) => x.colaboradorId === c.id);
-  const sFerias = situacaoFerias(c, meus(ferias));
+  // O corte sai de TODA a base, não só das férias desta pessoa: o que define
+  // até onde o sistema enxerga é quando a empresa começou a lançar.
+  const sFerias = situacaoFerias(c, meus(ferias), undefined, inicioDoHistorico(ferias));
   const sExp = situacaoExperiencia(c);
   const vinc = vinculosDoColaborador(c.id);
 
@@ -404,9 +406,14 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
   }
   if (!desligado && sFerias && sFerias.situacao !== "em-dia") {
     alertas.push({
+      // "sem-registro" não é alarme: é o sistema dizendo que não enxerga aquele
+      // período. Tratar como grave era o que fazia dez anos de casa virarem
+      // "VENCIDAS há 3.847 dias" na cara de quem abre a ficha.
       grave: sFerias.situacao === "vencida",
       texto: sFerias.situacao === "vencida"
         ? `Férias VENCIDAS há ${Math.abs(sFerias.diasParaLimite)} dia(s) — limite era ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Por lei, o pagamento é em dobro.`
+        : sFerias.situacao === "sem-registro"
+        ? `Sem histórico de férias no sistema para os períodos até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Se foram gozadas, lance para o alerta ficar correto.`
         : `Férias a conceder até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")} (${sFerias.diasParaLimite} dia(s)), senão paga em dobro.`,
       rotulo: "Agendar férias",
       acao: {
