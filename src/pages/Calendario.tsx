@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   CalendarDays, Cake, PartyPopper, Flag, Sparkles, CalendarClock, Building2,
-  Plus, ChevronLeft, ChevronRight, Pencil, Trash2,
+  Plus, ChevronLeft, ChevronRight, Pencil, Trash2, FileText, ShieldAlert, UserCheck, Palmtree,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -14,7 +14,8 @@ import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
 import { cn } from "@/lib/cn";
-import { parseData, MESES_PT } from "@/lib/format";
+import { parseData, MESES_PT, formatDate } from "@/lib/format";
+import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/clt";
 import { HOJE } from "@/data/_gen";
 import type { EventoCalendario, TipoEvento } from "@/data/types";
 
@@ -26,6 +27,12 @@ const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?
   { tipo: "Comemorativa", cor: "#2563eb", Icon: Sparkles },
   { tipo: "Reunião", cor: "#16334f", Icon: CalendarClock },
   { tipo: "Empresa", cor: "#16a34a", Icon: Building2 },
+  // Prazos. Estavam espalhados por Documentos, SST, Colaboradores e Férias —
+  // o calendário é onde se olha "o que vence", então eles passam a vir aqui.
+  { tipo: "Documento vence", cor: "#ea580c", Icon: FileText },
+  { tipo: "NR vence", cor: "#b91c1c", Icon: ShieldAlert },
+  { tipo: "Experiência", cor: "#7c3aed", Icon: UserCheck },
+  { tipo: "Férias — prazo CLT", cor: "#0891b2", Icon: Palmtree },
 ];
 const corDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.cor ?? "#64748b";
 const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarDays;
@@ -38,6 +45,9 @@ export default function Calendario() {
   const d = useDominio();
   const toast = useToast();
   const { items: eventos, remover } = useColecao("eventos");
+  const { items: documentos } = useColecao("documentos");
+  const { items: certificacoes } = useColecao("certificacoesNr");
+  const { items: ferias } = useColecao("ferias");
   const gere = podeGerir(sessao);
   const [ano, setAno] = useState(HOJE.getFullYear());
   const [mes, setMes] = useState(HOJE.getMonth()); // 0-based
@@ -68,8 +78,75 @@ export default function Calendario() {
       const sub = e.hora ? `${e.hora}${e.descricao ? ` · ${e.descricao}` : ""}` : (e.descricao ?? undefined);
       out.push({ dia: dt.getDate(), tipo: e.tipo, titulo: e.titulo, sub: sub ?? undefined, eventoId: e.id });
     }
+
+    /* ── Prazos ──────────────────────────────────────────────────────────────
+       Todo vencimento que existe no sistema cai aqui: documento, NR, contrato
+       de experiência e o prazo da CLT para conceder férias. Antes cada um vivia
+       só na sua tela, e quem abria o calendário para planejar o mês não via
+       nenhum deles. Só entra o que tem DATA e cai no mês/ano em exibição. */
+    const noMes = (v?: string | null) => {
+      const dt = parseData(v);
+      return dt && dt.getFullYear() === ano && dt.getMonth() === mes ? dt : null;
+    };
+
+    for (const doc of documentos) {
+      const dt = noMes(doc.dataVencimento);
+      if (!dt) continue;
+      const nome = doc.colaboradorId ? d.nomeColab(doc.colaboradorId) : "Documento da empresa";
+      out.push({
+        dia: dt.getDate(), tipo: "Documento vence",
+        titulo: nome,
+        sub: [doc.categoria, doc.nome].filter(Boolean).join(" · ") || "Documento",
+      });
+    }
+
+    for (const c of certificacoes) {
+      const dt = noMes(c.dataValidade);
+      if (!dt) continue;
+      out.push({
+        dia: dt.getDate(), tipo: "NR vence",
+        titulo: d.nomeColab(c.colaboradorId),
+        sub: `${c.nr} vence${c.instituicao ? ` · ${c.instituicao}` : ""}`,
+      });
+    }
+
+    for (const c of d.ativos) {
+      // Contrato de experiência: o dia 90 é quando a empresa PRECISA ter
+      // decidido — passou disso, o contrato vira por prazo indeterminado.
+      const exp = situacaoExperiencia(c);
+      if (exp) {
+        const dt = noMes(exp.fim.toISOString());
+        if (dt) out.push({
+          dia: dt.getDate(), tipo: "Experiência",
+          titulo: c.nome, sub: "90 dias de contrato — decidir efetivar ou encerrar",
+        });
+        // A marca dos 45 dias (decidir prorrogar) fica no meio do caminho.
+        const meio = new Date(exp.fim.getTime());
+        meio.setDate(meio.getDate() - 45);
+        const dm = noMes(meio.toISOString());
+        if (dm) out.push({
+          dia: dm.getDate(), tipo: "Experiência",
+          titulo: c.nome, sub: "45 dias — decidir se prorroga",
+        });
+      }
+    }
+
+    // Prazo de conceder férias (art. 134): passou, paga em dobro.
+    const desde = inicioDoHistorico(ferias);
+    for (const c of d.ativos) {
+      const sit = situacaoFerias(c, ferias.filter((f) => f.colaboradorId === c.id), undefined, desde);
+      if (!sit || sit.jaGozou || sit.situacao === "sem-registro") continue;
+      const dt = noMes(sit.limiteConcessao.toISOString());
+      if (!dt) continue;
+      out.push({
+        dia: dt.getDate(), tipo: "Férias — prazo CLT",
+        titulo: c.nome,
+        sub: `Último dia para conceder ${sit.diasEmAberto} dia(s) sem pagar em dobro`,
+      });
+    }
+
     return out.sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d.ativos, eventos, ano, mes]);
+  }, [d, eventos, documentos, certificacoes, ferias, ano, mes]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();
