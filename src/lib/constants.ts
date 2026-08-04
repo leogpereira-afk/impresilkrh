@@ -24,8 +24,15 @@ export const CATEGORIAS_DOCUMENTO = [
   "Certificado",
   "Advertência",
   "Comprovante",
+  // Aviso de férias, recibo, acordo de abono. Categoria própria para que o que
+  // é anexado pela aba Férias apareça também na ficha e em Documentos — um
+  // documento só, num lugar só, em vez de um arquivo paralelo por tela.
+  "Férias",
   "Outro",
 ] as const;
+
+/** Documentos que a aba de Férias mostra e cria. Ver CATEGORIAS_DOCUMENTO. */
+export const CATEGORIA_DOC_FERIAS = "Férias";
 
 // Categorias de documentos institucionais
 export const CATEGORIAS_INSTITUCIONAL = [

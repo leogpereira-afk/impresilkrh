@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
-import { Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus, BarChart3, Pencil, Trash2, Save } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import {
+  Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus, BarChart3, Pencil, Trash2, Save,
+  ChevronRight, AlertTriangle,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
@@ -20,6 +23,8 @@ import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { feriasEmCurso } from "@/lib/ferias";
 import { HistoricoFerias } from "@/components/ferias/historico-ferias";
 import { situacaoFerias, inicioDoHistorico, DIAS_FERIAS } from "@/lib/clt";
+import { contagem, prazoDeConcessao, statusIncoerente, limiteDeConcessao } from "@/lib/feriasContagem";
+import { DetalheFerias } from "@/components/ferias/detalhe-ferias";
 import {
   validarAgendamento, validarPeriodo, retornoDe, diasEntre, temErro,
   MAX_ABONO_DIAS, type Achado,
@@ -27,7 +32,6 @@ import {
 import { HOJE } from "@/data/_gen";
 import type { Ferias as TFerias, Colaborador } from "@/data/types";
 
-const MS_DIA = 86400000;
 // Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
 // milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
 // documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
@@ -61,6 +65,17 @@ const CORES_STATUS: Record<string, string> = {
   Concluída: "#94a3b8",
 };
 
+/* Cor da contagem. Quem está de férias AGORA é a informação que muda a decisão
+   de quem escala o dia — por isso é a única em verde forte; o resto é leitura
+   calma, e "datas trocadas" é o único vermelho porque é dado errado. */
+const COR_FASE: Record<string, string> = {
+  "em-curso": "text-emerald-600",
+  futuro: "text-sky-600",
+  voltou: "text-slate-400",
+  "sem-gozo": "text-slate-400",
+  "datas-trocadas": "text-red-600",
+};
+
 // Variante de Badge por status de férias (Apêndice — CLT).
 function varianteStatus(status: string): "neutral" | "success" | "info" | "warning" {
   if (status === "Concluída") return "neutral";
@@ -69,39 +84,20 @@ function varianteStatus(status: string): "neutral" | "success" | "info" | "warni
   return "warning"; // Em aberto
 }
 
-// Alerta CLT: período aquisitivo vencido ou a vencer (60 dias) e ainda não gozado.
-type Alerta = "vencido" | "a-vencer" | null;
 /* O prazo que interessa NÃO é o fim do período aquisitivo — é doze meses depois
    dele (art. 134: a empresa tem os 12 meses seguintes para conceder). Comparar
    com `periodoAquisitivoFim` direto marcava "vencido" assim que o direito
    nascia, um ano inteiro antes de existir qualquer risco de pagar em dobro.
 
-   `desde` é a data a partir da qual o sistema tem histórico de férias: período
-   cujo prazo acabou antes disso não é "vencido", é desconhecido — ver o comentário
-   de inicioDoHistorico em lib/clt.ts. */
-/* O prazo de conceder é 12 meses DEPOIS do fim do período aquisitivo (art. 134).
-   Ancorado no meio-dia para a soma de meses não escorregar de dia por causa de
-   fuso, e usando setMonth, que já normaliza 31/05 + 12 => 31/05 do ano seguinte
-   e 31/01 + 1 => 03/03 (o JS transborda o mês curto — por isso a conta anda
-   sempre a partir do FIM do aquisitivo, que é a data que a lei manda usar). */
-export function limiteDeConcessao(fimDoAquisitivo: string | Date | null | undefined): string {
-  const d = parseData(fimDoAquisitivo);
-  if (!d) return "";
-  const l = new Date(d.getTime());
-  l.setHours(12, 0, 0, 0);
-  l.setMonth(l.getMonth() + 12);
-  return l.toISOString();
-}
+   A conta mora em lib/feriasContagem.ts, com testes: aqui a tela só decide o
+   que mostrar. `desdeHistorico` é a data a partir da qual o sistema tem
+   registro de férias — período cujo prazo acabou antes disso não é "vencido",
+   é desconhecido (ver inicioDoHistorico em lib/clt.ts). */
+type Alerta = "vencido" | "a-vencer" | null;
 
 function alertaCLT(f: TFerias, desde: Date | null): Alerta {
-  if (f.status !== "Em aberto" && f.status !== "Agendada") return null;
-  const limite = parseData(limiteDeConcessao(f.periodoAquisitivoFim));
-  if (!limite) return null;
-  if (desde && limite.getTime() < desde.getTime()) return null;
-  const d = Math.round((limite.getTime() - HOJE.getTime()) / MS_DIA);
-  if (d < 0) return "vencido";
-  if (d <= JANELA_ALERTA_DIAS) return "a-vencer";
-  return null;
+  const s = prazoDeConcessao(f, HOJE, desde, JANELA_ALERTA_DIAS).situacao;
+  return s === "vencido" || s === "a-vencer" ? s : null;
 }
 
 export default function Ferias() {
@@ -118,6 +114,10 @@ export default function Ferias() {
   // quem agenda 15 dias não tinha como registrar isso — ficava gravado 30.
   const [dias, setDias] = useState("30");
   const [abono, setAbono] = useState("0");
+
+  // Uma linha aberta por vez: o painel é alto (abas + anexos) e dois abertos
+  // ao mesmo tempo empurram a tabela para fora da tela.
+  const [expandida, setExpandida] = useState<string | null>(null);
 
   // CRUD — edição/exclusão de um registro de férias (Quadro de Comando).
   const [editando, setEditando] = useState<TFerias | null>(null);
@@ -190,6 +190,24 @@ export default function Ferias() {
     () => lista.filter((f) => alertaCLT(f, desdeHistorico) !== null),
     [lista, desdeHistorico],
   );
+
+  /* Vencido é diferente de "a vencer": um custa dinheiro HOJE (art. 137 — as
+     férias passam a ser pagas em dobro), o outro é agenda. O cartão "Alertas
+     CLT" soma os dois num número só, e quem lê não sabe se precisa correr. */
+  const vencidas = useMemo(
+    () => lista.filter((f) => prazoDeConcessao(f, HOJE, desdeHistorico, JANELA_ALERTA_DIAS).situacao === "vencido"),
+    [lista, desdeHistorico],
+  );
+
+  /* A próxima pessoa a sair de férias, com a contagem. Só olha gozo FUTURO:
+     quem já está de férias aparece no cartão "De férias agora". */
+  const proxima = useMemo(() => {
+    const futuras = lista
+      .map((f) => ({ f, c: contagem(f, HOJE) }))
+      .filter((x) => x.c.fase === "futuro" && x.f.status !== "Cancelada");
+    futuras.sort((a, b) => a.c.dias - b.c.dias);
+    return futuras[0] ?? null;
+  }, [lista]);
 
   // Os 4 indicadores são recortes da tabela "Controle de férias", então clicar filtra a tabela.
   const [foco, setFoco] = useState<string | null>(null);
@@ -410,6 +428,39 @@ export default function Ferias() {
         )}
       </PageHeader>
 
+      {/* Conclusão primeiro: a pergunta que se faz olhando esta tela é "falta
+          muito para a próxima?". Antes ela só era respondida contando no
+          calendário, linha por linha. Quando não há nenhuma marcada, o silêncio
+          seria a pior resposta — dizer isso em voz alta é o próprio aviso. */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
+        {proxima ? (
+          <>
+            <span className="text-slate-500">Próximas férias:</span>
+            <span className="font-medium text-slate-800">{d.nomeColab(proxima.f.colaboradorId)}</span>
+            <span className="font-medium text-sky-600">{proxima.c.texto.toLowerCase()}</span>
+            <span className="text-slate-400">
+              (início em {formatDate(proxima.f.dataInicio)}, retorno em {formatDate(proxima.f.dataRetorno)})
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-slate-600">Nenhuma férias marcada para os próximos dias.</span>
+            {emAberto.length > 0 && (
+              <span className="text-slate-400">
+                {emAberto.length} {emAberto.length === 1 ? "pessoa tem período" : "pessoas têm período"} em aberto para programar.
+              </span>
+            )}
+          </>
+        )}
+        {vencidas.length > 0 && (
+          <span className="ml-auto flex items-center gap-1.5 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            {vencidas.length} {vencidas.length === 1 ? "período vencido" : "períodos vencidos"} — pagos em dobro
+          </span>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="De férias agora" value={deFeriasAgora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Período em curso hoje" onClick={() => alternarFoco("agora")} ativo={foco === "agora"} title="Filtrar o controle de férias por quem está de férias agora" />
         <StatCard label="Agendadas" value={agendadas.length} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Gozo programado" onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Filtrar o controle de férias pelas agendadas" />
@@ -529,9 +580,11 @@ export default function Ferias() {
             <table className="w-full">
               <thead className="border-b border-slate-100 bg-slate-50/50">
                 <tr>
+                  <th className="th w-8"><span className="sr-only">Abrir detalhes</span></th>
                   <th className="th">Colaborador</th>
                   <th className="th hidden md:table-cell">Período aquisitivo</th>
                   <th className="th hidden sm:table-cell">Gozo</th>
+                  <th className="th">Contagem</th>
                   <th className="th">Saldo</th>
                   <th className="th">Status</th>
                   <th className="th">CLT</th>
@@ -540,57 +593,105 @@ export default function Ferias() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {tabela.map((f) => {
-                  const alerta = alertaCLT(f, desdeHistorico);
+                  const prazo = prazoDeConcessao(f, HOJE, desdeHistorico, JANELA_ALERTA_DIAS);
+                  const c = contagem(f, HOJE);
+                  const incoerente = statusIncoerente(f, HOJE);
+                  const aberta = expandida === f.id;
+                  const nome = d.nomeColab(f.colaboradorId);
                   return (
-                    <tr key={f.id} className="transition hover:bg-slate-50/60">
-                      <td className="td">
-                        <LinkFicha id={f.colaboradorId} className="flex items-center gap-3" titulo="Abrir a ficha para lançar/agendar as férias">
-                          <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
-                          <span className="font-medium text-slate-800">{d.nomeColab(f.colaboradorId)}</span>
-                        </LinkFicha>
-                      </td>
-                      <td className="td hidden md:table-cell text-slate-500">
-                        {f.periodoAquisitivoInicio || f.periodoAquisitivoFim
-                          ? `${formatDate(f.periodoAquisitivoInicio)} – ${formatDate(f.periodoAquisitivoFim)}`
-                          : "—"}
-                      </td>
-                      <td className="td hidden sm:table-cell text-slate-500">
-                        {f.dataInicio ? `${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "—"}
-                      </td>
-                      <td className="td text-slate-700">{f.saldoDias} dias</td>
-                      <td className="td"><Badge variant={varianteStatus(f.status)}>{f.status}</Badge></td>
-                      <td className="td">
-                        {alerta === "vencido" ? (
-                          <Badge variant="danger">Período vencido</Badge>
-                        ) : alerta === "a-vencer" ? (
-                          <Badge variant="warning">Período a vencer</Badge>
-                        ) : (
-                          <span className="text-xs text-slate-300">—</span>
-                        )}
-                      </td>
-                      {podeEditar && (
-                        <td className="td">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              className="btn-ghost p-1.5"
-                              title="Editar férias"
-                              aria-label={`Editar férias de ${d.nomeColab(f.colaboradorId)}`}
-                              onClick={() => abrirEdicao(f)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              className="btn-ghost p-1.5 text-red-500 hover:text-red-600"
-                              title="Excluir férias"
-                              aria-label={`Excluir férias de ${d.nomeColab(f.colaboradorId)}`}
-                              onClick={() => setExcluindo(f)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
+                    <Fragment key={f.id}>
+                      <tr className="transition hover:bg-slate-50/60">
+                        <td className="td pr-0">
+                          <button
+                            type="button"
+                            className="btn-ghost p-1.5"
+                            aria-expanded={aberta}
+                            title={aberta ? "Fechar detalhes" : "Observações e documentação"}
+                            aria-label={`${aberta ? "Fechar" : "Abrir"} observações e documentação das férias de ${nome}`}
+                            onClick={() => setExpandida(aberta ? null : f.id)}
+                          >
+                            <ChevronRight className={`h-4 w-4 transition-transform ${aberta ? "rotate-90" : ""}`} />
+                          </button>
                         </td>
+                        <td className="td">
+                          <LinkFicha id={f.colaboradorId} className="flex items-center gap-3" titulo="Abrir a ficha para lançar/agendar as férias">
+                            <Avatar nome={nome} foto={d.fotoColab(f.colaboradorId)} size="sm" />
+                            <span className="font-medium text-slate-800">{nome}</span>
+                          </LinkFicha>
+                        </td>
+                        <td className="td hidden md:table-cell text-slate-500">
+                          {f.periodoAquisitivoInicio || f.periodoAquisitivoFim
+                            ? `${formatDate(f.periodoAquisitivoInicio)} – ${formatDate(f.periodoAquisitivoFim)}`
+                            : "—"}
+                        </td>
+                        <td className="td hidden sm:table-cell text-slate-500">
+                          {f.dataInicio ? `${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "—"}
+                        </td>
+                        {/* A contagem que a tela não fazia: quem lia "25/12 → 05/01"
+                            tinha de abrir o calendário para saber se faltava muito. */}
+                        <td className="td">
+                          <span className={`text-xs font-medium ${COR_FASE[c.fase]}`}>{c.texto}</span>
+                          {incoerente && (
+                            <span
+                              className="ml-1.5 inline-flex align-middle text-amber-500"
+                              title={incoerente}
+                              aria-label={incoerente}
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                            </span>
+                          )}
+                        </td>
+                        <td className="td text-slate-700">{f.saldoDias} dias</td>
+                        <td className="td"><Badge variant={varianteStatus(f.status)}>{f.status}</Badge></td>
+                        {/* Antes só falava dentro da janela de 60 dias: em tudo o
+                            mais ficava um travessão, que se lê como "não há prazo"
+                            quando na verdade há, com folga. Agora diz o prazo. */}
+                        <td className="td">
+                          {prazo.situacao === "vencido" ? (
+                            <span title={`O limite era ${prazo.limite}`}>
+                              <Badge variant="danger">{prazo.texto}</Badge>
+                            </span>
+                          ) : prazo.situacao === "a-vencer" ? (
+                            <span title={`Conceder até ${prazo.limite}`}>
+                              <Badge variant="warning">{prazo.texto}</Badge>
+                            </span>
+                          ) : prazo.situacao === "no-prazo" ? (
+                            <span className="text-xs text-slate-500" title={`Conceder até ${prazo.limite}`}>{prazo.texto}</span>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
+                        </td>
+                        {podeEditar && (
+                          <td className="td">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                className="btn-ghost p-1.5"
+                                title="Editar férias"
+                                aria-label={`Editar férias de ${nome}`}
+                                onClick={() => abrirEdicao(f)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                className="btn-ghost p-1.5 text-red-500 hover:text-red-600"
+                                title="Excluir férias"
+                                aria-label={`Excluir férias de ${nome}`}
+                                onClick={() => setExcluindo(f)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                      {aberta && (
+                        <tr>
+                          <td className="bg-slate-50/60 px-4 py-4" colSpan={podeEditar ? 9 : 8}>
+                            <DetalheFerias ferias={f} nome={nome} podeEditar={podeEditar} avisoStatus={incoerente} />
+                          </td>
+                        </tr>
                       )}
-                    </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>
