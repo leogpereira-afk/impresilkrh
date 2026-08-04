@@ -1124,14 +1124,34 @@ function listaDatas(dias: PontoDia[]): string {
 
 // Separa o que é falta de DIA INTEIRO do que é atraso, e colhe os feriados que o
 // próprio PDF trouxe — os dois entram no cálculo do desconto (dia = 1/30).
+/* Situações que NÃO descontam: atestado e abono estão pagos, e feriado, férias
+   e folga a pessoa nem devia estar trabalhando. É o que o próprio rodapé do
+   modal promete: "Atestado e abono não geram desconto". */
+const SIT_SEM_DESCONTO: SituacaoDia[] = ["atestado", "abono", "feriado", "ferias", "folga"];
+
 export function decomporFaltas(p: { dias?: PontoDia[]; faltasMin: number }) {
   const dias = p.dias ?? [];
   const cheios = dias.filter((x) => x.situacao === "falta");
   const minCheios = cheios.reduce((s, x) => s + (x.faltasMin || 0), 0);
+  /* O atraso vinha da SOBRA do total do mês, e isso invertia o efeito de
+     corrigir um dia: o RH recebia o atestado, trocava a situação de "Falta"
+     para "Atestado", e os minutos daquele dia — que continuam no total do mês —
+     deixavam de ser falta de dia inteiro e caíam inteiros no balde de ATRASO,
+     que é cobrado por hora e ainda leva reflexo de DSR. Marcar o atestado
+     AUMENTAVA o desconto em cerca de 20%, quando deveria zerá-lo.
+
+     Com o detalhe diário na mão, o atraso é somado dos dias que realmente
+     descontam. A sobra continua valendo só quando não há detalhe nenhum. */
+  const semDesconto = dias.reduce(
+    (soma, x) => soma + (SIT_SEM_DESCONTO.includes(x.situacao) ? (x.faltasMin || 0) : 0), 0);
+  const atrasoPorDia = dias
+    .filter((x) => x.situacao === "normal" || x.situacao === "semRegistro")
+    .reduce((soma, x) => soma + (x.faltasMin || 0), 0);
   return {
     diasCheios: cheios.length,
-    // O que sobra do total do mês são atrasos/saídas antecipadas em dias normais.
-    minutosAtraso: Math.max(0, (p.faltasMin || 0) - minCheios),
+    minutosAtraso: dias.length
+      ? atrasoPorDia
+      : Math.max(0, (p.faltasMin || 0) - minCheios - semDesconto),
     feriadosISO: dias.filter((x) => x.situacao === "feriado").map((x) => x.data),
     temDetalhe: dias.length > 0,
   };
@@ -1739,7 +1759,15 @@ function ModalEditarDia({
       faltasMin: horaParaMin(faltas),
       extrasMin: horaParaMin(extras),
     };
-    const dias = (ponto.dias ?? []).map((x) => (x.data === dia.data ? novoDia : x));
+    /* O extrato preenche as lacunas do mês com dias sintéticos ("sem registro")
+       e mostra o lápis em todos — mas o dia sintético não está em ponto.dias.
+       Só com `.map`, o array voltava idêntico, nada era gravado, e a tela ainda
+       dava o toast "Dia corrigido". O dia continuava faltando no extrato, no
+       PDF do colaborador e na apuração, sem nenhum erro. */
+    const base = ponto.dias ?? [];
+    const dias = base.some((x) => x.data === dia.data)
+      ? base.map((x) => (x.data === dia.data ? novoDia : x))
+      : [...base, novoDia].sort((a, b) => a.data.localeCompare(b.data));
 
     // Os totais do mês são refeitos pela soma dos dias — MAS só quando o detalhe
     // diário é a fonte completa (ficha vinda do PDF, com o mês inteiro).
