@@ -35,9 +35,15 @@ const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?
   { tipo: "NR vence", cor: "#b91c1c", Icon: ShieldAlert },
   { tipo: "Experiência", cor: "#7c3aed", Icon: UserCheck },
   { tipo: "Férias — prazo CLT", cor: "#0891b2", Icon: Palmtree },
+  // O período de gozo em si (saiu / volta). Vem DESLIGADO: com 30 pessoas ele
+  // enche o quadro e some com o resto — é informação de consulta, não de vigia.
+  { tipo: "Férias", cor: "#0e7490", Icon: Palmtree },
   // Os dois dias de dinheiro do mês, que a equipe inteira tem na cabeça.
   { tipo: "Pagamento", cor: "#047857", Icon: Banknote },
 ];
+/* Tipos que começam ESCONDIDOS. O calendário é para bater o olho e ver o que
+   exige ação; quem sai de férias é consulta — aparece quando se pede. */
+const OCULTOS_POR_PADRAO = new Set(["Férias"]);
 const corDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.cor ?? "#64748b";
 const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarDays;
 const TIPOS_EDITAVEIS: TipoEvento[] = ["Comemorativa", "Reunião", "Feriado", "Empresa", "Outro"];
@@ -58,6 +64,11 @@ export default function Calendario() {
   const [edit, setEdit] = useState<EventoCalendario | null>(null);
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<EventoCalendario | null>(null);
+  const [visiveis, setVisiveis] = useState<Set<string>>(
+    () => new Set(TIPOS.map((t) => t.tipo).filter((t) => !OCULTOS_POR_PADRAO.has(t))),
+  );
+  const alternarTipo = (t: string) =>
+    setVisiveis((s) => { const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n; });
 
   // Eventos do mês = aniversários + tempo de empresa (derivados) + eventos salvos.
   const itens = useMemo<Item[]>(() => {
@@ -149,6 +160,39 @@ export default function Calendario() {
       });
     }
 
+    /* ── Quem sai e quem volta de férias ───────────────────────────────────
+       Duas marcas por período: o dia em que a pessoa SAI e o dia em que VOLTA
+       ao trabalho. É o que responde "quem não vai estar aqui na semana que vem".
+       Cancelada fica de fora; o resto entra, inclusive o que já passou — o
+       calendário também serve para olhar para trás. */
+    for (const f of ferias) {
+      if (f.status === "Cancelada") continue;
+      const nome = d.nomeColab(f.colaboradorId);
+      const ini = noMes(f.dataInicio);
+      const ret = noMes(f.dataRetorno);
+      const volta = parseData(f.dataRetorno);
+      const saida = parseData(f.dataInicio);
+      const bruto = saida && volta
+        ? Math.round((volta.getTime() - saida.getTime()) / 86_400_000) : null;
+      // Registro com retorno ANTES do início existe na base antiga (a tela só
+      // passou a impedir hoje). Imprimir "-31 dia(s)" é a tela afirmando um
+      // absurdo: melhor dizer que o período está torto e mandar conferir.
+      const quantos = bruto != null && bruto > 0 ? bruto : null;
+      const torto = bruto != null && bruto <= 0;
+      if (ini) out.push({
+        dia: ini.getDate(), tipo: "Férias", titulo: nome,
+        sub: torto
+          ? "Período com datas trocadas — confira em Férias"
+          : `Sai de férias${quantos ? ` · ${quantos} dia(s)` : ""}${volta ? ` · volta ${formatDate(volta.toISOString())}` : ""}`,
+      });
+      if (ret) out.push({
+        dia: ret.getDate(), tipo: "Férias", titulo: nome,
+        sub: torto
+          ? "Período com datas trocadas — confira em Férias"
+          : `Volta de férias${saida ? ` · saiu ${formatDate(saida.toISOString())}` : ""}`,
+      });
+    }
+
     /* ── Dinheiro: os dois dias que todo mundo pergunta ────────────────────
        O 5º dia útil não é "dia 5": depende de onde caem sábado, domingo e os
        feriados daquele mês. Os feriados saem do próprio calendário (eventos do
@@ -168,8 +212,10 @@ export default function Calendario() {
       sub: adi.getDate() === 20 ? "Dia 20" : `Dia 20 caiu sem expediente — antecipado para ${adi.getDate()}`,
     });
 
-    return out.sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d, eventos, documentos, certificacoes, ferias, ano, mes]);
+    return out
+      .filter((x) => visiveis.has(x.tipo))
+      .sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
+  }, [d, eventos, documentos, certificacoes, ferias, ano, mes, visiveis]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();
@@ -190,7 +236,7 @@ export default function Calendario() {
 
   return (
     <div>
-      <PageHeader title="Calendário" description="Aniversários, tempo de empresa, feriados, datas comemorativas e reuniões — nada esquecido.">
+      <PageHeader title="Calendário" description="Aniversários, vencimentos, pagamentos e férias. Clique na legenda para mostrar ou esconder cada tipo.">
         {gere && <button className="btn-primary" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo evento</button>}
       </PageHeader>
 
@@ -201,8 +247,30 @@ export default function Calendario() {
           <button className="btn-outline px-2" onClick={() => navMes(1)} aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button>
           <button className="btn-ghost text-sm" onClick={() => { setMes(HOJE.getMonth()); setAno(HOJE.getFullYear()); }}>Hoje</button>
         </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {TIPOS.map((t) => <span key={t.tipo} className="inline-flex items-center gap-1.5 text-xs text-slate-500"><span className="h-2.5 w-2.5 rounded-full" style={{ background: t.cor }} />{t.tipo}</span>)}
+        {/* A legenda VIROU o seletor: clicar liga e desliga o tipo. Era só
+            enfeite, e o calendário não tinha como filtrar nada. Desligado fica
+            apagado e riscado, para a diferença ser óbvia sem precisar contar. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {TIPOS.map((t) => {
+            const on = visiveis.has(t.tipo);
+            return (
+              <button
+                key={t.tipo}
+                type="button"
+                onClick={() => alternarTipo(t.tipo)}
+                aria-pressed={on}
+                title={on ? `Esconder ${t.tipo}` : `Mostrar ${t.tipo}`}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition",
+                  on ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                     : "border-dashed border-slate-200 text-slate-300 line-through hover:text-slate-400",
+                )}
+              >
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: on ? t.cor : "#cbd5e1" }} />
+                {t.tipo}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -235,7 +303,13 @@ export default function Calendario() {
         <CardHeader title={`Tudo de ${MESES_PT[mes]}`} subtitle="Lista completa do mês, em ordem de data" icon={<CalendarDays className="h-[18px] w-[18px]" />} />
         <CardBody>
           {itens.length === 0 ? (
-            <EmptyState title="Nada marcado neste mês" description="Use “Novo evento” para adicionar reuniões e datas comemorativas." icon={<CalendarDays className="h-8 w-8" />} />
+            <EmptyState
+              title={visiveis.size === 0 ? "Tudo escondido" : "Nada marcado neste mês"}
+              description={visiveis.size === 0
+                ? "Clique na legenda acima para mostrar os tipos de novo."
+                : "Use “Novo evento” para adicionar reuniões e datas comemorativas."}
+              icon={<CalendarDays className="h-8 w-8" />}
+            />
           ) : (
             <div className="space-y-1.5">
               {itens.map((it, i) => {
