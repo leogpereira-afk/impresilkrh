@@ -32,6 +32,7 @@ import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { BarrasColoridas } from "@/components/charts/charts";
 import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
+import { ordemEstavel, aplicarOrdem } from "@/lib/ordemEstavel";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
@@ -448,15 +449,32 @@ function PainelChecklist({
           abertas: total - feitas,
         };
       })
-      .filter((g) => escopoIds.has(g.colaboradorId))
-      .sort((a, b) => {
-        // Mais pendências primeiro; depois por nome.
-        if (b.abertas !== a.abertas) return b.abertas - a.abertas;
-        const na = d.nomeColab(a.colaboradorId);
-        const nb = d.nomeColab(b.colaboradorId);
-        return na.localeCompare(nb);
-      });
-  }, [tarefas, tipo, escopoIds, d]);
+      .filter((g) => escopoIds.has(g.colaboradorId));
+  }, [tarefas, tipo, escopoIds]);
+
+  /* A ORDEM NÃO PODE MUDAR DEBAIXO DO CLIQUE.
+     Ordenar por "mais pendências primeiro" a cada render fazia o cartão pular
+     de lugar assim que se marcava um item: em 05/08/2026, Candida e Victor
+     estavam empatados em 12 pendências, e marcar um documento na Candida
+     trocava os dois de posição na grade. Quem clicou continuava olhando o mesmo
+     ponto da tela, agora ocupado pelo cartão de OUTRA pessoa — e parecia que o
+     clique não pegou e que os marcados sumiram.
+
+     A regra de triagem continua: ela decide a ordem quando a LISTA muda (alguém
+     entra ou sai), não quando um número dentro dela muda. Ver lib/ordemEstavel. */
+  const ordemRef = useRef<string[]>([]);
+  const gruposOrdenados = useMemo(() => {
+    const paraOrdenar = grupos.map((g) => ({
+      id: g.colaboradorId,
+      abertas: g.abertas,
+      nome: d.nomeColab(g.colaboradorId),
+    }));
+    ordemRef.current = ordemEstavel(paraOrdenar, ordemRef.current);
+    return aplicarOrdem(
+      grupos.map((g) => ({ ...g, id: g.colaboradorId })),
+      ordemRef.current,
+    );
+  }, [grupos, d]);
 
   // Resumo agregado de pendências (item 3 — "tudo em aberto").
   const pendencias = useMemo(() => {
@@ -513,7 +531,7 @@ function PainelChecklist({
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {grupos.map((g) => (
+        {gruposOrdenados.map((g) => (
           <div
             key={`${tipo}-${g.colaboradorId}`}
             ref={(el) => {
