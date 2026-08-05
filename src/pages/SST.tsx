@@ -16,10 +16,11 @@ import { useColecao, useConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, parseData, diasDeCalendario } from "@/lib/format";
+import { formatDate, parseData, diasDeCalendario, diaLocalISO } from "@/lib/format";
 import { CATEGORIAS_SST, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { mensagemAgendamento, telefoneWhatsApp, linkWhatsApp, quandoLegivel } from "@/lib/agendamentoExame";
 import { CATALOGO_NR, nomeNR, calcularValidadeNR } from "@/data/nrs";
+import { separarVigentes } from "@/lib/nrVigente";
 import { HOJE } from "@/data/_gen";
 
 // Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
@@ -467,6 +468,7 @@ function AbaCertificacoesNR() {
   const [novo, setNovo] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(FORM_VAZIO);
+  const [excluindoCert, setExcluindoCert] = useState<(typeof items)[number] | null>(null);
 
   const escopo = useMemo(
     // Mesma régua da aba de Exames: `noQuadro` (antes filtrava só por
@@ -478,9 +480,17 @@ function AbaCertificacoesNR() {
   const idsVisiveis = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
   const certs = useMemo(() => items.filter((c) => idsVisiveis.has(c.colaboradorId)), [items, idsVisiveis]);
 
-  const total = certs.length;
-  const vencidas = certs.filter((c) => situacaoDoc(c.dataValidade) === "Vencido").length;
-  const aVencer = certs.filter((c) => situacaoDoc(c.dataValidade) === "A vencer").length;
+  /* Os NÚMEROS olham só o que vale hoje. Renovar um treinamento não apaga o
+     anterior (o histórico é a prova de que a pessoa fez o curso na época), mas
+     o contador olhava TODAS as linhas — então o certificado velho seguia sendo
+     cobrado para sempre e o painel dizia que havia risco onde a pessoa está em
+     dia. Ver lib/nrVigente. */
+  const { vigentes, substituidas } = useMemo(() => separarVigentes(certs), [certs]);
+  const idsSubstituidas = useMemo(() => new Set(substituidas.map((c) => c.id)), [substituidas]);
+
+  const total = vigentes.length;
+  const vencidas = vigentes.filter((c) => situacaoDoc(c.dataValidade) === "Vencido").length;
+  const aVencer = vigentes.filter((c) => situacaoDoc(c.dataValidade) === "A vencer").length;
   const validas = total - vencidas - aVencer;
 
   // Os números vêm da mesma listagem de NRs logo abaixo, então clicar filtra a listagem.
@@ -528,6 +538,14 @@ function AbaCertificacoesNR() {
 
   const salvar = () => {
     if (!form.colaboradorId || !form.dataTreinamento) { toast("Selecione o colaborador e a data do treinamento.", "erro"); return; }
+    /* Treinamento no FUTURO não existe: a validade é contada a partir dele, e
+       uma data adiante deixaria o certificado "válido" por anos sem ninguém ter
+       feito o curso. O modal de exame já barra data incoerente; este não
+       barrava nada. */
+    if (form.dataTreinamento > diaLocalISO(new Date())) {
+      toast("A data do treinamento não pode ser no futuro.", "erro");
+      return;
+    }
     const payload = {
       colaboradorId: form.colaboradorId,
       nr: form.nr,
@@ -616,13 +634,26 @@ function AbaCertificacoesNR() {
                           </div>
                         </LinkFicha>
                         <div className="flex shrink-0 items-center gap-2">
-                          <Badge variant={VARIANTE_SITUACAO[sit]}>{sit}</Badge>
+                          {/* Substituída = há um treinamento MAIS NOVO da mesma
+                              NR para esta pessoa. Fica na lista porque é
+                              histórico, mas não pode aparecer como "Vencido" —
+                              senão parece cobrança de algo já resolvido. */}
+                          {idsSubstituidas.has(c.id) ? (
+                            <Badge variant="neutral">Substituída</Badge>
+                          ) : (
+                            <Badge variant={VARIANTE_SITUACAO[sit]}>{sit}</Badge>
+                          )}
                           {gere && (
                             <>
                               <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicao(c)} aria-label="Editar">
                                 <Pencil className="h-4 w-4" />
                               </button>
-                              <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => { remover(c.id); toast("Certificação removida."); }} aria-label="Remover">
+                              {/* Pergunta antes: a lixeira fica colada no lápis
+                                  e apagar certificação de NR é irreversível —
+                                  é a prova de que a pessoa pode operar. */}
+                              <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600"
+                                onClick={() => setExcluindoCert(c)}
+                                aria-label={`Remover a ${c.nr} de ${d.nomeColab(c.colaboradorId)}`}>
                                 <Trash2 className="h-4 w-4" />
                               </button>
                             </>
@@ -680,6 +711,30 @@ function AbaCertificacoesNR() {
           </div>
         </Modal>
       )}
+
+      <ConfirmDialog
+        aberto={!!excluindoCert}
+        onFechar={() => setExcluindoCert(null)}
+        onConfirmar={() => {
+          if (!excluindoCert) return;
+          remover(excluindoCert.id);
+          toast("Certificação removida.");
+          setExcluindoCert(null);
+        }}
+        titulo="Remover certificação de NR"
+        mensagem={
+          excluindoCert ? (
+            <>
+              Remover a <span className="font-medium text-slate-700">{excluindoCert.nr}</span> de{" "}
+              <span className="font-medium text-slate-700">{d.nomeColab(excluindoCert.colaboradorId)}</span>?
+              {" "}É a prova de que ela pode operar — se for renovação, lance o treinamento novo em vez de
+              apagar este. Esta ação não pode ser desfeita.
+            </>
+          ) : (
+            ""
+          )
+        }
+      />
     </div>
   );
 }
