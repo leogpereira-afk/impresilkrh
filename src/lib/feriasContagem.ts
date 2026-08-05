@@ -89,6 +89,51 @@ export function contagem(f: Pick<Ferias, "dataInicio" | "dataRetorno">, hoje: Da
   return { fase: "voltou", dias: desdeORetorno, texto };
 }
 
+// -------------------------- a próxima, por pessoa ---------------------------
+
+export interface Proxima {
+  /** "em-curso" = está de férias agora; "futuro" = já marcou; "sem-marcacao" = nada agendado. */
+  fase: "em-curso" | "futuro" | "sem-marcacao";
+  /** Dias que faltam (para sair, ou para voltar). 0 quando não há o que contar. */
+  dias: number;
+  texto: string;
+  /** O período que gerou a contagem, para a tela poder mostrar as datas. */
+  registro: Ferias | null;
+}
+
+/**
+ * A PRÓXIMA férias da pessoa — que é a pergunta que se faz olhando esta tela.
+ *
+ * A contagem por registro respondia "voltou há 211 dias", o que é verdade e não
+ * serve para nada: quem abre o controle de férias quer saber quanto falta para
+ * a próxima, não há quanto tempo foi a última.
+ *
+ * Ordem de prioridade: quem está de férias AGORA vem antes de quem tem uma
+ * marcada, porque é o que muda a escala de hoje. Entre as futuras, a mais
+ * próxima. Período cancelado não conta.
+ */
+export function proximaFerias(registros: Ferias[], hoje: Date = HOJE): Proxima {
+  const vivos = (registros || []).filter((f) => f.status !== "Cancelada");
+
+  const emCurso = vivos
+    .map((f) => ({ f, c: contagem(f, hoje) }))
+    .filter((x) => x.c.fase === "em-curso")
+    .sort((a, b) => a.c.dias - b.c.dias)[0];
+  if (emCurso) {
+    return { fase: "em-curso", dias: emCurso.c.dias, texto: emCurso.c.texto, registro: emCurso.f };
+  }
+
+  const futuras = vivos
+    .map((f) => ({ f, c: contagem(f, hoje) }))
+    .filter((x) => x.c.fase === "futuro")
+    .sort((a, b) => a.c.dias - b.c.dias);
+  if (futuras.length) {
+    return { fase: "futuro", dias: futuras[0].c.dias, texto: futuras[0].c.texto, registro: futuras[0].f };
+  }
+
+  return { fase: "sem-marcacao", dias: 0, texto: "Sem férias marcadas", registro: null };
+}
+
 // ------------------------------ prazo da CLT --------------------------------
 
 /**
@@ -181,6 +226,26 @@ export function prazoDeConcessao(
  * da folha, e um registro pode estar "errado" só porque as férias foram
  * antecipadas e ainda não lançaram.
  */
+/**
+ * O status que as DATAS pedem — para oferecer o conserto de um clique.
+ *
+ * Devolve `null` quando o status já está coerente (ou quando não dá para
+ * afirmar nada: sem gozo marcado, datas trocadas). Nunca aplica sozinho: quem
+ * decide é quem cuida da folha, e um registro pode estar "errado" só porque as
+ * férias foram antecipadas e ainda não lançaram.
+ */
+export function statusSugerido(
+  f: Pick<Ferias, "status" | "dataInicio" | "dataRetorno">,
+  hoje: Date = HOJE,
+): string | null {
+  if (!statusIncoerente(f, hoje)) return null;
+  const { fase } = contagem(f, hoje);
+  if (fase === "voltou") return "Concluída";
+  if (fase === "em-curso") return "Em andamento";
+  if (fase === "futuro") return "Agendada";
+  return null;
+}
+
 export function statusIncoerente(
   f: Pick<Ferias, "status" | "dataInicio" | "dataRetorno">,
   hoje: Date = HOJE,

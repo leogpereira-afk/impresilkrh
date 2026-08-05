@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { contagem, prazoDeConcessao, statusIncoerente, limiteDeConcessao } from "@/lib/feriasContagem";
+import {
+  contagem, prazoDeConcessao, statusIncoerente, statusSugerido, proximaFerias, limiteDeConcessao,
+} from "@/lib/feriasContagem";
 import { parseData } from "@/lib/format";
+import type { Ferias } from "@/data/types";
 
 /* Datas ancoradas no meio-dia LOCAL. Meia-noite escorrega de dia em fuso à
    frente de UTC, e foi assim que a CI (que roda em UTC) ficou vermelha enquanto
@@ -178,5 +181,102 @@ describe("statusIncoerente — quando o status contradiz as datas", () => {
   it("registro sem gozo e registro invertido não geram falso alarme", () => {
     expect(statusIncoerente({ status: "Em aberto", dataInicio: null, dataRetorno: null }, HOJE)).toBeNull();
     expect(statusIncoerente({ status: "Agendada", dataInicio: "2026-09-01", dataRetorno: "2026-08-01" }, HOJE)).toBeNull();
+  });
+});
+
+describe("proximaFerias — quanto falta para a próxima, por pessoa", () => {
+  const reg = (id: string, ini: string | null, ret: string | null, status = "Concluída") =>
+    ({ id, colaboradorId: "c1", dataInicio: ini, dataRetorno: ret, diasGozados: 0, saldoDias: 0, status }) as Ferias;
+
+  it("o caso do Andre: dois períodos, os DOIS no passado", () => {
+    // Era isto que a tela mostrava como "Voltou há 211 dias" em duas linhas.
+    // A resposta útil é que não há próxima marcada.
+    const p = proximaFerias([reg("a", "2025-12-25", "2026-01-05"), reg("b", "2024-12-23", "2025-01-02")], HOJE);
+    expect(p.fase).toBe("sem-marcacao");
+    expect(p.texto).toBe("Sem férias marcadas");
+  });
+
+  it("com uma futura, conta os dias que faltam", () => {
+    const p = proximaFerias([reg("a", "2025-12-25", "2026-01-05"), reg("b", "2026-08-20", "2026-09-19", "Agendada")], HOJE);
+    expect(p.fase).toBe("futuro");
+    expect(p.dias).toBe(16);
+    expect(p.texto).toBe("Faltam 16 dias");
+  });
+
+  it("entre duas futuras, pega a MAIS PRÓXIMA", () => {
+    const p = proximaFerias([
+      reg("longe", "2026-12-01", "2026-12-31", "Agendada"),
+      reg("perto", "2026-08-20", "2026-09-19", "Agendada"),
+    ], HOJE);
+    expect(p.registro?.id).toBe("perto");
+  });
+
+  it("quem está de férias AGORA vem antes de quem tem uma marcada", () => {
+    const p = proximaFerias([
+      reg("futura", "2026-08-20", "2026-09-19", "Agendada"),
+      reg("agora", "2026-07-20", "2026-08-19", "Em andamento"),
+    ], HOJE);
+    expect(p.fase).toBe("em-curso");
+    expect(p.registro?.id).toBe("agora");
+    expect(p.texto).toContain("volta em");
+  });
+
+  it("período CANCELADO não conta como próxima", () => {
+    const p = proximaFerias([reg("cancelada", "2026-08-20", "2026-09-19", "Cancelada")], HOJE);
+    expect(p.fase).toBe("sem-marcacao");
+  });
+
+  it("pessoa sem nenhum registro não quebra", () => {
+    expect(proximaFerias([], HOJE).fase).toBe("sem-marcacao");
+  });
+
+  it("registro em aberto (sem gozo) não vira próxima", () => {
+    // 13 pessoas da base estão assim: têm direito, não marcaram nada.
+    const p = proximaFerias([reg("aberto", null, null, "Em aberto")], HOJE);
+    expect(p.fase).toBe("sem-marcacao");
+  });
+});
+
+describe("statusSugerido — o conserto de um clique", () => {
+  it("os três casos reais viram Concluída", () => {
+    // Ricardo, Sally e Thiago: "Em andamento" com retorno em julho.
+    for (const [ini, ret] of [["2026-06-21", "2026-07-21"], ["2026-06-20", "2026-07-20"], ["2026-06-19", "2026-07-19"]]) {
+      expect(statusSugerido({ status: "Em andamento", dataInicio: ini, dataRetorno: ret }, HOJE)).toBe("Concluída");
+    }
+  });
+
+  it("gozo acontecendo agora vira Em andamento", () => {
+    expect(statusSugerido({ status: "Agendada", dataInicio: "2026-07-20", dataRetorno: "2026-08-19" }, HOJE))
+      .toBe("Em andamento");
+    expect(statusSugerido({ status: "Concluída", dataInicio: "2026-07-20", dataRetorno: "2026-08-19" }, HOJE))
+      .toBe("Em andamento");
+  });
+
+  it("gozo que ainda não começou vira Agendada", () => {
+    expect(statusSugerido({ status: "Concluída", dataInicio: "2026-09-01", dataRetorno: "2026-10-01" }, HOJE))
+      .toBe("Agendada");
+  });
+
+  it("NÃO sugere nada quando o status já está coerente", () => {
+    expect(statusSugerido({ status: "Concluída", dataInicio: "2026-06-19", dataRetorno: "2026-07-19" }, HOJE)).toBeNull();
+    expect(statusSugerido({ status: "Em andamento", dataInicio: "2026-07-20", dataRetorno: "2026-08-19" }, HOJE)).toBeNull();
+    expect(statusSugerido({ status: "Agendada", dataInicio: "2026-09-01", dataRetorno: "2026-10-01" }, HOJE)).toBeNull();
+  });
+
+  it("NÃO sugere nada quando não dá para afirmar (sem gozo, datas trocadas)", () => {
+    // "Em aberto" sem gozo é o estado legítimo de 13 pessoas da base: sugerir
+    // qualquer status aqui seria inventar agendamento que ninguém fez.
+    expect(statusSugerido({ status: "Em aberto", dataInicio: null, dataRetorno: null }, HOJE)).toBeNull();
+    expect(statusSugerido({ status: "Agendada", dataInicio: "2026-09-01", dataRetorno: "2026-08-01" }, HOJE)).toBeNull();
+  });
+
+  it("o sugerido é sempre um dos status que o formulário aceita", () => {
+    const validos = ["Em aberto", "Agendada", "Em andamento", "Concluída"];
+    const casos = [
+      { status: "Em andamento", dataInicio: "2026-06-19", dataRetorno: "2026-07-19" },
+      { status: "Agendada", dataInicio: "2026-07-20", dataRetorno: "2026-08-19" },
+      { status: "Concluída", dataInicio: "2026-09-01", dataRetorno: "2026-10-01" },
+    ];
+    for (const c of casos) expect(validos).toContain(statusSugerido(c, HOJE));
   });
 });

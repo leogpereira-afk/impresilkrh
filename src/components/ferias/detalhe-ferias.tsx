@@ -13,7 +13,7 @@
 // havia abono vendido).
 // ============================================================================
 import { useEffect, useState } from "react";
-import { AlertTriangle, FileText, Paperclip, Plus, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, FileText, Paperclip, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { Tabs } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Campo, Input } from "@/components/ui/form";
@@ -29,6 +29,8 @@ import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { formatDate } from "@/lib/format";
 import { CATEGORIA_DOC_FERIAS } from "@/lib/constants";
+import { contagem, prazoDeConcessao, statusIncoerente, statusSugerido } from "@/lib/feriasContagem";
+import { inicioDoHistorico } from "@/lib/clt";
 import type { Documento, Ferias } from "@/data/types";
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -38,17 +40,38 @@ function tamanho(bytes?: number | null): string {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
 
-// ------------------------------ observações ---------------------------------
+// Mesma régua de cor da tabela (Ferias.tsx). Duplicar a decisão faria o mesmo
+// status aparecer de duas cores na mesma tela.
+function varianteStatus(status: string): "neutral" | "success" | "info" | "warning" {
+  if (status === "Concluída") return "neutral";
+  if (status === "Em andamento") return "success";
+  if (status === "Agendada") return "info";
+  return "warning"; // Em aberto / sem status
+}
 
-function AbaObservacoes({
+// --------------------------- um período de férias ----------------------------
+
+/* UM CARTÃO POR PERÍODO. A tabela lá fora tem uma linha por PESSOA — quem tinha
+   três anos de histórico aparecia três vezes seguidas, com a mesma foto e o
+   mesmo nome. O histórico dela vive aqui dentro, do mais recente para o mais
+   antigo, e cada período traz o que era coluna: datas, saldo, status, prazo da
+   CLT — mais a observação, que é por período. */
+function CartaoPeriodo({
   ferias,
   podeEditar,
-  avisoStatus,
+  aoEditar,
+  aoExcluir,
+  desde,
 }: {
   ferias: Ferias;
   podeEditar: boolean;
-  avisoStatus: string | null;
+  aoEditar?: (f: Ferias) => void;
+  aoExcluir?: (f: Ferias) => void;
+  desde: Date | null;
 }) {
+  const avisoStatus = statusIncoerente(ferias);
+  const c = contagem(ferias);
+  const prazo = prazoDeConcessao(ferias, undefined, desde);
   const toast = useToast();
   const { atualizar } = useColecao("ferias");
   const guardado = ferias.observacao ?? "";
@@ -61,6 +84,10 @@ function AbaObservacoes({
 
   const sujo = texto !== guardado;
 
+  /* O status que as DATAS pedem, quando ele contradiz o que está gravado.
+     `null` quando está coerente ou quando não dá para afirmar nada. */
+  const sugerido = statusSugerido(ferias);
+
   const salvar = () => {
     // Grava SÓ este campo. Escrever o registro inteiro por cima apagaria o que
     // outra tela (ou a sincronização) tivesse mudado enquanto o painel estava
@@ -70,12 +97,72 @@ function AbaObservacoes({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+      {/* Cabeçalho do período: o que antes era a linha da tabela. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Badge variant={varianteStatus(ferias.status)}>{ferias.status || "Sem status"}</Badge>
+        <span className="text-sm text-slate-700">
+          {ferias.dataInicio
+            ? `${formatDate(ferias.dataInicio)} → ${formatDate(ferias.dataRetorno)}`
+            : "Sem gozo marcado"}
+        </span>
+        <span className="text-xs text-slate-400">
+          aquisitivo {ferias.periodoAquisitivoInicio || ferias.periodoAquisitivoFim
+            ? `${formatDate(ferias.periodoAquisitivoInicio)} – ${formatDate(ferias.periodoAquisitivoFim)}`
+            : "não informado"}
+        </span>
+        <span className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-slate-500">{c.texto}</span>
+          <span className="text-xs font-medium text-slate-700">saldo {ferias.saldoDias ?? 0} dias</span>
+          {prazo.situacao === "vencido" ? (
+            <Badge variant="danger">{prazo.texto}</Badge>
+          ) : prazo.situacao === "a-vencer" ? (
+            <Badge variant="warning">{prazo.texto}</Badge>
+          ) : prazo.situacao === "no-prazo" ? (
+            <span className="text-xs text-slate-400">{prazo.texto}</span>
+          ) : null}
+          {podeEditar && aoEditar && (
+            <button className="btn-ghost p-1.5" title="Editar este período" onClick={() => aoEditar(ferias)}>
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+          {podeEditar && aoExcluir && (
+            <button
+              className="btn-ghost p-1.5 text-red-500 hover:text-red-600"
+              title="Excluir este período"
+              onClick={() => aoExcluir(ferias)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </span>
+      </div>
+
       {avisoStatus && (
-        <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{avisoStatus} Confira o status no lápis de edição.</span>
-        </p>
+        <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{avisoStatus}</span>
+          </p>
+          {/* O conserto de um clique. Ninguém volta na ficha para trocar
+              "Em andamento" por "Concluída" quando a pessoa retorna — três
+              registros estavam assim em 04/08/2026, com retorno em julho. O
+              botão passa pelo caminho normal do app, então a mudança entra no
+              histórico com o nome de quem clicou e com Desfazer. Escrever isso
+              direto no banco mudaria ficha de pessoa sem rastro de quem e por
+              quê, num sistema cuja função é justamente provar. */}
+          {podeEditar && sugerido && (
+            <button
+              className="btn-outline mt-2 h-7 px-2 text-xs"
+              onClick={() => {
+                atualizar(ferias.id, { status: sugerido });
+                toast(`Status corrigido para "${sugerido}".`);
+              }}
+            >
+              <Check className="h-3.5 w-3.5" /> Marcar como {sugerido.toLowerCase()}
+            </button>
+          )}
+        </div>
       )}
       {podeEditar ? (
         <>
@@ -344,16 +431,26 @@ function AbaDocumentos({
 // --------------------------------- painel -----------------------------------
 
 export function DetalheFerias({
-  ferias,
+  colaboradorId,
   nome,
+  registros,
   podeEditar,
-  avisoStatus,
+  aoEditar,
+  aoExcluir,
 }: {
-  ferias: Ferias;
+  colaboradorId: string;
   nome: string;
+  /** Todos os períodos desta pessoa, do mais recente para o mais antigo. */
+  registros: Ferias[];
   podeEditar: boolean;
-  avisoStatus: string | null;
+  aoEditar?: (f: Ferias) => void;
+  aoExcluir?: (f: Ferias) => void;
 }) {
+  const { items: todasFerias } = useColecao("ferias");
+  // O corte do histórico sai de TODA a base, não só desta pessoa: o que define
+  // até onde o sistema enxerga é quando a empresa começou a lançar férias.
+  const desde = inicioDoHistorico(todasFerias);
+
   return (
     <Tabs
       // A aba escolhida é lembrada na sessão: quem está conferindo recibo de
@@ -361,18 +458,37 @@ export function DetalheFerias({
       idPersistencia="ferias-detalhe"
       abas={[
         {
-          id: "observacoes",
-          label: "Observações",
+          id: "periodos",
+          label: `Períodos (${registros.length})`,
           icon: <FileText className="h-4 w-4" />,
-          conteudo: <AbaObservacoes ferias={ferias} podeEditar={podeEditar} avisoStatus={avisoStatus} />,
+          conteudo: (
+            <div className="space-y-3">
+              {registros.length === 0 ? (
+                <EmptyState
+                  title="Sem períodos neste recorte"
+                  description="Tire o filtro dos cartões para ver o histórico completo desta pessoa."
+                  icon={<FileText className="h-8 w-8" />}
+                />
+              ) : (
+                registros.map((f) => (
+                  <CartaoPeriodo
+                    key={f.id}
+                    ferias={f}
+                    podeEditar={podeEditar}
+                    aoEditar={aoEditar}
+                    aoExcluir={aoExcluir}
+                    desde={desde}
+                  />
+                ))
+              )}
+            </div>
+          ),
         },
         {
           id: "documentos",
           label: "Documentação",
           icon: <Paperclip className="h-4 w-4" />,
-          conteudo: (
-            <AbaDocumentos colaboradorId={ferias.colaboradorId} nome={nome} podeEditar={podeEditar} />
-          ),
+          conteudo: <AbaDocumentos colaboradorId={colaboradorId} nome={nome} podeEditar={podeEditar} />,
         },
       ]}
     />

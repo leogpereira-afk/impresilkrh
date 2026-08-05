@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import {
-  Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus, BarChart3, Pencil, Trash2, Save,
+  Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus, BarChart3, Save,
   ChevronRight, AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -23,7 +23,9 @@ import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
 import { feriasEmCurso } from "@/lib/ferias";
 import { HistoricoFerias } from "@/components/ferias/historico-ferias";
 import { situacaoFerias, inicioDoHistorico, DIAS_FERIAS } from "@/lib/clt";
-import { contagem, prazoDeConcessao, statusIncoerente, limiteDeConcessao } from "@/lib/feriasContagem";
+import {
+  contagem, prazoDeConcessao, statusIncoerente, proximaFerias, limiteDeConcessao,
+} from "@/lib/feriasContagem";
 import { DetalheFerias } from "@/components/ferias/detalhe-ferias";
 import {
   validarAgendamento, validarPeriodo, retornoDe, diasEntre, temErro,
@@ -73,6 +75,8 @@ const COR_FASE: Record<string, string> = {
   futuro: "text-sky-600",
   voltou: "text-slate-400",
   "sem-gozo": "text-slate-400",
+  // Vem de proximaFerias: ninguem marcou nada. Nao e erro, e agenda vazia.
+  "sem-marcacao": "text-slate-400",
   "datas-trocadas": "text-red-600",
 };
 
@@ -213,6 +217,17 @@ export default function Ferias() {
   const [foco, setFoco] = useState<string | null>(null);
   const alternarFoco = (f: string) => setFoco((atual) => (atual === f ? null : f));
 
+  /* UMA LINHA POR PESSOA, não por lançamento.
+     Antes cada período virava uma linha, e quem tinha três anos de histórico
+     aparecia três vezes seguidas — com a mesma foto, o mesmo nome e três
+     contagens diferentes. A pergunta que se faz aqui é sobre a PESSOA ("falta
+     muito para as férias do Andre?"), não sobre o lançamento; o histórico dela
+     mora no painel que abre na linha.
+
+     O filtro dos cartões continua valendo sobre os LANÇAMENTOS: a pessoa entra
+     na tabela se algum período dela casa com o recorte, e o painel mostra os
+     períodos que casaram — senão o número do cartão diria uma coisa e a lista
+     mostraria outra. */
   const tabela = useMemo(() => {
     const base =
       foco === "alertas" ? lista.filter((f) => alertaCLT(f, desdeHistorico) !== null)
@@ -221,8 +236,45 @@ export default function Ferias() {
       : foco === "agora" ? lista.filter((f) => feriasEmCurso(f))
       : foco ? lista.filter((f) => f.status === foco)
       : lista;
-    return [...base].sort((a, b) => d.nomeColab(a.colaboradorId).localeCompare(d.nomeColab(b.colaboradorId)));
-  }, [lista, d, foco]);
+
+    const porPessoa = new Map<string, TFerias[]>();
+    for (const f of base) {
+      const atual = porPessoa.get(f.colaboradorId);
+      if (atual) atual.push(f);
+      else porPessoa.set(f.colaboradorId, [f]);
+    }
+
+    return [...porPessoa.entries()]
+      .map(([colaboradorId, registros]) => {
+        // Do mais recente para o mais antigo: o histórico se lê de cima.
+        const ordenados = [...registros].sort((a, b) =>
+          String(b.dataInicio || b.periodoAquisitivoFim || "").localeCompare(
+            String(a.dataInicio || a.periodoAquisitivoFim || ""),
+          ),
+        );
+        /* A próxima sai de TODOS os períodos da pessoa, não só dos que passaram
+           no filtro: com o cartão "Concluídas" ligado, olhar só o recorte diria
+           "sem férias marcadas" para quem tem uma agendada. */
+        const todosDela = lista.filter((f) => f.colaboradorId === colaboradorId);
+        const prazos = todosDela
+          .map((f) => prazoDeConcessao(f, HOJE, desdeHistorico, JANELA_ALERTA_DIAS))
+          .filter((p) => p.situacao !== "sem-prazo");
+        return {
+          colaboradorId,
+          nome: d.nomeColab(colaboradorId),
+          registros: ordenados,
+          proxima: proximaFerias(todosDela, HOJE),
+          // Saldo do que ainda está por gozar; período concluído não soma.
+          saldoAberto: todosDela
+            .filter((f) => f.status === "Em aberto" || f.status === "Agendada")
+            .reduce((s, f) => s + (Number(f.saldoDias) || 0), 0),
+          // O prazo que corre mais risco manda na linha.
+          prazo: prazos.sort((a, b) => a.dias - b.dias)[0] ?? null,
+          incoerentes: todosDela.filter((f) => statusIncoerente(f, HOJE)).length,
+        };
+      })
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [lista, d, foco, desdeHistorico]);
 
   // ---- Quadro de Comando: distribuição por status (gráfico clicável) ----
   const porStatus = useMemo(
@@ -564,7 +616,7 @@ export default function Ferias() {
       </div>
 
       <Card className="mt-6 overflow-hidden">
-        <CardHeader title="Controle de férias" subtitle={`${tabela.length} registro(s) no seu escopo`} icon={<Palmtree className="h-[18px] w-[18px]" />} />
+        <CardHeader title="Controle de férias" subtitle={`${tabela.length} ${tabela.length === 1 ? "pessoa" : "pessoas"} · ${lista.length} periodo(s) no seu escopo`} icon={<Palmtree className="h-[18px] w-[18px]" />} />
         {tabela.length === 0 ? (
           <CardBody>
             {/* Card de valor zero também é clicável: sem este aviso a tela diria
@@ -580,114 +632,97 @@ export default function Ferias() {
             <table className="w-full">
               <thead className="border-b border-slate-100 bg-slate-50/50">
                 <tr>
-                  <th className="th w-8"><span className="sr-only">Abrir detalhes</span></th>
+                  <th className="th w-8"><span className="sr-only">Abrir histórico</span></th>
                   <th className="th">Colaborador</th>
-                  <th className="th hidden md:table-cell">Período aquisitivo</th>
-                  <th className="th hidden sm:table-cell">Gozo</th>
-                  <th className="th">Contagem</th>
-                  <th className="th">Saldo</th>
-                  <th className="th">Status</th>
+                  <th className="th">Próximas férias</th>
+                  <th className="th hidden sm:table-cell">Saldo a gozar</th>
+                  <th className="th hidden md:table-cell">Períodos</th>
                   <th className="th">CLT</th>
-                  {podeEditar && <th className="th text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {tabela.map((f) => {
-                  const prazo = prazoDeConcessao(f, HOJE, desdeHistorico, JANELA_ALERTA_DIAS);
-                  const c = contagem(f, HOJE);
-                  const incoerente = statusIncoerente(f, HOJE);
-                  const aberta = expandida === f.id;
-                  const nome = d.nomeColab(f.colaboradorId);
+                {tabela.map((p) => {
+                  const aberta = expandida === p.colaboradorId;
+                  const prazo = p.prazo;
                   return (
-                    <Fragment key={f.id}>
+                    <Fragment key={p.colaboradorId}>
                       <tr className="transition hover:bg-slate-50/60">
                         <td className="td pr-0">
                           <button
                             type="button"
                             className="btn-ghost p-1.5"
                             aria-expanded={aberta}
-                            title={aberta ? "Fechar detalhes" : "Observações e documentação"}
-                            aria-label={`${aberta ? "Fechar" : "Abrir"} observações e documentação das férias de ${nome}`}
-                            onClick={() => setExpandida(aberta ? null : f.id)}
+                            title={aberta ? "Fechar" : "Ver o histórico de férias, observações e documentos"}
+                            aria-label={`${aberta ? "Fechar" : "Abrir"} o histórico de férias de ${p.nome}`}
+                            onClick={() => setExpandida(aberta ? null : p.colaboradorId)}
                           >
                             <ChevronRight className={`h-4 w-4 transition-transform ${aberta ? "rotate-90" : ""}`} />
                           </button>
                         </td>
                         <td className="td">
-                          <LinkFicha id={f.colaboradorId} className="flex items-center gap-3" titulo="Abrir a ficha para lançar/agendar as férias">
-                            <Avatar nome={nome} foto={d.fotoColab(f.colaboradorId)} size="sm" />
-                            <span className="font-medium text-slate-800">{nome}</span>
+                          <LinkFicha id={p.colaboradorId} className="flex items-center gap-3" titulo="Abrir a ficha para lançar/agendar as férias">
+                            <Avatar nome={p.nome} foto={d.fotoColab(p.colaboradorId)} size="sm" />
+                            <span className="font-medium text-slate-800">{p.nome}</span>
                           </LinkFicha>
                         </td>
-                        <td className="td hidden md:table-cell text-slate-500">
-                          {f.periodoAquisitivoInicio || f.periodoAquisitivoFim
-                            ? `${formatDate(f.periodoAquisitivoInicio)} – ${formatDate(f.periodoAquisitivoFim)}`
-                            : "—"}
-                        </td>
-                        <td className="td hidden sm:table-cell text-slate-500">
-                          {f.dataInicio ? `${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "—"}
-                        </td>
-                        {/* A contagem que a tela não fazia: quem lia "25/12 → 05/01"
-                            tinha de abrir o calendário para saber se faltava muito. */}
+                        {/* A pergunta que se faz olhando esta tela: falta muito?
+                            A contagem por lançamento respondia "voltou há 211
+                            dias" — verdade que não serve para nada. */}
                         <td className="td">
-                          <span className={`text-xs font-medium ${COR_FASE[c.fase]}`}>{c.texto}</span>
-                          {incoerente && (
+                          <span className={`text-xs font-medium ${COR_FASE[p.proxima.fase]}`}>
+                            {p.proxima.texto}
+                          </span>
+                          {p.proxima.registro?.dataInicio && (
+                            <span className="ml-1.5 text-xs text-slate-400">
+                              ({formatDate(p.proxima.registro.dataInicio)} → {formatDate(p.proxima.registro.dataRetorno)})
+                            </span>
+                          )}
+                          {p.incoerentes > 0 && (
                             <span
                               className="ml-1.5 inline-flex align-middle text-amber-500"
-                              title={incoerente}
-                              aria-label={incoerente}
+                              title={`${p.incoerentes} período(s) com o status em desacordo com as datas. Abra para corrigir.`}
+                              aria-label={`${p.incoerentes} período com status desatualizado`}
                             >
                               <AlertTriangle className="h-3.5 w-3.5" />
                             </span>
                           )}
                         </td>
-                        <td className="td text-slate-700">{f.saldoDias} dias</td>
-                        <td className="td"><Badge variant={varianteStatus(f.status)}>{f.status}</Badge></td>
+                        <td className="td hidden sm:table-cell text-slate-700">
+                          {p.saldoAberto > 0 ? `${p.saldoAberto} dias` : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="td hidden md:table-cell text-slate-500">
+                          {p.registros.length} {p.registros.length === 1 ? "período" : "períodos"}
+                        </td>
                         {/* Antes só falava dentro da janela de 60 dias: em tudo o
                             mais ficava um travessão, que se lê como "não há prazo"
                             quando na verdade há, com folga. Agora diz o prazo. */}
                         <td className="td">
-                          {prazo.situacao === "vencido" ? (
+                          {prazo?.situacao === "vencido" ? (
                             <span title={`O limite era ${prazo.limite}`}>
                               <Badge variant="danger">{prazo.texto}</Badge>
                             </span>
-                          ) : prazo.situacao === "a-vencer" ? (
+                          ) : prazo?.situacao === "a-vencer" ? (
                             <span title={`Conceder até ${prazo.limite}`}>
                               <Badge variant="warning">{prazo.texto}</Badge>
                             </span>
-                          ) : prazo.situacao === "no-prazo" ? (
+                          ) : prazo?.situacao === "no-prazo" ? (
                             <span className="text-xs text-slate-500" title={`Conceder até ${prazo.limite}`}>{prazo.texto}</span>
                           ) : (
                             <span className="text-xs text-slate-300">—</span>
                           )}
                         </td>
-                        {podeEditar && (
-                          <td className="td">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                className="btn-ghost p-1.5"
-                                title="Editar férias"
-                                aria-label={`Editar férias de ${nome}`}
-                                onClick={() => abrirEdicao(f)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <button
-                                className="btn-ghost p-1.5 text-red-500 hover:text-red-600"
-                                title="Excluir férias"
-                                aria-label={`Excluir férias de ${nome}`}
-                                onClick={() => setExcluindo(f)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                        )}
                       </tr>
                       {aberta && (
                         <tr>
-                          <td className="bg-slate-50/60 px-4 py-4" colSpan={podeEditar ? 9 : 8}>
-                            <DetalheFerias ferias={f} nome={nome} podeEditar={podeEditar} avisoStatus={incoerente} />
+                          <td className="bg-slate-50/60 px-4 py-4" colSpan={6}>
+                            <DetalheFerias
+                              colaboradorId={p.colaboradorId}
+                              nome={p.nome}
+                              registros={p.registros}
+                              podeEditar={podeEditar}
+                              aoEditar={abrirEdicao}
+                              aoExcluir={setExcluindo}
+                            />
                           </td>
                         </tr>
                       )}
