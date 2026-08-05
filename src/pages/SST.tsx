@@ -66,7 +66,11 @@ export default function SST() {
   // contador de vencidos. O seletor deixa reabrir para conferência/auditoria.
   const [incluirSaiu, setIncluirSaiu] = useState(false);
   const exames = useMemo(() => {
-    const escopo = colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => incluirSaiu || noQuadro(c));
+    // `!ehDirecao` é o mesmo recorte de Aceites, Férias, Desempenho e
+    // Colaboradores: a direção não entra em lista de colaborador. Esta tela era
+    // a única que ainda os cobrava por ASO e NR.
+    const escopo = colaboradoresVisiveis(sessao, d.colaboradores)
+      .filter((c) => !c.ehDirecao && (incluirSaiu || noQuadro(c)));
     const idsVisiveis = new Set(escopo.map((c) => c.id));
     const cats = new Set<string>(CATEGORIAS_SST);
     return documentos
@@ -83,7 +87,14 @@ export default function SST() {
   // Quantos exames ficaram de fora: um filtro que esconde sem dizer quanto
   // escondeu vira "o sistema perdeu exames".
   const deQuemSaiu = useMemo(() => {
-    const saiu = new Set(colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !noQuadro(c)).map((c) => c.id));
+    // Mesmo recorte da lista: a direção não conta como "escondido", ela nunca
+    // esteve nesta cobrança — senão o aviso diria que há exames guardados que
+    // não existem.
+    const saiu = new Set(
+      colaboradoresVisiveis(sessao, d.colaboradores)
+        .filter((c) => !c.ehDirecao && !noQuadro(c))
+        .map((c) => c.id),
+    );
     const cats = new Set<string>(CATEGORIAS_SST);
     return documentos.filter((doc) => cats.has(doc.categoria) && saiu.has(doc.colaboradorId)).length;
   }, [documentos, sessao, d.colaboradores]);
@@ -458,9 +469,10 @@ function AbaCertificacoesNR() {
   const [form, setForm] = useState(FORM_VAZIO);
 
   const escopo = useMemo(
-    // Mesma régua da aba de Exames (noQuadro): antes esta aba filtrava só por
-    // `statusId` e deixava passar quem tinha data de desligamento.
-    () => colaboradoresVisiveis(sessao, d.colaboradores).filter(noQuadro),
+    // Mesma régua da aba de Exames: `noQuadro` (antes filtrava só por
+    // `statusId` e deixava passar quem tinha data de desligamento) e sem a
+    // direção, que não entra em lista de colaborador.
+    () => colaboradoresVisiveis(sessao, d.colaboradores).filter((c) => !c.ehDirecao && noQuadro(c)),
     [sessao, d.colaboradores],
   );
   const idsVisiveis = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
