@@ -23,7 +23,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Toggle } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { Tabs } from "@/components/ui/tabs";
@@ -82,6 +82,7 @@ export default function Integracao() {
   const d = useDominio();
   const toast = useToast();
   const { items: tarefas, criar, atualizar } = useColecao("tarefas");
+  const { atualizar: atualizarColab } = useColecao("colaboradores");
   const { items: modelos } = useColecao("modelosChecklist");
 
   const gere = podeGerir(sessao);
@@ -212,10 +213,34 @@ export default function Integracao() {
       porColab.set(t.colaboradorId, g);
     }
     for (const [colaboradorId, g] of porColab) {
-      if (g.temDoc) continue; // já semeado
+      /* A GUARDA É O CARIMBO NA PESSOA, não a presença dos itens.
+
+         Inferir pela presença tinha um buraco no limite: enquanto sobrasse UM
+         documento nada acontecia, mas no instante em que o sétimo era apagado o
+         efeito disparava e recriava os sete — com ids novos e todos em aberto.
+         Ou seja, quem limpasse o bloco inteiro (que é justamente para o que a
+         lixeira existe: tirar documento que não se aplica) via tudo voltar, e a
+         marcação dos que tinha apagado antes sumia junto.
+
+         Com o carimbo, "já semeei para esta pessoa" é um fato gravado, não um
+         palpite a partir do que sobrou na tela. */
+      const colab = d.colabById.get(colaboradorId);
+      if (colab?.docsRhSemeadosEm || g.temDoc) {
+        // Registro antigo, semeado antes de existir o carimbo: carimba agora
+        // para não depender mais da presença dos itens.
+        if (g.temDoc && !colab?.docsRhSemeadosEm && colab) {
+          atualizarColab(colaboradorId, { docsRhSemeadosEm: new Date().toISOString() });
+        }
+        continue;
+      }
       const baseOrdem = g.maxOrdem + 1;
       DOCS_RH_PADRAO.forEach((nome, i) => {
         criar({
+          /* ID DETERMINÍSTICO. Com id aleatório, dois navegadores que abrem a
+             tela ao mesmo tempo semeiam 7 cada um e o merge do pull entrega 14
+             documentos. Com o id derivado da pessoa e da posição, os dois
+             semeiam o MESMO registro e o merge resolve sozinho. */
+          id: `tar-doc-${colaboradorId}-${i}`,
           colaboradorId,
           tipo: "Admissão",
           titulo: `${PREFIXO_DOC}${nome}`,
@@ -225,8 +250,9 @@ export default function Integracao() {
           ordem: baseOrdem + i,
         });
       });
+      atualizarColab(colaboradorId, { docsRhSemeadosEm: new Date().toISOString() });
     }
-  }, [tarefas, idsEscopo, criar]);
+  }, [tarefas, idsEscopo, criar, d, atualizarColab]);
 
   return (
     <div>
@@ -663,6 +689,7 @@ function CardChecklist({
   // de quem já entregou) ou corrigir um texto digitado errado era impossível —
   // inclusive nos 7 documentos que o modelo cria sozinho.
   const [renomeando, setRenomeando] = useState<{ id: string; texto: string } | null>(null);
+  const [excluindoItem, setExcluindoItem] = useState<Tarefa | null>(null);
   const salvarRenome = () => {
     if (!renomeando) return;
     const texto = renomeando.texto.trim();
@@ -677,8 +704,14 @@ function CardChecklist({
           onClick={() => setRenomeando({ id: item.id, texto: item.titulo })}>
           <Pencil className="h-3.5 w-3.5" />
         </button>
-        <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-red-600" title="Remover item do checklist" aria-label="Remover item"
-          onClick={() => { removerTarefa(item.id); toast("Item removido do checklist."); }}>
+        {/* PERGUNTA ANTES DE APAGAR. Este botão fica a 4px do Toggle, que é o
+            controle clicado dezenas de vezes por cartão — e a ação era
+            irreversível e sem aviso. Um erro de mira não "deixava de marcar":
+            apagava a linha, e o item sumia bem no instante em que a pessoa
+            tentou marcá-lo. */}
+        <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-red-600"
+          title="Remover item do checklist" aria-label={`Remover o item ${item.titulo}`}
+          onClick={() => setExcluindoItem(item)}>
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </span>
@@ -954,6 +987,23 @@ function CardChecklist({
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    {/* O lápis desta linha era um botão MORTO: ele guardava o
+                        item em `renomeando`, mas o campo de edição só existia na
+                        lista de jornada — clicar aqui não fazia nada. */}
+                    {renomeando?.id === t.id ? (
+                      <input
+                        className="input h-7 min-w-0 flex-1 py-0 text-sm"
+                        autoFocus
+                        value={renomeando.texto}
+                        onChange={(e) => setRenomeando({ id: t.id, texto: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") salvarRenome();
+                          if (e.key === "Escape") setRenomeando(null);
+                        }}
+                        onBlur={salvarRenome}
+                        aria-label={`Novo nome do documento ${rotuloDoc(t)}`}
+                      />
+                    ) : (
                     <span
                       className={
                         t.concluida
@@ -963,7 +1013,8 @@ function CardChecklist({
                     >
                       {rotuloDoc(t)}
                     </span>
-                    {!t.concluida && (
+                    )}
+                    {!t.concluida && !renomeando && (
                       <Badge variant="warning" className="shrink-0">
                         Em aberto
                       </Badge>
@@ -1008,6 +1059,33 @@ function CardChecklist({
           </div>
         )}
       </CardBody>
+
+      <ConfirmDialog
+        aberto={!!excluindoItem}
+        onFechar={() => setExcluindoItem(null)}
+        onConfirmar={() => {
+          if (!excluindoItem) return;
+          removerTarefa(excluindoItem.id);
+          toast("Item removido do checklist.");
+          setExcluindoItem(null);
+        }}
+        titulo="Remover item do checklist"
+        mensagem={
+          excluindoItem ? (
+            <>
+              Remover{" "}
+              <span className="font-medium text-slate-700">
+                {ehDoc(excluindoItem) ? rotuloDoc(excluindoItem) : excluindoItem.titulo}
+              </span>{" "}
+              do checklist de {colab?.nome ?? "colaborador"}?
+              {excluindoItem.concluida && " Ele já está marcado como feito — a marcação some junto."}
+              {" "}Esta ação não pode ser desfeita.
+            </>
+          ) : (
+            ""
+          )
+        }
+      />
     </Card>
   );
 }

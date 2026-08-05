@@ -124,6 +124,11 @@ export interface Colaborador {
   naoBatePonto?: boolean; // não registra ponto (comissão/externo) — fica fora da conferência do ponto
   cargoLivre?: string; // rótulo de cargo p/ Direção (sem cargoId)
   padrinhoId?: string | null; // mentor/padrinho (onboarding)
+  /* Carimbo de que a documentação de RH padrão já foi semeada para esta
+     pessoa. É um FATO gravado, não um palpite pela presença dos itens:
+     inferir pela presença fazia os 7 documentos ressuscitarem no instante em
+     que o último era apagado. Ver o efeito de seed em pages/Integracao. */
+  docsRhSemeadosEm?: string | null;
   fotoDataUrl?: string | null; // foto do colaborador (upload no navegador)
 }
 
