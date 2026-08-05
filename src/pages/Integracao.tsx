@@ -31,7 +31,7 @@ import { useToast } from "@/components/ui/toast";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { BarrasColoridas } from "@/components/charts/charts";
 import { useColecao } from "@/lib/store";
-import { useDominio, noQuadro } from "@/lib/dominio";
+import { useDominio, noQuadro, trabalhandoHoje } from "@/lib/dominio";
 import { ordemEstavel, aplicarOrdem } from "@/lib/ordemEstavel";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
@@ -823,12 +823,17 @@ function CardChecklist({
   // independentemente de qual aba está ativa — ver o efeito de seed lá.
 
   // Candidatos a padrinho: colaboradores ativos, exceto o próprio.
+  /* Padrinho tem de estar AQUI e FICANDO. `d.ativos` é headcount, régua boa
+     para contar gente e errada para esta pergunta: ela deixava passar quem está
+     em abandono (o status "Abandono" está marcado como conta-como-ativo na
+     tabela de status) e quem está em aviso prévio. Em 05/08/2026 uma pessoa em
+     abandono aparecia como candidata a apadrinhar um recém-chegado. */
   const candidatosPadrinho = useMemo(
     () =>
-      d.ativos
-        .filter((c) => c.id !== colaboradorId)
+      d.colaboradores
+        .filter((c) => c.id !== colaboradorId && trabalhandoHoje(c))
         .sort((a, b) => a.nome.localeCompare(b.nome)),
-    [d.ativos, colaboradorId],
+    [d.colaboradores, colaboradorId],
   );
 
   const definirPadrinho = (valor: string) => {

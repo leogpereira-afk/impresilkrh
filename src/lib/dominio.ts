@@ -57,6 +57,30 @@ export function noQuadro(c: Colaborador): boolean {
   return c.statusId !== "inativo" && !c.dataDesligamento;
 }
 
+/**
+ * Está de fato TRABALHANDO hoje — presente e ficando.
+ *
+ * É mais estreito que `noQuadro`, e de propósito. `noQuadro` responde "ainda é
+ * funcionário?" e por isso inclui quem está afastado (ele volta, e o exame dele
+ * tem de estar em dia). Há perguntas em que isso não serve: quem pode apadrinhar
+ * um recém-chegado, por exemplo, precisa estar na casa nos próximos meses.
+ *
+ * Fica de fora:
+ *  - inativo e desligado (já não é funcionário);
+ *  - ABANDONO — parou de vir, mesmo sem o desligamento lançado. Medido em
+ *    05/08/2026: uma pessoa nesse estado aparecia como candidata a padrinho;
+ *  - aviso prévio — está de saída, não vai acompanhar ninguém;
+ *  - afastado e atestado médico — não está aqui agora;
+ *  - direção — não entra em lista de colaborador.
+ */
+const STATUS_PRESENTE = new Set(["ativo", "experiencia"]);
+
+export function trabalhandoHoje(c: Colaborador): boolean {
+  if (c.ehDirecao) return false;
+  if (!noQuadro(c)) return false;
+  return STATUS_PRESENTE.has(String(c.statusId ?? ""));
+}
+
 export function contaHeadcount(c: Colaborador, statusById: Map<string, StatusColaborador>): boolean {
   if (c.ehDirecao) return false;
   if (c.dataDesligamento) return false;
