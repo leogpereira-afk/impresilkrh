@@ -184,6 +184,35 @@ export interface SituacaoExperiencia {
  * Situação do contrato de experiência. `null` se já passou dos 90 dias há muito
  * tempo (aí é contrato normal e não há o que avisar) ou sem data de admissão.
  */
+/**
+ * O FIM DA EXPERIÊNCIA — que é o fim do onboarding.
+ *
+ * `situacaoExperiencia` existe para AVISAR e por isso devolve `null` em vários
+ * casos (já decidida, desligado, mais de 15 dias do prazo). O onboarding
+ * precisa de outra coisa: o fato cru de quando a experiência acaba, mesmo
+ * quando não há mais nada a decidir — é esse o marco que encerra a integração
+ * da pessoa e libera o cartão da tela.
+ */
+export interface FimExperiencia {
+  /** Dia em que os 90 dias se completam. `null` sem data de admissão. */
+  fim: Date | null;
+  /** Dias até lá (negativo = já passou). NaN quando não dá para calcular. */
+  diasParaFim: number;
+  /** Os 90 dias já passaram? */
+  encerrada: boolean;
+  /** A direção já decidiu (efetivou/prorrogou) ou a pessoa saiu. */
+  decidida: boolean;
+}
+
+export function fimDaExperiencia(c: Colaborador, hoje = HOJE): FimExperiencia {
+  const adm = parseData(c.dataAdmissao);
+  const decidida = !!c.experienciaDecididaEm || !!c.dataDesligamento;
+  if (!adm) return { fim: null, diasParaFim: NaN, encerrada: false, decidida };
+  const fim = new Date(adm.getTime() + LIMITE_EXPERIENCIA_DIAS * DIA);
+  const diasParaFim = dias(hoje, fim);
+  return { fim, diasParaFim, encerrada: diasParaFim < 0, decidida };
+}
+
 export function situacaoExperiencia(c: Colaborador, hoje = HOJE): SituacaoExperiencia | null {
   const adm = parseData(c.dataAdmissao);
   if (!adm) return null;

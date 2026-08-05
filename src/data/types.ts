@@ -129,6 +129,13 @@ export interface Colaborador {
      inferir pela presença fazia os 7 documentos ressuscitarem no instante em
      que o último era apagado. Ver o efeito de seed em pages/Integracao. */
   docsRhSemeadosEm?: string | null;
+  /* Onboarding/offboarding ARQUIVADO: a jornada terminou (ou foi encerrada) e
+     o cartão sai da tela de Integração. É só apresentação — nenhuma tarefa é
+     apagada, e desarquivar traz tudo de volta como estava. Sem isto, quem
+     concluiu a integração ficava ocupando a tela para sempre, competindo com
+     quem ainda precisa de atenção. */
+  onboardingArquivadoEm?: string | null;
+  offboardingArquivadoEm?: string | null;
   fotoDataUrl?: string | null; // foto do colaborador (upload no navegador)
 }
 

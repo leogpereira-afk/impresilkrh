@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   CheckCircle2,
@@ -18,7 +18,7 @@ import {
   FileText,
   Trophy,
   Sparkles,
-  Users, Pencil, Trash2 } from "lucide-react";
+  Users, Pencil, Trash2, Archive, PackageOpen } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
@@ -36,6 +36,7 @@ import { ordemEstavel, aplicarOrdem } from "@/lib/ordemEstavel";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
+import { fimDaExperiencia } from "@/lib/clt";
 import { HOJE } from "@/data/_gen";
 import type { Tarefa } from "@/data/types";
 
@@ -451,6 +452,21 @@ function PainelChecklist({
   const d = useDominio();
   const [focoId, setFocoId] = useState<string | null>(null);
   const refs = useRef(new Map<string, HTMLDivElement | null>());
+  /* Arquivados ficam FORA da tela por padrão, mas nunca escondidos: o contador
+     logo abaixo do título diz quantos são e abre a lista. Esconder sem dizer
+     quantos é o mesmo que perder. */
+  const [verArquivados, setVerArquivados] = useState(false);
+
+  // useCallback para os useMemo abaixo poderem depender DELA, e não do `d`
+  // inteiro: sem isso o lint acusa dependência faltando e a alternativa (listar
+  // `d`) esconde qual pedaço realmente importa.
+  const estaArquivado = useCallback(
+    (colaboradorId: string) => {
+      const campo = tipo === "Admissão" ? "onboardingArquivadoEm" : "offboardingArquivadoEm";
+      return !!d.colabById.get(colaboradorId)?.[campo];
+    },
+    [d, tipo],
+  );
 
   const grupos = useMemo(() => {
     const mapa = new Map<string, Tarefa[]>();
@@ -478,6 +494,12 @@ function PainelChecklist({
       .filter((g) => escopoIds.has(g.colaboradorId));
   }, [tarefas, tipo, escopoIds]);
 
+  const arquivados = useMemo(() => grupos.filter((g) => estaArquivado(g.colaboradorId)), [grupos, estaArquivado]);
+  const naTela = useMemo(
+    () => (verArquivados ? grupos : grupos.filter((g) => !estaArquivado(g.colaboradorId))),
+    [grupos, verArquivados, estaArquivado],
+  );
+
   /* A ORDEM NÃO PODE MUDAR DEBAIXO DO CLIQUE.
      Ordenar por "mais pendências primeiro" a cada render fazia o cartão pular
      de lugar assim que se marcava um item: em 05/08/2026, Candida e Victor
@@ -490,29 +512,32 @@ function PainelChecklist({
      entra ou sai), não quando um número dentro dela muda. Ver lib/ordemEstavel. */
   const ordemRef = useRef<string[]>([]);
   const gruposOrdenados = useMemo(() => {
-    const paraOrdenar = grupos.map((g) => ({
+    const paraOrdenar = naTela.map((g) => ({
       id: g.colaboradorId,
       abertas: g.abertas,
       nome: d.nomeColab(g.colaboradorId),
     }));
     ordemRef.current = ordemEstavel(paraOrdenar, ordemRef.current);
     return aplicarOrdem(
-      grupos.map((g) => ({ ...g, id: g.colaboradorId })),
+      naTela.map((g) => ({ ...g, id: g.colaboradorId })),
       ordemRef.current,
     );
-  }, [grupos, d]);
+  }, [naTela, d]);
 
   // Resumo agregado de pendências (item 3 — "tudo em aberto").
   const pendencias = useMemo(() => {
     let tarefasAbertas = 0;
     let docsAbertos = 0;
-    for (const g of grupos) {
+    /* Conta o que está NA TELA. Somar arquivado daria um número de pendência
+       sem nada para clicar — o painel mandaria resolver algo invisível. */
+    const visiveis = grupos.filter((g) => !estaArquivado(g.colaboradorId));
+    for (const g of visiveis) {
       tarefasAbertas += g.jornada.filter((t) => !t.concluida).length;
       docsAbertos += g.docs.filter((t) => !t.concluida).length;
     }
-    const colabsComPendencia = grupos.filter((g) => g.abertas > 0).length;
+    const colabsComPendencia = visiveis.filter((g) => g.abertas > 0).length;
     return { tarefasAbertas, docsAbertos, colabsComPendencia };
-  }, [grupos]);
+  }, [grupos, estaArquivado]);
 
   const focar = (id: string) => {
     setFocoId(id);
@@ -542,6 +567,23 @@ function PainelChecklist({
     );
   }
 
+  /* Todos arquivados: não é "não há nada", é "está tudo resolvido". Dizer a
+     coisa errada aqui faria a pessoa achar que perdeu os checklists. */
+  if (naTela.length === 0) {
+    return (
+      <EmptyState
+        title={tipo === "Admissão" ? "Nenhuma integração em aberto" : "Nenhum offboarding em aberto"}
+        description={`${arquivados.length} ${arquivados.length === 1 ? "pessoa foi arquivada" : "pessoas foram arquivadas"} — a jornada delas terminou.`}
+        icon={<Trophy className="h-8 w-8" />}
+        acao={
+          <button className="btn-outline" onClick={() => setVerArquivados(true)}>
+            Ver arquivados
+          </button>
+        }
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {tipo === "Admissão" && (
@@ -554,6 +596,24 @@ function PainelChecklist({
           }))}
           onFocar={focar}
         />
+      )}
+
+      {/* Quantos saíram da tela — e o caminho de volta. */}
+      {arquivados.length > 0 && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-slate-500">
+          <Trophy className="h-3.5 w-3.5 text-slate-400" />
+          <span>
+            {arquivados.length} {arquivados.length === 1 ? "pessoa arquivada" : "pessoas arquivadas"}
+            {verArquivados ? " (aparecendo abaixo)" : " fora desta lista"}
+          </span>
+          <button
+            type="button"
+            className="font-medium text-brand hover:underline"
+            onClick={() => setVerArquivados((v) => !v)}
+          >
+            {verArquivados ? "esconder" : "ver"}
+          </button>
+        </div>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -723,6 +783,25 @@ function CardChecklist({
   const [novoItem, setNovoItem] = useState("");
 
   const colab = d.colabById.get(colaboradorId);
+
+  const [confirmandoArquivo, setConfirmandoArquivo] = useState(false);
+
+  /* O FIM DO ONBOARDING É O FIM DA EXPERIÊNCIA — é esse o marco, não "marquei
+     todos os itens". Por isso o cartão mostra o relógio dos 90 dias e o botão
+     de arquivar fica em destaque quando ele vira. */
+  const experiencia = colab ? fimDaExperiencia(colab) : null;
+  const campoArquivo = tipo === "Admissão" ? "onboardingArquivadoEm" : "offboardingArquivadoEm";
+  const arquivado = !!colab?.[campoArquivo];
+
+  const arquivar = () => {
+    atualizarColab(colaboradorId, { [campoArquivo]: new Date().toISOString() });
+    setConfirmandoArquivo(false);
+    toast(`${colab?.nome ?? "Colaborador"} arquivado. Nada foi apagado — dá para trazer de volta.`);
+  };
+  const desarquivar = () => {
+    atualizarColab(colaboradorId, { [campoArquivo]: null });
+    toast(`${colab?.nome ?? "Colaborador"} de volta à lista.`);
+  };
   // Progresso considera a jornada + documentos como etapas da integração.
   const itens = useMemo(() => [...jornada, ...docs], [jornada, docs]);
   const total = itens.length;
@@ -808,9 +887,22 @@ function CardChecklist({
           </div>
         }
         action={
-          <Badge variant={variantePorcentagem(pct)}>
-            {feitas}/{total} · {pct}%
-          </Badge>
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge variant={variantePorcentagem(pct)}>
+              {feitas}/{total} · {pct}%
+            </Badge>
+            {gere && (
+              <button
+                type="button"
+                className="btn-ghost p-1.5 text-slate-300 hover:text-brand"
+                title={arquivado ? "Trazer de volta para a lista" : "Arquivar — tira da tela sem apagar nada"}
+                aria-label={arquivado ? `Desarquivar ${colab?.nome ?? "colaborador"}` : `Arquivar ${colab?.nome ?? "colaborador"}`}
+                onClick={() => (arquivado ? desarquivar() : setConfirmandoArquivo(true))}
+              >
+                {arquivado ? <PackageOpen className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
         }
       />
       <CardBody className="space-y-3">
@@ -834,6 +926,40 @@ function CardChecklist({
             <p className="text-[11px] text-slate-400">
               Inclui {docs.length} documentos de RH
               {docsAbertos > 0 ? ` · ${docsAbertos} em aberto` : " · todos entregues"}.
+            </p>
+          )}
+
+          {/* O RELÓGIO QUE ENCERRA A INTEGRAÇÃO. O onboarding não acaba na
+              última caixinha marcada: acaba quando termina a experiência da
+              pessoa. Por isso o prazo dos 90 dias fica aqui, e é quando ele
+              vira que faz sentido arquivar o cartão. */}
+          {tipo === "Admissão" && experiencia?.fim && !arquivado && (
+            <p
+              className={`flex items-center gap-1.5 text-[11px] ${
+                experiencia.encerrada ? "font-medium text-emerald-700" : "text-slate-400"
+              }`}
+            >
+              <GraduationCap className="h-3 w-3 shrink-0" />
+              {experiencia.encerrada ? (
+                <>
+                  Experiência encerrada em {formatDate(experiencia.fim)} — a integração acabou.
+                  {gere && (
+                    <button
+                      type="button"
+                      className="font-semibold text-brand hover:underline"
+                      onClick={() => setConfirmandoArquivo(true)}
+                    >
+                      Arquivar
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  Experiência até {formatDate(experiencia.fim)}
+                  {Number.isFinite(experiencia.diasParaFim) && ` · faltam ${experiencia.diasParaFim} dias`}
+                  {experiencia.decidida && " (já decidida)"}
+                </>
+              )}
             </p>
           )}
         </div>
@@ -1059,6 +1185,41 @@ function CardChecklist({
           </div>
         )}
       </CardBody>
+
+      {/* O marco que ENCERRA o onboarding é o fim da experiência, não a última
+          caixinha marcada. Por isso o prazo dos 90 dias fica no cartão: é ele
+          que diz quando a integração da pessoa acabou de verdade. */}
+      <ConfirmDialog
+        aberto={confirmandoArquivo}
+        onFechar={() => setConfirmandoArquivo(false)}
+        onConfirmar={arquivar}
+        titulo="Arquivar a integração"
+        mensagem={
+          <>
+            Tirar <span className="font-medium text-slate-700">{colab?.nome ?? "esta pessoa"}</span> da
+            tela de Integração? Nada é apagado — o checklist inteiro continua guardado e dá para trazer
+            de volta a qualquer momento.
+            {experiencia?.fim && !experiencia.encerrada && (
+              <>
+                {" "}
+                <span className="font-medium text-amber-700">
+                  A experiência dela só termina em {formatDate(experiencia.fim)}
+                  {Number.isFinite(experiencia.diasParaFim) && ` (faltam ${experiencia.diasParaFim} dias)`}.
+                </span>
+              </>
+            )}
+            {total - feitas > 0 && (
+              <>
+                {" "}
+                <span className="font-medium text-amber-700">
+                  Ainda {total - feitas === 1 ? "há 1 item" : `há ${total - feitas} itens`} em aberto —
+                  arquivar não conclui {total - feitas === 1 ? "ele" : "eles"}.
+                </span>
+              </>
+            )}
+          </>
+        }
+      />
 
       <ConfirmDialog
         aberto={!!excluindoItem}
