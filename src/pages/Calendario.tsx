@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
-import { useColecao } from "@/lib/store";
+import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
@@ -19,7 +19,11 @@ import { parseData, MESES_PT, formatDate } from "@/lib/format";
 import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/clt";
 import { diaDoPagamento, diaDoAdiantamento, feriadosDe, DIAS_UTEIS_PAGAMENTO } from "@/lib/diaPagamento";
 import { HOJE } from "@/data/_gen";
-import type { EventoCalendario, TipoEvento } from "@/data/types";
+import {
+  tiposDisponiveis, validarNovoTipo, normalizarNomeTipo, ehPersonalizado, COR_PADRAO_TIPO,
+  type TipoPersonalizado,
+} from "@/lib/tiposEvento";
+import type { EventoCalendario } from "@/data/types";
 
 const DOW = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
@@ -44,9 +48,18 @@ const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?
 /* Tipos que começam ESCONDIDOS. O calendário é para bater o olho e ver o que
    exige ação; quem sai de férias é consulta — aparece quando se pede. */
 const OCULTOS_POR_PADRAO = new Set(["Férias"]);
-const corDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.cor ?? "#64748b";
+/* A cor e o ícone sabem dos tipos criados pela empresa. Sem isto, um tipo novo
+   aparecia cinza e sem entrada na legenda — ou seja, sem cor e sem filtro,
+   exatamente o que se perde ao jogar tudo em "Outro". */
+const corDe = (t: string, extras: TipoPersonalizado[] = []) =>
+  TIPOS.find((x) => x.tipo === t)?.cor
+  ?? extras.find((x) => x.nome === t)?.cor
+  ?? COR_PADRAO_TIPO;
 const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarDays;
-const TIPOS_EDITAVEIS: TipoEvento[] = ["Comemorativa", "Reunião", "Feriado", "Empresa", "Outro"];
+
+/* Valor sentinela do "+ Novo tipo…" no seletor. Começa com "__" para nunca
+   colidir com um nome de tipo digitado por alguém. */
+const NOVO_TIPO = "__novo_tipo__";
 
 type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?: string };
 
@@ -58,17 +71,39 @@ export default function Calendario() {
   const { items: documentos } = useColecao("documentos");
   const { items: certificacoes } = useColecao("certificacoesNr");
   const { items: ferias } = useColecao("ferias");
+  const config = useConfig();
+  /* `?? []` cria um array NOVO a cada render, e aí o useMemo abaixo nunca
+     memoriza nada. Memoizado, ele só muda quando a config muda de verdade. */
+  const personalizados = useMemo(
+    () => config.tiposEventoPersonalizados ?? [],
+    [config.tiposEventoPersonalizados],
+  );
+  /* A legenda mostra os tipos de fábrica MAIS os criados pela empresa. Um tipo
+     sem entrada aqui fica sem cor e sem como filtrar. */
+  const tiposDaLegenda = useMemo(
+    () => [
+      ...TIPOS,
+      ...personalizados
+        .filter((e) => !TIPOS.some((t) => t.tipo === e.nome))
+        .map((e) => ({ tipo: e.nome, cor: e.cor, Icon: CalendarDays })),
+    ],
+    [personalizados],
+  );
   const gere = podeGerir(sessao);
   const [ano, setAno] = useState(HOJE.getFullYear());
   const [mes, setMes] = useState(HOJE.getMonth()); // 0-based
   const [edit, setEdit] = useState<EventoCalendario | null>(null);
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<EventoCalendario | null>(null);
-  const [visiveis, setVisiveis] = useState<Set<string>>(
-    () => new Set(TIPOS.map((t) => t.tipo).filter((t) => !OCULTOS_POR_PADRAO.has(t))),
-  );
+  const [apagarTipo, setApagarTipo] = useState<string | null>(null);
+  /* Guarda os ESCONDIDOS, não os visíveis. Com a lista de visíveis, um tipo
+     criado depois não estava nela e os eventos dele nasciam invisíveis — a
+     pessoa criava o tipo, lançava o aviso e não via nada aparecer. Guardando o
+     avesso, o que é novo aparece por padrão, que é o que se espera. */
+  const [escondidos, setEscondidos] = useState<Set<string>>(() => new Set(OCULTOS_POR_PADRAO));
   const alternarTipo = (t: string) =>
-    setVisiveis((s) => { const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n; });
+    setEscondidos((s) => { const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n; });
+  const tudoEscondido = tiposDaLegenda.every((t) => escondidos.has(t.tipo));
 
   // Eventos do mês = aniversários + tempo de empresa (derivados) + eventos salvos.
   const itens = useMemo<Item[]>(() => {
@@ -213,9 +248,9 @@ export default function Calendario() {
     });
 
     return out
-      .filter((x) => visiveis.has(x.tipo))
+      .filter((x) => !escondidos.has(x.tipo))
       .sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d, eventos, documentos, certificacoes, ferias, ano, mes, visiveis]);
+  }, [d, eventos, documentos, certificacoes, ferias, ano, mes, escondidos]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();
@@ -251,28 +286,91 @@ export default function Calendario() {
             enfeite, e o calendário não tinha como filtrar nada. Desligado fica
             apagado e riscado, para a diferença ser óbvia sem precisar contar. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {TIPOS.map((t) => {
-            const on = visiveis.has(t.tipo);
+          {tiposDaLegenda.map((t) => {
+            const on = !escondidos.has(t.tipo);
+            const removivel = gere && ehPersonalizado(t.tipo);
             return (
-              <button
+              /* Contêiner, não <button>: o "x" de apagar é um botão próprio, e
+                 botão dentro de botão é HTML inválido — o navegador desmonta a
+                 marcação e o clique passa a cair em lugar imprevisível. */
+              <span
                 key={t.tipo}
-                type="button"
-                onClick={() => alternarTipo(t.tipo)}
-                aria-pressed={on}
-                title={on ? `Esconder ${t.tipo}` : `Mostrar ${t.tipo}`}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition",
                   on ? "border-slate-200 text-slate-600 hover:bg-slate-50"
                      : "border-dashed border-slate-200 text-slate-300 line-through hover:text-slate-400",
                 )}
               >
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: on ? t.cor : "#cbd5e1" }} />
-                {t.tipo}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => alternarTipo(t.tipo)}
+                  aria-pressed={on}
+                  title={on ? `Esconder ${t.tipo}` : `Mostrar ${t.tipo}`}
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: on ? t.cor : "#cbd5e1" }} />
+                  {t.tipo}
+                </button>
+                {/* Só os tipos criados pela empresa podem ser apagados. O x fica
+                    DENTRO do selo, mas com o clique separado: sem `stopPropagation`
+                    ele ligaria e desligaria o filtro junto. */}
+                {removivel && (
+                  <button
+                    type="button"
+                    aria-label={`Apagar o tipo ${t.tipo}`}
+                    title={`Apagar o tipo ${t.tipo}`}
+                    className="-mr-0.5 rounded-full px-0.5 text-slate-300 hover:text-red-600"
+                    onClick={() => setApagarTipo(t.tipo)}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
             );
           })}
         </div>
       </div>
+
+      <ConfirmDialog
+        aberto={!!apagarTipo}
+        onFechar={() => setApagarTipo(null)}
+        onConfirmar={() => {
+          if (!apagarTipo) return;
+          salvarConfig({
+            tiposEventoPersonalizados: personalizados.filter((t) => t.nome !== apagarTipo),
+          });
+          toast(`Tipo "${apagarTipo}" apagado.`);
+          setApagarTipo(null);
+        }}
+        titulo="Apagar tipo de aviso"
+        mensagem={
+          apagarTipo ? (
+            <>
+              Apagar o tipo <span className="font-medium text-slate-700">{apagarTipo}</span>?
+              {/* Apagar o TIPO não apaga os eventos — eles ficam, só perdem a cor
+                  e a entrada na legenda. Dizer isso evita o medo de perder
+                  lançamento, e evita a surpresa de eles sumirem do filtro. */}
+              {(() => {
+                const usados = eventos.filter((e) => e.tipo === apagarTipo).length;
+                return usados > 0 ? (
+                  <>
+                    {" "}
+                    <span className="font-medium text-amber-700">
+                      {usados === 1 ? "1 evento usa" : `${usados} eventos usam`} este tipo.
+                    </span>{" "}
+                    Eles continuam no calendário, mas voltam a aparecer em cinza e sem filtro
+                    próprio.
+                  </>
+                ) : (
+                  " Nenhum evento usa este tipo."
+                );
+              })()}
+            </>
+          ) : (
+            ""
+          )
+        }
+      />
 
       <Card className="mb-6">
         <CardBody className="p-0">
@@ -288,7 +386,7 @@ export default function Calendario() {
                   <div className={cn("mb-1 text-xs font-medium", noMes ? "text-slate-600" : "text-slate-300", ehHoje(dt) && "font-bold text-brand")}>{dt.getDate()}</div>
                   <div className="space-y-0.5">
                     {evs.slice(0, 3).map((e, j) => (
-                      <div key={j} className="truncate rounded px-1 py-0.5 text-[10px] font-medium text-white" style={{ background: corDe(e.tipo) }} title={`${e.titulo}${e.sub ? ` — ${e.sub}` : ""}`}>{e.titulo}</div>
+                      <div key={j} className="truncate rounded px-1 py-0.5 text-[10px] font-medium text-white" style={{ background: corDe(e.tipo, personalizados) }} title={`${e.titulo}${e.sub ? ` — ${e.sub}` : ""}`}>{e.titulo}</div>
                     ))}
                     {evs.length > 3 && <div className="px-1 text-[10px] font-medium text-slate-400">+{evs.length - 3} mais</div>}
                   </div>
@@ -304,8 +402,8 @@ export default function Calendario() {
         <CardBody>
           {itens.length === 0 ? (
             <EmptyState
-              title={visiveis.size === 0 ? "Tudo escondido" : "Nada marcado neste mês"}
-              description={visiveis.size === 0
+              title={tudoEscondido ? "Tudo escondido" : "Nada marcado neste mês"}
+              description={tudoEscondido
                 ? "Clique na legenda acima para mostrar os tipos de novo."
                 : "Use “Novo evento” para adicionar reuniões e datas comemorativas."}
               icon={<CalendarDays className="h-8 w-8" />}
@@ -317,11 +415,11 @@ export default function Calendario() {
                 const ev = it.eventoId ? eventos.find((e) => e.id === it.eventoId) : null;
                 return (
                   <div key={i} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2">
-                    <span className="flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg text-white" style={{ background: corDe(it.tipo) }}>
+                    <span className="flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg text-white" style={{ background: corDe(it.tipo, personalizados) }}>
                       <span className="text-[8px] uppercase leading-none">{MESES_PT[mes].slice(0, 3)}</span>
                       <span className="text-sm font-bold leading-none">{it.dia}</span>
                     </span>
-                    <Icon className="h-4 w-4 shrink-0" style={{ color: corDe(it.tipo) }} />
+                    <Icon className="h-4 w-4 shrink-0" style={{ color: corDe(it.tipo, personalizados) }} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-700">{it.titulo}</p>
                       <p className="truncate text-xs text-slate-400">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
@@ -358,6 +456,32 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
   const [form, setForm] = useState<Partial<EventoCalendario>>(editar ?? { tipo: "Comemorativa", recorrenteAnual: false, data: "" });
   const set = (p: Partial<EventoCalendario>) => setForm((f) => ({ ...f, ...p }));
 
+  /* Criar tipo de aviso na hora de lançar o evento. Mandar a pessoa para uma
+     tela de configuração no meio do cadastro é o caminho mais curto para ela
+     desistir e escolher "Outro". */
+  const config = useConfig();
+  // Memoizado pelo mesmo motivo da página: `?? []` cria array novo a cada render.
+  const personalizados = useMemo(
+    () => config.tiposEventoPersonalizados ?? [],
+    [config.tiposEventoPersonalizados],
+  );
+  const tipos = useMemo(() => tiposDisponiveis(personalizados), [personalizados]);
+  const [criandoTipo, setCriandoTipo] = useState(false);
+  const [novoNome, setNovoNome] = useState("");
+  const [novaCor, setNovaCor] = useState("#7c3aed");
+
+  const cancelarNovoTipo = () => { setCriandoTipo(false); setNovoNome(""); };
+
+  const criarTipo = () => {
+    const check = validarNovoTipo(novoNome, personalizados);
+    if (!check.ok) return toast(check.motivo, "erro");
+    const nome = normalizarNomeTipo(novoNome);
+    salvarConfig({ tiposEventoPersonalizados: [...personalizados, { nome, cor: novaCor }] });
+    set({ tipo: nome }); // já deixa selecionado: foi para isso que ela criou
+    cancelarNovoTipo();
+    toast(`Tipo "${nome}" criado.`);
+  };
+
   const salvar = () => {
     if (!form.titulo?.trim()) return toast("Informe o título do evento.", "erro");
     if (!form.data) return toast("Informe a data.", "erro");
@@ -386,8 +510,56 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
         <Campo label="Título" obrigatorio><Input value={form.titulo ?? ""} onChange={(e) => set({ titulo: e.target.value })} placeholder="Ex.: Reunião geral, Dia das Mães…" /></Campo>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Data" obrigatorio><Input type="date" value={(form.data ?? "").slice(0, 10)} onChange={(e) => set({ data: e.target.value })} /></Campo>
-          <Campo label="Tipo"><Select value={form.tipo} onChange={(e) => set({ tipo: e.target.value as TipoEvento })}>{TIPOS_EDITAVEIS.map((t) => <option key={t} value={t}>{t}</option>)}</Select></Campo>
+          {/* O seletor deixou de ser fechado. "Que tipo de aviso eu quero ver
+              no calendário" é decisão de quem usa: vistoria de extintor,
+              alvará vencendo, reunião de segurança. Sem poder criar, tudo virava
+              "Outro" e o quadro perdia a cor — que é o que faz bater o olho e
+              entender. */}
+          <Campo label="Tipo">
+            <Select
+              value={form.tipo}
+              onChange={(e) => {
+                if (e.target.value === NOVO_TIPO) { setCriandoTipo(true); return; }
+                set({ tipo: e.target.value });
+              }}
+            >
+              {tipos.map((t) => <option key={t.nome} value={t.nome}>{t.nome}</option>)}
+              <option value={NOVO_TIPO}>+ Novo tipo…</option>
+            </Select>
+          </Campo>
         </div>
+
+        {criandoTipo && (
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="grid grid-cols-[1fr_auto] gap-3">
+              <Campo label="Nome do novo tipo" obrigatorio>
+                <Input
+                  autoFocus
+                  value={novoNome}
+                  maxLength={40}
+                  onChange={(e) => setNovoNome(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); criarTipo(); } }}
+                  placeholder="Ex.: Vistoria de extintor"
+                />
+              </Campo>
+              <Campo label="Cor">
+                {/* A cor é o que diferencia no quadro do mês — por isso ela é
+                    escolhida na hora de criar, e não depois. */}
+                <input
+                  type="color"
+                  value={novaCor}
+                  onChange={(e) => setNovaCor(e.target.value)}
+                  className="h-[42px] w-14 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+                  aria-label="Cor do novo tipo"
+                />
+              </Campo>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" className="btn-primary" onClick={criarTipo}>Criar tipo</button>
+              <button type="button" className="btn-outline" onClick={cancelarNovoTipo}>Cancelar</button>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Hora" hint="Opcional (reuniões)"><Input type="time" value={form.hora ?? ""} onChange={(e) => set({ hora: e.target.value })} /></Campo>
           <Campo label="Repetição">

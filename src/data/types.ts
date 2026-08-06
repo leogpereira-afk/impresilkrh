@@ -433,6 +433,10 @@ export interface Config {
   // Padrões do gerador de anúncio de vaga. O que se repete em toda divulgação
   // (local, jornada, benefícios, como se candidatar) fica guardado para não ser
   // redigitado a cada vaga; o que muda vem do cadastro do cargo.
+  /* Tipos de aviso do calendário criados pela empresa (nome + cor). Os cinco
+     de fábrica moram no código; estes são os que o RH acrescenta — vistoria,
+     alvará, o que fizer sentido. Ver lib/tiposEvento. */
+  tiposEventoPersonalizados?: { nome: string; cor: string }[];
   anuncioLocal?: string;
   anuncioContratacao?: string;
   anuncioJornada?: string;
@@ -613,7 +617,10 @@ export interface ClassificacaoConta {
 // Eventos fixos do calendário (feriados, datas comemorativas, dias mundiais do
 // segmento, fundação e reuniões). Aniversários de pessoas e de empresa são
 // derivados dos colaboradores — não ficam aqui.
-export type TipoEvento = "Feriado" | "Comemorativa" | "Reunião" | "Empresa" | "Outro";
+/* Os cinco de fábrica, mais o que a empresa criar. O `(string & {})` mantém o
+   autocompletar dos conhecidos sem fechar a porta para os personalizados —
+   ver lib/tiposEvento. */
+export type TipoEvento = "Feriado" | "Comemorativa" | "Reunião" | "Empresa" | "Outro" | (string & {});
 export interface EventoCalendario {
   id: string;
   titulo: string;
