@@ -90,6 +90,27 @@ describe("situacaoExperiencia", () => {
   it("para de avisar quando já passou muito tempo (não vira ruído eterno)", () => {
     expect(situacaoExperiencia(pessoa("2024-01-01"), new Date(2026, 5, 1))).toBeNull();
   });
+
+  it("O CASO QUE IMPORTA: quem foi admitido HOJE já está em experiência", () => {
+    // O quadro de Colaboradores escondia o recém-admitido (só entrava a partir
+    // de 35 dias de casa). Quem cadastrava alguém não via a pessoa no bloco e
+    // concluía, com razão, que o cadastro tinha se perdido. O relógio dos 90
+    // dias corre desde o primeiro dia — então a conta vale desde o primeiro dia.
+    const s = situacaoExperiencia(pessoa("2026-06-10"), new Date(2026, 5, 10))!;
+    expect(s).not.toBeNull();
+    expect(s.diasDeCasa).toBe(0);
+    expect(s.situacao).toBe("primeiro-periodo");
+    expect(s.diasParaFim).toBe(90);
+  });
+
+  it("quem entrou ontem ou anteontem também conta", () => {
+    expect(situacaoExperiencia(pessoa("2026-06-09"), new Date(2026, 5, 10))!.diasDeCasa).toBe(1);
+    expect(situacaoExperiencia(pessoa("2026-06-08"), new Date(2026, 5, 10))!.diasDeCasa).toBe(2);
+  });
+
+  it("admissão com data futura não entra (data digitada errada não vira aviso)", () => {
+    expect(situacaoExperiencia(pessoa("2026-07-01"), new Date(2026, 5, 10))).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse, Hourglass } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse, Hourglass, CalendarOff } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -45,11 +45,6 @@ const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDeslig
 // trabalhando: fica em card próprio e sai da conta de "ativos", senão o número
 // de quem está de fato produzindo aparece inflado.
 const ehAfastado = (c: Colaborador) => c.statusId === "afastado" && !ehInativo(c);
-
-// Dia de casa em que aparece a 1ª decisão do contrato de experiência (prorrogar
-// ou não, no marco dos 45 dias com a folga de 10 que clt.ts usa). Antes disso não
-// há o que decidir, então quem não foi marcado à mão ainda não entra no aviso.
-const DIAS_1O_MARCO_EXPERIENCIA = 35;
 
 function ThOrdenavel({
   campo, ordem, setOrdem, className, children,
@@ -154,19 +149,33 @@ export default function Colaboradores() {
   // Quem está em contrato de experiência, do prazo mais curto para o mais longo
   // (quem vence antes aparece primeiro). Usa a regra da CLT que já existe.
   //
-  // O aviso olhava SÓ quem foi marcado à mão com o status "Em experiência", mas o
-  // cadastro nasce como "Ativo": quem ninguém marcou nunca entrava aqui, mesmo com
-  // a ficha e o sino (que decidem pela data de admissão) já avisando sobre ele.
-  // Agora a data também vale — porém só a partir do 1º marco de decisão (35 dias,
-  // a mesma folga de clt.ts), para o bloco não virar alarme permanente com todo
-  // recém-admitido, que ainda não tem decisão nenhuma a tomar.
+  // Este bloco é CENSO, não alarme: o título diz "N pessoas estão em contrato de
+  // experiência", e isso precisa ser verdade. Já teve dois filtros que mentiam:
+  //
+  //   1. só entrava quem foi marcado À MÃO com o status "Em experiência" — mas o
+  //      cadastro nasce "Ativo", então quem ninguém marcou nunca aparecia;
+  //   2. depois, só a partir de 35 dias de casa — o que escondia justamente o
+  //      recém-admitido. E é nele que o relógio dos 90 dias está correndo desde o
+  //      primeiro dia: quem cadastrava alguém hoje não via a pessoa aqui e
+  //      concluía, com razão, que o sistema tinha perdido o cadastro.
+  //
+  // Quem separa urgente de tranquilo é a COR do cartão e o "decidir!", não a
+  // presença na lista. Estar em experiência é um fato; ser urgente é um juízo.
   const emExperiencia = useMemo(
     () => escopo
       .filter((c) => !c.ehDirecao && !ehInativo(c))
       .map((c) => ({ c, sit: situacaoExperiencia(c), marcado: c.statusId === "experiencia" }))
-      .filter((x): x is { c: Colaborador; sit: SituacaoExperiencia; marcado: boolean } =>
-        !!x.sit && (x.marcado || x.sit.diasDeCasa >= DIAS_1O_MARCO_EXPERIENCIA))
+      .filter((x): x is { c: Colaborador; sit: SituacaoExperiencia; marcado: boolean } => !!x.sit)
       .sort((a, b) => a.sit.diasParaFim - b.sit.diasParaFim),
+    [escopo],
+  );
+
+  // Sem data de admissão, situacaoExperiencia() devolve null e a pessoa some de
+  // TODA conta da CLT — não entra no bloco acima, não gera férias — e nada na
+  // tela diz por quê. A ficha dela já avisa; aqui o quadro avisa, senão só
+  // descobre quem por acaso abrir a ficha certa.
+  const semAdmissao = useMemo(
+    () => escopo.filter((c) => !c.ehDirecao && !ehInativo(c) && !c.dataAdmissao),
     [escopo],
   );
 
@@ -376,6 +385,11 @@ export default function Colaboradores() {
                     {emExperiencia.length} em experiência{urgente ? " · decidir!" : ""}
                   </span>
                 )}
+                {semAdmissao.length > 0 && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-300">
+                    {semAdmissao.length} sem admissão
+                  </span>
+                )}
                 {(foco || chips.size > 0) && (
                   <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand">filtros ativos aqui dentro</span>
                 )}
@@ -447,6 +461,43 @@ export default function Colaboradores() {
           <p className="mt-2 text-[11px] text-slate-500">
             Marco dos 45 dias: decidir se prorroga. Marco dos 90: efetivar ou desligar. Clique no nome para abrir a ficha.
           </p>
+        </div>
+      )}
+
+      {/* SEM DATA DE ADMISSÃO — nada da CLT pode ser calculado, então a pessoa
+          não entra no bloco de experiência nem gera férias. Sem este aviso ela
+          simplesmente não existe para os prazos, e o quadro parece em dia. */}
+      {semAdmissao.length > 0 && (
+        <div className="mb-4 rounded-2xl border-2 border-slate-300 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-slate-600">
+              <CalendarOff className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-base font-bold text-slate-800">
+                {semAdmissao.length} {semAdmissao.length === 1 ? "pessoa está" : "pessoas estão"} sem data de admissão
+              </p>
+              <p className="text-xs text-slate-600">
+                Sem ela não dá para calcular contrato de experiência nem férias — estas pessoas ficam de fora do aviso acima.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {semAdmissao.map((c) => (
+              <Link
+                key={c.id}
+                to={`/colaboradores/${c.id}`}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:shadow-md"
+              >
+                <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-800">{c.nome}</p>
+                  <p className="truncate text-[11px] text-slate-500">{d.nomeCargo(c) || "—"}</p>
+                </div>
+                <span className="shrink-0 text-[11px] font-semibold text-brand">Preencher</span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 
