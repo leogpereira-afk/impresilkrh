@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
   ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock, Eye, EyeOff,
-  KeyRound, ChevronDown, History,
+  KeyRound, ChevronDown, History, CalendarDays,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -28,6 +28,9 @@ import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { competenciasPlano, compLabelLongo, confidencialDoMes } from "@/lib/custos";
 import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
+import {
+  validarNovoTipo, normalizarNomeTipo, NOMES_RESERVADOS, type TipoPersonalizado,
+} from "@/lib/tiposEvento";
 import type { Area, Cargo, CicloAvaliacao, ModeloChecklist, Nivel, Perfil, StatusColaborador, Usuario } from "@/data/types";
 
 export default function PainelControle() {
@@ -362,10 +365,160 @@ function CargosSecao() {
 function ConteudoSecao() {
   return (
     <div className="space-y-6">
+      <TiposEventoSecao />
       <ConteudoManager colecao="pops" titulo="POPs e Procedimentos" subtitulo="Procedimentos operacionais padrão (Apêndice E)" comSla />
       <ConteudoManager colecao="comunicacao" titulo="Guias de Comunicação" subtitulo="Comunicação interna (Apêndice D)" />
       <ConteudoManager colecao="institucionais" titulo="Documentos Institucionais & SST" subtitulo="Código de Ética, PGR, PCMSO, treinamentos" comCategoria />
     </div>
+  );
+}
+
+/* ---------------- Tipos de aviso do calendário ----------------
+   Estavam sendo criados dentro do modal "Novo evento", no meio do cadastro:
+   misturava dois trabalhos (lançar um aviso × definir as categorias da casa) e
+   não havia lugar nenhum para VER, renomear ou trocar a cor do que já existia.
+   Aqui ficam junto das outras listas do sistema — áreas, cargos, status —, que
+   é onde alguém procura quando quer configurar. */
+function TiposEventoSecao() {
+  const toast = useToast();
+  const config = useConfig();
+  const { items: eventos } = useColecao("eventos");
+  const personalizados = useMemo(
+    () => config.tiposEventoPersonalizados ?? [],
+    [config.tiposEventoPersonalizados],
+  );
+  const [edit, setEdit] = useState<TipoPersonalizado | null>(null);
+  const [novo, setNovo] = useState(false);
+  const [del, setDel] = useState<TipoPersonalizado | null>(null);
+  const [form, setForm] = useState<{ nome: string; cor: string }>({ nome: "", cor: "#7c3aed" });
+
+  // Quantos eventos usam este tipo — apagar não apaga os eventos, só a cor.
+  const delEmUso = del ? eventos.filter((e) => e.tipo === del.nome).length : 0;
+
+  /* salvarConfig só escreve no navegador; quem leva para a nuvem é
+     enviarConfigNuvem. Sem o par, o tipo ficava preso num aparelho só. */
+  const gravar = (lista: TipoPersonalizado[]) => {
+    salvarConfig({ tiposEventoPersonalizados: lista });
+    void enviarConfigNuvem();
+  };
+
+  const abrir = (t: TipoPersonalizado | null) => {
+    setForm(t ? { nome: t.nome, cor: t.cor } : { nome: "", cor: "#7c3aed" });
+    if (t) setEdit(t); else setNovo(true);
+  };
+
+  const salvar = () => {
+    const nome = normalizarNomeTipo(form.nome);
+    /* Ao EDITAR, o próprio tipo não conta como conflito consigo mesmo — senão
+       trocar só a cor seria recusado por "já existe". */
+    const outros = personalizados.filter((t) => t.nome !== edit?.nome);
+    const check = validarNovoTipo(nome, outros, NOMES_RESERVADOS);
+    if (!check.ok) return toast(check.motivo, "erro");
+    if (edit) {
+      gravar(personalizados.map((t) => (t.nome === edit.nome ? { nome, cor: form.cor } : t)));
+      /* Renomear muda a chave que os eventos guardam. Trocar o nome nos eventos
+         é outra história (mexe em coleção sincronizada); por ora o aviso diz o
+         que aconteceu, em vez de deixar a pessoa descobrir sozinha. */
+      const presos = eventos.filter((e) => e.tipo === edit.nome).length;
+      toast(nome !== edit.nome && presos > 0
+        ? `Tipo renomeado. ${presos} evento(s) ainda usam “${edit.nome}” e ficarão sem cor até serem reeditados.`
+        : "Tipo salvo.");
+    } else {
+      gravar([...personalizados, { nome, cor: form.cor }]);
+      toast("Tipo criado.");
+    }
+    setNovo(false); setEdit(null);
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Tipos de aviso do calendário"
+        subtitle="As categorias que a empresa cria, com cor própria no quadro do mês"
+        icon={<CalendarDays className="h-[18px] w-[18px]" />}
+        action={<button className="btn-outline" onClick={() => abrir(null)}><Plus className="h-4 w-4" /> Novo tipo</button>}
+      />
+      <CardBody className="space-y-3">
+        {personalizados.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center text-sm text-slate-500">
+            Nenhum tipo próprio ainda. Crie um para marcar no calendário o que só a Impresilk acompanha — vistoria de extintor, alvará vencendo, reunião de segurança.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {personalizados.map((t) => {
+              const usos = eventos.filter((e) => e.tipo === t.nome).length;
+              return (
+                <div key={t.nome} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <DotBadge label={t.nome} cor={t.cor} />
+                    <span className="text-xs text-slate-500">
+                      {usos === 0 ? "nenhum evento" : usos === 1 ? "1 evento" : `${usos} eventos`}
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button className="btn-ghost p-1.5" onClick={() => abrir(t)} aria-label={`Editar ${t.nome}`}><Pencil className="h-4 w-4" /></button>
+                    <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(t)} aria-label={`Excluir ${t.nome}`}><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Dizer o que NÃO se mexe aqui evita a pergunta "e por que Aniversário
+            não aparece nesta lista?". */}
+        <p className="text-xs text-slate-500">
+          Aniversário, tempo de casa, vencimentos, experiência, férias e pagamento são calculados pelo sistema: aparecem no calendário sozinhos e não entram nesta lista.
+        </p>
+      </CardBody>
+
+      {(novo || edit) && (
+        <Modal
+          aberto
+          onFechar={() => { setNovo(false); setEdit(null); }}
+          titulo={edit ? "Editar tipo de aviso" : "Novo tipo de aviso"}
+          largura="max-w-md"
+          rodape={<>
+            <button className="btn-outline" onClick={() => { setNovo(false); setEdit(null); }}>Cancelar</button>
+            <button className="btn-primary" onClick={salvar}>Salvar</button>
+          </>}
+        >
+          <div className="space-y-3">
+            <Campo label="Nome" obrigatorio>
+              <Input
+                autoFocus
+                maxLength={40}
+                value={form.nome}
+                onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+                placeholder="Ex.: Vistoria de extintor"
+              />
+            </Campo>
+            <Campo label="Cor" hint="É o que diferencia o aviso no quadro do mês">
+              <input
+                type="color"
+                className="h-10 w-20 rounded border border-slate-300"
+                value={form.cor}
+                onChange={(e) => setForm((f) => ({ ...f, cor: e.target.value }))}
+              />
+            </Campo>
+          </div>
+        </Modal>
+      )}
+
+      <ConfirmDialog
+        aberto={!!del}
+        onFechar={() => setDel(null)}
+        onConfirmar={() => {
+          if (!del) return;
+          gravar(personalizados.filter((t) => t.nome !== del.nome));
+          toast(`Tipo “${del.nome}” excluído.`);
+          setDel(null);
+        }}
+        titulo="Excluir tipo de aviso?"
+        mensagem={delEmUso > 0
+          ? `“${del?.nome}” está em ${delEmUso} evento(s). Eles CONTINUAM no calendário — só perdem a cor e o filtro próprio.`
+          : `“${del?.nome}” será removido. Nenhum evento usa este tipo.`}
+      />
+    </Card>
   );
 }
 

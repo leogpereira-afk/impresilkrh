@@ -24,39 +24,42 @@ import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/cl
 import { diaDoPagamento, diaDoAdiantamento, feriadosDe, DIAS_UTEIS_PAGAMENTO } from "@/lib/diaPagamento";
 import { HOJE } from "@/data/_gen";
 import {
-  tiposDisponiveis, validarNovoTipo, normalizarNomeTipo, COR_PADRAO_TIPO,
+  tiposDisponiveis, COR_PADRAO_TIPO, TIPOS_DERIVADOS, TIPOS_DE_FABRICA, NOMES_RESERVADOS,
   type TipoPersonalizado,
 } from "@/lib/tiposEvento";
 import type { EventoCalendario } from "@/data/types";
 
 const DOW = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
-  { tipo: "Aniversário", cor: "#db2777", Icon: Cake },
-  { tipo: "Tempo de empresa", cor: "#c2a14d", Icon: PartyPopper },
-  { tipo: "Feriado", cor: "#dc2626", Icon: Flag },
-  { tipo: "Comemorativa", cor: "#2563eb", Icon: Sparkles },
-  { tipo: "Reunião", cor: "#16334f", Icon: CalendarClock },
-  { tipo: "Empresa", cor: "#16a34a", Icon: Building2 },
+/* O ÍCONE de cada tipo. Nome e cor vivem em lib/tiposEvento.ts porque o Painel
+   de Controle também precisa deles (para recusar um tipo novo com nome já
+   ocupado); o ícone é só desenho e fica aqui. */
+const ICONES: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+  "Aniversário": Cake, "Tempo de empresa": PartyPopper, "Feriado": Flag,
+  "Comemorativa": Sparkles, "Reunião": CalendarClock, "Empresa": Building2,
   // Prazos. Estavam espalhados por Documentos, SST, Colaboradores e Férias —
   // o calendário é onde se olha "o que vence", então eles passam a vir aqui.
-  { tipo: "Documento vence", cor: "#ea580c", Icon: FileText },
-  { tipo: "NR vence", cor: "#b91c1c", Icon: ShieldAlert },
-  { tipo: "Experiência", cor: "#7c3aed", Icon: UserCheck },
-  { tipo: "Férias — prazo CLT", cor: "#0891b2", Icon: Palmtree },
-  // O período de gozo em si (saiu / volta). Vem DESLIGADO: com 30 pessoas ele
-  // enche o quadro e some com o resto — é informação de consulta, não de vigia.
-  { tipo: "Férias", cor: "#0e7490", Icon: Palmtree },
+  "Documento vence": FileText, "NR vence": ShieldAlert, "Experiência": UserCheck,
+  // "Férias — prazo CLT" é o limite legal; "Férias" é o período de gozo em si.
+  "Férias — prazo CLT": Palmtree, "Férias": Palmtree,
   // Os dois dias de dinheiro do mês, que a equipe inteira tem na cabeça.
-  { tipo: "Pagamento", cor: "#047857", Icon: Banknote },
-];
-/* Todos os nomes que ESTA TELA já usa. Um tipo criado pela empresa não pode
-   se chamar "Aniversário": ele colidiria com o derivado de mesmo nome, e a cor
-   passaria a depender de qual dos dois o código encontrasse primeiro. */
-const NOMES_RESERVADOS = TIPOS.map((t) => t.tipo);
+  "Pagamento": Banknote,
+};
 
-/* Tipos que começam ESCONDIDOS. O calendário é para bater o olho e ver o que
-   exige ação; quem sai de férias é consulta — aparece quando se pede. */
-const OCULTOS_POR_PADRAO = new Set(["Férias"]);
+/* A legenda, na ordem de leitura: primeiro o que é sobre pessoa, depois o que
+   vence, por fim dinheiro. "Outro" fica de fora — é a saída do seletor, não uma
+   categoria com cor própria. */
+const ORDEM_LEGENDA = [
+  "Aniversário", "Tempo de empresa", "Feriado", "Comemorativa", "Reunião", "Empresa",
+  "Documento vence", "NR vence", "Experiência", "Férias — prazo CLT", "Férias", "Pagamento",
+];
+const CORES_CONHECIDAS = [...TIPOS_DERIVADOS, ...TIPOS_DE_FABRICA];
+const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] =
+  ORDEM_LEGENDA.map((nome) => ({
+    tipo: nome,
+    cor: CORES_CONHECIDAS.find((t) => t.nome === nome)?.cor ?? COR_PADRAO_TIPO,
+    Icon: ICONES[nome] ?? CalendarDays,
+  }));
+
 /* A cor e o ícone sabem dos tipos criados pela empresa. Sem isto, um tipo novo
    aparecia cinza e sem entrada na legenda — ou seja, sem cor e sem filtro,
    exatamente o que se perde ao jogar tudo em "Outro". */
@@ -65,10 +68,6 @@ const corDe = (t: string, extras: TipoPersonalizado[] = []) =>
   ?? extras.find((x) => x.nome === t)?.cor
   ?? COR_PADRAO_TIPO;
 const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarDays;
-
-/* Valor sentinela do "+ Novo tipo…" no seletor. Começa com "__" para nunca
-   colidir com um nome de tipo digitado por alguém. */
-const NOVO_TIPO = "__novo_tipo__";
 
 type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?: string };
 
@@ -105,11 +104,18 @@ export default function Calendario() {
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<EventoCalendario | null>(null);
   const [apagarTipo, setApagarTipo] = useState<string | null>(null);
-  /* Os tipos que a pessoa escolheu ISOLAR. Vazio = vista padrão. A regra e o
+  /* Os tipos que a pessoa escolheu ISOLAR. Vazio = aparece tudo. A regra e o
      porquê estão em lib/focoCalendario.ts, com testes. */
   const [foco, setFoco] = useState<Set<string>>(() => new Set());
   const alternarTipo = (t: string) => setFoco((s) => alternarFoco(s, t));
-  const mostrando = (t: string) => visivel(t, foco, OCULTOS_POR_PADRAO);
+  const mostrando = (t: string) => visivel(t, foco);
+
+  /* Quem ainda está no quadro. Aniversário, tempo de casa, experiência e prazo
+     de férias já saíam de `d.ativos`; documento, NR e período de férias, não —
+     percorriam a coleção inteira e resolviam o nome com `d.nomeColab`. O quadro
+     do mês exibia o nome de gente DESLIGADA como se fosse pendência da casa, e
+     ninguém entendia por que o vencimento de alguém que saiu ainda cobrava. */
+  const noQuadro = useMemo(() => new Set(d.ativos.map((c) => c.id)), [d.ativos]);
 
   // Eventos do mês = aniversários + tempo de empresa (derivados) + eventos salvos.
   const itens = useMemo<Item[]>(() => {
@@ -148,6 +154,9 @@ export default function Calendario() {
     for (const doc of documentos) {
       const dt = noMes(doc.dataVencimento);
       if (!dt) continue;
+      /* Documento SEM colaborador é da empresa e continua valendo. Com
+         colaborador, só entra se a pessoa ainda estiver no quadro. */
+      if (doc.colaboradorId && !noQuadro.has(doc.colaboradorId)) continue;
       const nome = doc.colaboradorId ? d.nomeColab(doc.colaboradorId) : "Documento da empresa";
       out.push({
         dia: dt.getDate(), tipo: "Documento vence",
@@ -159,6 +168,7 @@ export default function Calendario() {
     for (const c of certificacoes) {
       const dt = noMes(c.dataValidade);
       if (!dt) continue;
+      if (!noQuadro.has(c.colaboradorId)) continue;
       out.push({
         dia: dt.getDate(), tipo: "NR vence",
         titulo: d.nomeColab(c.colaboradorId),
@@ -208,6 +218,7 @@ export default function Calendario() {
        calendário também serve para olhar para trás. */
     for (const f of ferias) {
       if (f.status === "Cancelada") continue;
+      if (!noQuadro.has(f.colaboradorId)) continue;
       const nome = d.nomeColab(f.colaboradorId);
       const ini = noMes(f.dataInicio);
       const ret = noMes(f.dataRetorno);
@@ -254,9 +265,9 @@ export default function Calendario() {
     });
 
     return out
-      .filter((x) => visivel(x.tipo, foco, OCULTOS_POR_PADRAO))
+      .filter((x) => visivel(x.tipo, foco))
       .sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d, eventos, documentos, certificacoes, ferias, ano, mes, foco]);
+  }, [d, noQuadro, eventos, documentos, certificacoes, ferias, ano, mes, foco]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();
@@ -521,28 +532,6 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
       : tipos),
     [tipos, tipoAtual],
   );
-  const [criandoTipo, setCriandoTipo] = useState(false);
-  const [novoNome, setNovoNome] = useState("");
-  const [novaCor, setNovaCor] = useState("#7c3aed");
-
-  const cancelarNovoTipo = () => { setCriandoTipo(false); setNovoNome(""); };
-
-  const criarTipo = () => {
-    const check = validarNovoTipo(novoNome, personalizados, NOMES_RESERVADOS);
-    if (!check.ok) return toast(check.motivo, "erro");
-    const nome = normalizarNomeTipo(novoNome);
-    salvarConfig({ tiposEventoPersonalizados: [...personalizados, { nome, cor: novaCor }] });
-    /* salvarConfig só escreve NESTE navegador — quem sobe a config é
-       enviarConfigNuvem (mesmo par usado em PainelControle e Custos). Sem isto o
-       EVENTO subia (é coleção, entra na fila de sync) e o TIPO dele não: na
-       máquina da direção o aviso aparecia cinza, fora da legenda e sem filtro —
-       exatamente o "vira Outro e perde a cor" que este recurso veio resolver. */
-    void enviarConfigNuvem();
-    set({ tipo: nome }); // já deixa selecionado: foi para isso que ela criou
-    cancelarNovoTipo();
-    toast(`Tipo "${nome}" criado.`);
-  };
-
   const salvar = () => {
     if (!form.titulo?.trim()) return toast("Informe o título do evento.", "erro");
     if (!form.data) return toast("Informe a data.", "erro");
@@ -571,56 +560,18 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
         <Campo label="Título" obrigatorio><Input value={form.titulo ?? ""} onChange={(e) => set({ titulo: e.target.value })} placeholder="Ex.: Reunião geral, Dia das Mães…" /></Campo>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Data" obrigatorio><Input type="date" value={(form.data ?? "").slice(0, 10)} onChange={(e) => set({ data: e.target.value })} /></Campo>
-          {/* O seletor deixou de ser fechado. "Que tipo de aviso eu quero ver
-              no calendário" é decisão de quem usa: vistoria de extintor,
-              alvará vencendo, reunião de segurança. Sem poder criar, tudo virava
-              "Outro" e o quadro perdia a cor — que é o que faz bater o olho e
-              entender. */}
-          <Campo label="Tipo">
-            <Select
-              value={form.tipo}
-              onChange={(e) => {
-                if (e.target.value === NOVO_TIPO) { setCriandoTipo(true); return; }
-                set({ tipo: e.target.value });
-              }}
-            >
+          {/* Criar tipo saiu daqui. Um formulário de configuração no meio do
+              cadastro de evento deixava a tela confusa e misturava dois
+              trabalhos: lançar um aviso e definir as categorias da empresa.
+              Agora os tipos se cadastram no Painel de Controle, junto das outras
+              listas do sistema, e aqui só se escolhe. */}
+          <Campo label="Tipo" hint="Cadastre novos tipos no Painel de Controle">
+            <Select value={form.tipo} onChange={(e) => set({ tipo: e.target.value })}>
               {opcoes.map((t) => <option key={t.nome} value={t.nome}>{t.nome}</option>)}
-              <option value={NOVO_TIPO}>+ Novo tipo…</option>
             </Select>
           </Campo>
         </div>
 
-        {criandoTipo && (
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-            <div className="grid grid-cols-[1fr_auto] gap-3">
-              <Campo label="Nome do novo tipo" obrigatorio>
-                <Input
-                  autoFocus
-                  value={novoNome}
-                  maxLength={40}
-                  onChange={(e) => setNovoNome(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); criarTipo(); } }}
-                  placeholder="Ex.: Vistoria de extintor"
-                />
-              </Campo>
-              <Campo label="Cor">
-                {/* A cor é o que diferencia no quadro do mês — por isso ela é
-                    escolhida na hora de criar, e não depois. */}
-                <input
-                  type="color"
-                  value={novaCor}
-                  onChange={(e) => setNovaCor(e.target.value)}
-                  className="h-[42px] w-14 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
-                  aria-label="Cor do novo tipo"
-                />
-              </Campo>
-            </div>
-            <div className="flex gap-2">
-              <button type="button" className="btn-primary" onClick={criarTipo}>Criar tipo</button>
-              <button type="button" className="btn-outline" onClick={cancelarNovoTipo}>Cancelar</button>
-            </div>
-          </div>
-        )}
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Hora" hint="Opcional (reuniões)"><Input type="time" value={form.hora ?? ""} onChange={(e) => set({ hora: e.target.value })} /></Campo>
           <Campo label="Repetição">

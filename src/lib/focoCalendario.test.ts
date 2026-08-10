@@ -1,21 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { visivel, alternarFoco, esquecerTipo } from "@/lib/focoCalendario";
 
-const OCULTOS = new Set(["Férias"]);
 const vazio = new Set<string>();
+const TODOS = ["Aniversário", "Pagamento", "Feriado", "NR vence", "Reunião", "Férias"];
 
 describe("visivel — sem nada em foco", () => {
-  it("mostra os tipos normais", () => {
-    expect(visivel("Aniversário", vazio, OCULTOS)).toBe(true);
-    expect(visivel("Pagamento", vazio, OCULTOS)).toBe(true);
-  });
-
-  it("esconde o que é oculto por padrão", () => {
-    expect(visivel("Férias", vazio, OCULTOS)).toBe(false);
-  });
-
-  it("sem lista de ocultos, mostra tudo", () => {
-    expect(visivel("Férias", vazio)).toBe(true);
+  it("aparece TUDO, sem exceção", () => {
+    // "Férias" já nascia riscado, por encher o quadro. Num modelo em que o
+    // clique escolhe o que ver, um selo desligado em repouso parece travado —
+    // e foi assim que soou para quem usa. Agora todo selo começa igual.
+    for (const t of TODOS) expect(visivel(t, vazio), `${t} deveria aparecer`).toBe(true);
   });
 });
 
@@ -24,27 +18,23 @@ describe("visivel — com foco", () => {
     // Antes o clique escondia: para ver só aniversário era preciso clicar nos
     // outros onze selos, um por um. Ninguém fazia, e o filtro não servia.
     const foco = new Set(["Aniversário"]);
-    expect(visivel("Aniversário", foco, OCULTOS)).toBe(true);
-    for (const outro of ["Pagamento", "Feriado", "NR vence", "Reunião"]) {
-      expect(visivel(outro, foco, OCULTOS), `${outro} deveria sumir`).toBe(false);
+    expect(visivel("Aniversário", foco)).toBe(true);
+    for (const outro of ["Pagamento", "Feriado", "NR vence", "Reunião", "Férias"]) {
+      expect(visivel(outro, foco), `${outro} deveria sumir`).toBe(false);
     }
   });
 
   it("dois em foco mostram os dois, e só eles", () => {
     const foco = new Set(["Aniversário", "Pagamento"]);
-    expect(visivel("Aniversário", foco, OCULTOS)).toBe(true);
-    expect(visivel("Pagamento", foco, OCULTOS)).toBe(true);
-    expect(visivel("Feriado", foco, OCULTOS)).toBe(false);
+    expect(visivel("Aniversário", foco)).toBe(true);
+    expect(visivel("Pagamento", foco)).toBe(true);
+    expect(visivel("Feriado", foco)).toBe(false);
   });
 
-  it("focar um tipo oculto por padrão passa a mostrá-lo", () => {
-    // É o único jeito de ver Férias — e agora é um clique, não onze.
-    expect(visivel("Férias", new Set(["Férias"]), OCULTOS)).toBe(true);
-  });
-
-  it("o foco manda mesmo sobre o que é oculto por padrão", () => {
-    // Férias fora do foco continua fora, como qualquer outro.
-    expect(visivel("Férias", new Set(["Aniversário"]), OCULTOS)).toBe(false);
+  it("ver só as férias é um clique", () => {
+    const foco = new Set(["Férias"]);
+    expect(visivel("Férias", foco)).toBe(true);
+    expect(visivel("Aniversário", foco)).toBe(false);
   });
 });
 
@@ -55,12 +45,11 @@ describe("alternarFoco", () => {
     expect([...alternarFoco(um, "Aniversário")]).toEqual([]);
   });
 
-  it("tirar o último devolve a vista padrão, não uma tela vazia", () => {
+  it("tirar o último devolve TUDO, não uma tela vazia", () => {
     const foco = alternarFoco(vazio, "Aniversário");
     const semFoco = alternarFoco(foco, "Aniversário");
     expect(semFoco.size).toBe(0);
-    expect(visivel("Pagamento", semFoco, OCULTOS)).toBe(true);
-    expect(visivel("Férias", semFoco, OCULTOS)).toBe(false);
+    for (const t of TODOS) expect(visivel(t, semFoco), `${t} deveria voltar`).toBe(true);
   });
 
   it("soma tipos sem apagar os anteriores", () => {
@@ -85,10 +74,10 @@ describe("esquecerTipo", () => {
     expect([...esquecerTipo(foco, "Vistoria de extintor")]).toEqual(["Pagamento"]);
   });
 
-  it("apagar o único em foco devolve a vista padrão", () => {
+  it("apagar o único em foco devolve a vista completa", () => {
     const r = esquecerTipo(new Set(["Vistoria"]), "Vistoria");
     expect(r.size).toBe(0);
-    expect(visivel("Aniversário", r, OCULTOS)).toBe(true);
+    expect(visivel("Aniversário", r)).toBe(true);
   });
 
   it("tipo que não estava em foco não muda nada", () => {

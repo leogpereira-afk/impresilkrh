@@ -12,6 +12,7 @@ import { HOJE } from "@/data/_gen";
 import { JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
 import { feriasEmCurso } from "@/lib/ferias";
+import { separarVigentes } from "@/lib/nrVigente";
 
 export type SeveridadeNotif = "alta" | "media" | "baixa";
 export type CategoriaNotif = "documento" | "nr" | "avaliacao" | "ferias" | "experiencia" | "aniversario";
@@ -50,7 +51,10 @@ export function useNotificacoes(): Notificacao[] {
   return useMemo(() => {
     if (!sessao) return [];
     const escopo = colaboradoresVisiveis(sessao, colaboradores);
-    const ids = new Set(escopo.map((c) => c.id));
+    /* Não existe mais um Set do escopo inteiro aqui de propósito. Ele existia e
+       era usado como se fosse "quem está na empresa", mas escopo é PERMISSÃO
+       (quem eu posso ver) — para o ADMIN_RH, a base toda, desligados inclusive.
+       Todo alerta deve sair de `idsAtivos`, logo abaixo. */
     const nomeById = new Map(colaboradores.map((c) => [c.id, c.nome]));
     const nome = (id: string) => nomeById.get(id) ?? "—";
     // Quem está TRABALHANDO — não só o status "ativo".
@@ -86,9 +90,19 @@ export function useNotificacoes(): Notificacao[] {
       });
     }
 
-    // NRs (treinamentos de segurança) a vencer / vencidas
-    for (const c of certificacoesNr) {
-      if (!ids.has(c.colaboradorId) || !c.dataValidade) continue;
+    /* NRs (treinamentos de segurança) a vencer / vencidas.
+       Duas réguas que este laço não tinha, e a tela de SST já tinha:
+       1. `idsAtivos`, não `ids` — `ids` é PERMISSÃO (quem eu posso ver), não
+          situação. Para o ADMIN_RH ele é a base inteira, então o sino cobrava
+          NR vencida de quem já saiu: alerta vermelho, no topo, sem conserto
+          possível, e que ao ser clicado levava a uma tela onde a linha nem
+          aparece (SST filtra por quem está no quadro).
+       2. `separarVigentes` — quem RENOVOU a NR-35 tem a linha velha vencida no
+          histórico (ela não se apaga: é a prova de que fez o curso). Sem isto o
+          sino gritava "vencida" para sempre sobre quem está em dia, e dizia o
+          contrário do que a tela de SST mostrava sobre a MESMA NR. */
+    for (const c of separarVigentes(certificacoesNr).vigentes) {
+      if (!idsAtivos.has(c.colaboradorId) || !c.dataValidade) continue;
       const dd = diasAte(c.dataValidade);
       if (isNaN(dd) || dd > JANELA_ALERTA_DIAS) continue;
       const vencida = dd < 0;
@@ -115,7 +129,9 @@ export function useNotificacoes(): Notificacao[] {
 
     // Férias em andamento ou começando em até 7 dias
     for (const f of ferias) {
-      if (!ids.has(f.colaboradorId)) continue;
+      // `idsAtivos` pelo mesmo motivo dos documentos: com `ids`, o sino anunciava
+      // "Fulano está de férias" sobre quem já foi desligado.
+      if (!idsAtivos.has(f.colaboradorId)) continue;
       // "Está de férias" é decidido pelas DATAS (lib/ferias). Pelo texto do
       // status, o sino avisava de quem já voltou e calava sobre quem está fora.
       if (feriasEmCurso(f)) {

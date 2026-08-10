@@ -479,7 +479,14 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   // Quem não bate ponto (comissão/externo/direção): fica fora da conferência.
   const { atualizar: atualizarColab } = useColecao("colaboradores");
   const [gerNaoBate, setGerNaoBate] = useState(false);
-  const naoBatem = useMemo(() => visiveisRbac.filter((c) => c.naoBatePonto), [visiveisRbac]);
+  /* A MESMA régua da lista de marcação lá embaixo (`!ehDirecao && noQuadro`).
+     Sem ela, quem foi marcado como "não bate ponto" e depois foi desligado
+     seguia somando aqui para sempre: o botão dizia 12, a lista mostrava 9, e os
+     3 que faltavam não apareciam em lugar nenhum para serem desmarcados. */
+  const naoBatem = useMemo(
+    () => visiveisRbac.filter((c) => !c.ehDirecao && noQuadro(c) && c.naoBatePonto),
+    [visiveisRbac],
+  );
 
   // Conferência: quem do cadastro (ativo, não-direção, que bate ponto) NÃO veio no PDF.
   const presentesIds = useMemo(
@@ -1096,7 +1103,9 @@ function NaoBatePontoModal({
       .filter((c) => (t ? c.nome.toLowerCase().includes(t) : true))
       .sort((a, b) => Number(!!b.naoBatePonto) - Number(!!a.naoBatePonto) || a.nome.localeCompare(b.nome));
   }, [colaboradores, busca]);
-  const marcados = colaboradores.filter((c) => c.naoBatePonto).length;
+  // Sai de `lista` (já filtrada), não da coleção inteira: o número tem de contar
+  // exatamente as linhas que estão logo abaixo dele.
+  const marcados = lista.filter((c) => c.naoBatePonto).length;
 
   return (
     <Modal aberto onFechar={onFechar} titulo="Quem não bate ponto" descricao="Marque quem não registra ponto (comissão, externo, direção). Fica fora da conferência do ponto do mês." largura="max-w-lg">

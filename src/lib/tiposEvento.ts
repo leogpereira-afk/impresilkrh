@@ -26,6 +26,34 @@ export const TIPOS_DE_FABRICA: TipoPersonalizado[] = [
   { nome: "Outro", cor: "#64748b" },
 ];
 
+/**
+ * Tipos DERIVADOS: o calendário os calcula a partir de outro dado (data de
+ * nascimento, validade da NR, 5º dia útil…). Ninguém os escolhe ao lançar um
+ * evento, e ninguém pode apagá-los ou reaproveitar o nome.
+ *
+ * Nome e cor moram aqui porque DUAS telas precisam deles — o calendário, para
+ * pintar e montar a legenda, e o Painel de Controle, para recusar um tipo novo
+ * com nome já ocupado. Enquanto a lista vivia só na página, o Painel não tinha
+ * como saber que "Aniversário" já existia. O ícone continua na página: é
+ * detalhe de desenho, não de regra.
+ */
+export const TIPOS_DERIVADOS: TipoPersonalizado[] = [
+  { nome: "Aniversário", cor: "#db2777" },
+  { nome: "Tempo de empresa", cor: "#c2a14d" },
+  { nome: "Documento vence", cor: "#ea580c" },
+  { nome: "NR vence", cor: "#b91c1c" },
+  { nome: "Experiência", cor: "#7c3aed" },
+  { nome: "Férias — prazo CLT", cor: "#0891b2" },
+  { nome: "Férias", cor: "#0e7490" },
+  { nome: "Pagamento", cor: "#047857" },
+];
+
+/** Todo nome que o sistema já usa — de fábrica ou derivado. */
+export const NOMES_RESERVADOS = [
+  ...TIPOS_DE_FABRICA.map((t) => t.nome),
+  ...TIPOS_DERIVADOS.map((t) => t.nome),
+];
+
 const NOMES_DE_FABRICA = new Set(TIPOS_DE_FABRICA.map((t) => t.nome.toLowerCase()));
 
 export const COR_PADRAO_TIPO = "#64748b";

@@ -437,23 +437,31 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
       acao: { tipo: "experiencia" },
     });
   }
-  for (const x of docsVencendo) {
-    const dd = diasPara(x.dataVencimento);
-    alertas.push({
-      grave: dd < 0,
-      texto: `Documento "${x.nome}" ${dd < 0 ? `vencido há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.`,
-      rotulo: "Renovar",
-      acao: { tipo: "documento", id: x.id },
-    });
-  }
-  for (const x of nrsVencendo) {
-    const dd = diasPara(x.dataValidade);
-    alertas.push({
-      grave: dd < 0,
-      texto: `${x.nr} ${dd < 0 ? `vencida há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.`,
-      rotulo: "Renovar em SST",
-      acao: { tipo: "nr", id: x.id },
-    });
+  /* Cobrança de providência só faz sentido para quem ainda trabalha aqui: os
+     três alertas acima já são guardados por `desligado`, e estes dois ficaram de
+     fora. Na ficha de quem saiu apareciam "Documento vencido — Renovar" e "NR
+     vencida — Renovar em SST", com botão e tudo, sobre alguém que nunca vai
+     renovar. As ABAS de documentos e certificações continuam visíveis: aquilo é
+     o arquivo da pessoa, histórico legítimo. O que sai é a cobrança. */
+  if (!desligado) {
+    for (const x of docsVencendo) {
+      const dd = diasPara(x.dataVencimento);
+      alertas.push({
+        grave: dd < 0,
+        texto: `Documento "${x.nome}" ${dd < 0 ? `vencido há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.`,
+        rotulo: "Renovar",
+        acao: { tipo: "documento", id: x.id },
+      });
+    }
+    for (const x of nrsVencendo) {
+      const dd = diasPara(x.dataValidade);
+      alertas.push({
+        grave: dd < 0,
+        texto: `${x.nr} ${dd < 0 ? `vencida há ${Math.abs(dd)} dia(s)` : `vence em ${dd} dia(s)`}.`,
+        rotulo: "Renovar em SST",
+        acao: { tipo: "nr", id: x.id },
+      });
+    }
   }
 
   const blocos = [

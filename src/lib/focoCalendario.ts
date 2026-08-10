@@ -8,23 +8,17 @@
 //
 // Agora clicar é FOCAR: clicou em "Aniversário", vê só aniversário. Clicou
 // também em "Pagamento", vê os dois. Clicou de novo num que já está em foco,
-// ele sai. Sem nada em foco, volta a vista padrão.
+// ele sai. Sem nada em foco, aparece TUDO.
 //
-// A vista padrão não é "tudo": "Férias" (o período de gozo) nasce fora, porque
-// com ~90 pessoas ele enche o quadro e some com o resto. Focar nele continua
-// possível — e agora é até mais fácil do que era.
+// "Férias" já nasceu fora da vista padrão, por encher o quadro. Isso caiu: com
+// o clique focando, um selo desligado em repouso parece travado — e foi
+// exatamente assim que soou para quem usa ("o botão de férias está apertado").
+// Num modelo em que o clique escolhe o que ver, todo selo tem de começar igual.
 // ============================================================================
 
-/** Está aparecendo no quadro agora? */
-export function visivel(
-  tipo: string,
-  foco: ReadonlySet<string>,
-  ocultosPorPadrao: ReadonlySet<string> = new Set(),
-): boolean {
-  // Com foco, só o que está em foco — inclusive um tipo oculto por padrão, que
-  // é justamente o jeito de enxergá-lo.
-  if (foco.size > 0) return foco.has(tipo);
-  return !ocultosPorPadrao.has(tipo);
+/** Está aparecendo no quadro agora? Sem foco, tudo aparece. */
+export function visivel(tipo: string, foco: ReadonlySet<string>): boolean {
+  return foco.size === 0 || foco.has(tipo);
 }
 
 /**

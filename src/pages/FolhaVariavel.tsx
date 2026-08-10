@@ -181,7 +181,11 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
                             <button type="button" onClick={() => alternarLinha(c.id)} className="text-left font-medium text-slate-700 transition hover:text-brand hover:underline">
                               {c.nome}
                             </button>
-                            {c.statusId === "inativo" && (
+                            {/* `noQuadro`, não `statusId === "inativo"`: quem já
+                                tem data de desligamento mas ficou com o status
+                                em "aviso" saía sem o selo, e a folha mostrava
+                                como se estivesse na casa. */}
+                            {!noQuadro(c) && (
                               <Badge variant="neutral">Desligado{c.dataDesligamento ? ` em ${diaBR(c.dataDesligamento)}` : ""}</Badge>
                             )}
                           </div>
