@@ -165,13 +165,52 @@ export function situacaoFerias(
    *
    * A data do gozo continua importando para uma coisa só: ninguém goza um
    * período cujo direito ainda não nasceu. */
-  /* Período cujo prazo de concessão acabou ANTES de o sistema ter qualquer
-     registro de férias. Não está "em aberto": é DESCONHECIDO. Por isso ele não
-     recebe abatimento — senão um gozo de 2026 quitaria um período de 2015 sobre
-     o qual o sistema não sabe nada, e o período de 2025, que ele sabe julgar,
-     ficaria descoberto e apareceria como vencido. */
-  const desconhecido = (p: { limiteConcessao: Date }) =>
-    !!desde && p.limiteConcessao.getTime() < desde.getTime();
+  /* Período que o sistema NÃO TEM COMO JULGAR, porque não enxergou a janela em
+     que essas férias poderiam ter sido concedidas. Não está "em aberto": é
+     DESCONHECIDO. Não recebe abatimento (senão um gozo de 2026 quitaria um
+     período de 2015 sobre o qual não se sabe nada) e não vira alarme.
+   *
+   * A comparação é com o NASCIMENTO DO DIREITO, não com o limite de concessão.
+   * A janela para gozar o período vai de `direitoDesde` até `limiteConcessao`;
+   * se o histórico começa no meio dela, o sistema viu só o fim e não pode
+   * afirmar que as férias não foram tiradas no trecho que lhe escapou.
+   *
+   * Medido em produção (10/08/2026): comparando com o limite, 12 das 32 pessoas
+   * no quadro apareciam como VENCIDAS — e nas 12 o direito nascera ANTES do
+   * primeiro registro da base. Pior, a regra era instável: bastou a base ganhar
+   * um registro de 2023 para o corte recuar e rearmar os 12 alertas falsos de
+   * uma vez. Uma pessoa admitida em 2014 recebia "VENCIDAS há 940 dias — o
+   * pagamento é em dobro" por um período que o sistema nunca teve como conferir. */
+  /* Até onde o sistema pode AFIRMAR que umas férias não foram tiradas.
+   *
+   * Duas situações, e elas são diferentes:
+   *
+   * a) Quem foi admitido DEPOIS de o sistema passar a registrar férias: a vida
+   *    inteira dessa pessoa na empresa está sob observação. Não ter registro é
+   *    achado de verdade — vale o alerta.
+   *
+   * b) Quem já estava na casa ANTES disso: o sistema perdeu os primeiros anos.
+   *    Aí ele só responde por aquilo que enxergou, ou seja, a partir do primeiro
+   *    registro DAQUELA pessoa. Antes disso a resposta honesta é "não sei".
+   *
+   * Sem essa distinção, o alerta era ruído: em 10/08/2026, `desde` valia
+   * 23/11/2023 por causa de UM registro solto — a base inteira tinha 4 férias
+   * concluídas e 25 registros sem data nenhuma. O sistema afirmava, sobre 12 das
+   * 32 pessoas no quadro, que elas não tiraram férias, inferindo dívida
+   * trabalhista da ausência de dado num sistema que mal começara a ser usado.
+   * Uma pessoa com 12 anos de casa recebia "VENCIDAS há 940 dias, pagamento em
+   * dobro" — e a regra ainda era instável: bastou a base ganhar um registro mais
+   * antigo para o corte recuar e rearmar os 12 alertas de uma vez. */
+  const inicios = todosOsRegistros.map((g) => g.inicio.getTime());
+  const primeiroRegistroDaPessoa = inicios.length ? Math.min(...inicios) : null;
+  const jaEstavaNaCasa = !!desde && adm.getTime() < desde.getTime();
+  const desconhecido = (p: { direitoDesde: Date }) => {
+    if (!desde) return false;      // sem corte informado, o chamador quer a conta crua
+    if (!jaEstavaNaCasa) return false; // (a) entrou sob observação: julga tudo
+    // (b) o sistema perdeu o começo: só responde a partir do 1º registro dela.
+    if (primeiroRegistroDaPessoa === null) return true;
+    return p.direitoDesde.getTime() < primeiroRegistroDaPessoa;
+  };
 
   for (const g of [...gozos].sort((a, b) => a.inicio.getTime() - b.inicio.getTime())) {
     let restante = g.dias;

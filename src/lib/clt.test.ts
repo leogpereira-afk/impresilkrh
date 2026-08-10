@@ -323,6 +323,35 @@ describe("situacaoFerias — sem histórico no sistema", () => {
     expect(s.situacao).toBe("vencida");
   });
 
+  it("O CASO DO ADILSON: 12 anos de casa, sem registro antigo, NÃO acusa dívida", () => {
+    /* Medido na base real em 10/08/2026: o corte global valia 23/11/2023 por
+       causa de UM registro solto, e o sistema acusava 12 das 32 pessoas no
+       quadro. Adilson (admitido em 2014) recebia "VENCIDAS há 940 dias — o
+       pagamento é em dobro" por períodos que o sistema nunca teve como conferir.
+       Quem já estava na casa antes de o sistema existir só é julgado a partir do
+       PRIMEIRO REGISTRO DELE. */
+    const adilson = pessoa("2014-01-13");
+    const cortePequeno = new Date(2023, 10, 23);      // 23/11/2023
+    const hoje = new Date(2026, 7, 10);
+    const s = situacaoFerias(adilson, [feriasEm("2026-12-14")], hoje, cortePequeno)!;
+    expect(s.situacao).not.toBe("vencida");
+  });
+
+  it("mas a partir do 1º registro DELE, o sistema volta a julgar", () => {
+    // Registro em 2023 → o período que nasce depois disso é observável.
+    const antigo = pessoa("2014-01-13");
+    const s = situacaoFerias(antigo, [feriasEm("2023-01-20")], new Date(2026, 7, 10), new Date(2023, 0, 1))!;
+    expect(s.situacao).toBe("vencida");
+  });
+
+  it("quem entrou DEPOIS do corte é julgado normalmente, mesmo sem registro", () => {
+    // A vida inteira dessa pessoa na empresa está sob observação: não ter
+    // registro é achado de verdade, não falta de dado.
+    const novato = pessoa("2024-01-10");
+    const s = situacaoFerias(novato, [], new Date(2026, 6, 1), new Date(2023, 0, 1))!;
+    expect(s.situacao).toBe("vencida");
+  });
+
   it("sem corte informado, o comportamento é o de sempre", () => {
     const s = situacaoFerias(pessoa("2024-01-10"), [], new Date(2026, 6, 1))!;
     expect(s.situacao).toBe("vencida");
