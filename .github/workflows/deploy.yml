@@ -17,9 +17,11 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
-# Precisa escrever: o build vai para a branch gh-pages, que é o que o Pages serve.
+# contents: escrever a branch gh-pages, que é o que o Pages serve.
+# pages: pedir o build pela API no último passo (sem isto o POST devolve 403).
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: pages
