@@ -40,6 +40,12 @@ export const TIPOS_DE_FABRICA: TipoPersonalizado[] = [
 export const TIPOS_DERIVADOS: TipoPersonalizado[] = [
   { nome: "Aniversário", cor: "#db2777" },
   { nome: "Tempo de empresa", cor: "#c2a14d" },
+  /* O dia em que a pessoa tem de COMPARECER à clínica. É compromisso marcado,
+     não prazo: o vencimento diz até quando dá para resolver, o agendamento diz
+     onde alguém precisa estar naquele dia. Ficava só na linha do exame em SST —
+     quem abria o calendário para planejar a semana não via ninguém saindo para
+     fazer exame. */
+  { nome: "Exame agendado", cor: "#0d9488" },
   { nome: "Documento vence", cor: "#ea580c" },
   { nome: "NR vence", cor: "#b91c1c" },
   { nome: "Experiência", cor: "#7c3aed" },

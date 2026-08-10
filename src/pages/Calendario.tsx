@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   CalendarDays, Cake, PartyPopper, Flag, Sparkles, CalendarClock, Building2,
   Plus, ChevronLeft, ChevronRight, Pencil, Trash2, FileText, ShieldAlert, UserCheck, Palmtree,
-  Banknote,
+  Banknote, Stethoscope,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -38,7 +38,7 @@ const ICONES: Record<string, React.ComponentType<{ className?: string; style?: R
   "Comemorativa": Sparkles, "Reunião": CalendarClock, "Empresa": Building2,
   // Prazos. Estavam espalhados por Documentos, SST, Colaboradores e Férias —
   // o calendário é onde se olha "o que vence", então eles passam a vir aqui.
-  "Documento vence": FileText, "NR vence": ShieldAlert, "Experiência": UserCheck,
+  "Exame agendado": Stethoscope, "Documento vence": FileText, "NR vence": ShieldAlert, "Experiência": UserCheck,
   // "Férias — prazo CLT" é o limite legal; "Férias" é o período de gozo em si.
   "Férias — prazo CLT": Palmtree, "Férias": Palmtree,
   // Os dois dias de dinheiro do mês, que a equipe inteira tem na cabeça.
@@ -50,7 +50,7 @@ const ICONES: Record<string, React.ComponentType<{ className?: string; style?: R
    categoria com cor própria. */
 const ORDEM_LEGENDA = [
   "Aniversário", "Tempo de empresa", "Feriado", "Comemorativa", "Reunião", "Empresa",
-  "Documento vence", "NR vence", "Experiência", "Férias — prazo CLT", "Férias", "Pagamento",
+  "Exame agendado", "Documento vence", "NR vence", "Experiência", "Férias — prazo CLT", "Férias", "Pagamento",
 ];
 const CORES_CONHECIDAS = [...TIPOS_DERIVADOS, ...TIPOS_DE_FABRICA];
 const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] =
@@ -170,6 +170,25 @@ export default function Calendario() {
         dia: dt.getDate(), tipo: "Documento vence",
         titulo: nome,
         sub: [doc.categoria, doc.nome].filter(Boolean).join(" · ") || "Documento",
+      });
+    }
+
+    /* EXAME AGENDADO — o dia de comparecer à clínica. É compromisso marcado, não
+       prazo: o vencimento diz até quando dá para resolver, isto diz onde alguém
+       precisa estar. Vivia só na linha do exame em SST, então quem abria o
+       calendário para planejar a semana não via ninguém saindo para o exame.
+       `agendadoPara` guarda data E hora (datetime-local), e a hora entra no
+       subtítulo — é a informação que o colaborador liga para perguntar. */
+    for (const doc of documentos) {
+      if (!doc.agendadoPara) continue;
+      if (doc.colaboradorId && !noQuadroIds.has(doc.colaboradorId)) continue;
+      const dt = noMes(doc.agendadoPara);
+      if (!dt) continue;
+      const hora = doc.agendadoPara.slice(11, 16);
+      out.push({
+        dia: dt.getDate(), tipo: "Exame agendado",
+        titulo: doc.colaboradorId ? d.nomeColab(doc.colaboradorId) : doc.nome,
+        sub: [hora, doc.categoria, doc.clinica, doc.localExame].filter(Boolean).join(" · "),
       });
     }
 

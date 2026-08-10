@@ -377,12 +377,18 @@ export default function SST() {
         description="ASO, exames ocupacionais, PGR e PCMSO."
       />
 
+      {/* Exames ocupacionais é a PRIMEIRA aba e a que abre: é o trabalho diário
+          desta tela (ASO e periódico vencem o tempo todo e cobram ação), enquanto
+          Programas é consulta e Certificações NR se mexe de vez em quando. Abrir
+          em Certificações fazia quem entrava precisar de um clique só para chegar
+          onde ia de fato trabalhar. */}
       <Tabs
         abas={[
+          { id: "exames", label: "Exames ocupacionais", icon: <HardHat className="h-4 w-4" />, conteudo: abaExames },
           { id: "certificacoes", label: "Certificações NR", icon: <Award className="h-4 w-4" />, conteudo: <AbaCertificacoesNR /> },
           { id: "programas", label: "Programas (NR)", icon: <ShieldCheck className="h-4 w-4" />, conteudo: abaProgramas },
-          { id: "exames", label: "Exames ocupacionais", icon: <HardHat className="h-4 w-4" />, conteudo: abaExames },
         ]}
+        inicial="exames"
       />
 
       {editarExame && (

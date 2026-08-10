@@ -57,7 +57,7 @@ async function perfilDoUsuario(userId: string): Promise<Sessao | null> {
 // cai no login local e ninguém fica travado durante a transição (o Supabase não
 // distingue "senha errada" de "ainda não tem conta lá", então a rota segura é
 // sempre tentar o local em seguida — se ele também recusar, o erro aparece).
-export async function loginServidor(nome: string, senha: string): Promise<Sessao> {
+export async function loginServidor(nome: string, senha: string, lembrar = false): Promise<Sessao> {
   if (!supabase) throw new ErroAuth("indisponivel", "Login por servidor não configurado.");
   let auth: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
   try {
@@ -73,7 +73,7 @@ export async function loginServidor(nome: string, senha: string): Promise<Sessao
     sessaoAtual = null;
     throw new ErroAuth("indisponivel", "Conta sem perfil vinculado. Fale com o RH.");
   }
-  entrar(sess.perfil, sess.colaboradorId);
+  entrar(sess.perfil, sess.colaboradorId, lembrar);
   if (temWindow) window.dispatchEvent(new CustomEvent("impresilk:autenticado"));
   return sess;
 }

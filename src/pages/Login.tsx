@@ -30,6 +30,10 @@ export default function Login() {
   const [verSenha, setVerSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [entrando, setEntrando] = useState(false);
+  /* Nasce DESLIGADO de propósito: numa gráfica há máquina compartilhada, e o
+     padrão tem de ser o mais seguro. Quem marca está dizendo "este aparelho é
+     meu". Nada de senha é guardado — só a sessão dura mais (ver lib/session). */
+  const [lembrar, setLembrar] = useState(false);
 
   // Quem pode entrar: colaboradores ativos (inclui diretoria). O perfil de acesso
   // vem do próprio cadastro de cada pessoa.
@@ -71,7 +75,7 @@ export default function Login() {
   const entrarLocal = async (): Promise<boolean> => {
     const r = await resolverLocal();
     if ("erro" in r) { setErro(r.erro); return false; }
-    entrar(r.perfil, r.colaboradorId);
+    entrar(r.perfil, r.colaboradorId, lembrar);
     navigate("/painel");
     return true;
   };
@@ -88,7 +92,7 @@ export default function Login() {
     try {
       if (MODO_JWT) {
         try {
-          await loginServidor(nome, senha);
+          await loginServidor(nome, senha, lembrar);
           navigate("/painel");
           return;
         } catch (err) {
@@ -98,7 +102,7 @@ export default function Login() {
           if (err instanceof ErroAuth && err.tipo === "credencial" && !acessoFixo) { setErro(err.message || "Senha incorreta."); return; }
         }
       }
-      if (acessoFixo) { entrar("ADMIN_RH", MASTER_COLAB_ID); navigate("/painel"); return; }
+      if (acessoFixo) { entrar("ADMIN_RH", MASTER_COLAB_ID, lembrar); navigate("/painel"); return; }
       if (!(await entrarLocal()) && MODO_JWT) setErro((e) => e || "Sem conexão para entrar agora. Tente novamente com internet.");
     } finally {
       setEntrando(false);
@@ -163,6 +167,25 @@ export default function Login() {
                   {verSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+            </label>
+
+            {/* "Manter conectado" é sobre a SESSÃO durar mais (30 dias parados
+                em vez de 12 horas), não sobre guardar a senha. A frase de baixo
+                diz isso em português: quem lê "salvar login" costuma imaginar a
+                senha gravada, e é justamente o que não acontece. */}
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={lembrar}
+                onChange={(e) => setLembrar(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-brand focus:ring-brand"
+              />
+              <span>
+                Manter conectado neste aparelho
+                <span className="block text-xs text-slate-400">
+                  Entra direto por 30 dias. Só no seu computador — a senha não fica guardada, e “Sair” encerra na hora.
+                </span>
+              </span>
             </label>
 
             {erro && <p className="text-sm text-red-600">{erro}</p>}

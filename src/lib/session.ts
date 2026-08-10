@@ -11,12 +11,28 @@ const TOKEN_KEY = "impresilk.auth.token"; // espelha K_TOKEN de lib/auth.ts
 // para a tela de login. Não apaga NENHUM dado, só exige entrar de novo.
 const VALIDADE_MS = 12 * 60 * 60 * 1000; // 12 horas paradas
 
+/* "Manter conectado neste aparelho": estende a janela de inatividade para 30
+   dias, para quem usa o próprio computador não ter de digitar a senha a cada
+   segunda-feira. Continua sendo INATIVIDADE — 30 dias sem abrir e cai também.
+
+   O que isto NÃO faz, de propósito: guardar a senha. Salvar senha no navegador
+   de um sistema que mostra folha de pagamento é criar um problema maior do que
+   o que resolve — qualquer um que sente na máquina entra, e não há como
+   revogar. O que fica gravado é a mesma sessão de sempre, só que com prazo
+   maior; "Sair" apaga na hora, como antes.
+
+   Por isso a opção nasce DESLIGADA: numa gráfica há máquina compartilhada, e o
+   padrão tem de ser o mais seguro. Quem marca está dizendo "este aparelho é
+   meu". */
+const VALIDADE_LEMBRAR_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias parados
+
 export interface Sessao {
   perfil: Perfil;
   colaboradorId: string;
 }
 interface SessaoGravada extends Sessao {
-  visto?: number; // instante do último uso (ms)
+  visto?: number;    // instante do último uso (ms)
+  lembrar?: boolean; // marcou "manter conectado neste aparelho"
 }
 
 const temWindow = typeof window !== "undefined";
@@ -34,9 +50,12 @@ function ler(): Sessao | null {
         // Sessão antiga (sem carimbo) ganha um carimbo agora em vez de derrubar
         // quem já estava logado no momento da atualização.
         const visto = typeof g?.visto === "number" ? g.visto : Date.now();
-        if (g?.perfil && g?.colaboradorId && Date.now() - visto <= VALIDADE_MS) {
+        const limite = g?.lembrar ? VALIDADE_LEMBRAR_MS : VALIDADE_MS;
+        if (g?.perfil && g?.colaboradorId && Date.now() - visto <= limite) {
           val = { perfil: g.perfil, colaboradorId: g.colaboradorId };
-          gravar(val, visto);
+          // Renova o carimbo E PRESERVA a escolha: sem repassar `lembrar`, o
+          // primeiro uso apagava a marcação e a sessão voltava para 12h.
+          gravar(val, Date.now(), !!g.lembrar);
         } else if (g?.perfil) {
           window.localStorage.removeItem(SESSAO_KEY); // expirou
         }
@@ -49,18 +68,18 @@ function ler(): Sessao | null {
   return val;
 }
 
-function gravar(s: Sessao, visto: number) {
+function gravar(s: Sessao, visto: number, lembrar = false) {
   if (!temWindow) return;
-  try { window.localStorage.setItem(SESSAO_KEY, JSON.stringify({ ...s, visto } satisfies SessaoGravada)); } catch { /* cota: segue em memória */ }
+  try { window.localStorage.setItem(SESSAO_KEY, JSON.stringify({ ...s, visto, lembrar } satisfies SessaoGravada)); } catch { /* cota: segue em memória */ }
 }
 
 function emit() {
   listeners.forEach((cb) => cb());
 }
 
-export function entrar(perfil: Perfil, colaboradorId: string): void {
+export function entrar(perfil: Perfil, colaboradorId: string, lembrar = false): void {
   cache = { perfil, colaboradorId };
-  gravar(cache, Date.now());
+  gravar(cache, Date.now(), lembrar);
   emit();
   // Avisa o sync: agora pode baixar a base completa (deslogado ele só traz o
   // cadastro de acesso). O login por servidor dispara o mesmo evento.
