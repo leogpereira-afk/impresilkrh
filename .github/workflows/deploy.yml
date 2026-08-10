@@ -3,22 +3,30 @@ name: Deploy (GitHub Pages)
 # Publica o build da SPA no GitHub Pages (único host — o Netlify foi desativado).
 # O backend é o Supabase (Auth + Postgres + Storage + Edge Functions), acessado
 # direto pelo navegador com a anon key (pública por design — protegida por RLS).
+#
+# POR QUE POR BRANCH E NÃO POR actions/deploy-pages:
+# Em 06/08/2026 o caminho oficial (upload-pages-artifact + deploy-pages) parou de
+# funcionar SÓ neste repositório: o deployment ficava em "deployment_queued" até a
+# action desistir em 10 min, com a configuração idêntica à do painel-impresilk, que
+# publicava normalmente. Apagar e recriar o site do Pages não resolveu. O que
+# resolveu foi servir de uma branch (build_type "legacy"), que é outro pipeline.
+# Se um dia o caminho oficial voltar, dá para reverter para o workflow anterior —
+# está no histórico deste arquivo.
 on:
   push:
     branches: [main]
   workflow_dispatch: {}
 
+# Precisa escrever: o build vai para a branch gh-pages, que é o que o Pages serve.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  publicar:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +48,33 @@ jobs:
       # subpágina), e o React Router (com basename) assume dali.
       - run: cp dist/index.html dist/404.html
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
+      # Sem isto o Pages passa o site pelo Jekyll, que ignora arquivos e pastas
+      # começados por "_" — silenciosamente, servindo 404 só para alguns assets.
+      - run: touch dist/.nojekyll
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publicar na branch gh-pages
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist
+          git init -q
+          git checkout -qb gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "publicar ${GITHUB_SHA::7}"
+          # A branch é o resultado do build, não histórico de trabalho: cada
+          # publicação a substitui inteira.
+          git push -q --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      # O push na branch normalmente já dispara o build do Pages, mas em 10/08 ele
+      # não disparou sozinho e o site ficou fora do ar. Pedir explicitamente custa
+      # uma chamada e tira essa dúvida do caminho.
+      - name: Pedir o build do Pages
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages/builds" > /dev/null
