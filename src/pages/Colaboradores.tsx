@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse, Hourglass, CalendarOff, AlertTriangle } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, UserCheck, UserX, HeartPulse, Hourglass, CalendarOff, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -10,7 +10,7 @@ import { Input, Select } from "@/components/ui/form";
 import { MotivacaoRosto } from "@/components/ui/indicadores";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, trabalhandoHoje } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
@@ -42,10 +42,6 @@ const ORDEM_ENQUADRAMENTO: Record<string, number> = { Crítico: 0, Abaixo: 1, De
 
 // Inativo = desligado (data de desligamento) ou status "inativo".
 const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
-// Afastado (INSS, licença, acidente) continua na empresa, mas NÃO está
-// trabalhando: fica em card próprio e sai da conta de "ativos", senão o número
-// de quem está de fato produzindo aparece inflado.
-const ehAfastado = (c: Colaborador) => c.statusId === "afastado" && !ehInativo(c);
 
 function ThOrdenavel({
   campo, ordem, setOrdem, className, children,
@@ -91,7 +87,7 @@ export default function Colaboradores() {
   // "Por setor" continuam para quem quiser navegar por setor.
   const [visao, setVisao] = useState<"setor" | "lista">("lista");
   // Card de resumo clicado (filtro rápido): ativos / em férias / desligados.
-  const [foco, setFoco] = useState<"ativos" | "afastados" | "ferias" | "desligados" | null>(null);
+  const [foco, setFoco] = useState<"presentes" | "indisponiveis" | "desligados" | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
   const [chips, setChips] = useState<Set<string>>(() => new Set());
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
@@ -196,17 +192,38 @@ export default function Colaboradores() {
     [escopo],
   );
 
-  // Cards de resumo — sobre o escopo de acesso, sem a Direção (mesma base da lista).
+  /* Está disponível para trabalhar HOJE? É a pergunta que os cards respondem.
+     `trabalhandoHoje` já exige estar no quadro e com status "ativo" ou "em
+     experiência" — quem está de atestado, afastado, em abandono ou de aviso
+     prévio não entra. Falta só descontar quem está de férias. */
+  const presente = useCallback(
+    (c: Colaborador) => trabalhandoHoje(c) && !emFerias.has(c.id),
+    [emFerias],
+  );
+
+  /* Cards de resumo — sobre o escopo de acesso, sem a Direção (mesma base da lista).
+   *
+   * Eram quatro e se sobrepunham: "Ativos" somava quem estava de férias (a nota
+   * dizia "já contados em Ativos") e ainda incluía atestado médico e abandono,
+   * porque esses status contam no headcount. O número respondia "quantos estão
+   * na folha", mas era lido como "quantos tenho para trabalhar" — e no cadastro
+   * de hoje isso dava 32 quando a mão de obra disponível era 30.
+   *
+   * Agora cada pessoa cai em UM card só, e a pergunta de cada um é direta:
+   *   Presentes     — dá para contar com esta pessoa hoje
+   *   Indisponíveis — ainda é da casa, mas hoje não está (férias, atestado,
+   *                   afastamento, abandono, aviso prévio)
+   *   Desligados    — saiu
+   * Presentes + Indisponíveis = o total no quadro (o que bate com a folha). */
   const resumo = useMemo(() => {
     const base = escopo.filter((c) => !c.ehDirecao);
+    const noQuadroAgora = base.filter((c) => !ehInativo(c));
     return {
-      // "Ativo" = está trabalhando: sem afastamento e sem desligamento.
-      ativos: base.filter((c) => !ehInativo(c) && !ehAfastado(c)).length,
-      afastados: base.filter((c) => ehAfastado(c)).length,
-      ferias: base.filter((c) => emFerias.has(c.id) && !ehInativo(c)).length,
+      presentes: noQuadroAgora.filter(presente).length,
+      indisponiveis: noQuadroAgora.filter((c) => !presente(c)).length,
       desligados: base.filter((c) => ehInativo(c)).length,
     };
-  }, [escopo, emFerias]);
+  }, [escopo, presente]);
 
   // Exporta a lista filtrada atual para CSV (Excel-friendly, separador ;).
   const exportarCsv = () => {
@@ -284,9 +301,8 @@ export default function Colaboradores() {
       // Card clicado tem prioridade sobre o checkbox "incluir inativos".
       .filter((c) => {
         if (foco === "desligados") return ehInativo(c);
-        if (foco === "ativos") return !ehInativo(c) && !ehAfastado(c);
-        if (foco === "afastados") return ehAfastado(c);
-        if (foco === "ferias") return !ehInativo(c) && emFerias.has(c.id);
+        if (foco === "presentes") return presente(c);
+        if (foco === "indisponiveis") return !ehInativo(c) && !presente(c);
         return mostrarInativos || !ehInativo(c);
       })
       // Área tem um filtro só (os chips). O Select abaixo é outra porta para o
@@ -303,7 +319,7 @@ export default function Colaboradores() {
           : true,
       )
       .sort(comparar);
-  }, [escopo, fStatus, busca, chips, mostrarInativos, foco, emFerias, d, comparar]);
+  }, [escopo, fStatus, busca, chips, mostrarInativos, foco, presente, d, comparar]);
 
   // Lista simples de nomes, agrupada por inicial (A, B, C…) — só os nomes, sem
   // cargo/setor. Usa a mesma lista já filtrada e ordenada alfabeticamente.
@@ -392,7 +408,7 @@ export default function Colaboradores() {
                 {aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
                 <span className="font-semibold text-slate-800">Resumo do quadro</span>
                 <span className="truncate text-xs text-slate-500">
-                  {resumo.ativos} ativos · {resumo.afastados} afastados · {resumo.ferias} em férias · {resumo.desligados} desligados
+                  {resumo.presentes} presentes · {resumo.indisponiveis} indisponíveis · {resumo.desligados} desligados
                 </span>
                 {emExperiencia.length > 0 && (
                   <span className={cn(
@@ -562,14 +578,14 @@ export default function Colaboradores() {
       )}
 
       {/* Cards de resumo do quadro — clicáveis: filtram a lista abaixo */}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {([
-          { key: "ativos", label: "Ativos", nota: "", valor: resumo.ativos, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
-          { key: "afastados", label: "Afastados", nota: "fora da conta de Ativos", valor: resumo.afastados, icon: HeartPulse, cor: "text-orange-600", bg: "bg-orange-50" },
-          // "Em férias" é um recorte de quem está ativo (férias não suspende o
-          // contrato): a nota avisa, senão parece que os cards se somam e a mesma
-          // pessoa aparece contada duas vezes.
-          { key: "ferias", label: "Em férias", nota: "já contados em Ativos", valor: resumo.ferias, icon: Palmtree, cor: "text-amber-600", bg: "bg-amber-50" },
+          { key: "presentes", label: "Ativos", nota: "presentes hoje", valor: resumo.presentes, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
+          // Não é "afastado" no sentido do status: é todo mundo que ainda é da
+          // casa mas hoje não está — férias, atestado, afastamento, abandono,
+          // aviso prévio. Quem precisa saber com quantas mãos conta amanhã olha
+          // este número, não o cadastro de cada um.
+          { key: "indisponiveis", label: "Indisponíveis", nota: "férias, atestado, afastamento…", valor: resumo.indisponiveis, icon: HeartPulse, cor: "text-orange-600", bg: "bg-orange-50" },
           { key: "desligados", label: "Desligados", nota: "", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
         ] as const).map(({ key, label, nota, valor, icon: Icon, cor, bg }) => {
           const ativoCard = foco === key;

@@ -12,6 +12,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
+import { exameDuplicado } from "@/lib/exameDuplicado";
 import { useColecao, useConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -290,6 +291,9 @@ export default function SST() {
           nome={d.nomeColab(editarExame.colaboradorId)}
           telefone={d.colabById.get(editarExame.colaboradorId)?.telefone}
           empresa={config.empresaNome}
+          /* A coleção INTEIRA, não a lista filtrada da tela: um exame escondido
+             pelo filtro continua sendo uma linha igual no cadastro. */
+          outrosExames={documentos}
           onFechar={() => setEditarExame(null)}
           onSalvar={(patch) => {
             atualizarDoc(editarExame.id, patch);
@@ -329,12 +333,14 @@ export default function SST() {
 // Corrigir um exame já lançado: tipo e datas. O anexo (quando existe) não é
 // tocado aqui — para trocar o arquivo, use a ficha do colaborador.
 function ModalEditarExame({
-  doc, nome, telefone, empresa, onSalvar, onAvisou, onFechar,
+  doc, nome, telefone, empresa, outrosExames, onSalvar, onAvisou, onFechar,
 }: {
-  doc: { id: string; categoria: string; dataEmissao?: string | null; dataVencimento?: string | null; agendadoPara?: string | null; clinica?: string | null; localExame?: string | null };
+  doc: { id: string; colaboradorId?: string | null; categoria: string; dataEmissao?: string | null; dataVencimento?: string | null; agendadoPara?: string | null; clinica?: string | null; localExame?: string | null };
   nome: string;
   telefone?: string | null;
   empresa?: string | null;
+  /** Todos os exames da base — para avisar quando a edição criar uma linha igual. */
+  outrosExames: readonly { id: string; colaboradorId?: string | null; categoria?: string | null; dataVencimento?: string | null }[];
   onSalvar: (patch: { categoria: string; dataEmissao: string | null; dataVencimento: string | null; agendadoPara: string | null; clinica: string | null; localExame: string | null }) => void;
   onAvisou: () => void;
   onFechar: () => void;
@@ -353,11 +359,28 @@ function ModalEditarExame({
     nome, tipo: categoria, quando: agendado, clinica, local, observacao: obsAviso, empresa,
   });
 
+  /* Esta edição vai deixar a pessoa com duas linhas idênticas? Foi assim que
+     nasceu a triplicata de 10/08: um ASO virou "Exame Periódico" e outro
+     registro teve a data movida para a mesma — cada edição, sozinha, parecia
+     inofensiva. O aviso é da hora de salvar, porque é onde dá para desistir. */
+  const jaExiste = exameDuplicado(outrosExames, {
+    id: doc.id, colaboradorId: doc.colaboradorId, categoria, dataVencimento: vencimento,
+  });
+  const [confirmouDuplicata, setConfirmouDuplicata] = useState(false);
+
   const salvar = () => {
     // Vencimento antes da emissão quase sempre é dedo trocado — e deixaria o
     // exame nascer "vencido" na lista.
     if (emissao && vencimento && vencimento < emissao) {
       toast("O vencimento não pode ser antes da emissão.", "erro");
+      return;
+    }
+    /* Avisa, não impede: 2ª via e exame refeito são motivos legítimos. O
+       primeiro clique explica, o segundo grava — sem tirar a decisão de quem
+       está olhando a ficha. */
+    if (jaExiste && !confirmouDuplicata) {
+      setConfirmouDuplicata(true);
+      toast(`${nome} já tem outro “${categoria}” vencendo neste mesmo dia. Clique em Salvar de novo para gravar assim mesmo.`, "erro");
       return;
     }
     onSalvar({
