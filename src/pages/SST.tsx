@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil, MessageCircle, CalendarClock } from "lucide-react";
+import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil, MessageCircle, CalendarClock, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -12,6 +12,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/cn";
 import { exameDuplicado } from "@/lib/exameDuplicado";
 import { useColecao, useConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
@@ -114,6 +115,27 @@ export default function SST() {
     [exames, focoExame],
   );
 
+  /* UMA LINHA POR PESSOA. A tabela repetia o nome a cada exame: quem tem ASO e
+     periódico aparecia duas vezes, e os três "Exame Periódico" iguais do mesmo
+     colaborador viravam três linhas soltas com o mesmo nome — impossível
+     distinguir "esta pessoa tem dois exames" de "há duas linhas duplicadas".
+     Agrupado, a repetição do nome some e o que sobra na tela é a pessoa.
+     `examesVisiveis` já vem do mais urgente para o menos, e o Map preserva a
+     ordem de inserção: cada pessoa herda a posição do seu exame mais urgente,
+     então quem vence antes continua no topo. */
+  const grupos = useMemo(() => {
+    const m = new Map<string, typeof examesVisiveis>();
+    for (const doc of examesVisiveis) {
+      const atual = m.get(doc.colaboradorId);
+      if (atual) atual.push(doc);
+      else m.set(doc.colaboradorId, [doc]);
+    }
+    return [...m.entries()].map(([colaboradorId, docs]) => ({ colaboradorId, docs }));
+  }, [examesVisiveis]);
+  const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
+  const alternarPessoa = (id: string) =>
+    setAbertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
   const abaProgramas = (
     <div className="space-y-6">
       {programas.length === 0 ? (
@@ -199,11 +221,26 @@ export default function SST() {
                 </tr>
               </thead>
               <tbody>
-                {examesVisiveis.map((doc) => {
-                  const situacao = situacaoDoc(doc.dataVencimento);
-                  return (
-                    <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                      <td className="td font-medium text-slate-700"><LinkFicha id={doc.colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">{d.nomeColab(doc.colaboradorId)}</LinkFicha></td>
+                {grupos.map(({ colaboradorId, docs }) => {
+                  const varios = docs.length > 1;
+                  const aberto = abertos.has(colaboradorId);
+                  /* A situação do GRUPO é a pior das linhas dele: com o grupo
+                     fechado, um selo "Válido" escondendo um exame vencido dentro
+                     seria pior do que não ter grupo nenhum. */
+                  const pior = docs
+                    .map((x) => situacaoDoc(x.dataVencimento))
+                    .reduce((a, b) => (["Vencido", "A vencer", "Válido"].indexOf(a) <= ["Vencido", "A vencer", "Válido"].indexOf(b) ? a : b));
+                  /* Uma pessoa com dois exames do MESMO tipo e MESMO vencimento
+                     é duplicata de digitação, não histórico. Dizer isso no grupo
+                     é o que faz o RH abrir e resolver. */
+                  const iguais = new Set(docs.map((x) => `${x.categoria}|${(x.dataVencimento ?? "").slice(0, 10)}`)).size < docs.length;
+                  const linhaExame = (doc: typeof docs[number], dentro: boolean) => {
+                    const situacao = situacaoDoc(doc.dataVencimento);
+                    return (
+                    <tr key={doc.id} className={cn("border-b border-slate-50 hover:bg-slate-50/50", dentro && "bg-slate-50/40")}>
+                      <td className={cn("td", dentro ? "pl-10 text-xs text-slate-400" : "font-medium text-slate-700")}>
+                        {dentro ? "—" : <LinkFicha id={doc.colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">{d.nomeColab(doc.colaboradorId)}</LinkFicha>}
+                      </td>
                       <td className="td text-slate-600">{doc.categoria}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataEmissao)}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataVencimento)}</td>
@@ -260,6 +297,48 @@ export default function SST() {
                         </td>
                       )}
                     </tr>
+                  );
+                  };
+
+                  // Uma pessoa, um exame: a linha de sempre, sem sanfona.
+                  if (!varios) return linhaExame(docs[0], false);
+
+                  return (
+                    <Fragment key={colaboradorId}>
+                      <tr className="border-b border-slate-100 bg-white hover:bg-slate-50/50">
+                        <td className="td">
+                          {/* Contêiner, não <button>: o nome é um link para a
+                              ficha, e link dentro de botão é HTML inválido. */}
+                          <span className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => alternarPessoa(colaboradorId)}
+                              aria-expanded={aberto}
+                              title={aberto ? "Recolher os exames desta pessoa" : `Ver os ${docs.length} exames desta pessoa`}
+                              className="rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand"
+                            >
+                              {aberto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </button>
+                            <LinkFicha id={colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">
+                              <span className="font-medium text-slate-700">{d.nomeColab(colaboradorId)}</span>
+                            </LinkFicha>
+                          </span>
+                        </td>
+                        <td className="td text-sm text-slate-500">
+                          {docs.length} exames
+                          {iguais && (
+                            <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200"
+                              title="Há mais de um exame do mesmo tipo com o mesmo vencimento — provavelmente duplicado.">
+                              repetido
+                            </span>
+                          )}
+                        </td>
+                        <td className="td" colSpan={3} />
+                        <td className="td text-right"><Badge variant={VARIANTE_SITUACAO[pior]}>{pior}</Badge></td>
+                        {gere && <td className="td" />}
+                      </tr>
+                      {aberto && docs.map((doc) => linhaExame(doc, true))}
+                    </Fragment>
                   );
                 })}
               </tbody>
