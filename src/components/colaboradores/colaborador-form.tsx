@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { useColecao } from "@/lib/store";
-import { useDominio, enquadrar } from "@/lib/dominio";
+import { useDominio, enquadrar, noQuadro } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
@@ -75,10 +75,28 @@ export function ColaboradorForm({
     () => d.cargos.filter((c) => c.areaId === form.areaId),
     [d.cargos, form.areaId],
   );
-  const gestoresPossiveis = useMemo(
-    () => d.colaboradores.filter((c) => c.id !== editar?.id),
+  /* Só quem está no quadro pode ser escolhido como gestor ou padrinho — a lista
+     vinha com a base INTEIRA e oferecia gente desligada, que ninguém quer
+     apontar como chefe ou mentor. A ficha (ColaboradorFicha) já usava esta
+     régua; este formulário tinha ficado para trás. */
+  const noQuadroMenosEu = useMemo(
+    () => d.colaboradores.filter((c) => c.id !== editar?.id && noQuadro(c)),
     [d.colaboradores, editar],
   );
+
+  /* Quem JÁ ESTÁ gravado no campo continua na lista mesmo tendo saído. Sem esta
+     exceção o <select> não acharia a option e exibiria a PRIMEIRA da lista,
+     enquanto o dado gravado continua o outro: a tela mostrando um chefe e o
+     cadastro guardando outro — e quem salvasse qualquer campo trocaria o gestor
+     sem perceber. Ele aparece para poder ser CORRIGIDO, não escondido.
+     Cada campo tem o seu, porque gestor e padrinho não são a mesma pessoa. */
+  const comOAtual = (atual?: string | null) => {
+    if (!atual || noQuadroMenosEu.some((c) => c.id === atual)) return noQuadroMenosEu;
+    const fora = d.colabById.get(atual);
+    return fora ? [...noQuadroMenosEu, fora] : noQuadroMenosEu;
+  };
+  const gestoresPossiveis = comOAtual(form.gestorId);
+  const padrinhosPossiveis = comOAtual(form.padrinhoId);
 
   const salvar = () => {
     if (!form.nome?.trim()) {
@@ -343,7 +361,7 @@ export function ColaboradorForm({
           <Campo label="Padrinho (mentor)">
             <Select value={form.padrinhoId ?? ""} onChange={(e) => set({ padrinhoId: e.target.value || null })}>
               <option value="">— nenhum —</option>
-              {gestoresPossiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              {padrinhosPossiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </Select>
           </Campo>
           <Campo label="Subárea" hint="Financeiro, RH, Compras…">

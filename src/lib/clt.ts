@@ -119,45 +119,78 @@ export function situacaoFerias(
   // risco de vencer. Olhar só o período mais recente escondia justamente o caso
   // grave: quem acumulou um período antigo nunca tirado (o que paga em dobro).
   const ciclos = Math.floor(mesesDeCasa / 12);
-  let ultimo: SituacaoFerias | null = null;
-  for (let i = 1; i <= ciclos; i++) {
+  const periodos = Array.from({ length: ciclos }, (_, k) => {
+    const i = k + 1;
     const direitoDesde = somaMeses(adm, i * 12);
-    const limiteConcessao = somaMeses(direitoDesde, 12);
-    // Quantos dias foram gozados dentro da janela de concessão deste período
-    // (férias partidas em 15+15 somam). Só está quitado quem chegou aos 30 —
-    // ou quem não registrou os dias mas tem um gozo lançado, para não passar a
-    // gritar com a base antiga, em que `diasGozados` costuma vir zerado.
-    // Janela do período: do nascimento do direito até o direito SEGUINTE. Um
-    // gozo lançado depois do limite de concessão também quita o período —
-    // férias vencidas concedidas em atraso (pagas em dobro) continuam sendo
-    // férias tiradas. Sem isto, agendar as férias vencidas não apagava o aviso:
-    // o "VENCIDAS há 567 dias" ficava para sempre e a sugestão travava no
-    // período mais antigo, sem deixar lançar os seguintes.
-    const fimDaJanela = somaMeses(direitoDesde, 24); // 12 de concessão + 12 de atraso tolerado
-    const naJanela = gozos.filter(
-      (g) => g.inicio.getTime() >= direitoDesde.getTime() && g.inicio.getTime() < fimDaJanela.getTime(),
-    );
-    const diasGozados = naJanela.reduce((soma, g) => soma + g.dias, 0);
-    const semRegistroDeDias = naJanela.length > 0 && diasGozados === 0;
-    const jaGozou = semRegistroDeDias || diasGozados >= DIAS_FERIAS;
-    const diasParaLimite = dias(ate, limiteConcessao);
-    // Período cujo prazo de concessão acabou ANTES de o sistema ter qualquer
-    // registro de férias: não dá para dizer que venceu, só que não está aqui.
-    // Afirmar "venceu" seria inventar; some do alerta e vira informação.
-    const foraDoHistorico = !jaGozou && !!desde &&
-      naJanela.length === 0 && limiteConcessao.getTime() < desde.getTime();
+    return {
+      aquisitivoInicio: somaMeses(adm, (i - 1) * 12),
+      direitoDesde,
+      limiteConcessao: somaMeses(direitoDesde, 12),
+      creditados: 0,
+      gozoSemDias: false,
+    };
+  });
+
+  /* Cada dia gozado abate o período EM ABERTO MAIS ANTIGO cujo direito já havia
+     nascido na data do gozo (FIFO — é assim que se acerta férias atrasadas).
+     Férias partidas em 15+15 somam, e um gozo grande transborda para o período
+     seguinte.
+   *
+   * Antes, cada período só olhava os gozos dentro de uma janela fixa de 24 meses
+   * (12 de concessão + 12 de atraso tolerado). Quem regularizou com MAIS atraso
+   * que isso — que é justamente quem estava pior — nunca quitava o período: o
+   * gozo caía fora da janela, era creditado ao período seguinte, e a ficha
+   * seguia estampando "Férias VENCIDAS há 940 dia(s)" para alguém que tinha
+   * tirado as férias. O aviso não tinha como sair da tela, e ainda afirmava
+   * "por lei, o pagamento é em dobro" sobre um período já concedido.
+   *
+   * A data do gozo continua importando para uma coisa só: ninguém goza um
+   * período cujo direito ainda não nasceu. */
+  /* Período cujo prazo de concessão acabou ANTES de o sistema ter qualquer
+     registro de férias. Não está "em aberto": é DESCONHECIDO. Por isso ele não
+     recebe abatimento — senão um gozo de 2026 quitaria um período de 2015 sobre
+     o qual o sistema não sabe nada, e o período de 2025, que ele sabe julgar,
+     ficaria descoberto e apareceria como vencido. */
+  const desconhecido = (p: { limiteConcessao: Date }) =>
+    !!desde && p.limiteConcessao.getTime() < desde.getTime();
+
+  for (const g of [...gozos].sort((a, b) => a.inicio.getTime() - b.inicio.getTime())) {
+    let restante = g.dias;
+    for (const p of periodos) {
+      if (p.direitoDesde.getTime() > g.inicio.getTime()) break; // direito ainda não nascido
+      if (desconhecido(p)) continue;
+      const quitado = p.gozoSemDias || p.creditados >= DIAS_FERIAS;
+      if (quitado) continue;
+      /* Base antiga: gozo lançado sem `diasGozados`. Não dá para somar nada, mas
+         também não dá para ignorar — senão o sistema passaria a gritar com todo
+         registro antigo. Vale como quitação do período mais antigo em aberto. */
+      if (g.dias === 0) { p.gozoSemDias = true; break; }
+      if (restante <= 0) break;
+      const usa = Math.min(DIAS_FERIAS - p.creditados, restante);
+      p.creditados += usa;
+      restante -= usa;
+    }
+  }
+
+  let ultimo: SituacaoFerias | null = null;
+  for (const p of periodos) {
+    const jaGozou = p.gozoSemDias || p.creditados >= DIAS_FERIAS;
+    const diasParaLimite = dias(ate, p.limiteConcessao);
+    // Sem registro no período: não dá para dizer que venceu, só que não está
+    // aqui. Afirmar "venceu" seria inventar; some do alerta e vira informação.
+    const foraDoHistorico = !jaGozou && desconhecido(p);
     const situacao: SituacaoFerias["situacao"] = jaGozou
       ? "em-dia"
       : foraDoHistorico ? "sem-registro"
       : diasParaLimite < 0 ? "vencida" : diasParaLimite <= 90 ? "a-vencer" : "em-dia";
     const atual: SituacaoFerias = {
-      aquisitivoInicio: somaMeses(adm, (i - 1) * 12),
-      direitoDesde,
-      limiteConcessao,
+      aquisitivoInicio: p.aquisitivoInicio,
+      direitoDesde: p.direitoDesde,
+      limiteConcessao: p.limiteConcessao,
       diasParaLimite,
       jaGozou,
-      diasGozados,
-      diasEmAberto: Math.max(0, DIAS_FERIAS - (semRegistroDeDias ? DIAS_FERIAS : diasGozados)),
+      diasGozados: p.gozoSemDias ? DIAS_FERIAS : p.creditados,
+      diasEmAberto: Math.max(0, DIAS_FERIAS - (p.gozoSemDias ? DIAS_FERIAS : p.creditados)),
       situacao,
     };
     // O mais antigo EM ABERTO é o que importa — mas um período sem histórico

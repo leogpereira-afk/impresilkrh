@@ -1592,7 +1592,10 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
   // "Novo período" gravava 2025-06-01 → 2026-05-31 CHUMBADO no código: todo
   // mundo recebia o mesmo período, errado para quase todos.
   const colab = d.colabById.get(colaboradorId);
-  const sit = colab ? situacaoFerias(colab, lista) : null;
+  // Com o corte de histórico, igual ao Resumo 360º: a sugestão de período tem de
+  // partir do mesmo julgamento que o alerta, senão o modal propõe um período que
+  // a tela ao lado considera desconhecido.
+  const sit = colab ? situacaoFerias(colab, lista, undefined, inicioDoHistorico(lista)) : null;
   const sugestao = (() => {
     if (sit) return { inicio: diaLocalISO(sit.aquisitivoInicio), fim: diaLocalISO(new Date(sit.direitoDesde.getTime() - 86400000)) };
     // Menos de 12 meses de casa: o primeiro aquisitivo é o ano a partir da admissão.

@@ -335,7 +335,11 @@ export default function Ferias() {
   const contexto = useMemo(() => {
     const colab = escopo.find((c) => c.id === colabId) || null;
     const dela = ferias.filter((f) => f.colaboradorId === colabId);
-    const sit = colab ? situacaoFerias(colab, dela) : null;
+    /* Com o corte de histórico, igual ao Resumo 360º da ficha. Sem ele, esta
+       tela julgava períodos anteriores ao primeiro registro do banco e dizia
+       "vencida" onde a ficha dizia "sem registro" — duas réguas para a mesma
+       pessoa, e a que aparecia dependia de por onde se entrava. */
+    const sit = colab ? situacaoFerias(colab, dela, undefined, inicioDoHistorico(ferias)) : null;
     return { colab, dela, sit };
   }, [colabId, escopo, ferias]);
 

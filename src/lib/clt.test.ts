@@ -169,6 +169,70 @@ describe("clt — correções da conferência", () => {
 // apontadas como vencidas, as 12 tinham o limite anterior ao primeiro registro
 // do banco — o alerta era 100% ruído.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Férias tiradas COM MUITO ATRASO precisam quitar o período. A conta antiga só
+// olhava os gozos dentro de uma janela fixa de 24 meses a partir do direito;
+// quem regularizou depois disso — justamente quem estava pior — nunca saía do
+// "VENCIDAS há N dias", e a ficha ainda afirmava "por lei, o pagamento é em
+// dobro" sobre um período já concedido. Agora cada dia gozado abate o período
+// em aberto MAIS ANTIGO (FIFO), que é como se acerta férias atrasadas.
+// ---------------------------------------------------------------------------
+describe("situacaoFerias — férias atrasadas quitam o período (FIFO)", () => {
+  const HOJE_F = new Date(2026, 7, 10); // 10/08/2026
+  const gozo = (inicio: string, dias: number): Ferias =>
+    ({ id: "g" + inicio, colaboradorId: "p1", dataInicio: inicio, diasGozados: dias, status: "Concluída" } as Ferias);
+
+  it("O CASO QUE IMPORTA: tirou as férias 2 anos atrasado — o período mais antigo sai da lista", () => {
+    // Admitido 13/01/2022 → 1º período vence 13/01/2024. Tirou 30 dias em
+    // março/2025 (14 meses depois do limite). Antes: seguia "vencida há 940
+    // dias" no MESMO período, como se nunca tivesse tirado.
+    const semGozo = situacaoFerias(pessoa("2022-01-13"), [], HOJE_F)!;
+    const comGozo = situacaoFerias(pessoa("2022-01-13"), [gozo("2025-03-03", 30)], HOJE_F)!;
+    expect(semGozo.limiteConcessao.getFullYear()).toBe(2024);
+    expect(comGozo.limiteConcessao.getFullYear()).toBe(2025); // andou para o período seguinte
+    expect(comGozo.diasParaLimite).toBeGreaterThan(semGozo.diasParaLimite);
+  });
+
+  it("quem tirou 30 dias todo ano está em dia", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"),
+      [gozo("2023-06-01", 30), gozo("2024-06-01", 30), gozo("2025-06-01", 30)], HOJE_F)!;
+    expect(s.situacao).toBe("em-dia");
+  });
+
+  it("15+15 no mesmo período somam 30 e quitam", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"),
+      [gozo("2023-06-01", 15), gozo("2023-11-01", 15)], HOJE_F)!;
+    // O 1º período (limite 13/01/2024) está quitado: o aberto agora é o seguinte.
+    expect(s.limiteConcessao.getFullYear()).toBe(2025);
+  });
+
+  it("meio período não quita: 15 dias deixam 15 em aberto", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"), [gozo("2023-06-01", 15)], HOJE_F)!;
+    expect(s.jaGozou).toBe(false);
+    expect(s.diasEmAberto).toBe(15);
+    expect(s.limiteConcessao.getFullYear()).toBe(2024); // ainda o 1º período
+  });
+
+  it("gozo grande transborda para o período seguinte", () => {
+    // 60 dias de uma vez quitam dois períodos.
+    const s = situacaoFerias(pessoa("2022-01-13"), [gozo("2025-03-03", 60)], HOJE_F)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2026);
+  });
+
+  it("não quita período cujo direito ainda não tinha nascido na data do gozo", () => {
+    // Gozo em 2023 não pode abater o período que só nasce em 2025.
+    const s = situacaoFerias(pessoa("2022-01-13"), [gozo("2023-06-01", 30)], HOJE_F)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2025);
+    expect(s.jaGozou).toBe(false);
+  });
+
+  it("férias canceladas não quitam nada", () => {
+    const cancelada = { ...gozo("2025-03-03", 30), status: "Cancelada" } as Ferias;
+    const s = situacaoFerias(pessoa("2022-01-13"), [cancelada], HOJE_F)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2024);
+  });
+});
+
 describe("situacaoFerias — sem histórico no sistema", () => {
   const HOJE_TESTE = new Date(2026, 7, 4);          // 04/08/2026
   const inicioBase = new Date(2025, 11, 6);         // 06/12/2025, como na produção
