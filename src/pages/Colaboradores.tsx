@@ -125,9 +125,12 @@ export default function Colaboradores() {
     for (const v of m.values()) v.tipos.sort((a, b) => b.valor - a.valor);
     return m;
   }, [pagamentos, mesCusto]);
-  // Resumo do quadro recolhido por padrão — a lista é o trabalho do dia a dia
-  // e vinha depois de uma tela inteira de cards. null = "o usuário ainda não
-  // mexeu": aí ele abre sozinho SÓ se houver experiência urgente para decidir.
+  /* Resumo do quadro ABERTO por padrão. Ele já veio recolhido, para a lista (o
+     trabalho do dia a dia) subir na tela — mas recolhido os cards somem, e eles
+     são o painel que responde "com quantas mãos eu conto hoje". Quem abria a
+     tela achava que os cards tinham sumido do sistema.
+     Continua sendo um acordeão: quem quiser a lista logo de cara recolhe, e a
+     escolha vale enquanto a tela estiver aberta. */
   const [resumoAberto, setResumoAberto] = useState<boolean | null>(null);
 
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
@@ -395,7 +398,7 @@ export default function Colaboradores() {
           por tempo indeterminado, isso não pode ficar atrás de um recolher. */}
       {(() => {
         const urgente = emExperiencia.some((e) => e.sit.diasParaFim <= 15);
-        const aberto = resumoAberto ?? urgente;
+        const aberto = resumoAberto ?? true; // `urgente` deixou de importar: agora abre sempre
         return (
           <Card className="mb-4 overflow-hidden">
             <button
@@ -779,12 +782,18 @@ export default function Colaboradores() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {lista.map((c) => {
+                {lista.map((c, i) => {
                   const custo = custoPorColab.get(c.id);
                   return (
                   <tr key={c.id} className="group transition hover:bg-slate-50/60">
                     <td className="td">
                       <Link to={`/colaboradores/${c.id}`} className="flex items-center gap-3">
+                        {/* Contador de POSIÇÃO na lista, não um código da pessoa:
+                            ele responde "quantos já conferi e quantos faltam" e
+                            acompanha o filtro e a ordenação. Um número fixo por
+                            colaborador seria outra coisa — viraria matrícula, e
+                            aí passaria a valer como identificação. */}
+                        <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{i + 1}</span>
                         <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-800">{c.nome}</p>

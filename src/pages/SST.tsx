@@ -120,9 +120,13 @@ export default function SST() {
      colaborador viravam três linhas soltas com o mesmo nome — impossível
      distinguir "esta pessoa tem dois exames" de "há duas linhas duplicadas".
      Agrupado, a repetição do nome some e o que sobra na tela é a pessoa.
-     `examesVisiveis` já vem do mais urgente para o menos, e o Map preserva a
-     ordem de inserção: cada pessoa herda a posição do seu exame mais urgente,
-     então quem vence antes continua no topo. */
+
+     A lista fica em ORDEM ALFABÉTICA e numerada: esta tela é usada para
+     conferir a casa inteira, pessoa por pessoa, e para isso o que importa é
+     achar um nome e saber quantos já passaram. A urgência não se perde — ela
+     está no selo de situação de cada linha, e os cards em cima filtram por
+     vencido / a vencer. DENTRO de cada pessoa os exames seguem por
+     vencimento, do que vence antes para o que vence depois. */
   const grupos = useMemo(() => {
     const m = new Map<string, typeof examesVisiveis>();
     for (const doc of examesVisiveis) {
@@ -130,8 +134,12 @@ export default function SST() {
       if (atual) atual.push(doc);
       else m.set(doc.colaboradorId, [doc]);
     }
-    return [...m.entries()].map(([colaboradorId, docs]) => ({ colaboradorId, docs }));
-  }, [examesVisiveis]);
+    return [...m.entries()]
+      .map(([colaboradorId, docs]) => ({ colaboradorId, nome: d.nomeColab(colaboradorId), docs }))
+      // localeCompare com pt-BR: sem isso "Ângela" cai depois de "Zuleica",
+      // porque a comparação crua ordena por código do caractere.
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [examesVisiveis, d]);
   const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
   const alternarPessoa = (id: string) =>
     setAbertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -221,7 +229,11 @@ export default function SST() {
                 </tr>
               </thead>
               <tbody>
-                {grupos.map(({ colaboradorId, docs }) => {
+                {grupos.map(({ colaboradorId, nome, docs }, i) => {
+                  /* O número é da PESSOA, não da linha: com os exames dentro do
+                     grupo, contar linhas diria 40 onde há 26 colaboradores. É
+                     ele que responde "quantos já conferi, quantos faltam". */
+                  const numero = i + 1;
                   const varios = docs.length > 1;
                   const aberto = abertos.has(colaboradorId);
                   /* A situação do GRUPO é a pior das linhas dele: com o grupo
@@ -239,7 +251,15 @@ export default function SST() {
                     return (
                     <tr key={doc.id} className={cn("border-b border-slate-50 hover:bg-slate-50/50", dentro && "bg-slate-50/40")}>
                       <td className={cn("td", dentro ? "pl-10 text-xs text-slate-400" : "font-medium text-slate-700")}>
-                        {dentro ? "—" : <LinkFicha id={doc.colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">{d.nomeColab(doc.colaboradorId)}</LinkFicha>}
+                        {dentro ? "—" : (
+                          <span className="flex items-center gap-2">
+                            {/* `tabular-nums` para os números ficarem alinhados
+                                em coluna; sem isso o 1 é mais estreito que o 8
+                                e a lista fica serrilhada. */}
+                            <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{numero}</span>
+                            <LinkFicha id={doc.colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">{nome}</LinkFicha>
+                          </span>
+                        )}
                       </td>
                       <td className="td text-slate-600">{doc.categoria}</td>
                       <td className="td tabular-nums text-slate-600">{formatDate(doc.dataEmissao)}</td>
@@ -310,17 +330,18 @@ export default function SST() {
                           {/* Contêiner, não <button>: o nome é um link para a
                               ficha, e link dentro de botão é HTML inválido. */}
                           <span className="flex items-center gap-2">
+                            <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{numero}</span>
                             <button
                               type="button"
                               onClick={() => alternarPessoa(colaboradorId)}
                               aria-expanded={aberto}
                               title={aberto ? "Recolher os exames desta pessoa" : `Ver os ${docs.length} exames desta pessoa`}
-                              className="rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand"
+                              className="-ml-1 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-brand"
                             >
                               {aberto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </button>
                             <LinkFicha id={colaboradorId} titulo="Abrir a ficha para ver documentos e avisar o gestor">
-                              <span className="font-medium text-slate-700">{d.nomeColab(colaboradorId)}</span>
+                              <span className="font-medium text-slate-700">{nome}</span>
                             </LinkFicha>
                           </span>
                         </td>
