@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  tiposDisponiveis, validarNovoTipo, ehPersonalizado, normalizarNomeTipo, TIPOS_DE_FABRICA,
+  tiposDisponiveis, validarNovoTipo, normalizarNomeTipo, TIPOS_DE_FABRICA,
 } from "@/lib/tiposEvento";
+
+/* Os tipos DERIVADOS do calendário (Calendario.tsx os passa como `reservados`).
+   A lib não os conhece sozinha — é justamente daí que veio o defeito. */
+const DERIVADOS = [
+  "Aniversário", "Tempo de empresa", "Documento vence", "NR vence",
+  "Experiência", "Férias — prazo CLT", "Férias", "Pagamento",
+];
 
 describe("tiposDisponiveis", () => {
   it("sem nada criado, devolve só os de fábrica", () => {
@@ -76,12 +83,32 @@ describe("validarNovoTipo", () => {
   });
 });
 
-describe("ehPersonalizado", () => {
-  it("os de fábrica não podem ser apagados", () => {
-    for (const t of TIPOS_DE_FABRICA) expect(ehPersonalizado(t.nome)).toBe(false);
+describe("nomes reservados pela tela (os tipos derivados)", () => {
+  it("O CASO QUE IMPORTA: não dá para criar um tipo com nome de derivado", () => {
+    // Sem os reservados, "Aniversário" era aceito: entrava na config, colidia com
+    // o derivado de mesmo nome na legenda, e a cor passava a depender de qual dos
+    // dois o código encontrasse primeiro.
+    for (const nome of DERIVADOS) {
+      const r = validarNovoTipo(nome, [], DERIVADOS);
+      expect(r.ok, `"${nome}" deveria ser recusado`).toBe(false);
+    }
   });
 
-  it("o que a empresa criou pode", () => {
-    expect(ehPersonalizado("Vistoria de extintor")).toBe(true);
+  it("recusa derivado com caixa e espaço diferentes", () => {
+    expect(validarNovoTipo("  aniversÁrio  ", [], DERIVADOS).ok).toBe(false);
+  });
+
+  it("um nome livre continua passando", () => {
+    expect(validarNovoTipo("Vistoria de extintor", [], DERIVADOS)).toEqual({ ok: true });
+  });
+
+  it("personalizado com nome de derivado não entra no seletor", () => {
+    const r = tiposDisponiveis([{ nome: "Pagamento", cor: "#f00" }], DERIVADOS);
+    expect(r).toHaveLength(TIPOS_DE_FABRICA.length);
+  });
+
+  it("sem passar reservados, o comportamento antigo segue valendo (fábrica só)", () => {
+    expect(validarNovoTipo("Reunião").ok).toBe(false);
+    expect(validarNovoTipo("Aniversário").ok).toBe(true);
   });
 });

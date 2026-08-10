@@ -30,6 +30,11 @@ concurrency:
 jobs:
   publicar:
     runs-on: ubuntu-latest
+    # O caminho antigo (actions/deploy-pages + environment github-pages) tinha a
+    # trava de branch do AMBIENTE, que só deixava `main` publicar. Publicando por
+    # branch essa trava não existe mais: sem esta condição, um workflow_dispatch
+    # de qualquer branch — inclusive uma de teste — iria direto para produção.
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 

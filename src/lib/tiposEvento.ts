@@ -34,15 +34,34 @@ export const COR_PADRAO_TIPO = "#64748b";
 export const normalizarNomeTipo = (s: string) => String(s ?? "").trim().replace(/\s+/g, " ");
 
 /**
+ * Nomes que o calendário JÁ USA e que ninguém pode reaproveitar — os de fábrica
+ * mais os `reservados` que a tela passa (os tipos DERIVADOS: Aniversário, NR
+ * vence, Pagamento…). A tela é dona dessa lista porque é lá que ela vive, com
+ * cor e ícone; passar por parâmetro evita manter a mesma lista em dois lugares
+ * e sair de sincronia.
+ */
+const nomesOcupados = (reservados: string[]) => {
+  const s = new Set(NOMES_DE_FABRICA);
+  for (const r of reservados) {
+    const n = normalizarNomeTipo(r).toLowerCase();
+    if (n) s.add(n);
+  }
+  return s;
+};
+
+/**
  * A lista completa para o seletor: os de fábrica primeiro, depois os criados
  * pela empresa, em ordem alfabética.
  *
- * Um personalizado com o MESMO nome de um de fábrica é ignorado — senão o
- * seletor mostraria "Reunião" duas vezes e a cor dependeria de qual das duas o
- * código encontrasse primeiro.
+ * Um personalizado com o MESMO nome de um de fábrica (ou de um reservado) é
+ * ignorado — senão o seletor mostraria "Reunião" duas vezes e a cor dependeria
+ * de qual das duas o código encontrasse primeiro.
  */
-export function tiposDisponiveis(personalizados: TipoPersonalizado[] = []): TipoPersonalizado[] {
-  const vistos = new Set(NOMES_DE_FABRICA);
+export function tiposDisponiveis(
+  personalizados: TipoPersonalizado[] = [],
+  reservados: string[] = [],
+): TipoPersonalizado[] {
+  const vistos = nomesOcupados(reservados);
   const extras: TipoPersonalizado[] = [];
   for (const t of personalizados) {
     const nome = normalizarNomeTipo(t?.nome);
@@ -55,22 +74,26 @@ export function tiposDisponiveis(personalizados: TipoPersonalizado[] = []): Tipo
   return [...TIPOS_DE_FABRICA, ...extras];
 }
 
-/** Pode criar um tipo com este nome? Devolve o motivo quando não. */
+/**
+ * Pode criar um tipo com este nome? Devolve o motivo quando não.
+ *
+ * `reservados` são os nomes que a tela já usa por conta própria. Sem eles dava
+ * para criar um tipo chamado "Aniversário": ele entrava na config, colidia com
+ * o tipo derivado de mesmo nome na legenda, e a cor passava a depender de qual
+ * dos dois o código achasse primeiro.
+ */
 export function validarNovoTipo(
   nome: string,
   personalizados: TipoPersonalizado[] = [],
+  reservados: string[] = [],
 ): { ok: true } | { ok: false; motivo: string } {
   const limpo = normalizarNomeTipo(nome);
   if (!limpo) return { ok: false, motivo: "Dê um nome ao tipo." };
   if (limpo.length > 40) return { ok: false, motivo: "O nome do tipo é longo demais (máximo 40 letras)." };
-  const existe = tiposDisponiveis(personalizados).some(
-    (t) => t.nome.toLowerCase() === limpo.toLowerCase(),
-  );
-  if (existe) return { ok: false, motivo: `Já existe um tipo chamado "${limpo}".` };
+  const ocupados = nomesOcupados(reservados);
+  if (ocupados.has(limpo.toLowerCase()) ||
+      personalizados.some((t) => normalizarNomeTipo(t?.nome).toLowerCase() === limpo.toLowerCase())) {
+    return { ok: false, motivo: `Já existe um tipo chamado "${limpo}".` };
+  }
   return { ok: true };
-}
-
-/** É um tipo criado pela empresa (e portanto removível)? */
-export function ehPersonalizado(nome: string): boolean {
-  return !NOMES_DE_FABRICA.has(normalizarNomeTipo(nome).toLowerCase());
 }

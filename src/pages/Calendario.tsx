@@ -11,6 +11,9 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
+/* salvarConfig só grava no navegador; quem leva a config para a nuvem é este.
+   Os dois andam sempre juntos (mesmo par de PainelControle.tsx e Custos.tsx). */
+import { enviarConfigNuvem } from "@/lib/sync";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
@@ -20,7 +23,7 @@ import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/cl
 import { diaDoPagamento, diaDoAdiantamento, feriadosDe, DIAS_UTEIS_PAGAMENTO } from "@/lib/diaPagamento";
 import { HOJE } from "@/data/_gen";
 import {
-  tiposDisponiveis, validarNovoTipo, normalizarNomeTipo, ehPersonalizado, COR_PADRAO_TIPO,
+  tiposDisponiveis, validarNovoTipo, normalizarNomeTipo, COR_PADRAO_TIPO,
   type TipoPersonalizado,
 } from "@/lib/tiposEvento";
 import type { EventoCalendario } from "@/data/types";
@@ -45,6 +48,11 @@ const TIPOS: { tipo: string; cor: string; Icon: React.ComponentType<{ className?
   // Os dois dias de dinheiro do mês, que a equipe inteira tem na cabeça.
   { tipo: "Pagamento", cor: "#047857", Icon: Banknote },
 ];
+/* Todos os nomes que ESTA TELA já usa. Um tipo criado pela empresa não pode
+   se chamar "Aniversário": ele colidiria com o derivado de mesmo nome, e a cor
+   passaria a depender de qual dos dois o código encontrasse primeiro. */
+const NOMES_RESERVADOS = TIPOS.map((t) => t.tipo);
+
 /* Tipos que começam ESCONDIDOS. O calendário é para bater o olho e ver o que
    exige ação; quem sai de férias é consulta — aparece quando se pede. */
 const OCULTOS_POR_PADRAO = new Set(["Férias"]);
@@ -288,7 +296,14 @@ export default function Calendario() {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {tiposDaLegenda.map((t) => {
             const on = !escondidos.has(t.tipo);
-            const removivel = gere && ehPersonalizado(t.tipo);
+            /* Removível é quem ESTÁ na lista de personalizados — não "quem não
+               é de fábrica". A versão anterior perguntava à lib, que só conhece
+               os 5 tipos de fábrica dela e desconhece os 8 DERIVADOS desta tela
+               (Aniversário, NR vence, Pagamento…): os 8 passavam por "criados
+               pela empresa" e ganhavam um "×" que prometia apagar e não apagava
+               nada — o filtro do onConfirmar não encontrava o nome, e mesmo
+               assim saía o aviso "Tipo apagado". */
+            const removivel = gere && personalizados.some((p) => p.nome === t.tipo);
             return (
               /* Contêiner, não <button>: o "x" de apagar é um botão próprio, e
                  botão dentro de botão é HTML inválido — o navegador desmonta a
@@ -338,6 +353,18 @@ export default function Calendario() {
           if (!apagarTipo) return;
           salvarConfig({
             tiposEventoPersonalizados: personalizados.filter((t) => t.nome !== apagarTipo),
+          });
+          /* salvarConfig só escreve NESTE navegador. Sem isto o tipo continuava
+             existindo nos outros aparelhos, e a próxima config que subisse de
+             qualquer máquina ressuscitava o que acabou de ser apagado. */
+          void enviarConfigNuvem();
+          /* O diálogo promete que os eventos continuam aparecendo. Se o tipo
+             estava ESCONDIDO na hora de apagar, o nome seguia em `escondidos` —
+             sem entrada na legenda, não havia mais como reexibi-lo, e os eventos
+             sumiam de vez, ao contrário do que a tela acabou de garantir. */
+          setEscondidos((s) => {
+            if (!s.has(apagarTipo)) return s;
+            const n = new Set(s); n.delete(apagarTipo); return n;
           });
           toast(`Tipo "${apagarTipo}" apagado.`);
           setApagarTipo(null);
@@ -465,7 +492,20 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
     () => config.tiposEventoPersonalizados ?? [],
     [config.tiposEventoPersonalizados],
   );
-  const tipos = useMemo(() => tiposDisponiveis(personalizados), [personalizados]);
+  const tipos = useMemo(() => tiposDisponiveis(personalizados, NOMES_RESERVADOS), [personalizados]);
+  /* O tipo do evento que está sendo editado pode NÃO estar na lista — foi
+     apagado, ou foi criado noutro aparelho e a config ainda não chegou aqui.
+     Sem esta entrada o <select> não acha a option correspondente e mostra a
+     PRIMEIRA ("Comemorativa"), enquanto o dado gravado continua o original:
+     a tela afirma um tipo e o registro guarda outro, e quem mexer noutro campo
+     e salvar acha que confirmou o que estava lendo. */
+  const tipoAtual = form.tipo?.trim();
+  const opcoes = useMemo(
+    () => (tipoAtual && !tipos.some((t) => t.nome === tipoAtual)
+      ? [...tipos, { nome: tipoAtual, cor: COR_PADRAO_TIPO }]
+      : tipos),
+    [tipos, tipoAtual],
+  );
   const [criandoTipo, setCriandoTipo] = useState(false);
   const [novoNome, setNovoNome] = useState("");
   const [novaCor, setNovaCor] = useState("#7c3aed");
@@ -473,10 +513,16 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
   const cancelarNovoTipo = () => { setCriandoTipo(false); setNovoNome(""); };
 
   const criarTipo = () => {
-    const check = validarNovoTipo(novoNome, personalizados);
+    const check = validarNovoTipo(novoNome, personalizados, NOMES_RESERVADOS);
     if (!check.ok) return toast(check.motivo, "erro");
     const nome = normalizarNomeTipo(novoNome);
     salvarConfig({ tiposEventoPersonalizados: [...personalizados, { nome, cor: novaCor }] });
+    /* salvarConfig só escreve NESTE navegador — quem sobe a config é
+       enviarConfigNuvem (mesmo par usado em PainelControle e Custos). Sem isto o
+       EVENTO subia (é coleção, entra na fila de sync) e o TIPO dele não: na
+       máquina da direção o aviso aparecia cinza, fora da legenda e sem filtro —
+       exatamente o "vira Outro e perde a cor" que este recurso veio resolver. */
+    void enviarConfigNuvem();
     set({ tipo: nome }); // já deixa selecionado: foi para isso que ela criou
     cancelarNovoTipo();
     toast(`Tipo "${nome}" criado.`);
@@ -523,7 +569,7 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
                 set({ tipo: e.target.value });
               }}
             >
-              {tipos.map((t) => <option key={t.nome} value={t.nome}>{t.nome}</option>)}
+              {opcoes.map((t) => <option key={t.nome} value={t.nome}>{t.nome}</option>)}
               <option value={NOVO_TIPO}>+ Novo tipo…</option>
             </Select>
           </Campo>
