@@ -14,6 +14,7 @@ import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 /* salvarConfig só grava no navegador; quem leva a config para a nuvem é este.
    Os dois andam sempre juntos (mesmo par de PainelControle.tsx e Custos.tsx). */
 import { enviarConfigNuvem } from "@/lib/sync";
+import { visivel, alternarFoco, esquecerTipo } from "@/lib/focoCalendario";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
@@ -104,14 +105,11 @@ export default function Calendario() {
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<EventoCalendario | null>(null);
   const [apagarTipo, setApagarTipo] = useState<string | null>(null);
-  /* Guarda os ESCONDIDOS, não os visíveis. Com a lista de visíveis, um tipo
-     criado depois não estava nela e os eventos dele nasciam invisíveis — a
-     pessoa criava o tipo, lançava o aviso e não via nada aparecer. Guardando o
-     avesso, o que é novo aparece por padrão, que é o que se espera. */
-  const [escondidos, setEscondidos] = useState<Set<string>>(() => new Set(OCULTOS_POR_PADRAO));
-  const alternarTipo = (t: string) =>
-    setEscondidos((s) => { const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n; });
-  const tudoEscondido = tiposDaLegenda.every((t) => escondidos.has(t.tipo));
+  /* Os tipos que a pessoa escolheu ISOLAR. Vazio = vista padrão. A regra e o
+     porquê estão em lib/focoCalendario.ts, com testes. */
+  const [foco, setFoco] = useState<Set<string>>(() => new Set());
+  const alternarTipo = (t: string) => setFoco((s) => alternarFoco(s, t));
+  const mostrando = (t: string) => visivel(t, foco, OCULTOS_POR_PADRAO);
 
   // Eventos do mês = aniversários + tempo de empresa (derivados) + eventos salvos.
   const itens = useMemo<Item[]>(() => {
@@ -256,9 +254,9 @@ export default function Calendario() {
     });
 
     return out
-      .filter((x) => !escondidos.has(x.tipo))
+      .filter((x) => visivel(x.tipo, foco, OCULTOS_POR_PADRAO))
       .sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d, eventos, documentos, certificacoes, ferias, ano, mes, escondidos]);
+  }, [d, eventos, documentos, certificacoes, ferias, ano, mes, foco]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();
@@ -279,7 +277,7 @@ export default function Calendario() {
 
   return (
     <div>
-      <PageHeader title="Calendário" description="Aniversários, vencimentos, pagamentos e férias. Clique na legenda para mostrar ou esconder cada tipo.">
+      <PageHeader title="Calendário" description="Aniversários, vencimentos, pagamentos e férias. Clique na legenda para ver só um tipo.">
         {gere && <button className="btn-primary" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo evento</button>}
       </PageHeader>
 
@@ -290,12 +288,15 @@ export default function Calendario() {
           <button className="btn-outline px-2" onClick={() => navMes(1)} aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button>
           <button className="btn-ghost text-sm" onClick={() => { setMes(HOJE.getMonth()); setAno(HOJE.getFullYear()); }}>Hoje</button>
         </div>
-        {/* A legenda VIROU o seletor: clicar liga e desliga o tipo. Era só
-            enfeite, e o calendário não tinha como filtrar nada. Desligado fica
-            apagado e riscado, para a diferença ser óbvia sem precisar contar. */}
+        {/* A legenda É o filtro: clicar num selo mostra SÓ aquele tipo, e clicar
+            em mais de um soma. Antes o clique escondia — para ver só os
+            aniversários era preciso desligar os outros onze, um a um, e depois
+            religar os onze. O selo apagado e riscado é o que NÃO está no quadro
+            agora, para a diferença ser óbvia sem precisar contar. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {tiposDaLegenda.map((t) => {
-            const on = !escondidos.has(t.tipo);
+            const on = mostrando(t.tipo);
+            const focado = foco.has(t.tipo);
             /* Removível é quem ESTÁ na lista de personalizados — não "quem não
                é de fábrica". A versão anterior perguntava à lib, que só conhece
                os 5 tipos de fábrica dela e desconhece os 8 DERIVADOS desta tela
@@ -312,15 +313,18 @@ export default function Calendario() {
                 key={t.tipo}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition",
-                  on ? "border-slate-200 text-slate-600 hover:bg-slate-50"
-                     : "border-dashed border-slate-200 text-slate-300 line-through hover:text-slate-400",
+                  focado ? "border-brand bg-brand/5 font-medium text-brand-ink"
+                    : on ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      : "border-dashed border-slate-200 text-slate-300 line-through hover:text-slate-400",
                 )}
               >
                 <button
                   type="button"
                   onClick={() => alternarTipo(t.tipo)}
-                  aria-pressed={on}
-                  title={on ? `Esconder ${t.tipo}` : `Mostrar ${t.tipo}`}
+                  aria-pressed={focado}
+                  title={focado
+                    ? (foco.size === 1 ? "Voltar a ver todos" : `Tirar ${t.tipo} do filtro`)
+                    : (foco.size ? `Somar ${t.tipo} ao filtro` : `Ver só ${t.tipo}`)}
                   className="inline-flex items-center gap-1.5"
                 >
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: on ? t.cor : "#cbd5e1" }} />
@@ -343,6 +347,18 @@ export default function Calendario() {
               </span>
             );
           })}
+          {/* Com o filtro ligado é preciso ter UMA saída óbvia. Sem isto a pessoa
+              teria que lembrar em quais selos clicou para desfazer um a um — o
+              mesmo trabalho que este recurso veio eliminar. */}
+          {foco.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setFoco(new Set())}
+              className="ml-1 rounded-full px-2 py-0.5 text-xs font-medium text-brand underline-offset-2 hover:underline"
+            >
+              Ver todos
+            </button>
+          )}
         </div>
       </div>
 
@@ -358,14 +374,10 @@ export default function Calendario() {
              existindo nos outros aparelhos, e a próxima config que subisse de
              qualquer máquina ressuscitava o que acabou de ser apagado. */
           void enviarConfigNuvem();
-          /* O diálogo promete que os eventos continuam aparecendo. Se o tipo
-             estava ESCONDIDO na hora de apagar, o nome seguia em `escondidos` —
-             sem entrada na legenda, não havia mais como reexibi-lo, e os eventos
-             sumiam de vez, ao contrário do que a tela acabou de garantir. */
-          setEscondidos((s) => {
-            if (!s.has(apagarTipo)) return s;
-            const n = new Set(s); n.delete(apagarTipo); return n;
-          });
+          /* Apagar um tipo que estava EM FOCO deixaria o quadro filtrado por um
+             nome que não tem mais selo: nada apareceria e não haveria onde
+             clicar para desfazer. */
+          setFoco((s) => esquecerTipo(s, apagarTipo));
           toast(`Tipo "${apagarTipo}" apagado.`);
           setApagarTipo(null);
         }}
@@ -428,10 +440,13 @@ export default function Calendario() {
         <CardHeader title={`Tudo de ${MESES_PT[mes]}`} subtitle="Lista completa do mês, em ordem de data" icon={<CalendarDays className="h-[18px] w-[18px]" />} />
         <CardBody>
           {itens.length === 0 ? (
+            /* Vazio POR FILTRO e vazio DE VERDADE são coisas diferentes: dizer
+               "nada marcado neste mês" com o filtro ligado faz a pessoa concluir
+               que o mês está livre quando ela mesma escondeu o resto. */
             <EmptyState
-              title={tudoEscondido ? "Tudo escondido" : "Nada marcado neste mês"}
-              description={tudoEscondido
-                ? "Clique na legenda acima para mostrar os tipos de novo."
+              title={foco.size > 0 ? "Nada deste tipo neste mês" : "Nada marcado neste mês"}
+              description={foco.size > 0
+                ? `O filtro está mostrando só ${[...foco].join(", ")}. Clique em “Ver todos” na legenda acima.`
                 : "Use “Novo evento” para adicionar reuniões e datas comemorativas."}
               icon={<CalendarDays className="h-8 w-8" />}
             />
