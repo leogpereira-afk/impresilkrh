@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse, Hourglass, CalendarOff } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, Palmtree, UserCheck, UserX, HeartPulse, Hourglass, CalendarOff, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -15,6 +15,7 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
 import { TIPOS_ENCARGO, corDoTipo, competenciaLabel } from "@/lib/folha";
+import { foraDaExperiencia, explicar as explicarForaDaExperiencia, type ForaDaExperiencia } from "@/lib/foraDaExperiencia";
 import { situacaoExperiencia, type SituacaoExperiencia } from "@/lib/clt";
 import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
@@ -176,6 +177,22 @@ export default function Colaboradores() {
   // descobre quem por acaso abrir a ficha certa.
   const semAdmissao = useMemo(
     () => escopo.filter((c) => !c.ehDirecao && !ehInativo(c) && !c.dataAdmissao),
+    [escopo],
+  );
+
+  /* Marcado à mão como "Em experiência", mas as DATAS dizem outra coisa. Estas
+     pessoas sumiam do bloco acima sem nada na tela dizendo por quê — e o selo do
+     topo, que conta o bloco e não o status, dizia "5 em experiência" enquanto o
+     cadastro tinha seis assim. Quem abrisse a ficha do sexto via "Em
+     experiência" e não entendia a diferença.
+     O caso mais grave cai justamente aqui: passar dos 90 dias sem decidir torna
+     o contrato indeterminado sozinho, e era exatamente nesse momento que a
+     pessoa desaparecia do aviso. */
+  const experienciaIncoerente = useMemo(
+    () => escopo
+      .filter((c) => !c.ehDirecao && !ehInativo(c) && c.statusId === "experiencia" && c.dataAdmissao)
+      .map((c) => ({ c, fora: foraDaExperiencia(c) }))
+      .filter((x): x is { c: Colaborador; fora: ForaDaExperiencia } => !!x.fora),
     [escopo],
   );
 
@@ -390,6 +407,11 @@ export default function Colaboradores() {
                     {semAdmissao.length} sem admissão
                   </span>
                 )}
+                {experienciaIncoerente.length > 0 && (
+                  <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700 ring-1 ring-orange-200">
+                    {experienciaIncoerente.length} com status a acertar
+                  </span>
+                )}
                 {(foco || chips.size > 0) && (
                   <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand">filtros ativos aqui dentro</span>
                 )}
@@ -461,6 +483,44 @@ export default function Colaboradores() {
           <p className="mt-2 text-[11px] text-slate-500">
             Marco dos 45 dias: decidir se prorroga. Marco dos 90: efetivar ou desligar. Clique no nome para abrir a ficha.
           </p>
+        </div>
+      )}
+
+      {/* STATUS DIZ EXPERIÊNCIA, AS DATAS DIZEM OUTRA COISA — some do bloco
+          acima em silêncio, inclusive no caso mais caro (passou dos 90 dias). */}
+      {experienciaIncoerente.length > 0 && (
+        <div className="mb-4 rounded-2xl border-2 border-orange-300 bg-orange-50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
+              <AlertTriangle className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-base font-bold text-slate-800">
+                {experienciaIncoerente.length === 1
+                  ? "1 pessoa está marcada como “Em experiência”, mas as datas dizem outra coisa"
+                  : `${experienciaIncoerente.length} pessoas estão marcadas como “Em experiência”, mas as datas dizem outra coisa`}
+              </p>
+              <p className="text-xs text-slate-600">
+                Elas não entram no aviso acima — o prazo é contado pela data de admissão, não pelo status. Abra a ficha para acertar.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {experienciaIncoerente.map(({ c, fora }) => (
+              <Link
+                key={c.id}
+                to={`/colaboradores/${c.id}`}
+                className="flex items-center gap-3 rounded-xl border border-orange-200 bg-white p-3 transition hover:shadow-md"
+              >
+                <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-800">{c.nome}</p>
+                  <p className="text-[11px] text-slate-500">{explicarForaDaExperiencia(fora)}</p>
+                </div>
+                <span className="shrink-0 text-[11px] font-semibold text-brand">Acertar</span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 
