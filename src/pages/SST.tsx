@@ -366,7 +366,13 @@ function ModalEditarExame({
   const jaExiste = exameDuplicado(outrosExames, {
     id: doc.id, colaboradorId: doc.colaboradorId, categoria, dataVencimento: vencimento,
   });
-  const [confirmouDuplicata, setConfirmouDuplicata] = useState(false);
+  /* Guarda QUAL conflito foi confirmado, não um simples "já confirmei". Com um
+     booleano, depois do primeiro aviso a pessoa podia trocar a data para OUTRA
+     que também colide e gravar sem aviso nenhum — a trava valia uma vez só por
+     abertura do modal. */
+  const [duplicataConfirmada, setDuplicataConfirmada] = useState<string | null>(null);
+  const chaveDuplicata = `${categoria}|${vencimento}`;
+  const precisaConfirmar = !!jaExiste && duplicataConfirmada !== chaveDuplicata;
 
   const salvar = () => {
     // Vencimento antes da emissão quase sempre é dedo trocado — e deixaria o
@@ -378,8 +384,8 @@ function ModalEditarExame({
     /* Avisa, não impede: 2ª via e exame refeito são motivos legítimos. O
        primeiro clique explica, o segundo grava — sem tirar a decisão de quem
        está olhando a ficha. */
-    if (jaExiste && !confirmouDuplicata) {
-      setConfirmouDuplicata(true);
+    if (precisaConfirmar) {
+      setDuplicataConfirmada(chaveDuplicata);
       toast(`${nome} já tem outro “${categoria}” vencendo neste mesmo dia. Clique em Salvar de novo para gravar assim mesmo.`, "erro");
       return;
     }
@@ -395,6 +401,14 @@ function ModalEditarExame({
   const avisar = () => {
     if (!tel) return toast("Este colaborador não tem um telefone válido no cadastro.", "erro");
     if (!agendado) return toast("Informe a data e a hora antes de avisar.", "erro");
+    /* Este botão TAMBÉM grava. Sem a mesma trava, bastava usar "Salvar e avisar"
+       em vez de "Salvar" para criar a linha duplicada sem nenhum aviso — uma
+       trava que só cobre um dos dois caminhos de gravação não trava nada. */
+    if (precisaConfirmar) {
+      setDuplicataConfirmada(chaveDuplicata);
+      toast(`${nome} já tem outro “${categoria}” vencendo neste mesmo dia. Clique de novo para gravar assim mesmo.`, "erro");
+      return;
+    }
     onSalvar({
       categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null,
       agendadoPara: agendado || null, clinica: clinica.trim() || null, localExame: local.trim() || null,

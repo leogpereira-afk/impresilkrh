@@ -15,7 +15,7 @@ import { useColecao, useConfig, salvarConfig } from "@/lib/store";
    Os dois andam sempre juntos (mesmo par de PainelControle.tsx e Custos.tsx). */
 import { enviarConfigNuvem } from "@/lib/sync";
 import { visivel, alternarFoco, esquecerTipo } from "@/lib/focoCalendario";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
 import { cn } from "@/lib/cn";
@@ -110,12 +110,20 @@ export default function Calendario() {
   const alternarTipo = (t: string) => setFoco((s) => alternarFoco(s, t));
   const mostrando = (t: string) => visivel(t, foco);
 
-  /* Quem ainda está no quadro. Aniversário, tempo de casa, experiência e prazo
-     de férias já saíam de `d.ativos`; documento, NR e período de férias, não —
-     percorriam a coleção inteira e resolviam o nome com `d.nomeColab`. O quadro
-     do mês exibia o nome de gente DESLIGADA como se fosse pendência da casa, e
-     ninguém entendia por que o vencimento de alguém que saiu ainda cobrava. */
-  const noQuadro = useMemo(() => new Set(d.ativos.map((c) => c.id)), [d.ativos]);
+  /* Quem ainda está no quadro. Documento, NR e período de férias percorriam a
+     coleção inteira e resolviam o nome com `d.nomeColab`: o quadro do mês exibia
+     o nome de gente DESLIGADA como se fosse pendência da casa.
+   *
+   * A régua é `noQuadro` (não saiu da empresa), NÃO `d.ativos`. `d.ativos` é
+   * HEADCOUNT — exclui quem está afastado e quem está com status que não conta
+   * na folha. São réguas diferentes e hoje isso vale 4 pessoas reais: afastado
+   * continua empregado, e o ASO dele vencendo continua sendo problema da
+   * empresa. Usar o headcount aqui fazia o vencimento dessas pessoas sumir do
+   * calendário — o mesmo tipo de sumiço silencioso que este bloco veio corrigir. */
+  const noQuadroIds = useMemo(
+    () => new Set(d.colaboradores.filter((c) => !c.ehDirecao && noQuadro(c)).map((c) => c.id)),
+    [d.colaboradores],
+  );
 
   // Eventos do mês = aniversários + tempo de empresa (derivados) + eventos salvos.
   const itens = useMemo<Item[]>(() => {
@@ -156,7 +164,7 @@ export default function Calendario() {
       if (!dt) continue;
       /* Documento SEM colaborador é da empresa e continua valendo. Com
          colaborador, só entra se a pessoa ainda estiver no quadro. */
-      if (doc.colaboradorId && !noQuadro.has(doc.colaboradorId)) continue;
+      if (doc.colaboradorId && !noQuadroIds.has(doc.colaboradorId)) continue;
       const nome = doc.colaboradorId ? d.nomeColab(doc.colaboradorId) : "Documento da empresa";
       out.push({
         dia: dt.getDate(), tipo: "Documento vence",
@@ -168,7 +176,7 @@ export default function Calendario() {
     for (const c of certificacoes) {
       const dt = noMes(c.dataValidade);
       if (!dt) continue;
-      if (!noQuadro.has(c.colaboradorId)) continue;
+      if (!noQuadroIds.has(c.colaboradorId)) continue;
       out.push({
         dia: dt.getDate(), tipo: "NR vence",
         titulo: d.nomeColab(c.colaboradorId),
@@ -218,7 +226,7 @@ export default function Calendario() {
        calendário também serve para olhar para trás. */
     for (const f of ferias) {
       if (f.status === "Cancelada") continue;
-      if (!noQuadro.has(f.colaboradorId)) continue;
+      if (!noQuadroIds.has(f.colaboradorId)) continue;
       const nome = d.nomeColab(f.colaboradorId);
       const ini = noMes(f.dataInicio);
       const ret = noMes(f.dataRetorno);
@@ -267,7 +275,7 @@ export default function Calendario() {
     return out
       .filter((x) => visivel(x.tipo, foco))
       .sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d, noQuadro, eventos, documentos, certificacoes, ferias, ano, mes, foco]);
+  }, [d, noQuadroIds, eventos, documentos, certificacoes, ferias, ano, mes, foco]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();

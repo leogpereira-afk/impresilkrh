@@ -411,7 +411,14 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
       // "VENCIDAS há 3.847 dias" na cara de quem abre a ficha.
       grave: sFerias.situacao === "vencida",
       texto: sFerias.situacao === "vencida"
+        /* Agendar NÃO quita o período (ver clt.ts), então o alerta continua —
+           mas repeti-lo igual para quem já marcou as férias faz parecer que o
+           sistema não registrou o lançamento. Dizer que existe agendamento
+           mantém a cobrança de pé e mostra que o passo seguinte já foi dado. */
         ? `Férias VENCIDAS há ${Math.abs(sFerias.diasParaLimite)} dia(s) — limite era ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Por lei, o pagamento é em dobro.`
+          + (sFerias.diasAgendados > 0 && sFerias.agendadoPara
+            ? ` Já há ${sFerias.diasAgendados} dia(s) agendados para ${sFerias.agendadoPara.toLocaleDateString("pt-BR")} — o dobro continua devido.`
+            : "")
         : sFerias.situacao === "sem-registro"
         ? `Sem histórico de férias no sistema para os períodos até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Se foram gozadas, lance para o alerta ficar correto.`
         : `Férias a conceder até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")} (${sFerias.diasParaLimite} dia(s)), senão paga em dobro.`,
@@ -1592,10 +1599,15 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
   // "Novo período" gravava 2025-06-01 → 2026-05-31 CHUMBADO no código: todo
   // mundo recebia o mesmo período, errado para quase todos.
   const colab = d.colabById.get(colaboradorId);
-  // Com o corte de histórico, igual ao Resumo 360º: a sugestão de período tem de
-  // partir do mesmo julgamento que o alerta, senão o modal propõe um período que
-  // a tela ao lado considera desconhecido.
-  const sit = colab ? situacaoFerias(colab, lista, undefined, inicioDoHistorico(lista)) : null;
+  /* O corte de histórico sai de `items` (a base INTEIRA), não de `lista` (só
+     esta pessoa) — é o mesmo que o Resumo 360º, a tela /ferias e o sino usam.
+     Com `lista`, quem não tem nenhum registro caía em corte `null`: nenhum
+     período virava "desconhecido" e o botão "Novo período" propunha o aquisitivo
+     mais antigo da vida da pessoa. Medido: 20 das 92 pessoas divergiam, e numa
+     delas o modal sugeria um período de 2021 enquanto o alerta da MESMA ficha
+     mandava conceder o de 2024. Quem gravasse pelo modal criava um período que
+     o alerta não reconhece, e o aviso ficava na tela pedindo de novo. */
+  const sit = colab ? situacaoFerias(colab, lista, undefined, inicioDoHistorico(items)) : null;
   const sugestao = (() => {
     if (sit) return { inicio: diaLocalISO(sit.aquisitivoInicio), fim: diaLocalISO(new Date(sit.direitoDesde.getTime() - 86400000)) };
     // Menos de 12 meses de casa: o primeiro aquisitivo é o ano a partir da admissão.

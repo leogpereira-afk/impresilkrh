@@ -55,6 +55,15 @@ export interface SituacaoFerias {
   diasGozados: number;
   /** Dias que ainda faltam conceder — é o que vira pagamento em dobro. */
   diasEmAberto: number;
+  /**
+   * Dias já LANÇADOS para uma data futura. Não quitam nada (agendar não é
+   * gozar), mas a tela precisa saber que existem: sem isso ela repetiria
+   * "VENCIDAS há 247 dias" para quem já tem as férias marcadas, e quem lançou
+   * acharia que o sistema não registrou.
+   */
+  diasAgendados: number;
+  /** A data agendada mais próxima, quando houver. */
+  agendadoPara: Date | null;
   situacao: "em-dia" | "a-vencer" | "vencida" | "sem-registro";
 }
 
@@ -109,10 +118,20 @@ export function situacaoFerias(
   // resolvido, o aviso sumia e o Resumo 360º estampava "Nada pendente" enquanto
   // a própria aba Férias mostrava "Saldo 15 dias". Esses 15 vencem no mesmo
   // prazo e também são pagos EM DOBRO. Agora só quita o período quem somou 30.
-  const gozos = feriasDaPessoa
+  const todosOsRegistros = feriasDaPessoa
     .filter((f) => f.status !== "Cancelada")
     .map((f) => ({ inicio: parseData(f.dataInicio), dias: Number(f.diasGozados) || 0 }))
     .filter((g): g is { inicio: Date; dias: number } => !!g.inicio);
+
+  /* AGENDAR NÃO É GOZAR. Só quita o período o que JÁ COMEÇOU — quem decide isso
+     é a DATA, não o texto do status: "Agendada" é digitado à mão e ninguém volta
+     para trocar depois que a pessoa saiu de férias.
+     Sem esta separação, bastava lançar 30 dias para o ano que vem e o "VENCIDAS
+     há N dias — por lei o pagamento é em dobro" sumia no mesmo instante da
+     ficha, do sino e do calendário, com a dívida do art. 137 intacta. Pior: era
+     mais fácil apagar o alerta do que resolvê-lo. */
+  const gozos = todosOsRegistros.filter((g) => g.inicio.getTime() <= ate.getTime());
+  const agendados = todosOsRegistros.filter((g) => g.inicio.getTime() > ate.getTime());
 
   // Percorre TODOS os períodos aquisitivos já completos, do mais antigo para o
   // mais novo, e reporta o PRIMEIRO que ainda não foi gozado — é ele que corre
@@ -163,8 +182,14 @@ export function situacaoFerias(
       if (quitado) continue;
       /* Base antiga: gozo lançado sem `diasGozados`. Não dá para somar nada, mas
          também não dá para ignorar — senão o sistema passaria a gritar com todo
-         registro antigo. Vale como quitação do período mais antigo em aberto. */
-      if (g.dias === 0) { p.gozoSemDias = true; break; }
+         registro antigo. Vale como quitação do período mais antigo em aberto…
+         …mas SÓ se o período estiver intocado. Num período que já recebeu 15
+         dias, deixar o registro sem dias "quitar" apagava os outros 15 — que a
+         empresa ainda deve, e que vencem pagos em dobro. */
+      if (g.dias === 0) {
+        if (p.creditados === 0) { p.gozoSemDias = true; break; }
+        continue;
+      }
       if (restante <= 0) break;
       const usa = Math.min(DIAS_FERIAS - p.creditados, restante);
       p.creditados += usa;
@@ -191,6 +216,10 @@ export function situacaoFerias(
       jaGozou,
       diasGozados: p.gozoSemDias ? DIAS_FERIAS : p.creditados,
       diasEmAberto: Math.max(0, DIAS_FERIAS - (p.gozoSemDias ? DIAS_FERIAS : p.creditados)),
+      diasAgendados: agendados.reduce((s, g) => s + g.dias, 0),
+      agendadoPara: agendados.length
+        ? agendados.reduce((a, b) => (a.inicio.getTime() <= b.inicio.getTime() ? a : b)).inicio
+        : null,
       situacao,
     };
     // O mais antigo EM ABERTO é o que importa — mas um período sem histórico

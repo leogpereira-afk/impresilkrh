@@ -233,6 +233,73 @@ describe("situacaoFerias — férias atrasadas quitam o período (FIFO)", () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// AGENDAR NÃO É GOZAR. Achado bloqueador da revisão de 10/08/2026: o FIFO
+// creditava qualquer registro de férias ao período em aberto mais antigo sem
+// perguntar se o gozo JÁ ACONTECEU. Bastava o RH agendar 30 dias para o ano que
+// vem e o "VENCIDAS há N dias — pagamento em dobro" sumia no mesmo instante da
+// ficha, do sino e do calendário. A dívida do art. 137 continuava lá, invisível.
+// ---------------------------------------------------------------------------
+describe("situacaoFerias — agendar não quita o período", () => {
+  const HOJE_A = new Date(2026, 7, 10); // 10/08/2026
+  const reg = (inicio: string, dias: number, status = "Concluída"): Ferias =>
+    ({ id: "r" + inicio, colaboradorId: "p1", dataInicio: inicio, diasGozados: dias, status } as Ferias);
+
+  it("O CASO QUE IMPORTA: agendar para o ano que vem NÃO apaga o vencido", () => {
+    const semNada = situacaoFerias(pessoa("2023-12-06"), [], HOJE_A)!;
+    expect(semNada.situacao).toBe("vencida");
+    const comAgendamento = situacaoFerias(
+      pessoa("2023-12-06"), [reg("2027-01-18", 30, "Agendada")], HOJE_A)!;
+    expect(comAgendamento.situacao).toBe("vencida");
+    expect(comAgendamento.limiteConcessao.getTime()).toBe(semNada.limiteConcessao.getTime());
+  });
+
+  it("o agendamento aparece na resposta, para a tela poder informar em vez de calar", () => {
+    const s = situacaoFerias(pessoa("2023-12-06"), [reg("2027-01-18", 30, "Agendada")], HOJE_A)!;
+    expect(s.diasAgendados).toBe(30);
+    expect(s.agendadoPara?.getFullYear()).toBe(2027);
+  });
+
+  it("gozo que JÁ COMEÇOU continua quitando, mesmo em atraso", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"), [reg("2025-03-03", 30)], HOJE_A)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2025); // andou de período
+  });
+
+  it("gozo em curso (começou ontem, termina depois) já conta", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"), [reg("2026-08-09", 30)], HOJE_A)!;
+    expect(s.limiteConcessao.getFullYear()).toBeGreaterThan(2024);
+  });
+
+  it("status Agendada mas com data JÁ PASSADA conta — o que vale é a data, não o rótulo", () => {
+    // O texto do status é digitado à mão e ninguém volta para atualizá-lo.
+    const s = situacaoFerias(pessoa("2022-01-13"), [reg("2025-03-03", 30, "Agendada")], HOJE_A)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2025);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Registro ANTIGO sem `diasGozados` (base importada) não pode apagar dias
+// parciais já creditados: quem tirou 15 dos 30 continua devendo 15, e esses 15
+// também são pagos em dobro.
+// ---------------------------------------------------------------------------
+describe("situacaoFerias — registro sem dias não engole crédito parcial", () => {
+  const HOJE_B = new Date(2026, 7, 10);
+  const reg = (inicio: string, dias: number): Ferias =>
+    ({ id: "r" + inicio, colaboradorId: "p1", dataInicio: inicio, diasGozados: dias, status: "Concluída" } as Ferias);
+
+  it("15 dias tirados + registro sem dias = ainda faltam 15", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"), [reg("2023-06-01", 15), reg("2023-11-01", 0)], HOJE_B)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2024); // ainda o mesmo período
+    expect(s.jaGozou).toBe(false);
+    expect(s.diasEmAberto).toBe(15);
+  });
+
+  it("registro sem dias em período INTOCADO continua quitando (não grita com base antiga)", () => {
+    const s = situacaoFerias(pessoa("2022-01-13"), [reg("2023-06-01", 0)], HOJE_B)!;
+    expect(s.limiteConcessao.getFullYear()).toBe(2025); // quitou o 1º e andou
+  });
+});
+
 describe("situacaoFerias — sem histórico no sistema", () => {
   const HOJE_TESTE = new Date(2026, 7, 4);          // 04/08/2026
   const inicioBase = new Date(2025, 11, 6);         // 06/12/2025, como na produção
