@@ -11,7 +11,7 @@
 // ============================================================================
 import type { Session } from "@supabase/supabase-js";
 import { supabase, SUPABASE_CONFIGURADO, FN_ADMIN_USERS } from "@/lib/supabase";
-import { entrar, sair, type Sessao } from "@/lib/session";
+import { entrar, sair, obterSessao, type Sessao } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 
 export const MODO_JWT: boolean = SUPABASE_CONFIGURADO;
@@ -33,9 +33,26 @@ export class ErroAuth extends Error {
 let sessaoAtual: Session | null = null;
 if (temWindow && supabase) {
   supabase.auth.onAuthStateChange((_ev, s) => { sessaoAtual = s; });
-  supabase.auth.getSession().then(({ data }) => {
+  supabase.auth.getSession().then(async ({ data }) => {
     sessaoAtual = data.session ?? null;
-    if (!data.session) sair(); // sem sessão válida → não deixa sessão pendurada
+    if (!data.session) { sair(); return; } // sem sessão válida → não deixa sessão pendurada
+
+    /* QUEM DIZ O PERFIL É O SERVIDOR, NÃO O NAVEGADOR.
+       A sessão do app é um JSON no localStorage: dá para abrir o console,
+       trocar "COLABORADOR" por "ADMIN_RH" e recarregar — as telas são guardadas
+       no cliente e passariam a aparecer. Os DADOS não vêm (o sync confere o
+       perfil no servidor a cada chamada), mas a pessoa vê o que já está no
+       aparelho e o menu inteiro, o que é confuso e ruim.
+       Então, com sessão de verdade na mão, o perfil é relido de `perfis` e
+       sobrescreve o que estiver gravado. */
+    try {
+      const real = await perfilDoUsuario(data.session.user.id);
+      if (!real) { await supabase!.auth.signOut(); sair(); return; }
+      const local = obterSessao();
+      if (!local || local.perfil !== real.perfil || local.colaboradorId !== real.colaboradorId) {
+        entrar(real.perfil, real.colaboradorId, true);
+      }
+    } catch { /* offline: fica com o que tem, e o sync recusa o que não puder */ }
   });
 }
 
