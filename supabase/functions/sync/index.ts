@@ -95,6 +95,14 @@ Deno.serve(async (req) => {
     // Todo mundo ESCREVE no histórico (é o registro do que a pessoa fez), mas
     // só em nome de si mesmo — senão dá para forjar linha com o nome de outro.
     if (colecao === "alteracoes") return reg?.usuarioColaboradorId === meuId;
+    /* A COLEÇÃO `usuarios` É CONTROLE DE ACESSO, NÃO DADO DE TRABALHO.
+       Ela guarda quem entra no RH, com que perfil, e o senhaHash de cada um.
+       Caindo no `return true` do fim, QUALQUER pessoa logada podia reescrevê-la:
+       apagar o senhaHash de alguém (e a senha geral do app volta a valer para
+       essa pessoa), ou promover a si mesma a ADMIN_RH na lista local. Só quem
+       administra o RH mexe nisso — e quem administra já passou pelo `ehAdmin`
+       lá em cima. */
+    if (colecao === "usuarios") return false;
     return true;
   };
 
