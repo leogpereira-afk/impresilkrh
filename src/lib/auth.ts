@@ -10,7 +10,7 @@
 // PainelControle.tsx, MeuPerfil.tsx nem o módulo de sync.
 // ============================================================================
 import type { Session } from "@supabase/supabase-js";
-import { supabase, SUPABASE_CONFIGURADO, FN_ADMIN_USERS } from "@/lib/supabase";
+import { supabase, SUPABASE_CONFIGURADO, FN_ADMIN_USERS, FN_ACESSO_ENTRAR, ANON_PUBLICA } from "@/lib/supabase";
 import { entrar, sair, obterSessao, type Sessao } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 
@@ -82,6 +82,50 @@ async function perfilDoUsuario(userId: string): Promise<Sessao | null> {
 // vinculado, ou Supabase fora do ar.
 export async function loginServidor(nome: string, senha: string, lembrar = false): Promise<Sessao> {
   if (!supabase) throw new ErroAuth("indisponivel", "Login por servidor não configurado.");
+
+  /* PRIMEIRO A ENTRADA ÚNICA, COM O USUÁRIO CURTO.
+     O RH é o único dos sete cuja chave de login é o NOME COMPLETO — herança
+     dele, de antes de tudo. Nos outros seis a pessoa digita "leonardo". Aqui a
+     entrada única é tentada com o que foi digitado: se for o usuário curto, ela
+     resolve a identidade certa e devolve a sessão pronta.
+     Falhando, segue o caminho de sempre (nome completo → e-mail sintético), que
+     continua atendendo quem não está na tabela nova. */
+  if (FN_ACESSO_ENTRAR && ANON_PUBLICA) {
+    try {
+      const r = await fetch(FN_ACESSO_ENTRAR, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: ANON_PUBLICA,
+                   Authorization: `Bearer ${ANON_PUBLICA}` },
+        body: JSON.stringify({ action: "entrar", usuario: nome, senha }),
+      });
+      if (r.ok) {
+        const corpo = await r.json();
+        const ses = corpo?.sessao;
+        if (ses?.access_token && ses?.refresh_token) {
+          const { data } = await supabase.auth.setSession({
+            access_token: ses.access_token, refresh_token: ses.refresh_token,
+          });
+          if (data?.session?.user) {
+            sessaoAtual = data.session;
+            const perfilUnico = await perfilDoUsuario(data.session.user.id);
+            if (perfilUnico) {
+              entrar(perfilUnico.perfil, perfilUnico.colaboradorId, lembrar);
+              if (temWindow) window.dispatchEvent(new CustomEvent("impresilk:autenticado"));
+              return perfilUnico;
+            }
+            // Entrou na casa, mas não tem lugar AQUI: não é falha de senha.
+            await supabase.auth.signOut();
+            sessaoAtual = null;
+            throw new ErroAuth("indisponivel", "Seu acesso não inclui o RH. Fale com a direção.");
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof ErroAuth) throw e;
+      /* rede/CORS: cai no caminho de sempre */
+    }
+  }
+
   let auth: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
   try {
     auth = await supabase.auth.signInWithPassword({ email: emailSintetico(nome), password: senha });

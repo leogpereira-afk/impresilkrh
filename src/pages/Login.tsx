@@ -151,18 +151,18 @@ export default function Login() {
             <Logo variant="color" className="h-14 w-auto max-w-[220px] object-contain" />
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-brand-ink">Acessar o sistema</h2>
-          <p className="mt-1.5 text-sm text-slate-500">Informe seu nome e sua senha.</p>
+          <p className="mt-1.5 text-sm text-slate-500">O mesmo usuário e a mesma senha dos outros sistemas.</p>
 
           <form onSubmit={submeter} className="mt-7 space-y-5">
             <label className="block">
-              <span className="label">Nome</span>
+              <span className="label">Usuário ou nome completo</span>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   className="input pl-9"
                   value={nome}
                   onChange={(e) => { setNome(e.target.value); setErro(""); }}
-                  placeholder="Digite seu nome"
+                  placeholder="ex.: leonardo"
                   autoFocus
                   autoComplete="off"
                 />
@@ -215,8 +215,8 @@ export default function Login() {
           <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
             <p className="font-medium text-slate-600">Acesso</p>
             <p className="mt-1">
-              Entre com seu nome e a sua senha. Esqueceu a senha? Fale com o RH para redefinir no Painel de Controle.
-            </p>
+              Use o mesmo usuário dos outros sistemas (ex.: leonardo). O nome completo
+            também funciona. Esqueceu a senha? Fale com a direção.</p>
           </div>
         </div>
       </div>
