@@ -83,7 +83,7 @@ export default function Login() {
        é dar senha a essas quatro — pela tela de Acessos do painel. */
     const temPropria = ehHash(usuario?.senhaHash) || !!senhaUsuario;
     const ok =
-      (!temPropria && senha === SENHA_DEMO) ||
+      (!temPropria && !!SENHA_DEMO && senha === SENHA_DEMO) ||
       (ehHash(usuario?.senhaHash) && (await conferirHash(senha, usuario!.senhaHash!))) ||
       (!!senhaUsuario && senha === senhaUsuario);
     if (!ok) return { erro: "Senha incorreta." };

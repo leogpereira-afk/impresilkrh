@@ -1,7 +1,13 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type { Perfil } from "@/data/types";
 
-export const SENHA_DEMO = "Impresilk@2026";
+/* A SENHA GERAL MORREU (11/08/2026).
+   Ela estava escrita aqui, num bundle público, e abria a conta de qualquer
+   pessoa do quadro que ainda não tivesse senha própria. Só continuava viva
+   porque removê-la trancaria quem não tinha outra forma de entrar.
+   Agora as seis pessoas do RH têm conta no Supabase Auth e entram pela porta
+   de verdade — então ela não tem mais para que existir. */
+export const SENHA_DEMO = "";
 const SESSAO_KEY = "impresilk.rh.v1:sessao";
 const TOKEN_KEY = "impresilk.auth.token"; // espelha K_TOKEN de lib/auth.ts
 

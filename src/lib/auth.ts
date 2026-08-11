@@ -52,11 +52,17 @@ async function perfilDoUsuario(userId: string): Promise<Sessao | null> {
 }
 
 // Faz login no Supabase Auth. Sucesso → guarda a sessão, define a sessão do
-// app e avisa o módulo de sync. Em QUALQUER falha de autenticação, lança
-// ErroAuth("indisponivel") DE PROPÓSITO (não "credencial"): assim o Login.tsx
-// cai no login local e ninguém fica travado durante a transição (o Supabase não
-// distingue "senha errada" de "ainda não tem conta lá", então a rota segura é
-// sempre tentar o local em seguida — se ele também recusar, o erro aparece).
+// app e avisa o módulo de sync.
+//
+// Até 11/08/2026 QUALQUER falha virava ErroAuth("indisponivel") de propósito,
+// para o Login.tsx cair no login local: nem todo mundo tinha conta no servidor,
+// e travar essa gente seria pior. O preço era que senha errada TAMBÉM caía no
+// local — e lá a senha geral do app (escrita no bundle público) abria a porta.
+//
+// Agora as SEIS pessoas do quadro têm conta de servidor, então senha errada é
+// senha errada: lança "credencial" e o login para ali. "indisponivel" fica só
+// para o que realmente é indisponibilidade — sem conta no servidor, sem perfil
+// vinculado, ou Supabase fora do ar.
 export async function loginServidor(nome: string, senha: string, lembrar = false): Promise<Sessao> {
   if (!supabase) throw new ErroAuth("indisponivel", "Login por servidor não configurado.");
   let auth: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
@@ -65,7 +71,17 @@ export async function loginServidor(nome: string, senha: string, lembrar = false
   } catch {
     throw new ErroAuth("rede", "Sem conexão para entrar. Tente novamente com internet.");
   }
-  if (auth.error) throw new ErroAuth("indisponivel", auth.error.message || "Login indisponível no momento.");
+  if (auth.error) {
+    // O GoTrue devolve a MESMA mensagem para senha errada e para conta
+    // inexistente ("Invalid login credentials"). Como todo mundo do quadro tem
+    // conta, o caso comum é senha errada -- e dizer isso e PARAR e mais seguro
+    // do que mandar a pessoa para a porta local.
+    const cru = String(auth.error.message || "");
+    const ehCredencial = /invalid login credentials|invalid_grant/i.test(cru);
+    throw new ErroAuth(
+      ehCredencial ? "credencial" : "indisponivel",
+      ehCredencial ? "Senha incorreta." : (cru || "Login indisponível no momento."));
+  }
   sessaoAtual = auth.data.session;
   const sess = await perfilDoUsuario(auth.data.user!.id);
   if (!sess) {
