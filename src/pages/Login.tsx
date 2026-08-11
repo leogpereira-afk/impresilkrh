@@ -15,10 +15,19 @@ const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").to
 // Acesso fixo de administrador (INDEPENDENTE do cadastro de colaboradores).
 // Garante que o dono nunca fique travado — funciona mesmo se a base mudar/zerar
 // ou se o login por servidor (JWT) não conhecer o usuário. Aceita "leonardo" ou
-// o nome completo. (É uma chave fixa no app: protege contra acesso casual, não é
-// segurança forte — troque aqui se vazar.)
-const ACESSO_FIXO_NOMES = ["leonardo", "leonardo goncalves"];
-const ACESSO_FIXO_SENHA = "1903";
+// o nome completo.
+//
+// A PORTA DOS FUNDOS FOI FECHADA (10/08/2026). Havia aqui um nome e uma senha
+// fixos que entravam como ADMIN_RH sem passar pelo servidor -- escritos em
+// texto, num repositório PÚBLICO. Qualquer pessoa que abrisse este arquivo no
+// GitHub e sentasse num computador onde o RH já tinha sido usado abria a ficha
+// de todo mundo: salário, CPF, endereço. Não é hipótese: o repo responde 200 no
+// raw.githubusercontent.
+//
+// Ela existia como saída de emergência, para o caso de o servidor recusar. Hoje
+// a direção tem conta de verdade no Supabase Auth e entra com a própria senha
+// (confirmado em 10/08), então a saída não é mais necessária -- e uma saída de
+// emergência cuja chave está publicada não é saída de emergência, é porta.
 
 export default function Login() {
   const navigate = useNavigate();
@@ -64,8 +73,17 @@ export default function Login() {
     // A senha guardada é um HASH (formato novo). Registros antigos ainda podem ter
     // a senha em texto — aceitos até a migração converter (ver lib/migracoes.ts).
     const senhaUsuario = usuario?.senha?.trim();
+
+    /* A SENHA GERAL SÓ VALE PARA QUEM AINDA NÃO TEM A PRÓPRIA.
+       Ela está escrita neste bundle, que é público — antes valia para QUALQUER
+       pessoa do quadro, então saber o nome de alguém bastava para entrar como
+       ela. Agora quem já definiu senha não é mais contornável por ela.
+       Ela continua existindo para as pessoas sem senha nenhuma (4 das 7 em
+       10/08/2026): removê-la de vez trancaria essas do lado de fora. O fim dela
+       é dar senha a essas quatro — pela tela de Acessos do painel. */
+    const temPropria = ehHash(usuario?.senhaHash) || !!senhaUsuario;
     const ok =
-      senha === SENHA_DEMO ||
+      (!temPropria && senha === SENHA_DEMO) ||
       (ehHash(usuario?.senhaHash) && (await conferirHash(senha, usuario!.senhaHash!))) ||
       (!!senhaUsuario && senha === senhaUsuario);
     if (!ok) return { erro: "Senha incorreta." };
@@ -83,7 +101,6 @@ export default function Login() {
   const submeter = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro("");
-    const acessoFixo = ACESSO_FIXO_NOMES.includes(normalizar(nome)) && senha === ACESSO_FIXO_SENHA;
     // Login real PRIMEIRO (servidor confere a senha e emite o crachá). O acesso
     // fixo ficou para trás de propósito: se ele viesse antes, o diretor entraria
     // sempre pela porta velha — sem crachá — e a migração nunca aconteceria. Ele
@@ -99,10 +116,9 @@ export default function Login() {
           // Senha errada de quem TEM conta no servidor: mostra e para aqui.
           // Quem ainda não tem conta lá (ou servidor fora) cai no login local —
           // é o que permite ligar o login real sem travar ninguém.
-          if (err instanceof ErroAuth && err.tipo === "credencial" && !acessoFixo) { setErro(err.message || "Senha incorreta."); return; }
+          if (err instanceof ErroAuth && err.tipo === "credencial") { setErro(err.message || "Senha incorreta."); return; }
         }
       }
-      if (acessoFixo) { entrar("ADMIN_RH", MASTER_COLAB_ID, lembrar); navigate("/painel"); return; }
       if (!(await entrarLocal()) && MODO_JWT) setErro((e) => e || "Sem conexão para entrar agora. Tente novamente com internet.");
     } finally {
       setEntrando(false);
