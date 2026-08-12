@@ -6,12 +6,19 @@
  * faz abria o Painel de Controle, que é tela de configuração: entrava para
  * consultar e saía com risco de editar.
  *
- * O piso de cada cargo é o N1 da faixa já cadastrada — o mesmo número que a
- * tabela salarial usa, não uma segunda régua que pudesse divergir dela.
+ * Esta tela serve para MONTAR PROPOSTA DE CONTRATAÇÃO. Por isso o número que
+ * manda é o que a CONTABILIDADE pagou, não a faixa do plano de carreira: são
+ * respostas a perguntas diferentes — uma diz o que se paga hoje, a outra o que o
+ * plano previu — e não podem depender uma da outra. As duas aparecem lado a
+ * lado, rotuladas, para comparar sem confundir.
  *
- * Além de ler, a tela mostra QUEM ocupa cada cargo hoje, quanto cada um ganha e
- * onde esse salário cai na faixa (a bolinha), e deixa o RH editar ali mesmo —
- * antes era preciso sair para o Painel de Controle e achar o cargo de novo.
+ * A competência é a última FECHADA. O mês corrente costuma ter só o adiantamento
+ * lançado (medido em 10/08/2026: julho tinha 29 adiantamentos e zero salários) e
+ * mostraria ~40% do que se paga — proposta pela metade.
+ *
+ * Mostra também quem ocupa cada cargo hoje, com a régua entre o menor e o maior
+ * efetivamente pagos, e deixa o RH editar ali mesmo — antes era preciso sair
+ * para o Painel de Controle e achar o cargo de novo.
  */
 import { useMemo, useState } from "react";
 import { Search, Briefcase, ChevronDown, ChevronRight, Users, Pencil } from "lucide-react";
@@ -28,6 +35,11 @@ import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { posicaoNaFaixa } from "@/lib/posicaoNaFaixa";
+import {
+  ultimaCompetenciaFechada, salarioPorPessoa, resumoDoCargo, posicaoEntre, mesProporcional,
+  type PagamentoLike, type ResumoCargo,
+} from "@/lib/salarioReal";
+import { competenciaLabel } from "@/lib/folha";
 import { formatBRL } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Cargo, Colaborador } from "@/data/types";
@@ -51,6 +63,18 @@ export default function Cargos() {
   const sessao = useSessao();
   const podeEditar = ehRH(sessao);
   const { atualizar } = useColecao("cargos");
+  const pagamentos = useColecao("pagamentos").items as unknown as PagamentoLike[];
+
+  /* O QUE A CONTABILIDADE PAGOU. Esta tela é para MONTAR PROPOSTA, então o
+     número que manda é o real, não a faixa do plano de carreira — são respostas
+     a perguntas diferentes e não podem depender uma da outra.
+     A competência é a última FECHADA: o mês corrente costuma ter só o
+     adiantamento lançado e mostraria ~40% do que se paga. */
+  const competencia = useMemo(() => ultimaCompetenciaFechada(pagamentos), [pagamentos]);
+  const pagoPorPessoa = useMemo(
+    () => (competencia ? salarioPorPessoa(pagamentos, competencia) : new Map<string, number>()),
+    [pagamentos, competencia],
+  );
   const [editando, setEditando] = useState<Cargo | null>(null);
   const [busca, setBusca] = useState("");
   const [area, setArea] = useState("");
@@ -90,7 +114,7 @@ export default function Cargos() {
     <div>
       <PageHeader
         title="Descrição dos Cargos"
-        description="O que cada cargo faz, quem o ocupa hoje e onde cada salário cai na faixa."
+        description="O que cada cargo faz, quem o ocupa hoje e o que a contabilidade paga — para montar proposta."
       />
 
       <Card className="mb-4">
@@ -128,6 +152,14 @@ export default function Cargos() {
             const aberto = abertos.has(c.id);
             const ocupantes = ocupacao.get(c.id) ?? [];
             const quantos = ocupantes.length;
+            /* Quem entrou ou saiu no meio da competência recebeu proporcional.
+               Medido na base: isso produzia "menor R$ 474" num cargo de 7
+               pessoas — como referência de contratação, veneno. Sai do RESUMO,
+               fica na lista marcado. */
+            const cheios = competencia
+              ? ocupantes.filter((p) => !mesProporcional(p, competencia) && (pagoPorPessoa.get(p.id) ?? 0) > 0)
+              : [];
+            const real: ResumoCargo | null = resumoDoCargo(cheios.map((p) => pagoPorPessoa.get(p.id) ?? 0));
             const piso = c.faixas?.[0];
             const teto = c.faixas?.[c.faixas.length - 1];
             const preenchidos = BLOCOS.filter((b) => String(c[b.chave] ?? "").trim());
@@ -152,11 +184,20 @@ export default function Cargos() {
                     {/* O piso é o N1 da MESMA faixa da tabela salarial. Repetir o
                         número aqui de outra fonte criaria duas réguas para o
                         mesmo cargo, e um dia elas discordariam. */}
+                    {/* O que a CONTABILIDADE pagou é o número grande — é ele que
+                        serve para montar proposta. A faixa do plano fica ao lado,
+                        menor e rotulada, para comparar sem se confundir: uma diz
+                        o que se paga, a outra o que o plano previu. */}
                     <span className="mt-0.5 block text-xs text-slate-500">
-                      {piso != null
-                        ? <>Piso (N1) <strong className="font-semibold text-slate-700">{formatBRL(piso)}</strong>
-                            {teto != null && teto !== piso && <> · até {formatBRL(teto)} no N5</>}</>
-                        : "Faixa salarial não cadastrada"}
+                      {real
+                        ? <>Paga hoje <strong className="font-semibold text-slate-700">{formatBRL(real.mediana)}</strong>
+                            <span className="text-slate-400"> (mediana de {real.quantos})</span>
+                            {real.menor !== real.maior && <> · de {formatBRL(real.menor)} a {formatBRL(real.maior)}</>}</>
+                        : <span className="text-slate-400">Sem salário fechado na contabilidade</span>}
+                      {piso != null && (
+                        <span className="text-slate-400"> · plano: {formatBRL(piso)}
+                          {teto != null && teto !== piso && <>–{formatBRL(teto)}</>}</span>
+                      )}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-xs text-slate-500" title={`${quantos} pessoa(s) neste cargo hoje`}>
@@ -210,11 +251,19 @@ export default function Cargos() {
                     {ocupantes.length > 0 && (
                       <div className="mt-4 border-t border-slate-100 pt-3">
                         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          Quem ocupa hoje ({ocupantes.length})
+                          Quem ocupa hoje ({ocupantes.length}){competencia && <> · pago em {competenciaLabel(competencia)}</>}
                         </p>
                         <div className="space-y-2">
                           {ocupantes.map((p) => (
-                            <OcupanteLinha key={p.id} colab={p} faixas={c.faixas} nivel={d.nomeNivel(p.nivelId)} />
+                            <OcupanteLinha
+                              key={p.id}
+                              colab={p}
+                              nivel={d.nomeNivel(p.nivelId)}
+                              pago={pagoPorPessoa.get(p.id)}
+                              real={real}
+                              proporcional={!!competencia && mesProporcional(p, competencia)}
+                              faixas={c.faixas}
+                            />
                           ))}
                         </div>
                       </div>
@@ -274,10 +323,18 @@ export default function Cargos() {
 /* Uma pessoa do cargo: nome, nível, salário e a BOLINHA na régua do piso ao
    teto. A cor sai do enquadramento (a regra do plano de carreira); a posição
    mostra o quanto falta para o topo do próprio cargo. */
-function OcupanteLinha({ colab, faixas, nivel }: {
-  colab: Colaborador; faixas?: number[]; nivel: string;
+function OcupanteLinha({ colab, nivel, pago, real, proporcional, faixas }: {
+  colab: Colaborador; nivel: string; pago?: number;
+  real: ResumoCargo | null; proporcional: boolean; faixas?: number[];
 }) {
-  const pos = posicaoNaFaixa(colab.salario, faixas);
+  /* A régua é a REALIDADE do cargo (menor → maior efetivamente pago), não a
+     faixa do plano: para decidir uma proposta importa onde a pessoa está entre
+     os colegas dela, não entre dois números teóricos. O enquadramento pelo plano
+     continua ao lado, como leitura secundária. */
+  const temRegua = !!real && pago != null && pago > 0 && !proporcional;
+  const pct = temRegua ? posicaoEntre(pago!, real!.menor, real!.maior) : 0;
+  const enq = posicaoNaFaixa(pago ?? colab.salario, faixas);
+
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-100 px-3 py-2">
       <Avatar nome={colab.nome} foto={colab.fotoDataUrl} size="sm" />
@@ -288,33 +345,32 @@ function OcupanteLinha({ colab, faixas, nivel }: {
         <p className="text-[11px] text-slate-400">{nivel}</p>
       </div>
 
-      {pos ? (
+      {temRegua ? (
         <div className="flex min-w-[11rem] flex-1 items-center gap-2">
-          {/* A régua vai do PISO ao TETO da faixa deste cargo. Sem as pontas
-              rotuladas a bolinha não diria nada — 60% de quê? */}
-          <span className="text-[10px] tabular-nums text-slate-400">{formatBRL(faixas![0])}</span>
+          <span className="text-[10px] tabular-nums text-slate-400">{formatBRL(real!.menor)}</span>
           <span className="relative h-1.5 flex-1 rounded-full bg-slate-100">
             <span
-              className={cn("absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white", COR_ENQ[pos.enquadramento] ?? "bg-slate-300")}
-              style={{ left: `${pos.pct}%` }}
-              title={`${pos.enquadramento}${pos.foraDaFaixa ? " — fora da faixa do cargo" : ""}`}
+              className={cn("absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white",
+                COR_ENQ[enq?.enquadramento ?? "Sem dados"] ?? "bg-slate-300")}
+              style={{ left: `${pct}%` }}
+              title={`${formatBRL(pago!)} — entre os do cargo${enq ? ` · ${enq.enquadramento} pelo plano` : ""}`}
             />
           </span>
-          <span className="text-[10px] tabular-nums text-slate-400">{formatBRL(faixas![faixas!.length - 1])}</span>
+          <span className="text-[10px] tabular-nums text-slate-400">{formatBRL(real!.maior)}</span>
         </div>
       ) : (
-        <span className="flex-1 text-xs text-slate-400">Sem salário cadastrado</span>
+        <span className="flex-1 text-xs text-slate-400">
+          {proporcional
+            ? "Mês proporcional — entrou ou saiu no meio da competência"
+            : "Sem salário fechado no mês"}
+        </span>
       )}
 
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold tabular-nums text-slate-700">
-          {colab.salario != null ? formatBRL(colab.salario) : "—"}
+          {pago != null && pago > 0 ? formatBRL(pago) : "—"}
         </p>
-        {pos && (
-          <p className={cn("text-[11px]", pos.foraDaFaixa ? "font-medium text-amber-700" : "text-slate-400")}>
-            {pos.enquadramento}
-          </p>
-        )}
+        {enq && <p className="text-[11px] text-slate-400">{enq.enquadramento} no plano</p>}
       </div>
     </div>
   );
