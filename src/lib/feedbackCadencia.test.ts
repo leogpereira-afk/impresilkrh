@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  cadenciaDe, ultimoFeedback, compararFila, CADENCIA_FEEDBACK_DIAS, type FeedbackLike,
+  cadenciaDe, ultimoFeedback, compararFila, CADENCIA_FEEDBACK_DIAS,
+  bloqueio, combinadoEmAberto, combinadoVencido, cadenciaDaPessoa, montarConteudo,
+  type FeedbackLike,
 } from "@/lib/feedbackCadencia";
 
 const HOJE = new Date(2026, 7, 10); // 10/08/2026
@@ -98,5 +100,127 @@ describe("compararFila", () => {
     const a = cadenciaDe([fb("a", 200)], null, HOJE);
     const b = cadenciaDe([fb("b", 400)], null, HOJE);
     expect([a, b].sort(compararFila)[0].diasDesde).toBe(400);
+  });
+});
+
+describe("bloqueio — o que não entra neste registro", () => {
+  it("O CASO QUE IMPORTA: assédio e agressão vão para o canal próprio, não para cá", () => {
+    // Lei 14.457/2022, art. 23: empresa com CIPA tem canal com sigilo. Denúncia
+    // colada no histórico de desempenho é o pior desenho possível.
+    expect(bloqueio("ele agrediu o colega na serralheria")).toBe("grave");
+    expect(bloqueio("caso de assédio com a equipe")).toBe("grave");
+    expect(bloqueio("chegou bêbado")).toBe("grave");
+    expect(bloqueio("recusou o EPI de novo")).toBe("grave");
+  });
+
+  it("dado SENSÍVEL da LGPD (art. 11) também não entra", () => {
+    expect(bloqueio("trouxe atestado médico")).toBe("sensivel");
+    expect(bloqueio("está em tratamento de depressão")).toBe("sensivel");
+    expect(bloqueio("entrou no sindicato")).toBe("sensivel");
+    expect(bloqueio("por causa da gravidez")).toBe("sensivel");
+  });
+
+  it("respeita FRONTEIRA de palavra — bloqueio falso ensina a contornar a tela", () => {
+    // "acidentalmente" não é "acidente"; "drogaria" não é "droga".
+    expect(bloqueio("acidentalmente cortou a chapa menor")).toBeNull();
+    expect(bloqueio("entregou na drogaria do centro")).toBeNull();
+    expect(bloqueio("mediconhecimento")).toBeNull();
+  });
+
+  it("conversa normal de trabalho passa", () => {
+    expect(bloqueio("soldou fora do esquadro e voltou para retrabalho")).toBeNull();
+    expect(bloqueio("conferiu o projeto antes de cortar, ficou perfeito")).toBeNull();
+  });
+
+  it("texto vazio ou ausente não quebra", () => {
+    expect(bloqueio("")).toBeNull();
+    expect(bloqueio(undefined as unknown as string)).toBeNull();
+  });
+});
+
+describe("combinado voltando", () => {
+  const reg = (id: string, dias: number, extra: Record<string, unknown> = {}) => ({
+    id, colaboradoresId: "p1", criadoEm: diasAtras(dias),
+    ocorridoEm: diasAtras(dias).slice(0, 10), ...extra,
+  }) as never;
+
+  it("pega o combinado aberto mais recente", () => {
+    const lista = [
+      reg("velho", 200, { combinado: "A" }),
+      reg("novo", 10, { combinado: "B" }),
+    ];
+    expect((combinadoEmAberto(lista) as unknown as { id: string })?.id).toBe("novo");
+  });
+
+  it("combinado com desfecho não está mais em aberto", () => {
+    const lista = [reg("x", 10, { combinado: "A", desfecho: "resolveu" })];
+    expect(combinadoEmAberto(lista)).toBeNull();
+  });
+
+  it("registro sem combinado não conta", () => {
+    expect(combinadoEmAberto([reg("x", 5)])).toBeNull();
+  });
+
+  it("prazo passado = vencido", () => {
+    const f = { combinado: "A", combinadoPrazo: diasAtras(5).slice(0, 10), criadoEm: diasAtras(40) };
+    expect(combinadoVencido(f, HOJE)).toBe(true);
+  });
+
+  it('O CASO QUE IMPORTA: "na próxima peça" NUNCA vence por calendário', () => {
+    // Foi o prazo que o encarregado pediu: vence no encontro, não no relógio.
+    const f = { combinado: "A", combinadoPrazo: null, combinadoGatilho: "proxima-peca", criadoEm: diasAtras(400) };
+    expect(combinadoVencido(f, HOJE)).toBe(false);
+  });
+
+  it("sem prazo e sem gatilho não vence", () => {
+    expect(combinadoVencido({ combinado: "A", criadoEm: diasAtras(400) }, HOJE)).toBe(false);
+  });
+});
+
+describe("cadenciaDaPessoa", () => {
+  it("em experiência tem cadência mais curta que o padrão", () => {
+    // Com 90 dias uniformes, o 1º feedback caía no MESMO dia em que o contrato
+    // vira indeterminado — e a decisão de efetivar chegava sem conversa escrita.
+    expect(cadenciaDaPessoa({ emExperiencia: true })).toBe(30);
+    expect(cadenciaDaPessoa({ emExperiencia: true })).toBeLessThan(CADENCIA_FEEDBACK_DIAS);
+  });
+
+  it("com plano aberto, 45; sem nada, o padrão", () => {
+    expect(cadenciaDaPessoa({ comPlanoAberto: true })).toBe(45);
+    expect(cadenciaDaPessoa({})).toBe(CADENCIA_FEEDBACK_DIAS);
+  });
+
+  it("experiência manda sobre plano — é o prazo mais curto e o mais caro", () => {
+    expect(cadenciaDaPessoa({ emExperiencia: true, comPlanoAberto: true })).toBe(30);
+  });
+});
+
+describe("montarConteudo", () => {
+  it("junta fato, efeito e combinado num texto legível", () => {
+    const t = montarConteudo({
+      oQueAconteceu: "Soldou fora do esquadro.", efeito: "Retrabalho",
+      combinado: "Conferir o gabarito antes de soldar", combinadoPrazo: "2026-09-15",
+    });
+    expect(t).toContain("Soldou fora do esquadro.");
+    expect(t).toContain("No que deu: Retrabalho.");
+    expect(t).toContain("Conferir o gabarito");
+    expect(t).toContain("15/09");
+  });
+
+  it('NÃO escreve "ele respondeu" — anotação unilateral como fala do trabalhador derruba o registro', () => {
+    const t = montarConteudo({ oQueAconteceu: "x", efeito: "Retrabalho" });
+    expect(t.toLowerCase()).not.toContain("respondeu");
+  });
+
+  it('"na próxima peça" aparece como gatilho, não como data', () => {
+    const t = montarConteudo({
+      oQueAconteceu: "x", combinado: "conferir", combinadoGatilho: "proxima-peca", combinadoPrazo: null,
+    });
+    expect(t).toContain("na próxima peça");
+  });
+
+  it("elogio sem combinado não inventa combinado", () => {
+    const t = montarConteudo({ oQueAconteceu: "Entrou de primeira.", efeito: "Entrou de primeira" });
+    expect(t).not.toContain("Combinado");
   });
 });

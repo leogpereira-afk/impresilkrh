@@ -41,8 +41,22 @@ export interface Cargo {
   indicadores?: string;
   requisitos?: string;
   trilha?: string;
-  // Faixa salarial por nível N1..N5 (R$). Apêndice C.
+  // Faixa salarial por nível N1..N5 (R$). Apêndice C — o PLANO de carreira.
   faixas: [number, number, number, number, number];
+  /**
+   * O que a empresa PAGA hoje neste cargo, informado à mão pelo RH.
+   *
+   * Não sai do ERP de propósito. A derivação automática (somar as rubricas de
+   * salário da última competência fechada) foi construída e descartada: ela
+   * carregava três armadilhas — o salário vem partido em adiantamento e saldo, o
+   * mês corrente entra pela metade, e quem foi admitido no meio do mês aparece
+   * com valor proporcional. O número que serve para montar proposta é o que o
+   * RH sabe e digita, não o que a conta deduz.
+   */
+  salarioPraticado?: number | null;
+  /** Quando esse valor foi conferido pela última vez — número de contratação
+   *  envelhece, e sem a data ninguém sabe se ainda vale. */
+  salarioPraticadoEm?: string | null;
 }
 
 export interface StatusColaborador {
@@ -302,11 +316,55 @@ export interface PDI {
 export interface Feedback {
   id: string;
   colaboradorId: string;
-  autorId?: string | null;
-  tipo: string;
+  autorId?: string | null;   // opcional no tipo (registros legados), obrigatório ao escrever
+  tipo: string;              // Reconhecimento | Ajuste (legado: Positivo/Desenvolvimento/Contínuo)
+  /** DERIVADO dos campos abaixo — é o que as telas antigas leem e o que a pessoa vê. */
   conteudo: string;
   contexto?: string;
   criadoEm: string;
+
+  /* ── Campos do registro estruturado ────────────────────────────────────────
+     Desenho vindo de pesquisa (SBI do Center for Creative Leadership + a Ação
+     Alternativa do STAR/AR + a data de revisão do CEDAR), revisado por dois
+     céticos: um encarregado de produção e um parecer trabalhista. Todos
+     OPCIONAIS no tipo porque os registros antigos não os têm; a tela exige o
+     que precisa exigir. */
+
+  /** Quando a conversa aconteceu — diferente de quando foi digitada. */
+  ocorridoEm?: string;
+  /** Carimbo do SERVIDOR no momento da gravação. Nunca o relógio do aparelho. */
+  registradoEm?: string;
+
+  /** O fato, como quem viu contaria. Um campo, não dois: "soldou fora do
+      esquadro" e "voltou para retrabalho" são a mesma frase na cabeça de quem
+      estava lá, e separar produzia repetição ou metade vazia. */
+  oQueAconteceu?: string;
+  /** No que deu — lista FECHADA (EFEITOS_AJUSTE / EFEITOS_ELOGIO). */
+  efeito?: string;
+  /** O.S. do Mubisys, só quando a pessoa souber de cabeça. */
+  os?: string;
+
+  /** O que ficou combinado. Obrigatório em Ajuste; AUSENTE em Reconhecimento —
+      emendar "mas da próxima vez" num elogio faz ouvir só o "mas". */
+  combinado?: string;
+  combinadoPrazo?: string | null;
+  /** "proxima-peca": não vence por data, reaparece no próximo encontro. */
+  combinadoGatilho?: string | null;
+
+  /** Como terminou o combinado: resolveu | ainda-nao | mudou | nao-era-isso. */
+  desfecho?: string | null;
+  desfechoEm?: string | null;
+
+  /** Ciência da própria pessoa. O líder NUNCA autocertifica isto. */
+  cienciaEm?: string | null;
+  cienciaMeio?: string | null;      // "app" | "papel"
+  cienciaRegistradaPor?: string | null;
+  /** A réplica do titular — contraditório, e art. 18, III da LGPD. */
+  replica?: string | null;
+  replicaEm?: string | null;
+
+  /** Conversa com a equipe: mesmo texto em N pessoas, marcadas pelo grupo. */
+  grupoId?: string | null;
 }
 
 export interface Viagem {

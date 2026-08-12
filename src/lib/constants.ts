@@ -101,8 +101,97 @@ export const STATUS_PDI = [
   "Atrasada",
 ] as const;
 
-// Tipos de feedback
-export const TIPOS_FEEDBACK = ["Positivo", "Desenvolvimento", "Contínuo"] as const;
+/* Tipos de feedback. O enum anterior — "Positivo" | "Desenvolvimento" |
+   "Contínuo" — misturava TRÊS eixos num campo só: valência, propósito e
+   frequência. Um mesmo registro podia ser os três, então o campo não
+   classificava nada e não sustentava relatório.
+   A taxonomia de Stone & Heen (Thanks for the Feedback) é mutuamente exclusiva:
+   apreciação, coaching e avaliação são coisas diferentes, e misturá-las destrói
+   as duas primeiras. A AVALIAÇÃO sai daqui — ela tem módulo próprio.
+   "Ajuste" e não "Orientação": no vocabulário de RH, "orientação" é vizinha de
+   "orientação formal / advertência verbal", e este registro precisa ser
+   inequivocamente sobre o trabalho. */
+export const TIPOS_FEEDBACK = ["Reconhecimento", "Ajuste"] as const;
+
+/** Os registros antigos têm o enum velho. Leitura, não migração destrutiva. */
+export function tipoFeedbackLegado(t?: string | null): "Reconhecimento" | "Ajuste" {
+  if (t === "Reconhecimento" || t === "Positivo") return "Reconhecimento";
+  return "Ajuste";
+}
+
+/* NO QUE DEU — lista FECHADA, um toque, nunca texto livre. É o único campo do
+   registro que precisa somar em relatório, e é o que mantém a conversa na
+   TAREFA em vez de na pessoa.
+   Kluger & DeNisi (1996, Psychological Bulletin; 607 tamanhos de efeito, 23.663
+   observações): feedback classificado como elogio teve d=.09 contra d=.34 sem
+   elogio, e feedback desenhado para desencorajar, d=-.14. Os dois extremos
+   falham pelo mesmo motivo — falam da pessoa. Hattie & Timperley (2007) chegam
+   ao mesmo lugar: o nível do "self" é o menos eficaz dos quatro.
+   Numa gráfica o efeito é físico e nomeável, o que torna isso possível. */
+export const EFEITOS_AJUSTE = [
+  "Retrabalho", "Atrasou a O.S.", "Perda de material", "Voltou da obra",
+  "Cliente reclamou", "Sobrecarregou o colega", "Sem efeito ainda",
+  "Risco de segurança",
+] as const;
+
+export const EFEITOS_ELOGIO = [
+  "Entrou de primeira", "Prazo cumprido", "Economizou material",
+  "Cliente elogiou", "Evitou acidente", "Segurou a equipe", "Ensinou alguém",
+] as const;
+
+/** Não é etiqueta, é ROTA: fecha o feedback e manda para o registro de segurança. */
+export const EFEITO_ROTA_SEGURANCA = "Risco de segurança";
+
+/* Fichas de combinado por setor, derivadas dos POPs. Um toque insere o texto
+   EDITÁVEL — a ficha existe para reduzir digitação no celular, não para limitar. */
+export const COMBINADOS_SUGERIDOS: Record<string, string[]> = {
+  serralheria: [
+    "Conferir o esquadro antes de soldar",
+    "Conferir a medida no projeto antes de cortar",
+    "Separar a sobra de material",
+  ],
+  "instalacao-externa": [
+    "Fotografar a medida antes de sair do cliente",
+    "Conferir a fixação antes de descer",
+    "Levar o kit conferido",
+  ],
+  "impressao-digital": [
+    "Conferir o arquivo antes de mandar pra máquina",
+    "Teste de cor antes da tiragem",
+  ],
+  _todos: ["Avisar o encarregado quando travar"],
+};
+
+/* O QUE NÃO ENTRA NESTE REGISTRO.
+ *
+ * Duas listas que BLOQUEIAM a gravação e não deixam vestígio do texto. Avisar,
+ * permitir e guardar seria a pior das três opções.
+ *
+ * GRAVE: assédio e agressão têm canal próprio — empresa com CIPA (NR-5) tem
+ * dever de canal de recebimento e apuração com sigilo desde a Lei 14.457/2022,
+ * art. 23. Denúncia colada no histórico de desempenho de qualquer uma das duas
+ * pessoas é o pior desenho possível.
+ *
+ * SENSÍVEL: art. 11 da LGPD — saúde, religião, sindicato e deficiência são dado
+ * pessoal SENSÍVEL, com base legal própria. Não entram num registro de conversa
+ * sobre trabalho. */
+export const PALAVRAS_BLOQUEIO_GRAVE = [
+  "assédio", "assedio", "agrediu", "agressão", "agressao", "ameaçou", "ameacou",
+  "ameaça", "ameaca", "brigou", "briga", "bêbado", "bebado", "embriagado",
+  "droga", "roubou", "roubo", "furto", "furtou", "sem epi", "recusou o epi",
+  "acidente",
+] as const;
+
+export const PALAVRAS_BLOQUEIO_SENSIVEL = [
+  "inss", "atestado", "médico", "medico", "doença", "doenca", "depressão",
+  "depressao", "gravidez", "grávida", "gravida", "tratamento", "remédio",
+  "remedio", "laudo", "psicólogo", "psicologo", "psiquiatra", "igreja",
+  "religião", "religiao", "sindicato", "deficiência", "deficiencia",
+] as const;
+
+/** O carimbo que vai na tela, no PDF e no extrato — sempre, em todo registro. */
+export const AVISO_NAO_E_PUNICAO =
+  "Registro de conversa sobre o trabalho. Não é penalidade disciplinar (art. 482 da CLT), não gera e não substitui advertência.";
 
 // Status de férias
 export const STATUS_FERIAS = [

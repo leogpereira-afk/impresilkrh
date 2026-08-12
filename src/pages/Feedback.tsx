@@ -13,7 +13,7 @@
  * sem nunca chegar a uma tela de feedback.
  */
 import { useMemo, useState } from "react";
-import { MessageSquare, Search, Plus, Sparkles, ArrowDownAZ, ChevronDown, ChevronRight } from "lucide-react";
+import { MessageSquare, Search, Plus, Sparkles, ArrowDownAZ, ChevronDown, ChevronRight, ThumbsUp, Wrench } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,11 +26,15 @@ import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { formatDate } from "@/lib/format";
-import { TIPOS_FEEDBACK, ARQUETIPOS } from "@/lib/constants";
+import { formatDate, diaLocalISO } from "@/lib/format";
+import {
+  ARQUETIPOS, EFEITOS_AJUSTE, EFEITOS_ELOGIO, COMBINADOS_SUGERIDOS,
+  AVISO_NAO_E_PUNICAO, tipoFeedbackLegado,
+} from "@/lib/constants";
 import {
   cadenciaDe, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
-  type Cadencia, type SituacaoFeedback,
+  bloqueio, combinadoEmAberto, combinadoVencido, ehRotaSeguranca, montarConteudo,
+  type Cadencia, type SituacaoFeedback, type MotivoBloqueio,
 } from "@/lib/feedbackCadencia";
 import { cn } from "@/lib/cn";
 import type { Colaborador, Feedback as FeedbackReg } from "@/data/types";
@@ -70,7 +74,7 @@ export default function Feedback() {
   const d = useDominio();
   const sessao = useSessao();
   const toast = useToast();
-  const { items: feedbacks, criar } = useColecao("feedbacks");
+  const { items: feedbacks, criar, atualizar } = useColecao("feedbacks");
   const [busca, setBusca] = useState("");
   const [foco, setFoco] = useState<SituacaoFeedback | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "fila", asc: true });
@@ -243,10 +247,25 @@ export default function Feedback() {
       {novoPara && (
         <ModalNovoFeedback
           colab={novoPara}
+          setor={novoPara.areaId ?? undefined}
+          aberto={combinadoEmAberto(
+            (feedbacks as FeedbackReg[]).filter((f) => f.colaboradorId === novoPara.id),
+          )}
           onFechar={() => setNovoPara(null)}
+          onDesfecho={(id, desfecho) => {
+            atualizar(id, { desfecho, desfechoEm: new Date().toISOString() });
+            toast("Combinado anterior atualizado.");
+          }}
           onSalvar={(dados) => {
-            criar({ ...dados, colaboradorId: novoPara.id, autorId: sessao?.colaboradorId ?? null });
-            toast(`Feedback registrado para ${novoPara.nome}.`);
+            criar({
+              ...dados,
+              colaboradorId: novoPara.id,
+              autorId: sessao?.colaboradorId ?? null,
+              // Carimbo do momento da gravação — diferente de quando a conversa foi.
+              registradoEm: new Date().toISOString(),
+              criadoEm: new Date().toISOString(),
+            });
+            toast(`Conversa registrada para ${novoPara.nome}.`);
             setNovoPara(null);
           }}
         />
@@ -334,62 +353,220 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
   );
 }
 
-function ModalNovoFeedback({ colab, onSalvar, onFechar }: {
+/* O PORTÃO. Antes de qualquer campo, três saídas — e uma delas não abre
+   formulário nenhum.
+   Stone & Heen (Thanks for the Feedback): existem três coisas chamadas de
+   "feedback" — apreciação, coaching e avaliação — e a falha mais comum é quem
+   fala mandar uma e quem ouve escutar outra. Misturar avaliação num elogio
+   destrói os dois. Aqui a avaliação nem entra: tem módulo próprio. */
+function ModalNovoFeedback({ colab, setor, aberto: emAberto, onSalvar, onDesfecho, onFechar }: {
   colab: Colaborador;
-  onSalvar: (d: { tipo: string; conteudo: string; contexto?: string; criadoEm: string }) => void;
+  setor?: string;
+  aberto: FeedbackReg | null;
+  onSalvar: (d: Partial<FeedbackReg>) => void;
+  onDesfecho: (id: string, desfecho: string) => void;
   onFechar: () => void;
 }) {
   const toast = useToast();
-  const [tipo, setTipo] = useState<string>(TIPOS_FEEDBACK[0]);
-  const [conteudo, setConteudo] = useState("");
-  const [contexto, setContexto] = useState("");
-  const arq = colab.perfilComportamental ? ARQUETIPOS[colab.perfilComportamental] : undefined;
+  const [tipo, setTipo] = useState<"Reconhecimento" | "Ajuste" | null>(null);
+  const [ocorridoEm, setOcorridoEm] = useState(() => diaLocalISO(new Date()));
+  const [oQue, setOQue] = useState("");
+  const [efeito, setEfeito] = useState("");
+  const [os, setOs] = useState("");
+  const [combinado, setCombinado] = useState("");
+  const [prazo, setPrazo] = useState<{ data: string | null; gatilho: string | null }>(
+    { data: null, gatilho: null },
+  );
+  const [barrado, setBarrado] = useState<MotivoBloqueio>(null);
+
+  const ajuste = tipo === "Ajuste";
+  const efeitos = ajuste ? EFEITOS_AJUSTE : EFEITOS_ELOGIO;
+  const fichas = [...(COMBINADOS_SUGERIDOS[setor ?? ""] ?? []), ...COMBINADOS_SUGERIDOS._todos];
+
+  const emDias = (n: number) => diaLocalISO(new Date(Date.now() + n * 86_400_000));
 
   const salvar = () => {
-    if (!conteudo.trim()) return toast("Escreva o que foi conversado.", "erro");
-    onSalvar({
-      tipo,
-      conteudo: conteudo.trim(),
-      contexto: contexto.trim() || undefined,
-      // Carimbo do momento do registro — é o que a cadência usa para contar.
-      criadoEm: new Date().toISOString(),
-    });
+    if (oQue.trim().length < 15) return toast("Conte o que aconteceu — uma frase basta.", "erro");
+    /* Bloqueio ANTES de gravar, e sem guardar o texto: avisar, permitir e
+       guardar seria a pior das três opções. */
+    const b = bloqueio(`${oQue} ${combinado}`);
+    if (b) { setBarrado(b); return; }
+    if (ehRotaSeguranca(efeito)) { setBarrado("grave"); return; }
+    if (!efeito) return toast("Marque no que deu.", "erro");
+    if (ajuste && !combinado.trim()) return toast("Escreva o que ficou combinado.", "erro");
+    if (ajuste && !prazo.data && !prazo.gatilho) return toast("Diga até quando.", "erro");
+
+    if (!tipo) return; // o portão garante isto, mas o tipo precisa saber
+    const base = {
+      tipo, ocorridoEm, oQueAconteceu: oQue.trim(), efeito,
+      os: os.trim() || undefined,
+      ...(ajuste ? { combinado: combinado.trim(), combinadoPrazo: prazo.data, combinadoGatilho: prazo.gatilho } : {}),
+    };
+    onSalvar({ ...base, conteudo: montarConteudo(base) });
   };
+
+  if (barrado) {
+    return (
+      <Modal aberto onFechar={() => setBarrado(null)} titulo="Isso não entra aqui" largura="max-w-md"
+        rodape={<button className="btn-outline" onClick={() => setBarrado(null)}>Voltar e escrever de outro jeito</button>}>
+        <p className="text-sm text-slate-600">
+          {barrado === "sensivel"
+            ? "Saúde, atestado, sindicato, religião e afins são dado pessoal sensível (art. 11 da LGPD) e não podem ficar num registro de conversa sobre trabalho."
+            : "Assédio, agressão, EPI, furto, bebida e acidente têm caminho próprio, com sigilo. Registro assim, colado no histórico de desempenho, prejudica todo mundo."}
+        </p>
+        <p className="mt-2 text-sm font-medium text-slate-700">Fala direto com o RH — o texto não foi guardado.</p>
+      </Modal>
+    );
+  }
+
+  // O portão: enquanto não escolher, não há formulário.
+  if (!tipo) {
+    return (
+      <Modal aberto onFechar={onFechar} titulo={`Conversa com ${colab.nome}`} largura="max-w-md"
+        descricao="O que você quer registrar?">
+        <div className="space-y-2">
+          <button type="button" onClick={() => setTipo("Reconhecimento")}
+            className="flex w-full items-center gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4 text-left transition hover:border-emerald-300">
+            <ThumbsUp className="h-5 w-5 shrink-0 text-emerald-600" />
+            <span>
+              <span className="block font-semibold text-slate-800">Elogiar</span>
+              <span className="block text-xs text-slate-500">Ele fez algo que deu certo e você quer que fique registrado.</span>
+            </span>
+          </button>
+          <button type="button" onClick={() => setTipo("Ajuste")}
+            className="flex w-full items-center gap-3 rounded-xl border-2 border-amber-200 bg-amber-50/50 p-4 text-left transition hover:border-amber-300">
+            <Wrench className="h-5 w-5 shrink-0 text-amber-600" />
+            <span>
+              <span className="block font-semibold text-slate-800">Ajustar</span>
+              <span className="block text-xs text-slate-500">Algo precisa mudar daqui pra frente. Vocês combinam o quê.</span>
+            </span>
+          </button>
+          {/* Não abre nada de propósito. */}
+          <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+            <strong className="font-medium text-slate-700">É coisa grave?</strong> Briga, assédio, EPI, furto, bebida,
+            acidente — <strong className="font-medium text-slate-700">fala com o RH</strong>. Isso não se registra aqui.
+          </p>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
       aberto
       onFechar={onFechar}
-      titulo={`Feedback para ${colab.nome}`}
-      descricao="Fica no histórico da pessoa e zera a contagem da cadência."
+      titulo={`${ajuste ? "Ajustar" : "Elogiar"} — ${colab.nome}`}
       largura="max-w-lg"
       rodape={<>
-        <button className="btn-outline" onClick={onFechar}>Cancelar</button>
-        <button className="btn-primary" onClick={salvar}>Registrar</button>
+        <button className="btn-outline" onClick={() => setTipo(null)}>Voltar</button>
+        <button className="btn-primary" onClick={salvar}>Salvar</button>
       </>}
     >
-      <div className="space-y-3">
-        {arq?.comoLidar?.feedback && (
-          <p className="rounded-lg bg-brand/5 px-3 py-2 text-xs text-brand-ink">
-            <strong className="font-semibold">{colab.perfilComportamental}:</strong> {arq.comoLidar.feedback}
-          </p>
+      <div className="space-y-4">
+        {/* O COMBINADO ANTERIOR vem antes de tudo — é o único lugar que o
+            encarregado disse que vale. Responder é sempre OPCIONAL: a trava que
+            exigia desfecho produzia clique em "Feito" sem conferir nada, ou
+            seja, histórico falso, que é pior que histórico faltando. */}
+        {emAberto?.combinado && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs text-slate-500">
+              Combinado de {formatDate(emAberto.ocorridoEm ?? emAberto.criadoEm)}
+              {combinadoVencido(emAberto) && <span className="ml-1 font-medium text-red-600">· venceu</span>}
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-slate-700">“{emAberto.combinado}”</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[["resolveu", "Resolveu"], ["ainda-nao", "Ainda não"], ["mudou", "Mudou"], ["nao-era-isso", "Não era isso"]].map(([v, r]) => (
+                <button key={v} type="button" onClick={() => onDesfecho(emAberto.id, v)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:text-brand">
+                  {r}
+                </button>
+              ))}
+              <span className="px-1 py-1 text-xs text-slate-400">ou deixa pra depois</span>
+            </div>
+          </div>
         )}
-        <Campo label="Tipo">
-          <Select value={tipo} onChange={(e) => setTipo(e.target.value)}>
-            {TIPOS_FEEDBACK.map((t) => <option key={t} value={t}>{t}</option>)}
-          </Select>
+
+        <Campo label="Quando foi a conversa">
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {[["Hoje", 0], ["Ontem", -1]].map(([r, n]) => (
+              <button key={String(r)} type="button" onClick={() => setOcorridoEm(emDias(Number(n)))}
+                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:text-brand">
+                {r}
+              </button>
+            ))}
+          </div>
+          <Input type="date" value={ocorridoEm} max={diaLocalISO(new Date())}
+            onChange={(e) => setOcorridoEm(e.target.value)} />
         </Campo>
-        <Campo label="O que foi conversado" obrigatorio>
-          <Textarea
-            autoFocus
-            value={conteudo}
-            onChange={(e) => setConteudo(e.target.value)}
-            placeholder="Fato observado, impacto e o combinado daqui para frente."
-          />
+
+        <Campo label="O que aconteceu" obrigatorio
+          hint={ajuste
+            ? "O que ele fez e no que deu. Uma frase, do jeito que você contaria."
+            : "O que exatamente ele fez. “Conferiu o esquadro antes de soldar” vale mais que “é caprichoso”."}>
+          <Textarea autoFocus value={oQue} onChange={(e) => setOQue(e.target.value)} rows={3} />
         </Campo>
-        <Campo label="Contexto" hint="Opcional — situação, projeto ou período a que se refere">
-          <Input value={contexto} onChange={(e) => setContexto(e.target.value)} />
+
+        {/* Lista FECHADA, um toque. É o único campo que precisa somar em
+            relatório, e é o que mantém a conversa na TAREFA em vez de na pessoa. */}
+        <Campo label="No que deu" obrigatorio>
+          <div className="flex flex-wrap gap-1.5">
+            {efeitos.map((e) => (
+              <button key={e} type="button" onClick={() => setEfeito(e)}
+                className={cn("rounded-lg border px-2.5 py-1 text-xs transition",
+                  efeito === e ? "border-brand bg-brand/5 font-medium text-brand-ink" : "border-slate-200 text-slate-600 hover:border-brand")}>
+                {e}
+              </button>
+            ))}
+          </div>
         </Campo>
+
+        {ajuste && (
+          <>
+            <Campo label="O que ficou combinado" obrigatorio
+              hint="Uma coisa que dá pra ver acontecer na próxima peça.">
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {fichas.map((f) => (
+                  <button key={f} type="button" onClick={() => setCombinado(f)}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:text-brand">
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <Input value={combinado} onChange={(e) => setCombinado(e.target.value)} />
+            </Campo>
+
+            <Campo label="Até quando" obrigatorio>
+              <div className="flex flex-wrap gap-1.5">
+                {[["Semana que vem", 7], ["15 dias", 15], ["30 dias", 30]].map(([r, n]) => (
+                  <button key={String(r)} type="button"
+                    onClick={() => setPrazo({ data: emDias(Number(n)), gatilho: null })}
+                    className={cn("rounded-lg border px-2.5 py-1 text-xs transition",
+                      prazo.data === emDias(Number(n)) ? "border-brand bg-brand/5 font-medium text-brand-ink" : "border-slate-200 text-slate-600 hover:border-brand")}>
+                    {r}
+                  </button>
+                ))}
+                {/* Pedido do encarregado: é o prazo real da serralheria. Não
+                    vence por calendário — reaparece no próximo encontro. */}
+                <button type="button" onClick={() => setPrazo({ data: null, gatilho: "proxima-peca" })}
+                  className={cn("rounded-lg border px-2.5 py-1 text-xs transition",
+                    prazo.gatilho === "proxima-peca" ? "border-brand bg-brand/5 font-medium text-brand-ink" : "border-slate-200 text-slate-600 hover:border-brand")}>
+                  Na próxima peça
+                </button>
+              </div>
+            </Campo>
+          </>
+        )}
+
+        <Campo label="O.S." hint="Opcional — só se você souber de cabeça">
+          <Input inputMode="numeric" value={os} onChange={(e) => setOs(e.target.value)} />
+        </Campo>
+
+        {/* Carimbo obrigatório, em todo registro. Sem ele, o acervo vira algo
+            que a empresa terá de sustentar como se fosse disciplinar. */}
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+          Quem vê: você, o RH, a direção — e a própria pessoa, na ficha dela.<br />
+          {AVISO_NAO_E_PUNICAO}
+        </p>
       </div>
     </Modal>
   );
