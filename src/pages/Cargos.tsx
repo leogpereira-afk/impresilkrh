@@ -19,18 +19,23 @@
  * produzia "menor R$ 474" num cargo de 7 pessoas. Número de contratação é o que
  * o RH sabe e digita, com a data em que conferiu.
  *
- * Mostra também quem ocupa cada cargo hoje, com a régua da faixa do plano, e
- * deixa o RH editar ali mesmo — antes era preciso sair para o Painel de Controle
- * e achar o cargo de novo.
+ * UM VALOR SÓ. A faixa por nível N1–N5 pertence ao plano de carreira e continua
+ * no Painel de Controle: aqui ela criaria dois números concorrentes para a mesma
+ * pergunta ("quanto pago neste cargo?"), e a proposta sairia do errado.
+ *
+ * O RH cria, edita e apaga cargo nesta tela — antes era preciso sair para o
+ * Painel de Controle e achar o cargo de novo. Apagar é barrado quando há gente
+ * no cargo: as pessoas ficariam apontando para um cargo inexistente e perderiam
+ * nome na lista, enquadramento e faixa de uma vez.
  */
 import { useMemo, useState } from "react";
-import { Search, Briefcase, ChevronDown, ChevronRight, Users, Pencil } from "lucide-react";
+import { Search, Briefcase, ChevronDown, ChevronRight, Users, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Avatar, EmptyState } from "@/components/ui/misc";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
@@ -59,9 +64,12 @@ const BLOCOS: { chave: keyof Cargo; titulo: string }[] = [
 export default function Cargos() {
   const d = useDominio();
   const sessao = useSessao();
+  const toast = useToast();
   const podeEditar = ehRH(sessao);
-  const { atualizar } = useColecao("cargos");
+  const { criar, atualizar, remover } = useColecao("cargos");
   const [editando, setEditando] = useState<Cargo | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [apagando, setApagando] = useState<Cargo | null>(null);
   const [busca, setBusca] = useState("");
   const [area, setArea] = useState("");
   const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
@@ -101,7 +109,13 @@ export default function Cargos() {
       <PageHeader
         title="Descrição dos Cargos"
         description="O que cada cargo faz, quem o ocupa hoje e o que se paga — para montar proposta."
-      />
+      >
+        {podeEditar && (
+          <button className="btn-primary" onClick={() => setCriando(true)}>
+            <Plus className="h-4 w-4" /> Novo cargo
+          </button>
+        )}
+      </PageHeader>
 
       <Card className="mb-4">
         <CardBody className="flex flex-wrap items-center gap-3">
@@ -144,8 +158,6 @@ export default function Cargos() {
                (salário partido, mês corrente pela metade, admissão no meio do
                mês). Número de contratação é o que o RH sabe e digita. */
             const praticado = c.salarioPraticado;
-            const piso = c.faixas?.[0];
-            const teto = c.faixas?.[c.faixas.length - 1];
             const preenchidos = BLOCOS.filter((b) => String(c[b.chave] ?? "").trim());
             return (
               <Card key={c.id} className="overflow-hidden">
@@ -173,14 +185,14 @@ export default function Cargos() {
                         menor e rotulada, para comparar sem se confundir: uma diz
                         o que se paga, a outra o que o plano previu. */}
                     <span className="mt-0.5 block text-xs text-slate-500">
+                      {/* UM valor só. A faixa por nível N1–N5 vive no plano de
+                          carreira, noutra tela — aqui ela só criaria dois números
+                          concorrentes para a mesma pergunta ("quanto pago neste
+                          cargo?") e a proposta sairia do número errado. */}
                       {praticado != null && praticado > 0
-                        ? <>Paga hoje <strong className="font-semibold text-slate-700">{formatBRL(praticado)}</strong>
+                        ? <>Salário <strong className="font-semibold text-slate-700">{formatBRL(praticado)}</strong>
                             {c.salarioPraticadoEm && <span className="text-slate-400"> · conferido em {formatDate(c.salarioPraticadoEm)}</span>}</>
-                        : <span className="text-slate-400">Salário praticado não informado</span>}
-                      {piso != null && (
-                        <span className="text-slate-400"> · plano: {formatBRL(piso)}
-                          {teto != null && teto !== piso && <>–{formatBRL(teto)}</>}</span>
-                      )}
+                        : <span className="text-slate-400">Salário não informado</span>}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-xs text-slate-500" title={`${quantos} pessoa(s) neste cargo hoje`}>
@@ -197,9 +209,17 @@ export default function Cargos() {
                       type="button"
                       className="btn-ghost text-xs"
                       onClick={() => setEditando(c)}
-                      title={`Editar a descrição e a faixa de ${c.nome}`}
+                      title={`Editar ${c.nome}`}
                     >
                       <Pencil className="h-3.5 w-3.5" /> Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost text-xs text-red-500"
+                      onClick={() => setApagando(c)}
+                      title={`Apagar ${c.nome}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Apagar
                     </button>
                   </div>
                 )}
@@ -244,26 +264,6 @@ export default function Cargos() {
                       </div>
                     )}
 
-                    {c.faixas?.length > 0 && (
-                      <div className="mt-4 border-t border-slate-100 pt-3">
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Faixa por nível</p>
-                        <div className="flex flex-wrap gap-2">
-                          {c.faixas.map((v, n) => (
-                            <span
-                              key={n}
-                              className={cn(
-                                "rounded-lg px-2.5 py-1 text-xs ring-1",
-                                n === 0
-                                  ? "bg-brand/5 font-semibold text-brand-ink ring-brand/20"
-                                  : "bg-slate-50 text-slate-600 ring-slate-200",
-                              )}
-                            >
-                              N{n + 1} · {formatBRL(v)}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </CardBody>
                 )}
               </Card>
@@ -272,13 +272,43 @@ export default function Cargos() {
         </div>
       )}
 
-      {editando && (
+      {(editando || criando) && (
         <ModalEditarCargo
           cargo={editando}
-          onFechar={() => setEditando(null)}
-          onSalvar={(patch) => { atualizar(editando.id, patch); setEditando(null); }}
+          areas={d.areas.filter((a) => a.id !== "direcao")}
+          onFechar={() => { setEditando(null); setCriando(false); }}
+          onSalvar={(patch) => {
+            if (editando) atualizar(editando.id, patch);
+            else criar(patch as Cargo);
+            setEditando(null); setCriando(false);
+          }}
         />
       )}
+
+      {/* Apagar cargo OCUPADO deixaria as pessoas apontando para um cargo que
+          não existe — some o nome na lista, o enquadramento e a faixa. */}
+      <ConfirmDialog
+        aberto={!!apagando}
+        onFechar={() => setApagando(null)}
+        onConfirmar={() => {
+          if (!apagando) return;
+          const usados = (ocupacao.get(apagando.id) ?? []).length;
+          if (usados > 0) {
+            toast(`Não dá para apagar: ${usados} pessoa(s) estão neste cargo. Mude-as antes.`, "erro");
+            setApagando(null);
+            return;
+          }
+          remover(apagando.id);
+          toast(`Cargo “${apagando.nome}” apagado.`);
+          setApagando(null);
+        }}
+        titulo="Apagar cargo?"
+        mensagem={apagando
+          ? (ocupacao.get(apagando.id) ?? []).length > 0
+            ? `“${apagando.nome}” está em uso por ${(ocupacao.get(apagando.id) ?? []).length} pessoa(s) e não pode ser apagado.`
+            : `“${apagando.nome}” será removido. Nenhuma pessoa ocupa este cargo.`
+          : ""}
+      />
 
       <Card className="mt-4">
         <CardHeader title="De onde vem esta tela" icon={<Briefcase className="h-[18px] w-[18px]" />} />
@@ -347,40 +377,35 @@ function OcupanteLinha({ colab, nivel, faixas }: {
    tela e voltar. As FAIXAS entram junto porque descrição e faixa são o mesmo
    assunto — mudar o que o cargo faz sem poder ajustar o que ele paga deixaria a
    metade cara do problema fora do alcance. */
-function ModalEditarCargo({ cargo, onSalvar, onFechar }: {
-  cargo: Cargo;
+function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
+  /** null = criando um cargo novo. */
+  cargo: Cargo | null;
+  areas: { id: string; nome: string }[];
   onSalvar: (patch: Partial<Cargo>) => void;
   onFechar: () => void;
 }) {
   const toast = useToast();
-  const [form, setForm] = useState<Partial<Cargo>>({ ...cargo });
+  const [form, setForm] = useState<Partial<Cargo>>(
+    () => cargo ? { ...cargo } : { nome: "", areaId: areas[0]?.id ?? "", faixas: [0, 0, 0, 0, 0] },
+  );
   const set = (p: Partial<Cargo>) => setForm((f) => ({ ...f, ...p }));
-
-  const setFaixa = (i: number, v: string) => {
-    const n = Number(v.replace(/[^\d.,]/g, "").replace(",", "."));
-    const atual = [...(form.faixas ?? cargo.faixas ?? [0, 0, 0, 0, 0])] as Cargo["faixas"];
-    atual[i] = Number.isFinite(n) ? n : 0;
-    set({ faixas: atual });
-  };
 
   const salvar = () => {
     if (!String(form.nome ?? "").trim()) return toast("O cargo precisa de um nome.", "erro");
-    const f = form.faixas ?? cargo.faixas;
-    /* Faixa que desce no meio do caminho é quase sempre dedo trocado, e o
-       enquadramento de todo mundo do cargo passaria a sair errado em silêncio. */
-    if (f && f.some((v, i) => i > 0 && v < f[i - 1])) {
-      return toast("Cada nível precisa ser maior ou igual ao anterior (N1 → N5).", "erro");
-    }
-    onSalvar(form);
-    toast("Cargo atualizado.");
+    if (!String(form.areaId ?? "").trim()) return toast("Escolha a área do cargo.", "erro");
+    /* Cargo novo nasce com a faixa zerada: ela pertence ao PLANO DE CARREIRA e
+       se ajusta no Painel de Controle. Aqui só existe um salário — dois números
+       para a mesma pergunta fariam a proposta sair do errado. */
+    onSalvar({ ...form, faixas: (form.faixas ?? [0, 0, 0, 0, 0]) as Cargo["faixas"] });
+    toast(cargo ? "Cargo atualizado." : "Cargo criado.");
   };
 
   return (
     <Modal
       aberto
       onFechar={onFechar}
-      titulo={`Editar ${cargo.nome}`}
-      descricao="Vale para esta tela, para a tabela salarial e para o enquadramento de quem ocupa o cargo."
+      titulo={cargo ? `Editar ${cargo.nome}` : "Novo cargo"}
+      descricao="A descrição e o salário valem para esta tela. A faixa por nível do plano de carreira fica no Painel de Controle."
       largura="max-w-2xl"
       rodape={<>
         <button className="btn-outline" onClick={onFechar}>Cancelar</button>
@@ -390,6 +415,11 @@ function ModalEditarCargo({ cargo, onSalvar, onFechar }: {
       <div className="space-y-3">
         <Campo label="Nome do cargo" obrigatorio>
           <Input value={form.nome ?? ""} onChange={(e) => set({ nome: e.target.value })} />
+        </Campo>
+        <Campo label="Área" obrigatorio>
+          <Select value={form.areaId ?? ""} onChange={(e) => set({ areaId: e.target.value })}>
+            {areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+          </Select>
         </Campo>
         <Campo label="Trilha" hint="Opcional — ex.: Técnica, Liderança">
           <Input value={form.trilha ?? ""} onChange={(e) => set({ trilha: e.target.value })} />
@@ -420,20 +450,6 @@ function ModalEditarCargo({ cargo, onSalvar, onFechar }: {
           />
         </Campo>
 
-        <Campo label="Faixa do plano de carreira por nível" hint="Outra coisa: é o que o PLANO prevê, não o que se paga">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {(form.faixas ?? cargo.faixas ?? []).map((v, i) => (
-              <label key={i} className="text-xs text-slate-500">
-                N{i + 1}
-                <Input
-                  inputMode="decimal"
-                  value={String(v ?? "")}
-                  onChange={(e) => setFaixa(i, e.target.value)}
-                />
-              </label>
-            ))}
-          </div>
-        </Campo>
       </div>
     </Modal>
   );
