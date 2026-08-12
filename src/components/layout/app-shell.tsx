@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
-  Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays,
+  Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays, MessageSquare,
   Sun, Moon, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -41,6 +41,7 @@ const NAV: ItemNav[] = [
   // sob Colaboradores (subitens indentados).
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas", sub: true },
+  { href: "/feedback", label: "Feedback", icon: MessageSquare, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
@@ -50,6 +51,7 @@ const NAV: ItemNav[] = [
   { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
   // Cargos & Custos — estrutura e dinheiro. (A Folha Variável virou aba dentro de
   // "Frequência e Advertências", junto do Ponto do mês.)
+  { href: "/cargos", label: "Descrição dos Cargos", icon: Briefcase, perfis: RH, grupo: "Cargos & Custos" },
   { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
   { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },
   // Comunicação & Conteúdo — comunicação interna e material de referência
