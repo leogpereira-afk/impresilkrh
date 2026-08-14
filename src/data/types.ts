@@ -575,6 +575,15 @@ export interface ArquivoRepositorio {
 export interface Treinamento {
   id: string;
   colaboradorId: string;
+  /**
+   * TURMA: o mesmo treinamento lançado para várias pessoas de uma vez.
+   *
+   * O registro continua sendo POR PESSOA — cada uma tem o seu progresso, o seu
+   * status e o seu prazo, porque quem faltou no dia não pode aparecer como
+   * treinado. O `turmaId` é só o fio que diz "estes fizeram juntos", e é ele
+   * que permite dar feedback a quem participou sem procurar nome por nome.
+   */
+  turmaId?: string | null;
   titulo: string;
   tipo: string; // Obrigatório, Reciclagem, Onboarding, Técnico, Segurança
   status: string; // Pendente, Em andamento, Concluído

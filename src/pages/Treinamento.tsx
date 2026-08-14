@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   GraduationCap, Plus, Trophy, Clock, CheckCircle2, Trash2, Pencil, ListChecks, Users, BookOpen,
+  MessageSquare,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -17,8 +18,13 @@ import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, formatPercent } from "@/lib/format";
-import { TIPOS_TREINAMENTO, STATUS_TREINAMENTO, CATALOGO_TREINAMENTOS } from "@/lib/constants";
+import { formatDate, formatPercent, diaLocalISO } from "@/lib/format";
+import { cn } from "@/lib/cn";
+import {
+  TIPOS_TREINAMENTO, STATUS_TREINAMENTO, CATALOGO_TREINAMENTOS,
+  EFEITOS_ELOGIO, AVISO_NAO_E_PUNICAO,
+} from "@/lib/constants";
+import { bloqueio } from "@/lib/feedbackCadencia";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador, Treinamento } from "@/data/types";
 
@@ -51,6 +57,8 @@ export default function Treinamento() {
   const toast = useToast();
   const podeEditar = podeGerir(sessao);
   const { items: treinamentos, criar, atualizar, remover } = useColecao("treinamentos");
+  // Feedback da turma grava na coleção de feedbacks, não aqui.
+  const { criar: criarFeedback } = useColecao("feedbacks");
 
   const [novo, setNovo] = useState(false);
   const [editar, setEditar] = useState<Treinamento | null>(null);
@@ -140,7 +148,33 @@ export default function Treinamento() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendentes, d]);
 
+  /* TURMAS: quem fez o mesmo treinamento junto. É este agrupamento que permite
+     dar feedback a quem participou sem procurar nome por nome. */
+  const turmas = useMemo(() => {
+    const m = new Map<string, Treinamento[]>();
+    for (const t of treinamentos) {
+      if (!t.turmaId) continue;
+      const arr = m.get(t.turmaId);
+      if (arr) arr.push(t); else m.set(t.turmaId, [t]);
+    }
+    return [...m.entries()]
+      .map(([turmaId, regs]) => ({ turmaId, titulo: regs[0].titulo, tipo: regs[0].tipo, regs }))
+      .filter((t) => t.regs.length > 1)
+      .sort((a, b) => b.regs.length - a.regs.length || a.titulo.localeCompare(b.titulo, "pt-BR"));
+  }, [treinamentos]);
+
+  const [feedbackTurma, setFeedbackTurma] = useState<{ turmaId: string; titulo: string; tipo: string; regs: Treinamento[] } | null>(null);
+
   // ----- Drills -----
+  /* O catálogo aprende: sugestões = a lista de fábrica MAIS tudo que já foi
+     lançado na base. Assim um treinamento fora do padrão NR é digitado uma vez
+     e vira sugestão para sempre, sem precisar mexer em código. */
+  const sugestoesTitulo = useMemo(() => {
+    const usados = new Set(treinamentos.map((t) => t.titulo).filter(Boolean));
+    for (const t of CATALOGO_TREINAMENTOS) usados.add(t);
+    return [...usados].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [treinamentos]);
+
   const drillRegs = (titulo: string, regs: Treinamento[], subtitulo?: string) =>
     drill.abrir(titulo, pessoasDe(regs), subtitulo ?? `${pessoasDe(regs).length} colaborador(es) no seu escopo`);
 
@@ -370,6 +404,72 @@ export default function Treinamento() {
         )}
       </Card>
 
+      {/* TURMAS — e o elo com o feedback. Quem deu um treinamento para seis
+          pessoas quer falar com as seis, e procurar nome por nome numa lista de
+          trinta é o que faz a conversa não acontecer. */}
+      {turmas.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader
+            title="Turmas"
+            subtitle="Quem fez o mesmo treinamento junto"
+            icon={<Users className="h-[18px] w-[18px]" />}
+          />
+          <CardBody className="space-y-2">
+            {turmas.map((t) => (
+              <div key={t.turmaId} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-100 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800">{t.titulo}</p>
+                  <p className="text-xs text-slate-500">
+                    {t.tipo} · {t.regs.length} pessoas ·{" "}
+                    {t.regs.filter((r) => r.status === "Concluído").length} concluíram
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-outline shrink-0 text-xs"
+                  onClick={() => setFeedbackTurma(t)}
+                  title="Registrar a mesma conversa para todos que fizeram este treinamento"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" /> Dar feedback à turma
+                </button>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
+      {feedbackTurma && (
+        <ModalFeedbackTurma
+          turma={feedbackTurma}
+          nomeDe={(id) => d.nomeColab(id)}
+          onFechar={() => setFeedbackTurma(null)}
+          onSalvar={(texto, efeito) => {
+            /* UM REGISTRO POR PESSOA, com o mesmo `grupoId` e o selo de conversa
+               com a equipe. Sem o selo, a ficha de cada um leria como se a
+               conversa tivesse sido individual — e não foi. */
+            const grupoId = `grupo_${Date.now().toString(36)}`;
+            const agora = new Date().toISOString();
+            for (const r of feedbackTurma.regs) {
+              criarFeedback({
+                colaboradorId: r.colaboradorId,
+                autorId: sessao?.colaboradorId ?? null,
+                tipo: "Reconhecimento",
+                oQueAconteceu: texto,
+                efeito,
+                conteudo: `${texto} No que deu: ${efeito}.`,
+                contexto: `Turma: ${feedbackTurma.titulo}`,
+                ocorridoEm: diaLocalISO(new Date()),
+                registradoEm: agora,
+                criadoEm: agora,
+                grupoId,
+              });
+            }
+            toast(`Feedback registrado para ${feedbackTurma.regs.length} pessoas.`);
+            setFeedbackTurma(null);
+          }}
+        />
+      )}
+
       {/* O que precisa treinar (pendentes agrupados por título) */}
       <Card className="mt-6">
         <CardHeader
@@ -415,11 +515,25 @@ export default function Treinamento() {
       {(novo || editar) && (
         <NovoTreinamentoModal
           escopo={escopo}
+          sugestoes={sugestoesTitulo}
           registro={editar}
           onFechar={() => { setNovo(false); setEditar(null); }}
           onCriar={(payload) => {
-            if (editar) { atualizar(editar.id, payload); toast("Treinamento atualizado."); }
-            else { criar(payload); toast("Treinamento criado."); }
+            const { colaboradoresIds, ...dados } = payload;
+            if (editar) {
+              atualizar(editar.id, dados);
+              toast("Treinamento atualizado.");
+            } else {
+              /* UM REGISTRO POR PESSOA, com o mesmo `turmaId`. Guardar a turma
+                 num registro só faria o progresso ser coletivo — e quem faltou
+                 no dia apareceria como treinado. */
+              const ids = colaboradoresIds ?? [];
+              const turmaId = `turma_${Date.now().toString(36)}`;
+              for (const cid of ids) criar({ ...dados, colaboradorId: cid, turmaId });
+              toast(ids.length === 1
+                ? "Treinamento criado."
+                : `Treinamento criado para ${ids.length} pessoas.`);
+            }
             setNovo(false); setEditar(null);
           }}
         />
@@ -453,18 +567,32 @@ export default function Treinamento() {
 // =====================================================================================
 function NovoTreinamentoModal({
   escopo,
+  sugestoes,
   registro,
   onFechar,
   onCriar,
 }: {
   escopo: Colaborador[];
+  /** Títulos já usados na base — o catálogo aprende com o uso. */
+  sugestoes: string[];
   /** Preenchido = edição; nulo = novo. */
   registro?: Treinamento | null;
   onFechar: () => void;
-  onCriar: (payload: Partial<Treinamento>) => void;
+  onCriar: (payload: Partial<Treinamento> & { colaboradoresIds?: string[] }) => void;
 }) {
   const toast = useToast();
-  const [colaboradorId, setColaboradorId] = useState(registro?.colaboradorId ?? escopo[0]?.id ?? "");
+  /* Uma turma, não uma pessoa. O treinamento de segurança é dado para o setor
+     inteiro de uma vez — lançar seis vezes o mesmo curso é o caminho mais curto
+     para não lançar nenhum. Na EDIÇÃO continua sendo um registro só: cada pessoa
+     tem o seu progresso. */
+  const [selecionados, setSelecionados] = useState<Set<string>>(
+    () => new Set(registro ? [registro.colaboradorId] : []),
+  );
+  const [buscaPessoa, setBuscaPessoa] = useState("");
+  const visiveis = useMemo(() => {
+    const t = buscaPessoa.trim().toLowerCase();
+    return t ? escopo.filter((c) => c.nome.toLowerCase().includes(t)) : escopo;
+  }, [escopo, buscaPessoa]);
   const [titulo, setTitulo] = useState(registro?.titulo ?? "");
   const [tipo, setTipo] = useState<string>(registro?.tipo ?? TIPOS_TREINAMENTO[0]);
   const [status, setStatus] = useState<string>(registro?.status ?? STATUS_TREINAMENTO[0]);
@@ -474,7 +602,7 @@ function NovoTreinamentoModal({
   const [descricao, setDescricao] = useState(registro?.descricao ?? "");
 
   const salvar = () => {
-    if (!colaboradorId) return toast("Selecione o colaborador.", "erro");
+    if (selecionados.size === 0) return toast("Selecione quem fez o treinamento.", "erro");
     if (!titulo.trim()) return toast("Informe o título do treinamento.", "erro");
     // Mantém status e progresso coerentes.
     let st = status;
@@ -483,7 +611,7 @@ function NovoTreinamentoModal({
     else if (st === "Pendente") pr = 0;
     else if (pr >= 100) st = "Concluído";
     onCriar({
-      colaboradorId,
+      colaboradoresIds: [...selecionados],
       titulo: titulo.trim(),
       tipo,
       status: st,
@@ -509,18 +637,64 @@ function NovoTreinamentoModal({
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Campo label="Colaborador" obrigatorio className="sm:col-span-2">
-          <Select value={colaboradorId} onChange={(e) => setColaboradorId(e.target.value)}>
-            <option value="">Selecione…</option>
-            {escopo.map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
-            ))}
-          </Select>
+        <Campo
+          label={registro ? "Colaborador" : "Quem fez o treinamento"}
+          obrigatorio
+          className="sm:col-span-2"
+          hint={registro ? undefined : "Marque a turma inteira — cada um fica com o próprio progresso"}
+        >
+          {registro ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {escopo.find((c) => c.id === registro.colaboradorId)?.nome ?? "—"}
+            </p>
+          ) : (
+            <>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Input
+                  value={buscaPessoa}
+                  onChange={(e) => setBuscaPessoa(e.target.value)}
+                  placeholder="Filtrar por nome"
+                  className="min-w-[10rem] flex-1"
+                />
+                <button type="button" className="btn-outline text-xs"
+                  onClick={() => setSelecionados(new Set(visiveis.map((c) => c.id)))}>
+                  Marcar os {visiveis.length}
+                </button>
+                <button type="button" className="btn-ghost text-xs"
+                  onClick={() => setSelecionados(new Set())}>
+                  Limpar
+                </button>
+              </div>
+              <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200">
+                {visiveis.map((c) => (
+                  <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b border-slate-50 px-3 py-1.5 text-sm last:border-0 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={selecionados.has(c.id)}
+                      onChange={() => setSelecionados((prev) => {
+                        const n = new Set(prev);
+                        n.has(c.id) ? n.delete(c.id) : n.add(c.id);
+                        return n;
+                      })}
+                      className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+                    />
+                    <span className="text-slate-700">{c.nome}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {selecionados.size} selecionada(s) — serão criados {selecionados.size} registro(s), um por pessoa.
+              </p>
+            </>
+          )}
         </Campo>
         <Campo label="Título" obrigatorio className="sm:col-span-2">
           <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Uso de EPIs e Segurança (NR-06)" list="catalogo-treinamentos" />
+          {/* O campo SEMPRE aceitou texto livre — isto é sugestão, não lista
+              fechada. O que faltava era a lista APRENDER: o que foi digitado uma
+              vez vira sugestão nas próximas, sem precisar mexer em código. */}
           <datalist id="catalogo-treinamentos">
-            {CATALOGO_TREINAMENTOS.map((t) => <option key={t} value={t} />)}
+            {sugestoes.map((t) => <option key={t} value={t} />)}
           </datalist>
         </Campo>
         <Campo label="Tipo" obrigatorio>
@@ -554,6 +728,84 @@ function NovoTreinamentoModal({
         <Campo label="Descrição" className="sm:col-span-2">
           <Textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Detalhe o conteúdo e o objetivo do treinamento." />
         </Campo>
+      </div>
+    </Modal>
+  );
+}
+
+/* Conversa com a TURMA, não com uma pessoa.
+ *
+ * Só RECONHECIMENTO, de propósito. Ajuste com combinado cobrado de um indivíduo
+ * a partir de uma conversa coletiva é injusto e indefensável — quem faltou, quem
+ * já fazia certo e quem errou receberiam a mesma cobrança escrita na ficha.
+ * Elogio coletivo é o oposto: reconhece sem imputar nada a ninguém.
+ */
+function ModalFeedbackTurma({ turma, nomeDe, onSalvar, onFechar }: {
+  turma: { titulo: string; regs: Treinamento[] };
+  nomeDe: (id: string) => string;
+  onSalvar: (texto: string, efeito: string) => void;
+  onFechar: () => void;
+}) {
+  const toast = useToast();
+  const [texto, setTexto] = useState("");
+  const [efeito, setEfeito] = useState<string>(EFEITOS_ELOGIO[0]);
+
+  const salvar = () => {
+    if (texto.trim().length < 15) return toast("Conte o que aconteceu — uma frase basta.", "erro");
+    const b = bloqueio(texto);
+    if (b) {
+      return toast(
+        b === "sensivel"
+          ? "Isso é dado sensível (saúde, sindicato, religião) e não entra num registro de conversa."
+          : "Isso tem caminho próprio, com sigilo. Fala direto com o RH.",
+        "erro",
+      );
+    }
+    onSalvar(texto.trim(), efeito);
+  };
+
+  return (
+    <Modal
+      aberto
+      onFechar={onFechar}
+      titulo="Feedback para a turma"
+      descricao={`${turma.titulo} · ${turma.regs.length} pessoas`}
+      largura="max-w-lg"
+      rodape={<>
+        <button className="btn-outline" onClick={onFechar}>Cancelar</button>
+        <button className="btn-primary" onClick={salvar}>Registrar para todos</button>
+      </>}
+    >
+      <div className="space-y-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs font-medium text-slate-600">Vai para:</p>
+          <p className="text-xs text-slate-500">
+            {turma.regs.map((r) => nomeDe(r.colaboradorId)).join(" · ")}
+          </p>
+        </div>
+
+        <Campo label="O que você quer reconhecer" obrigatorio
+          hint="O mesmo texto vai para todos, e a ficha de cada um mostra que foi conversa com a equipe.">
+          <Textarea autoFocus rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} />
+        </Campo>
+
+        <Campo label="No que deu" obrigatorio>
+          <div className="flex flex-wrap gap-1.5">
+            {EFEITOS_ELOGIO.map((e) => (
+              <button key={e} type="button" onClick={() => setEfeito(e)}
+                className={cn("rounded-lg border px-2.5 py-1 text-xs transition",
+                  efeito === e ? "border-brand bg-brand/5 font-medium text-brand-ink" : "border-slate-200 text-slate-600 hover:border-brand")}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </Campo>
+
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+          Só reconhecimento: ajuste com combinado sai de conversa individual, porque
+          cobrança coletiva na ficha de um indivíduo é injusta.<br />
+          {AVISO_NAO_E_PUNICAO}
+        </p>
       </div>
     </Modal>
   );
