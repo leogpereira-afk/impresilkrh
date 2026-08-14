@@ -36,6 +36,8 @@ export interface FeedbackLike {
   conteudo?: string;
   /** Conversa com a EQUIPE: mesmo texto em várias fichas. */
   grupoId?: string | null;
+  /** "treinamento" = fala do curso, não do serviço do dia a dia. */
+  origem?: string | null;
 }
 
 export type SituacaoFeedback = "nunca" | "atrasado" | "a-vencer" | "em-dia";
@@ -79,7 +81,14 @@ export function cadenciaDe(
      "em dia" sem ninguém nunca ter tido uma conversa sobre o próprio trabalho.
      O relógio individual segue contando a partir do último feedback INDIVIDUAL. */
   const ultimo = ultimoFeedback(feedbacksDaPessoa);
-  const ultimoIndividual = ultimoFeedback(feedbacksDaPessoa.filter((f) => !f.grupoId));
+  /* O relógio da cadência conta só a CONVERSA SOBRE O TRABALHO: individual e
+     sem origem externa. Feedback de treinamento fala do curso que a pessoa fez;
+     tratá-lo como conversa de trabalho faria o histórico dizer que houve
+     conversa quando o que houve foi um elogio no fim de um treinamento — e o RH
+     leria a ficha errado na hora de decidir efetivação ou promoção. */
+  const ultimoIndividual = ultimoFeedback(
+    feedbacksDaPessoa.filter((f) => !f.grupoId && !f.origem),
+  );
   const marco = ultimoIndividual?.criadoEm ?? dataAdmissao ?? null;
   if (!marco) return { ultimo, diasDesde: null, diasParaProximo: null, situacao: "nunca" };
 

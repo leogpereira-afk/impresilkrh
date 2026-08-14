@@ -250,3 +250,21 @@ describe("conversa com a equipe conta diferente", () => {
     expect(r.diasDesde).toBe(10); // conta do individual, não do coletivo
   });
 });
+
+describe("feedback de TREINAMENTO não é conversa de trabalho", () => {
+  const trein = (id: string, dias: number): FeedbackLike =>
+    ({ id, colaboradorId: "p1", criadoEm: diasAtras(dias), origem: "treinamento", tipo: "Reconhecimento" });
+
+  it("O CASO QUE IMPORTA: elogio no fim de um curso não zera o relógio da conversa", () => {
+    /* Se zerasse, o RH abriria a ficha na hora de decidir efetivação e leria
+       "conversou há 5 dias" — quando o que houve foi um elogio de turma. */
+    const r = cadenciaDe([trein("t", 5)], diasAtras(900).slice(0, 10), HOJE);
+    expect(r.situacao).toBe("atrasado");
+  });
+
+  it("conversa de trabalho individual continua contando normalmente", () => {
+    const r = cadenciaDe([trein("t", 1), fb("ind", 10)], diasAtras(900).slice(0, 10), HOJE);
+    expect(r.situacao).toBe("em-dia");
+    expect(r.diasDesde).toBe(10);
+  });
+});

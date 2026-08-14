@@ -457,6 +457,11 @@ export default function Treinamento() {
                 oQueAconteceu: texto,
                 efeito,
                 conteudo: `${texto} No que deu: ${efeito}.`,
+                /* Marca a ORIGEM: é feedback sobre o treinamento, não sobre o
+                   serviço do dia a dia. A tela de Feedback separa os dois. */
+                origem: "treinamento",
+                origemRef: feedbackTurma.turmaId,
+                origemTitulo: feedbackTurma.titulo,
                 contexto: `Turma: ${feedbackTurma.titulo}`,
                 ocorridoEm: diaLocalISO(new Date()),
                 registradoEm: agora,

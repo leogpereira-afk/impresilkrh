@@ -365,6 +365,21 @@ export interface Feedback {
 
   /** Conversa com a equipe: mesmo texto em N pessoas, marcadas pelo grupo. */
   grupoId?: string | null;
+
+  /**
+   * DE ONDE veio este feedback. Ausente = conversa de trabalho, o caso comum.
+   *
+   * "treinamento" é outra coisa: fala do curso que a pessoa fez, não do serviço
+   * dela no dia a dia. Misturar os dois faria o histórico dizer que houve
+   * conversa sobre o trabalho quando o que houve foi um elogio no fim de um
+   * treinamento — e o RH leria a ficha errado justamente na hora de decidir
+   * efetivação ou promoção.
+   */
+  origem?: string | null;
+  /** O que originou: id da turma, do ciclo, etc. */
+  origemRef?: string | null;
+  /** Rótulo legível da origem — ex.: o título do treinamento. */
+  origemTitulo?: string | null;
 }
 
 export interface Viagem {

@@ -319,11 +319,20 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
                 {/* Conversa com a EQUIPE precisa se identificar: sem o selo, a
                     ficha leria como se tivesse sido individual — e não foi. Ela
                     também não zera o relógio da cadência (ver feedbackCadencia). */}
-                {(cad.ultimo as FeedbackReg).grupoId && (
+                {/* Feedback de TREINAMENTO fala do curso, não do serviço do dia
+                    a dia — e não conta no relógio da cadência (ver
+                    feedbackCadencia). Precisa se identificar, senão a ficha diz
+                    "conversou há 5 dias" quando o que houve foi outra coisa. */}
+                {(cad.ultimo as FeedbackReg).origem === "treinamento" ? (
+                  <span className="ml-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-violet-200"
+                    title={(cad.ultimo as FeedbackReg).origemTitulo ?? "Feedback de treinamento"}>
+                    treinamento
+                  </span>
+                ) : (cad.ultimo as FeedbackReg).grupoId ? (
                   <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
                     turma
                   </span>
-                )}
+                ) : null}
               </span>
             : <span className="text-slate-300">—</span>}
         </td>
@@ -352,8 +361,18 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
               )}
               {cad.ultimo?.conteudo && (
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Último feedback</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    {(cad.ultimo as FeedbackReg).origem === "treinamento"
+                      ? `Último registro — treinamento${(cad.ultimo as FeedbackReg).origemTitulo ? `: ${(cad.ultimo as FeedbackReg).origemTitulo}` : ""}`
+                      : "Último feedback"}
+                  </p>
                   <p className="whitespace-pre-line text-sm text-slate-600">{cad.ultimo.conteudo}</p>
+                  {(cad.ultimo as FeedbackReg).origem === "treinamento" && (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      Fala do treinamento — não substitui a conversa sobre o trabalho, e por isso
+                      não conta na cadência.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
