@@ -224,3 +224,29 @@ describe("montarConteudo", () => {
     expect(t).not.toContain("Combinado");
   });
 });
+
+describe("conversa com a equipe conta diferente", () => {
+  const eq = (id: string, dias: number): FeedbackLike =>
+    ({ id, colaboradorId: "p1", criadoEm: diasAtras(dias), grupoId: "g1", tipo: "Reconhecimento" });
+
+  it("O CASO QUE IMPORTA: elogio coletivo NÃO zera o relógio da cadência", () => {
+    /* Se zerasse, bastaria um elogio à equipe por trimestre para o quadro
+       inteiro aparecer "em dia" sem ninguém nunca ter tido uma conversa sobre o
+       próprio trabalho — o módulo viraria teatro. */
+    const so = cadenciaDe([eq("g", 5)], diasAtras(900).slice(0, 10), HOJE);
+    expect(so.situacao).toBe("atrasado");
+  });
+
+  it("mas tira de “nunca recebeu” — houve conversa, e ela ouviu", () => {
+    const nunca = cadenciaDe([], diasAtras(20).slice(0, 10), HOJE);
+    expect(nunca.situacao).toBe("nunca");
+    const comEquipe = cadenciaDe([eq("g", 5)], diasAtras(20).slice(0, 10), HOJE);
+    expect(comEquipe.ultimo?.id).toBe("g"); // aparece como último contato
+  });
+
+  it("feedback individual manda sobre o coletivo no relógio", () => {
+    const r = cadenciaDe([eq("g", 1), fb("ind", 10)], diasAtras(900).slice(0, 10), HOJE);
+    expect(r.situacao).toBe("em-dia");
+    expect(r.diasDesde).toBe(10); // conta do individual, não do coletivo
+  });
+});

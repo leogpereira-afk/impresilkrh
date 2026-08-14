@@ -34,6 +34,8 @@ export interface FeedbackLike {
   tipo?: string;
   autorId?: string | null;
   conteudo?: string;
+  /** Conversa com a EQUIPE: mesmo texto em várias fichas. */
+  grupoId?: string | null;
 }
 
 export type SituacaoFeedback = "nunca" | "atrasado" | "a-vencer" | "em-dia";
@@ -70,8 +72,15 @@ export function cadenciaDe(
   dataAdmissao?: string | null,
   hoje: Date = HOJE,
 ): Cadencia {
+  /* CONVERSA COM A EQUIPE conta menos que conversa individual, e a diferença
+     importa: ela tira a pessoa de "nunca recebeu" — porque de fato houve
+     conversa e ela ouviu —, mas NÃO zera o relógio da cadência. Se zerasse,
+     bastaria um elogio coletivo por trimestre para o quadro inteiro aparecer
+     "em dia" sem ninguém nunca ter tido uma conversa sobre o próprio trabalho.
+     O relógio individual segue contando a partir do último feedback INDIVIDUAL. */
   const ultimo = ultimoFeedback(feedbacksDaPessoa);
-  const marco = ultimo?.criadoEm ?? dataAdmissao ?? null;
+  const ultimoIndividual = ultimoFeedback(feedbacksDaPessoa.filter((f) => !f.grupoId));
+  const marco = ultimoIndividual?.criadoEm ?? dataAdmissao ?? null;
   if (!marco) return { ultimo, diasDesde: null, diasParaProximo: null, situacao: "nunca" };
 
   // `diasDeCalendario` ancora no início do dia — a conta crua de milissegundos
@@ -80,7 +89,7 @@ export function cadenciaDe(
   if (isNaN(desde)) return { ultimo, diasDesde: null, diasParaProximo: null, situacao: "nunca" };
 
   const diasParaProximo = CADENCIA_FEEDBACK_DIAS - desde;
-  const situacao: SituacaoFeedback = !ultimo && diasParaProximo > 0
+  const situacao: SituacaoFeedback = !ultimoIndividual && diasParaProximo > 0
     // Nunca recebeu, mas ainda dentro do prazo desde que entrou: é "nunca" como
     // fato, não como cobrança. Quem lê precisa saber que não há histórico.
     ? "nunca"

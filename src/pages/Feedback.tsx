@@ -313,7 +313,18 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
         <td className="td"><Badge variant={selo.variante}>{selo.texto}</Badge></td>
         <td className="td hidden sm:table-cell text-slate-600">
           {cad.ultimo
-            ? <span className="tabular-nums">{formatDate(cad.ultimo.criadoEm)}{cad.ultimo.tipo && <span className="text-slate-400"> · {cad.ultimo.tipo}</span>}</span>
+            ? <span className="tabular-nums">
+                {formatDate(cad.ultimo.criadoEm)}
+                {cad.ultimo.tipo && <span className="text-slate-400"> · {tipoFeedbackLegado(cad.ultimo.tipo)}</span>}
+                {/* Conversa com a EQUIPE precisa se identificar: sem o selo, a
+                    ficha leria como se tivesse sido individual — e não foi. Ela
+                    também não zera o relógio da cadência (ver feedbackCadencia). */}
+                {(cad.ultimo as FeedbackReg).grupoId && (
+                  <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                    turma
+                  </span>
+                )}
+              </span>
             : <span className="text-slate-300">—</span>}
         </td>
         <td className="td hidden lg:table-cell tabular-nums text-slate-500">
