@@ -63,6 +63,9 @@ Deno.serve(async (req) => {
   if (!sessao) return json({ erro: "Não autorizado." }, 401);
 
   const ehAdmin = sessao.perfil === "ADMIN_RH";
+  // Gestão = quem lidera equipe (gestor ou RH). Treinamento e feedback são
+  // trabalho de gestão, não de colaborador comum.
+  const ehGestao = ehAdmin || sessao.perfil === "GESTOR";
   const meuId = sessao.colaborador_id;
 
   // Escopo LGPD de leitura: mesma regra de sempre — RH vê tudo; os demais não
@@ -85,6 +88,27 @@ Deno.serve(async (req) => {
     // que existe logo acima para `colaboradores` e `pagamentos`. Descoberto na
     // revisão de 02/08/2026, antes de ir para produção.
     if (env.colecao === "alteracoes") return null;
+    /* `usuarios` é CONTROLE DE ACESSO, e a leitura estava aberta — a escrita foi
+       fechada em 418aa90, a leitura ficou. O registro carrega o senhaHash
+       (PBKDF2) de cada conta e, em registro legado ainda não migrado, o campo
+       `senha` em texto puro. Sem esta linha, qualquer pessoa logada baixava a
+       coleção inteira pelo pull e tinha o hash de senha do ADMIN_RH no próprio
+       disco — bruteforce offline, e com a senha certa entra como RH num
+       computador do escritório com a base em cache. Mesma "porta de dados
+       destrancada" do histórico logo acima. */
+    if (env.colecao === "usuarios") return null;
+    /* `cargos.salarioPraticado` é o que a empresa paga em cada cargo, digitado
+       pelo RH — dado de folha. A tela é restrita ao RH, mas o pull baixava a
+       coleção inteira. Não dá para devolver `null` (todo mundo precisa do NOME
+       do cargo para a ficha funcionar), então some só o campo de salário. */
+    if (env.colecao === "cargos") {
+      const { salarioPraticado, salarioPraticadoEm, ...resto } = env.registro;
+      return { ...env, registro: resto };
+    }
+    /* `feedbacks` é conversa sobre o trabalho de uma pessoa — só ela e o RH veem
+       o que é dela. Sem isto, qualquer logado baixava o feedback de todo o
+       quadro. */
+    if (env.colecao === "feedbacks" && env.registro.colaboradorId !== meuId) return null;
     return env;
   };
   // Escopo de escrita: espelha o de leitura.
@@ -103,6 +127,20 @@ Deno.serve(async (req) => {
        administra o RH mexe nisso — e quem administra já passou pelo `ehAdmin`
        lá em cima. */
     if (colecao === "usuarios") return false;
+    /* `cargos` é estrutura da empresa + salário praticado. Sem esta linha,
+       qualquer logado reescrevia um cargo pelo sync — mudava o salário que a
+       tela mostra ao RH, ou apagava a descrição. Só o RH mexe. */
+    if (colecao === "cargos") return false;
+    /* `feedbacks` é conversa sobre alguém, e vale como registro. Todo mundo caía
+       no `return true` e podia FORJAR um feedback no nome de qualquer pessoa —
+       inclusive escrever na própria ficha "recebeu ajuste sobre X" para inflar
+       o próprio histórico, ou plantar um registro contra um colega. Um feedback
+       só pode ser escrito por quem é o autor. */
+    if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId;
+    /* `treinamentos` é lançado por gestão (a tela é restrita a gestor+RH), nunca
+       por colaborador comum — senão dá para marcar treinamento no nome de
+       terceiro, ou marcar o próprio como concluído sem ter feito. */
+    if (colecao === "treinamentos") return ehGestao;
     return true;
   };
 

@@ -32,10 +32,11 @@ import {
   AVISO_NAO_E_PUNICAO, tipoFeedbackLegado,
 } from "@/lib/constants";
 import {
-  cadenciaDe, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
+  cadenciaDe, cadenciaDaPessoa, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
   bloqueio, combinadoEmAberto, combinadoVencido, ehRotaSeguranca, montarConteudo,
   type Cadencia, type SituacaoFeedback, type MotivoBloqueio,
 } from "@/lib/feedbackCadencia";
+import { situacaoExperiencia } from "@/lib/clt";
 import { cn } from "@/lib/cn";
 import type { Colaborador, Feedback as FeedbackReg } from "@/data/types";
 
@@ -94,7 +95,15 @@ export default function Feedback() {
       const arr = agrupado.get(f.colaboradorId);
       if (arr) arr.push(f); else agrupado.set(f.colaboradorId, [f]);
     }
-    return pessoas.map((c) => ({ c, cad: cadenciaDe(agrupado.get(c.id) ?? [], c.dataAdmissao) }));
+    return pessoas.map((c) => {
+      /* Ritmo por pessoa: 30 dias em experiência (a conversa precede a decisão
+         de efetivar), 45 com plano de ação aberto, 90 no padrão. */
+      const dias = cadenciaDaPessoa({
+        emExperiencia: !!situacaoExperiencia(c),
+        comPlanoAberto: false, // PDI ainda não é lido aqui; entra quando houver a fonte
+      });
+      return { c, cad: cadenciaDe(agrupado.get(c.id) ?? [], c.dataAdmissao, undefined, dias) };
+    });
   }, [pessoas, feedbacks]);
 
   /* Os quatro números saem SEMPRE do quadro inteiro, nunca da lista filtrada:

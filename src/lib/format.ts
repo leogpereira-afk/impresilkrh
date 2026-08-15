@@ -125,3 +125,39 @@ export const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
+
+/**
+ * Lê um valor em dinheiro digitado à mão, no formato brasileiro.
+ *
+ * O parse ingênuo (`.replace(",", ".")` e `Number`) quebra de duas formas com o
+ * formato que a pessoa realmente digita: "2.500,00" vira "2.500.00" (NaN, e o
+ * salário some), e "2.500" vira 2.5 (o ponto de milhar lido como decimal). Aqui
+ * o separador de milhar é descartado e só a vírgula decimal vira ponto.
+ *
+ * Devolve null para vazio ou lixo — quem chama decide o que fazer com "não sei".
+ */
+export function parseBRL(texto: string): number | null {
+  const limpo = String(texto ?? "").trim();
+  if (!limpo) return null;
+  // Fica só dígito, ponto e vírgula.
+  const so = limpo.replace(/[^\d.,]/g, "");
+  if (!so) return null;
+  // A ÚLTIMA vírgula (ou o último ponto, se não houver vírgula) é o decimal;
+  // todo o resto é separador de milhar e sai.
+  let semMilhar: string;
+  if (so.includes(",")) {
+    // Vírgula presente: ela é o decimal, todo ponto é milhar. "2.500,00" -> 2500.00
+    semMilhar = so.replace(/\./g, "").replace(",", ".");
+  } else {
+    /* Sem vírgula, o ponto é ambíguo. No dinheiro digitado à mão em pt-BR, ponto
+       seguido de exatamente 3 dígitos é MILHAR ("2.500" = 2500), e de 1 ou 2 é
+       DECIMAL ("1234.56" = 1234.56; "2.5" = 2.5). Se o último grupo tem 3
+       dígitos, todos os pontos são milhar; senão, só o último ponto é decimal. */
+    const ultimoGrupo = so.slice(so.lastIndexOf(".") + 1);
+    semMilhar = ultimoGrupo.length === 3
+      ? so.replace(/\./g, "")
+      : so.replace(/\.(?=.*\.)/g, "");
+  }
+  const n = Number(semMilhar);
+  return Number.isFinite(n) ? n : null;
+}

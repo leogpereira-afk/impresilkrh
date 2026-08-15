@@ -95,7 +95,19 @@ export function entrar(perfil: Perfil, colaboradorId: string, lembrar = false): 
 /** Marca atividade: adia a expiração. Chamado a cada navegação/interação. */
 export function renovarSessao(): void {
   const s = cache ?? ler();
-  if (s) gravar(s, Date.now());
+  // PRESERVA o "manter conectado". Sem repassar `lembrar`, o default `false`
+  // apagava a marcação no primeiro clique depois do login — 30 dias viravam 12h,
+  // à revelia de quem marcou a caixa.
+  if (s) gravar(s, Date.now(), lembrarGravado());
+}
+
+/** Marcou "manter conectado neste aparelho"? Lê o flag persistido. */
+export function lembrarGravado(): boolean {
+  if (!temWindow) return false;
+  try {
+    const raw = window.localStorage.getItem(SESSAO_KEY);
+    return raw ? !!(JSON.parse(raw) as SessaoGravada)?.lembrar : false;
+  } catch { return false; }
 }
 
 export function sair(): void {

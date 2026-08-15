@@ -11,7 +11,7 @@
 // ============================================================================
 import type { Session } from "@supabase/supabase-js";
 import { supabase, SUPABASE_CONFIGURADO, FN_ADMIN_USERS, FN_ACESSO_ENTRAR, ANON_PUBLICA } from "@/lib/supabase";
-import { entrar, sair, obterSessao, type Sessao } from "@/lib/session";
+import { entrar, sair, obterSessao, lembrarGravado, type Sessao } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 
 export const MODO_JWT: boolean = SUPABASE_CONFIGURADO;
@@ -49,8 +49,19 @@ if (temWindow && supabase) {
       const real = await perfilDoUsuario(data.session.user.id);
       if (!real) { await supabase!.auth.signOut(); sair(); return; }
       const local = obterSessao();
-      if (!local || local.perfil !== real.perfil || local.colaboradorId !== real.colaboradorId) {
-        entrar(real.perfil, real.colaboradorId, true);
+      /* SEM SESSÃO LOCAL DO APP = expirou por inatividade (o vigia de 12h/30d de
+         session.ts removeu o SESSAO_KEY). NÃO ressuscitar: a sessão do Supabase
+         persiste no navegador e seu refresh token não vence sozinho, então um F5
+         num computador compartilhado da gráfica reentrava como o RH horas depois
+         de a pessoa sair — exatamente o que a expiração existe para impedir.
+         Aqui a sessão do app é a fonte da verdade de "ainda logado": se ela
+         morreu, encerra a do Supabase também. */
+      if (!local) { await supabase!.auth.signOut(); sair(); return; }
+      /* Perfil divergente (adulterado no console, ou mudou no servidor): corrige
+         PRESERVANDO o "manter conectado" que a pessoa escolheu — nunca `true`
+         fixo, que dava 30 dias a quem não pediu. */
+      if (local.perfil !== real.perfil || local.colaboradorId !== real.colaboradorId) {
+        entrar(real.perfil, real.colaboradorId, lembrarGravado());
       }
     } catch { /* offline: fica com o que tem, e o sync recusa o que não puder */ }
   });

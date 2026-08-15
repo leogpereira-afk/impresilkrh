@@ -154,6 +154,12 @@ export default function Treinamento() {
     const m = new Map<string, Treinamento[]>();
     for (const t of treinamentos) {
       if (!t.turmaId) continue;
+      /* SÓ quem está no escopo do usuário. Sem isto, o gestor via a turma
+         inteira — incluindo gente de outra equipe — e o botão "dar feedback à
+         turma" gravaria na ficha de subordinado alheio. A lista principal já
+         filtra por `idsEscopo`; este agrupamento tinha ficado de fora e virava a
+         porta dos fundos do escopo. */
+      if (!idsEscopo.has(t.colaboradorId)) continue;
       const arr = m.get(t.turmaId);
       if (arr) arr.push(t); else m.set(t.turmaId, [t]);
     }
@@ -161,7 +167,7 @@ export default function Treinamento() {
       .map(([turmaId, regs]) => ({ turmaId, titulo: regs[0].titulo, tipo: regs[0].tipo, regs }))
       .filter((t) => t.regs.length > 1)
       .sort((a, b) => b.regs.length - a.regs.length || a.titulo.localeCompare(b.titulo, "pt-BR"));
-  }, [treinamentos]);
+  }, [treinamentos, idsEscopo]);
 
   const [feedbackTurma, setFeedbackTurma] = useState<{ turmaId: string; titulo: string; tipo: string; regs: Treinamento[] } | null>(null);
 

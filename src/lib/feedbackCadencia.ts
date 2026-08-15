@@ -73,6 +73,9 @@ export function cadenciaDe(
   feedbacksDaPessoa: readonly FeedbackLike[],
   dataAdmissao?: string | null,
   hoje: Date = HOJE,
+  /* Cada pessoa pode ter um ritmo próprio (30 dias em experiência, 45 com plano
+     aberto) — ver cadenciaDaPessoa. Sem passar, vale o padrão de 90. */
+  cadenciaDias: number = CADENCIA_FEEDBACK_DIAS,
 ): Cadencia {
   /* CONVERSA COM A EQUIPE conta menos que conversa individual, e a diferença
      importa: ela tira a pessoa de "nunca recebeu" — porque de fato houve
@@ -97,7 +100,7 @@ export function cadenciaDe(
   const desde = -diasDeCalendario(marco, hoje);
   if (isNaN(desde)) return { ultimo, diasDesde: null, diasParaProximo: null, situacao: "nunca" };
 
-  const diasParaProximo = CADENCIA_FEEDBACK_DIAS - desde;
+  const diasParaProximo = cadenciaDias - desde;
   const situacao: SituacaoFeedback = !ultimoIndividual && diasParaProximo > 0
     // Nunca recebeu, mas ainda dentro do prazo desde que entrou: é "nunca" como
     // fato, não como cobrança. Quem lê precisa saber que não há histórico.

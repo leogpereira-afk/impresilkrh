@@ -43,7 +43,7 @@ import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { posicaoNaFaixa } from "@/lib/posicaoNaFaixa";
-import { formatBRL, formatDate, diaLocalISO } from "@/lib/format";
+import { formatBRL, formatDate, diaLocalISO, parseBRL } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Cargo, Colaborador } from "@/data/types";
 
@@ -439,12 +439,17 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
             inputMode="decimal"
             value={form.salarioPraticado != null ? String(form.salarioPraticado) : ""}
             onChange={(e) => {
-              const n = Number(e.target.value.replace(/[^\d.,]/g, "").replace(",", "."));
+              // parseBRL: o parse ingênuo transformava "2.500,00" em NaN (salário
+              // sumia) e "2.500" em 2,5. Ver lib/format.
+              const novo = parseBRL(e.target.value);
               set({
-                salarioPraticado: e.target.value.trim() === "" ? null : (Number.isFinite(n) ? n : null),
-                // Carimba a conferência: número de contratação envelhece, e sem
-                // a data ninguém sabe se ainda vale.
-                salarioPraticadoEm: diaLocalISO(new Date()),
+                salarioPraticado: novo,
+                /* Só carimba a conferência se o VALOR mudou. Carimbar a cada
+                   tecla — ou ao salvar sem mexer no salário — poria data de hoje
+                   num número que ninguém conferiu, e "conferido em" mentiria. */
+                ...(novo !== (form.salarioPraticado ?? null)
+                  ? { salarioPraticadoEm: diaLocalISO(new Date()) }
+                  : {}),
               });
             }}
           />
