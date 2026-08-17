@@ -33,8 +33,19 @@ async function sessaoDoPedido(req: Request): Promise<Perfil | null> {
   if (!m) return null;
   const { data, error } = await admin.auth.getUser(m[1]); // valida o JWT do usuário
   if (error || !data?.user) return null;
-  const { data: perfil } = await admin.from("perfis").select("colaborador_id, perfil").eq("user_id", data.user.id).maybeSingle();
+  const { data: perfil } = await admin.from("perfis")
+    .select("colaborador_id, perfil, ativo").eq("user_id", data.user.id).maybeSingle();
   if (!perfil) return null;
+  /* DESLIGAR TEM DE FECHAR AQUI TAMBEM. Ate 17/08/2026 `perfis` nao tinha
+     coluna de ativo, e o sync nunca consultava o quadro unico -- entao quem
+     fosse desativado na tela de Acessos continuava entrando no RH digitando o
+     nome completo, com a sessao do Supabase Auth que se renova sozinha. Era o
+     unico dos oito que ficava aberto.
+
+     A sessao do Auth ja emitida tambem morre: o desativar da tela derruba as
+     sessoes (painel-acesso), mas esta trava e a que vale mesmo se sobrar
+     alguma. */
+  if ((perfil as { ativo?: boolean }).ativo === false) return null;
   return perfil as Perfil;
 }
 
