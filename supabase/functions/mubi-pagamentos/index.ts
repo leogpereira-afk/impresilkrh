@@ -26,14 +26,23 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-// Só o RH/gestão pode puxar a folha — são valores de salário.
+/* SÓ O ADMIN_RH. Isto aqui devolve a FOLHA INTEIRA do ERP — todo mundo, com
+   valor — e aceitava GESTOR, que hoje são três pessoas (Jéssica, Pedro e
+   Saulo). As outras duas portas dos MESMOS dados são mais estreitas: a tela é
+   restrita ao RH e o `sync` devolve `null` para pagamento de terceiro
+   (mascarar, colecao "pagamentos"). Três portas para o mesmo dado, e a mais
+   larga era a que ninguém olhava.
+
+   A régua de uma porta de dados não é o cargo de quem lidera equipe; é quem
+   pode ver aquele dado. Liderar equipe não é ver a folha dela.
+   (Conferência dos 8 sistemas, 16/08/2026.) */
 async function ehGestao(req: Request): Promise<boolean> {
   const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!m) return false;
   const { data, error } = await admin.auth.getUser(m[1]);
   if (error || !data?.user) return false;
   const { data: perfil } = await admin.from("perfis").select("perfil").eq("user_id", data.user.id).maybeSingle();
-  return perfil?.perfil === "ADMIN_RH" || perfil?.perfil === "GESTOR";
+  return perfil?.perfil === "ADMIN_RH";
 }
 
 // Plano de contas do Mubisys → tipo de pagamento do RH.

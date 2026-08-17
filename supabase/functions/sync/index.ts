@@ -109,6 +109,19 @@ Deno.serve(async (req) => {
        o que é dela. Sem isto, qualquer logado baixava o feedback de todo o
        quadro. */
     if (env.colecao === "feedbacks" && env.registro.colaboradorId !== meuId) return null;
+    /* `movimentacoes` é a carreira da pessoa — E É FOLHA. Dos 162 registros,
+       107 trazem `salarioNovo` e 25 `salarioAnterior`, cobrindo 82 pessoas; e o
+       valor aparece DUAS vezes, porque a `descricao` o escreve por extenso
+       ("salário — → R$ 1.816,66. Alterado na ficha."). Sem esta linha a coleção
+       inteira caía no `return env` do fim e ia para o disco de qualquer pessoa
+       logada pelo pull — a mesma porta dos fundos que já custou o histórico de
+       `alteracoes` e a coleção `usuarios`.
+
+       Por que `null` e não apagar os dois campos: a máscara de campo deixaria o
+       valor na descrição. Mascarar o que se enxerga e esquecer onde o mesmo
+       dado está escrito de novo é exatamente como esta coleção escapou das
+       outras quatro travas. (Conferência dos 8 sistemas, 16/08/2026.) */
+    if (env.colecao === "movimentacoes" && env.registro.colaboradorId !== meuId) return null;
     return env;
   };
   // Escopo de escrita: espelha o de leitura.
@@ -141,6 +154,11 @@ Deno.serve(async (req) => {
        por colaborador comum — senão dá para marcar treinamento no nome de
        terceiro, ou marcar o próprio como concluído sem ter feito. */
     if (colecao === "treinamentos") return ehGestao;
+    /* `movimentacoes` é o que a ficha da pessoa diz sobre promoção, mudança de
+       cargo e SALÁRIO. Caindo no `return true`, qualquer logado escrevia uma
+       linha de carreira no nome de terceiro — ou na própria, inventando uma
+       promoção. A escrita espelha a leitura: só o RH mexe. */
+    if (colecao === "movimentacoes") return false;
     return true;
   };
 
