@@ -54,6 +54,109 @@ async function marcarMudanca(colecoes: string | string[]): Promise<void> {
   } catch { /* best-effort: rev é só uma dica de cache */ }
 }
 
+/* ============================================================================
+   O ESCOPO, COLECAO POR COLECAO — LISTA BRANCA.
+   ============================================================================
+   Ate 17/08/2026 o `mascarar` conhecia SETE colecoes e tudo mais caia num
+   `return env` no fim; o `podeEscrever` terminava em `return true`. Sao 40
+   colecoes no banco: 33 escapavam. A maior delas e `planoContas`, 1.539 linhas
+   de dinheiro (1.119 de folha), cuja TELA e restrita ao ADMIN_RH -- e o pull
+   levava a colecao inteira para o disco de qualquer pessoa logada, e ainda
+   aceitava que ela gravasse por cima.
+
+   Esse desenho falha para o lado errado: colecao NOVA nasce aberta, e ninguem
+   percebe. Agora e o contrario -- o que nao esta nesta tabela e negado, e a
+   linha nova aparece no log do servidor pedindo classificacao.
+
+   OS QUATRO NIVEIS
+     "rh"     so ADMIN_RH le e escreve.
+     "gestao" ADMIN_RH e GESTOR (quem lidera equipe). Ferias, ponto, treinamento
+              e avaliacao sao ferramenta de gestao: fechar aqui cegaria o gestor
+              no trabalho dele.
+     "meu"    so o proprio registro da pessoa (por colaboradorId, ou por id em
+              `colaboradores`).
+     "todos"  estrutura e institucional: cargo, area, nivel, POP, comunicado.
+              Nada aqui identifica dinheiro nem vida de ninguem.
+
+   COMO ESTA TABELA FOI MONTADA (e como conferir de novo): cruzando cada
+   `useColecao("x")` das telas com o guarda da rota em src/App.tsx --
+   RH = ["ADMIN_RH"], GESTAO = ["ADMIN_RH","GESTOR"]. Colecao lida so por tela
+   de RH virou "rh", e assim por diante. Onde a leitura vinha da ficha do
+   colaborador (ColaboradorFicha, que cada um abre para SI), virou "meu".
+
+   `campos` apaga campo a campo em vez de esconder a linha inteira -- serve para
+   o caso do `cargos`, em que todo mundo precisa do NOME do cargo e ninguem
+   precisa do salario praticado. */
+const ESCOPO: Record<string, { nivel: "rh" | "gestao" | "meu" | "todos"; campos?: string[] }> = {
+  // --- dinheiro e vida da pessoa: so o RH
+  planoContas: { nivel: "rh" },
+  classificacaoCustos: { nivel: "rh" },
+  alteracoes: { nivel: "rh" },          // historico com valor de campo
+  usuarios: { nivel: "rh" },            // controle de acesso, com senhaHash
+  acessos: { nivel: "rh" },
+  consentimentos: { nivel: "rh" },      // LGPD
+  evolucao: { nivel: "rh" },
+  candidatos: { nivel: "rh" },
+  pesquisas: { nivel: "rh" },
+  respostasPesquisa: { nivel: "rh" },
+  _diagnostico: { nivel: "rh" },
+
+  // --- ferramenta de quem lidera equipe
+  ferias: { nivel: "gestao" },
+  ausencias: { nivel: "gestao" },
+  pontos: { nivel: "gestao" },
+  treinamentos: { nivel: "gestao" },
+  avaliacoes: { nivel: "gestao" },
+  metas: { nivel: "gestao" },
+  pdis: { nivel: "gestao" },
+  advertencias: { nivel: "gestao" },
+  certificacoesNr: { nivel: "gestao" },
+  documentos: { nivel: "gestao" },
+  contatos: { nivel: "gestao" },        // contato de emergencia
+  tarefas: { nivel: "gestao" },
+  agendamentos: { nivel: "gestao" },
+  fechamentos: { nivel: "gestao" },     // folha variavel
+  lancamentos: { nivel: "gestao" },
+  templatesMensagem: { nivel: "gestao" },
+  modelosChecklist: { nivel: "gestao" },
+  viagens: { nivel: "gestao" },
+
+  // --- so o proprio
+  pagamentos: { nivel: "meu" },
+  movimentacoes: { nivel: "meu" },      // carreira, e traz salario na descricao
+  feedbacks: { nivel: "meu" },
+  aceites: { nivel: "meu" },
+
+  // --- estrutura e institucional
+  colaboradores: { nivel: "todos", campos: CAMPOS_SENSIVEIS },
+  cargos: { nivel: "todos", campos: ["salarioPraticado", "salarioPraticadoEm"] },
+  areas: { nivel: "todos" },
+  niveis: { nivel: "todos" },
+  status: { nivel: "todos" },
+  ciclos: { nivel: "todos" },
+  eventos: { nivel: "todos" },
+  vagas: { nivel: "todos" },            // tem mural publico
+  pops: { nivel: "todos" },
+  institucionais: { nivel: "todos" },
+  repositorio: { nivel: "todos" },
+  comunicacao: { nivel: "todos" },
+};
+
+// Colecao que ninguem classificou NAO passa. E ela se anuncia no log em vez de
+// vazar calada -- foi o silencio que deixou 33 delas abertas por meses.
+const desconhecidas = new Set<string>();
+function escopoDe(colecao: string) {
+  const e = ESCOPO[colecao];
+  if (!e) {
+    if (!desconhecidas.has(colecao)) {
+      desconhecidas.add(colecao);
+      console.warn(`[sync] colecao SEM ESCOPO, negada: ${colecao} — classifique em ESCOPO`);
+    }
+    return { nivel: "rh" as const };
+  }
+  return e;
+}
+
 Deno.serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
@@ -68,99 +171,68 @@ Deno.serve(async (req) => {
   const ehGestao = ehAdmin || sessao.perfil === "GESTOR";
   const meuId = sessao.colaborador_id;
 
-  // Escopo LGPD de leitura: mesma regra de sempre — RH vê tudo; os demais não
-  // veem dado sensível de terceiros nem a folha alheia.
+  /* LEITURA. A tabela ESCOPO manda; o que nao esta la e negado (escopoDe cai em
+     "rh" e reclama no log). O ADMIN_RH continua vendo tudo -- e a unica excecao
+     de nivel, e ela e a regra de sempre. */
+  const meuRegistro = (colecao: string, r: any) =>
+    colecao === "colaboradores" ? r?.id === meuId : r?.colaboradorId === meuId;
+
   const mascarar = (env: { colecao: string; registro: any } | null) => {
     if (!env) return null;
-    if (env.registro?._apagado) return env; // lápide propaga p/ todos
+    /* LAPIDE PROPAGA PARA TODOS, MAS SO O ESSENCIAL. Ela precisa chegar em todo
+       aparelho para o registro sumir de lá -- por isso escapa do escopo. Só que
+       ela vinha INTEIRA, antes de qualquer verificação: uma lápide de `usuarios`
+       ou de `candidatos` entregava o conteúdo do registro a quem não podia
+       ver o registro vivo. Hoje as três que existem só têm id e data, mas o
+       desenho é que estava errado -- apagar um registro não pode ser a forma de
+       publicá-lo.
+
+       O cliente só precisa saber QUAL id morreu e QUANDO. */
+    if (env.registro?._apagado) {
+      return { ...env, registro: {
+        id: env.registro.id, _apagado: true, atualizadoEm: env.registro.atualizadoEm,
+      } };
+    }
     if (ehAdmin) return env;
-    if (env.colecao === "colaboradores" && env.registro.id !== meuId) {
+    const { nivel, campos } = escopoDe(env.colecao);
+    if (nivel === "rh") return null;
+    if (nivel === "gestao" && !ehGestao) return null;
+    if (nivel === "meu" && !meuRegistro(env.colecao, env.registro)) return null;
+    /* Campo a campo, e nao a linha inteira: todo mundo precisa do NOME do cargo
+       e ninguem precisa do salario praticado; todo mundo precisa saber quem e
+       colega e ninguem precisa do CPF e do endereco do colega. */
+    if (campos && !meuRegistro(env.colecao, env.registro)) {
       const r = { ...env.registro };
-      for (const k of CAMPOS_SENSIVEIS) delete r[k];
+      for (const k of campos) delete r[k];
       return { ...env, registro: r };
     }
-    if (env.colecao === "pagamentos" && env.registro.colaboradorId !== meuId) return null;
-    // Histórico de alterações: SÓ o RH baixa.
-    //
-    // Sem esta linha o histórico vira a porta dos fundos da folha: ele diz
-    // "Fulano alterou o Colaborador X", cita cargo, status e admissão, e chega
-    // ao disco de qualquer pessoa logada pelo pull — contornando o mascaramento
-    // que existe logo acima para `colaboradores` e `pagamentos`. Descoberto na
-    // revisão de 02/08/2026, antes de ir para produção.
-    if (env.colecao === "alteracoes") return null;
-    /* `usuarios` é CONTROLE DE ACESSO, e a leitura estava aberta — a escrita foi
-       fechada em 418aa90, a leitura ficou. O registro carrega o senhaHash
-       (PBKDF2) de cada conta e, em registro legado ainda não migrado, o campo
-       `senha` em texto puro. Sem esta linha, qualquer pessoa logada baixava a
-       coleção inteira pelo pull e tinha o hash de senha do ADMIN_RH no próprio
-       disco — bruteforce offline, e com a senha certa entra como RH num
-       computador do escritório com a base em cache. Mesma "porta de dados
-       destrancada" do histórico logo acima. */
-    if (env.colecao === "usuarios") return null;
-    /* `cargos.salarioPraticado` é o que a empresa paga em cada cargo, digitado
-       pelo RH — dado de folha. A tela é restrita ao RH, mas o pull baixava a
-       coleção inteira. Não dá para devolver `null` (todo mundo precisa do NOME
-       do cargo para a ficha funcionar), então some só o campo de salário. */
-    if (env.colecao === "cargos") {
-      const { salarioPraticado, salarioPraticadoEm, ...resto } = env.registro;
-      return { ...env, registro: resto };
-    }
-    /* `feedbacks` é conversa sobre o trabalho de uma pessoa — só ela e o RH veem
-       o que é dela. Sem isto, qualquer logado baixava o feedback de todo o
-       quadro. */
-    if (env.colecao === "feedbacks" && env.registro.colaboradorId !== meuId) return null;
-    /* `movimentacoes` é a carreira da pessoa — E É FOLHA. Dos 162 registros,
-       107 trazem `salarioNovo` e 25 `salarioAnterior`, cobrindo 82 pessoas; e o
-       valor aparece DUAS vezes, porque a `descricao` o escreve por extenso
-       ("salário — → R$ 1.816,66. Alterado na ficha."). Sem esta linha a coleção
-       inteira caía no `return env` do fim e ia para o disco de qualquer pessoa
-       logada pelo pull — a mesma porta dos fundos que já custou o histórico de
-       `alteracoes` e a coleção `usuarios`.
-
-       Por que `null` e não apagar os dois campos: a máscara de campo deixaria o
-       valor na descrição. Mascarar o que se enxerga e esquecer onde o mesmo
-       dado está escrito de novo é exatamente como esta coleção escapou das
-       outras quatro travas. (Conferência dos 8 sistemas, 16/08/2026.) */
-    if (env.colecao === "movimentacoes" && env.registro.colaboradorId !== meuId) return null;
     return env;
   };
-  // Escopo de escrita: espelha o de leitura.
+
+  /* ESCRITA — espelha a leitura, com uma diferenca: nivel "todos" NAO e escrita
+     livre. Cargo, area e nivel sao estrutura da empresa; quem lidera equipe le,
+     quem administra e que muda. Sem isso, qualquer logado reescrevia a tabela
+     de cargos pelo sync. */
   const podeEscrever = (colecao: string, reg: any): boolean => {
     if (ehAdmin) return true;
-    if (colecao === "colaboradores") return reg?.id === meuId;
-    if (colecao === "pagamentos") return reg?.colaboradorId === meuId;
-    // Todo mundo ESCREVE no histórico (é o registro do que a pessoa fez), mas
-    // só em nome de si mesmo — senão dá para forjar linha com o nome de outro.
-    if (colecao === "alteracoes") return reg?.usuarioColaboradorId === meuId;
-    /* A COLEÇÃO `usuarios` É CONTROLE DE ACESSO, NÃO DADO DE TRABALHO.
-       Ela guarda quem entra no RH, com que perfil, e o senhaHash de cada um.
-       Caindo no `return true` do fim, QUALQUER pessoa logada podia reescrevê-la:
-       apagar o senhaHash de alguém (e a senha geral do app volta a valer para
-       essa pessoa), ou promover a si mesma a ADMIN_RH na lista local. Só quem
-       administra o RH mexe nisso — e quem administra já passou pelo `ehAdmin`
-       lá em cima. */
-    if (colecao === "usuarios") return false;
-    /* `cargos` é estrutura da empresa + salário praticado. Sem esta linha,
-       qualquer logado reescrevia um cargo pelo sync — mudava o salário que a
-       tela mostra ao RH, ou apagava a descrição. Só o RH mexe. */
-    if (colecao === "cargos") return false;
-    /* `feedbacks` é conversa sobre alguém, e vale como registro. Todo mundo caía
-       no `return true` e podia FORJAR um feedback no nome de qualquer pessoa —
-       inclusive escrever na própria ficha "recebeu ajuste sobre X" para inflar
-       o próprio histórico, ou plantar um registro contra um colega. Um feedback
-       só pode ser escrito por quem é o autor. */
-    if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId;
-    /* `treinamentos` é lançado por gestão (a tela é restrita a gestor+RH), nunca
-       por colaborador comum — senão dá para marcar treinamento no nome de
-       terceiro, ou marcar o próprio como concluído sem ter feito. */
-    if (colecao === "treinamentos") return ehGestao;
-    /* `movimentacoes` é o que a ficha da pessoa diz sobre promoção, mudança de
-       cargo e SALÁRIO. Caindo no `return true`, qualquer logado escrevia uma
-       linha de carreira no nome de terceiro — ou na própria, inventando uma
-       promoção. A escrita espelha a leitura: só o RH mexe. */
-    if (colecao === "movimentacoes") return false;
-    return true;
+    const { nivel } = escopoDe(colecao);
+    if (nivel === "rh" || nivel === "todos") return false;
+    if (nivel === "gestao") {
+      // Feedback e treinamento sao de gestao, mas em NOME PROPRIO: sem isto da
+      // para forjar um feedback no nome de outra pessoa.
+      if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId;
+      return ehGestao;
+    }
+    // "meu": a propria linha, e so ela.
+    return meuRegistro(colecao, reg);
   };
+
+  /* O historico de alteracoes e o unico que TODO MUNDO escreve -- e o registro
+     do que a pessoa fez --, mas so em nome de si mesma. Ele e nivel "rh" na
+     leitura de proposito (diz o que mudou, com valor), e por isso precisa desta
+     excecao explicita aqui. */
+  const podeEscreverAlteracao = (reg: any) =>
+    ehAdmin || reg?.usuarioColaboradorId === meuId || reg?.colaboradorId === meuId;
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ erro: "JSON inválido." }, 400); }
@@ -212,7 +284,15 @@ Deno.serve(async (req) => {
         const colecao = String(body.colecao ?? "");
         const registro = body.registro as { id?: string; atualizadoEm?: string; _apagado?: boolean } | undefined;
         if (!colecao || !registro?.id) return json({ erro: "colecao e registro.id obrigatórios." }, 400);
-        if (!podeEscrever(colecao, registro)) return json({ erro: "Sem permissão para gravar este registro." }, 403);
+        /* `alteracoes` e `acessos` sao o RASTRO: todo mundo escreve (e o registro
+           do que a pessoa fez), e ninguem le alem do RH. Por isso nao passam
+           pelo podeEscrever normal, que os negaria pelo nivel de leitura -- mas
+           cada um so escreve em nome de SI, senao da para forjar linha com o
+           nome de outro. */
+        const escritaOk = (colecao === "alteracoes" || colecao === "acessos")
+          ? podeEscreverAlteracao(registro)
+          : podeEscrever(colecao, registro);
+        if (!escritaOk) return json({ erro: "Sem permissão para gravar este registro." }, 403);
         const { data: atual } = await admin.from("registros").select("registro").eq("colecao", colecao).eq("id", registro.id).maybeSingle();
         const servidorTs = (atual?.registro as { atualizadoEm?: string } | undefined)?.atualizadoEm;
         const enviadoTs = registro.atualizadoEm;
