@@ -72,14 +72,21 @@ export default function Freelancers() {
   const sessao = useSessao();
   const toast = useToast();
   const podeEditar = ehRH(sessao);
-  const { criar, atualizar, remover } = useColecao("freelancers");
+  /* `items` VEM DO PROPRIO HOOK, e nao de um atalho pelo dominio. A primeira
+     versao lia `(d as unknown as {...}).freelancers ?? []` -- um cast para
+     alcancar uma colecao que o `useDominio` nao expoe. Alem de feio, o `?? []`
+     criava um ARRAY NOVO a cada render, e o `useMemo` da lista, que depende
+     dele, nunca aproveitava o cache: refazia filtro e ordenacao a cada tecla
+     digitada na busca. O lint pegou (react-hooks/exhaustive-deps) e a outra
+     sessao avisou.
+     `items` sai de `useSyncExternalStore`, entao a referencia so muda quando a
+     colecao muda de verdade -- que e o que o memo precisa. */
+  const { items: todos, criar, atualizar, remover } = useColecao("freelancers");
 
   const [busca, setBusca] = useState("");
   const [verEncerrados, setVerEncerrados] = useState(false);
   const [form, setForm] = useState<Partial<Freelancer> | null>(null);
   const [apagando, setApagando] = useState<Freelancer | null>(null);
-
-  const todos = (d as unknown as { freelancers?: Freelancer[] }).freelancers ?? [];
 
   const lista = useMemo(() => {
     const termo = busca.trim().toLowerCase();
