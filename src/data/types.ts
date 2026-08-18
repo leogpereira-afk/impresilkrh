@@ -773,7 +773,10 @@ export interface RespostaPesquisa {
 // Vaga em aberto + candidatos com nota (0-10) para classificar/ranquear. O
 // currículo (arquivo) fica no IndexedDB sob "cv:<id>" (não infla a sincronização);
 // só os metadados e a nota sincronizam.
-export type StatusVaga = "Aberta" | "Em triagem" | "Fechada" | "Cancelada";
+/* "Prevista" = vaga que ainda não abriu, mas já se sabe que vai abrir. Serve
+   para começar a juntar currículo antes da necessidade virar urgência — que é
+   quando a contratação sai ruim. */
+export type StatusVaga = "Prevista" | "Aberta" | "Em triagem" | "Fechada" | "Cancelada";
 export interface Vaga {
   id: string;
   titulo: string;
@@ -792,7 +795,15 @@ export interface Vaga {
 export type EtapaCandidato = "Triagem" | "Entrevista" | "Teste" | "Aprovado" | "Reprovado" | "Contratado";
 export interface Candidato {
   id: string;
-  vagaId: string;
+  /* Sem vaga = currículo do BANCO DE TALENTOS (chegou espontaneamente, ou
+     sobrou de um processo). Era obrigatório, e por isso quem não era contratado
+     simplesmente sumia: no mês seguinte a busca recomeçava do zero. */
+  vagaId?: string | null;
+  /** O RH guardou este candidato no banco depois de um processo. */
+  noBanco?: boolean | null;
+  /** Cargo/área de interesse — é por aqui que se procura no banco. */
+  interesseCargoId?: string | null;
+  interesseAreaId?: string | null;
   colaboradorId?: string | null; // candidatura INTERNA: colaborador disputando a vaga pelo mural
   nome: string;
   email?: string;
@@ -804,6 +815,29 @@ export interface Candidato {
   nota?: number | null; // 0-10 — usado para classificar
   etapa: EtapaCandidato;
   observacao?: string;
+
+  /* DEVOLUTIVA a quem não seguiu. O sistema monta o texto e o RH manda pelo
+     WhatsApp dele — não dispara sozinho: mensagem em nome da empresa para gente
+     de fora, se sair para a pessoa errada, não tem volta. */
+  devolutivaEm?: string | null;      // ISO — quando foi dada
+  devolutivaMotivo?: string | null;  // chave de MOTIVOS_DEVOLUTIVA
+  devolutivaTexto?: string | null;   // o que foi mandado, como foi mandado
+
+  /* TESTE DE DIAS antes de contratar. A pessoa AINDA NÃO é colaborador, então o
+     registro mora aqui, no candidato — pendurá-lo num cadastro de colaborador
+     criaria funcionário que nunca existiu.
+     `testePago` é campo de primeira classe de propósito: se um dia alguém
+     questionar esses dias, o que protege a empresa é o registro mostrando que a
+     pessoa esteve lá E foi paga. Ver o cabeçalho de lib/selecao.ts. */
+  testeInicio?: string | null;       // 1º dia (AAAA-MM-DD)
+  testeFim?: string | null;          // último dia
+  testeAreaId?: string | null;       // setor onde ficou
+  testeAvaliadorId?: string | null;  // colaborador que acompanhou
+  testeResultado?: "Aprovado" | "Não aprovado" | null;
+  testeParecer?: string | null;      // o que mostrou nos dias — e o porquê
+  testePago?: boolean | null;
+  testeValorPago?: number | null;
+
   criadoEm: string;
 }
 

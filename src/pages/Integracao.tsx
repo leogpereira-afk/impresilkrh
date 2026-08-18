@@ -18,7 +18,8 @@ import {
   FileText,
   Trophy,
   Sparkles,
-  Users, Pencil, Trash2, Archive, PackageOpen } from "lucide-react";
+  Users, Pencil, Trash2, Archive, PackageOpen, UserCheck,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
@@ -27,6 +28,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Toggle } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { Tabs } from "@/components/ui/tabs";
+import { PainelTeste } from "@/components/integracao/painel-teste";
 import { useToast } from "@/components/ui/toast";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { BarrasColoridas } from "@/components/charts/charts";
@@ -342,6 +344,15 @@ export default function Integracao() {
                   onAlternar={alternar}
                 />
               ),
+            },
+            {
+              /* O teste vem ANTES do onboarding na ordem real das coisas, mas
+                 depois na aba: quem abre esta tela no dia a dia está cuidando de
+                 quem já foi contratado. */
+              id: "teste",
+              label: "Teste antes da contratação",
+              icon: <UserCheck className="h-4 w-4" />,
+              conteudo: <PainelTeste podeEditar={gere} />,
             },
             {
               id: "desligamento",
