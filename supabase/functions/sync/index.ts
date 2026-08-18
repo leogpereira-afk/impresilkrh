@@ -104,6 +104,13 @@ const ESCOPO: Record<string, { nivel: "rh" | "gestao" | "meu" | "todos"; campos?
   classificacaoCustos: { nivel: "rh" },
   alteracoes: { nivel: "rh" },          // historico com valor de campo
   usuarios: { nivel: "rh" },            // controle de acesso, com senhaHash
+  /* FREELANCER e contrato: valor combinado, CPF, CNPJ e a data que fecha o
+     acesso. Nivel "rh" e o mesmo dos outros contratos — gestor nao precisa ver
+     quanto se paga a um prestador para tocar o time dele.
+     Sem esta linha a colecao cairia no padrao de `escopoDe`, que TAMBEM e "rh"
+     e portanto seguro; mas o padrao vem com um aviso no log e nao diz se foi
+     decisao ou esquecimento. Classificar e a diferenca entre as duas. */
+  freelancers: { nivel: "rh" },
   acessos: { nivel: "rh" },
   consentimentos: { nivel: "rh" },      // LGPD
   evolucao: { nivel: "rh" },

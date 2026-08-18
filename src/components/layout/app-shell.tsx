@@ -45,6 +45,10 @@ const NAV: ItemNav[] = [
   { href: "/feedback", label: "Feedback", icon: MessageSquare, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
+  /* Freelancer NAO e do quadro: fica em "Pessoas" porque e gente, mas fora da
+     linha dos Colaboradores porque nao entra em headcount, folha nem organograma.
+     Icone de contrato, e nao de capacete: o capacete ja e o SST. */
+  { href: "/freelancers", label: "Contratos de freelancer", icon: FileSignature, perfis: RH, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
