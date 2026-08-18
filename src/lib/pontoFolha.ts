@@ -244,6 +244,48 @@ export function horasDecimais(minutos: number): number {
 }
 
 /**
+ * Lê uma DURAÇÃO digitada ("02:50" = 2h50 = 170 min).
+ *
+ * Diferente de `minutosEntre`, que recebe começo e fim de relógio: aqui vem a
+ * quantidade de horas já somada, que é como a planilha do RH registra.
+ *
+ * Devolve `null` quando não entende, e é isso que importa: `horaParaMin`
+ * devolve 0 para lixo, e 0 minuto vira R$ 0,00 — o lançamento sairia zerado
+ * sem ninguém ver que a digitação estava errada. Com `null` a tela pode
+ * recusar e pedir de novo.
+ *
+ * Aceita também horas decimais ("2,5" = 2h30), porque quem vem da planilha
+ * digita dos dois jeitos. NÃO aceita "2.50" com ponto: seria 2h30 ou 2,5h?
+ * Adivinhar aqui erra em dinheiro — melhor recusar e pedir "02:30".
+ */
+export function minutosDaDuracao(txt: string | null | undefined): number | null {
+  const s = String(txt ?? "").trim().replace(/\s/g, "");
+  if (!s) return null;
+  const relogio = /^(\d{1,3}):([0-5]\d)$/.exec(s);
+  if (relogio) return +relogio[1] * 60 + +relogio[2];
+  // Só vírgula como decimal — ver o porquê no comentário acima.
+  if (/^\d{1,3}(,\d{1,2})?$/.test(s)) return Math.round(Number(s.replace(",", ".")) * 60);
+  return null;
+}
+
+/**
+ * O valor digitado saiu do que a conta sugeriu?
+ *
+ * Existe porque o RH PRECISA poder alterar o valor calculado — "tem horas que
+ * tem bônus". Mas um valor alterado que se parece com um valor calculado é uma
+ * armadilha: seis meses depois ninguém sabe se aqueles R$ 30 a mais foram
+ * bônus combinado ou erro de digitação. Então a tela mostra a diferença, e ela
+ * vai junto na descrição do lançamento.
+ *
+ * Tolerância de um centavo: arredondamento não é bônus.
+ */
+export function diferencaDoCalculo(digitado: number, calculado: number): number {
+  if (!Number.isFinite(digitado) || !Number.isFinite(calculado) || calculado <= 0) return 0;
+  const d = centavos(digitado - calculado);
+  return Math.abs(d) < 0.01 ? 0 : d;
+}
+
+/**
  * Intervalo de relógio em minutos: "18:00" → "21:30" = 210.
  * Devolve 0 se algum lado estiver vazio/inválido. Fim antes do início é virada
  * de meia-noite (22:00 → 02:00 = 4h), que acontece em plantão.

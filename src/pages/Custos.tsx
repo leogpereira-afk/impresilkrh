@@ -38,7 +38,12 @@ import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { calcularEncargos, separarRecebido, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, formatDate } from "@/lib/format";
+import {
+  calcularHoraExtra, minutosDaDuracao, diferencaDoCalculo, valorDigitado,
+  horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO, DIVISOR_MENSAL_PADRAO,
+} from "@/lib/pontoFolha";
+import { minParaHora } from "@/lib/pontoImport";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
 import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
 import {
@@ -156,6 +161,20 @@ export default function Custos() {
   const [lancDesc, setLancDesc] = useState<string>("");
   const [lancEditId, setLancEditId] = useState<string | null>(null);
   const [pagExcluir, setPagExcluir] = useState<string | null>(null);
+
+  /* HORA EXTRA CALCULADA (pedido do RH: "seria melhor ele calcular, tipo a
+     planilha — eu coloco o dia, a hora e o salário, aí ele calcula").
+     A conta vem de pontoFolha.ts, a MESMA da Folha Variável: salário ÷ 220 ×
+     adicional × horas. Uma regra só, em um lugar só — se o acordo coletivo
+     mudar o divisor, muda lá e vale nas duas telas. */
+  const [heDia, setHeDia] = useState<string>("");
+  const [heDuracao, setHeDuracao] = useState<string>("");
+  const [heFator, setHeFator] = useState<number>(FATOR_HE_PADRAO);
+  const [heSalario, setHeSalario] = useState<string>("");
+  /* O valor calculado preenche o campo, mas o RH pode escrever por cima —
+     "tem horas que tem bônus". Esta marca lembra que ele mexeu, para o
+     recálculo não apagar o que a pessoa acabou de digitar. */
+  const [valorTocado, setValorTocado] = useState(false);
 
   // Competência efetiva (cai para a última quando a selecionada some / inicial vazia).
   const compAtiva = comp && competencias.includes(comp) ? comp : compPadrao;
@@ -666,14 +685,27 @@ export default function Custos() {
     else classifColecao.criar({ codigo: conta.codigo, nome: conta.nome, classe });
   };
 
-  // Abre o modal de lançamento em modo "novo".
+  /* Abre o modal de lançamento em modo "novo", SEMPRE limpo. O dia e as horas
+     do lançamento anterior reaparecendo no próximo passariam despercebidos,
+     porque o valor "parece certo" — e sairia hora extra no dia errado. */
   const abrirNovoLanc = () => {
     setLancEditId(null);
     setLancTipo("Comissão");
     setLancValor("");
     setLancDesc("");
+    limparHoraExtra();
     setAddLanc(true);
   };
+
+  /** Zera os campos da hora extra e repõe o salário do cadastro. */
+  function limparHoraExtra() {
+    setHeDia("");
+    setHeDuracao("");
+    setHeFator(FATOR_HE_PADRAO);
+    // Vem do cadastro; quem não tem aparece vazio para o RH digitar.
+    setHeSalario(d.colabById.get(colabId)?.salario ? String(d.colabById.get(colabId)!.salario) : "");
+    setValorTocado(false);
+  }
 
   // Abre o modal de lançamento em modo "edição" de um pagamento existente.
   const abrirEdicaoLanc = (p: Pagamento) => {
@@ -681,19 +713,71 @@ export default function Custos() {
     setLancTipo(p.tipo);
     setLancValor(String(p.valor));
     setLancDesc(p.descricao === "Lançamento manual" ? "" : (p.descricao ?? ""));
+    limparHoraExtra();
+    /* Na edição o valor já é o gravado: marcar como "tocado" impede que o
+       recálculo o substitua e apague um bônus lançado semanas atrás. */
+    setValorTocado(true);
     setAddLanc(true);
   };
 
+  /* ---------- Hora extra: a conta ---------- */
+  const ehLancHE = lancTipo === "Horas Extras";
+  const colabDoLanc = d.colabById.get(colabId);
+  // `null` = não entendi o que foi digitado (ver minutosDaDuracao). Diferente de
+  // vazio, que é só "ainda não preencheu".
+  const heMinutos = ehLancHE ? minutosDaDuracao(heDuracao) : null;
+  const heSalarioNum = valorDigitado(heSalario);
+  const heCalc = useMemo(
+    () => calcularHoraExtra({ salario: heSalarioNum, minutos: heMinutos ?? 0, fator: heFator }),
+    [heSalarioNum, heMinutos, heFator],
+  );
+  const heValido = ehLancHE && heMinutos != null && heMinutos > 0 && !heCalc.semSalario;
+
+  /* Preenche o campo de valor com o que a conta deu — mas só enquanto o RH não
+     tiver escrito nele. Sobrescrever o que a pessoa acabou de digitar seria
+     exatamente o defeito que o pedido pediu para evitar ("tem horas que tem
+     bônus"): ela põe 80,00, mexe no adicional para conferir, e os 80 somem. */
+  useEffect(() => {
+    if (!heValido || valorTocado) return;
+    setLancValor(heCalc.valor.toFixed(2));
+  }, [heValido, valorTocado, heCalc.valor]);
+
+  // Quanto o valor no campo se afasta do calculado — o bônus, em número.
+  const heDiferenca = heValido ? diferencaDoCalculo(valorDigitado(lancValor), heCalc.valor) : 0;
+
   // Lança/edita um pagamento manual para o colaborador no mês (preenche o que faltou na folha).
   const salvarLancamento = () => {
-    const valor = Number(String(lancValor).replace(",", "."));
+    const valor = valorDigitado(lancValor);
     if (!lancTipo) return toast("Escolha o tipo de pagamento.", "erro");
+    /* Duração escrita de um jeito que não dá para entender NÃO pode virar
+       lançamento: sem esta trava ela valeria zero minuto, e o pagamento sairia
+       com o valor que estivesse no campo — ou R$ 0,00 — sem ninguém notar. */
+    if (ehLancHE && heDuracao.trim() && heMinutos == null) {
+      return toast('Não entendi as horas. Escreva como na planilha: "02:50".', "erro");
+    }
     if (!valor || valor <= 0) return toast("Informe um valor maior que zero.", "erro");
+
+    /* A descrição guarda a CONTA, não só o resultado. Daqui a seis meses, "R$
+       80,00 de hora extra" não se explica sozinho; "3h00 em 12/08 · +50% ·
+       base R$ 2.800,00 · calculado R$ 57,27 · +R$ 22,73" se explica. É também
+       o que separa bônus combinado de erro de digitação. */
+    let descricao = lancDesc.trim();
+    if (ehLancHE && heValido) {
+      const partes = [
+        `${minParaHora(heMinutos ?? 0)} de hora extra`,
+        heDia ? `em ${formatDate(heDia)}` : null,
+        ADICIONAIS_HE.find((a) => a.fator === heFator)?.curto ?? null,
+        `base ${formatBRL(heSalarioNum)}`,
+        `calculado ${formatBRL(heCalc.valor)}`,
+        heDiferenca !== 0 ? `${heDiferenca > 0 ? "+" : "−"}${formatBRL(Math.abs(heDiferenca))} à mão` : null,
+      ].filter(Boolean);
+      descricao = [descricao, partes.join(" · ")].filter(Boolean).join(" — ");
+    }
     if (lancEditId) {
       pagamentosColecao.atualizar(lancEditId, {
         tipo: lancTipo,
         valor: Math.round(valor * 100) / 100,
-        descricao: lancDesc.trim() || "Lançamento manual",
+        descricao: descricao || "Lançamento manual",
       });
       toast("Lançamento atualizado.");
     } else {
@@ -702,8 +786,9 @@ export default function Custos() {
         competencia: compAtiva,
         tipo: lancTipo,
         valor: Math.round(valor * 100) / 100,
-        dataPagamento: `${compAtiva}-15`,
-        descricao: lancDesc.trim() || "Lançamento manual",
+        // Hora extra tem dia próprio; os demais caem no dia 15 como antes.
+        dataPagamento: ehLancHE && heDia ? heDia : `${compAtiva}-15`,
+        descricao: descricao || "Lançamento manual",
         // Pagamento em dinheiro não passa pelo ERP: sem esta marca, a prévia
         // da varredura listaria o lançamento como "fora do ERP" com o botão
         // de remover em massa ao lado — um clique apagaria dinheiro real.
@@ -2111,9 +2196,81 @@ export default function Custos() {
               {TIPOS_PAGAMENTO.map((t) => <option key={t.tipo} value={t.tipo}>{t.tipo}</option>)}
             </Select>
           </Campo>
-          <Campo label="Valor (R$)">
-            <Input type="number" inputMode="decimal" step="0.01" value={lancValor} onChange={(e) => setLancValor(e.target.value)} placeholder="0,00" />
+          {/* HORA EXTRA: os campos da planilha do RH — dia, horas e a base.
+              Só aparecem neste tipo; nos outros o modal continua como era. */}
+          {ehLancHE && (
+            <div className="space-y-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Campo label="Dia">
+                  <Input type="date" value={heDia} onChange={(e) => setHeDia(e.target.value)} />
+                </Campo>
+                <Campo label="Horas" hint='Como na planilha: 02:50'>
+                  <Input
+                    value={heDuracao}
+                    onChange={(e) => { setHeDuracao(e.target.value); setValorTocado(false); }}
+                    placeholder="02:50"
+                    inputMode="numeric"
+                  />
+                </Campo>
+              </div>
+              <Campo label="Adicional">
+                <Select value={heFator} onChange={(e) => { setHeFator(Number(e.target.value)); setValorTocado(false); }}>
+                  {ADICIONAIS_HE.map((a) => <option key={a.fator} value={a.fator}>{a.label}</option>)}
+                </Select>
+              </Campo>
+              <Campo
+                label="Salário base (R$)"
+                hint={colabDoLanc?.salario ? "Veio do cadastro — pode corrigir só para esta conta" : "Sem salário no cadastro: digite para calcular"}
+              >
+                <Input
+                  value={heSalario}
+                  onChange={(e) => { setHeSalario(e.target.value); setValorTocado(false); }}
+                  placeholder="0,00"
+                  inputMode="decimal"
+                />
+              </Campo>
+
+              {/* A conta à mostra. Número que aparece sem explicação vira número
+                  em que ninguém confia — e aí o RH volta para a planilha. */}
+              {heDuracao.trim() && heMinutos == null ? (
+                <p className="text-xs text-red-600">
+                  Não entendi as horas. Escreva como na planilha: <b>02:50</b> (ou 2,5 para duas horas e meia).
+                </p>
+              ) : heCalc.semSalario && (heMinutos ?? 0) > 0 ? (
+                <p className="text-xs text-amber-700">
+                  Falta o salário base para calcular. Digite acima — e vale cadastrar em Colaboradores para não precisar de novo.
+                </p>
+              ) : heValido ? (
+                <p className="text-xs text-slate-500">
+                  {formatBRL(heSalarioNum)} ÷ {DIVISOR_MENSAL_PADRAO}h = {formatBRL(heCalc.valorHoraNormal)}/h
+                  {" · "}com {ADICIONAIS_HE.find((a) => a.fator === heFator)?.curto} = {formatBRL(heCalc.valorHoraExtra)}/h
+                  {" · "}× {horasDecimais(heMinutos ?? 0).toLocaleString("pt-BR")}h ={" "}
+                  <b className="text-slate-700">{formatBRL(heCalc.valor)}</b>
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          <Campo
+            label="Valor (R$)"
+            hint={heValido ? "Calculado — pode alterar se houve bônus" : undefined}
+          >
+            {/* Texto, não type=number: o campo numérico devolve "" para "0," e
+                comia o que estava sendo digitado. valorDigitado() lê os dois
+                formatos brasileiros. */}
+            <Input
+              value={lancValor}
+              onChange={(e) => { setLancValor(e.target.value); setValorTocado(true); }}
+              placeholder="0,00"
+              inputMode="decimal"
+            />
           </Campo>
+          {heDiferenca !== 0 && (
+            <p className="text-xs text-amber-700">
+              {heDiferenca > 0 ? "+" : "−"}{formatBRL(Math.abs(heDiferenca))} {heDiferenca > 0 ? "acima" : "abaixo"} do calculado
+              {heDiferenca > 0 ? " (bônus)" : ""} — fica registrado na descrição.
+            </p>
+          )}
           <Campo label="Descrição (opcional)">
             <Input value={lancDesc} onChange={(e) => setLancDesc(e.target.value)} placeholder="Ex.: Comissão produção" />
           </Campo>

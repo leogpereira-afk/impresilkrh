@@ -10,6 +10,7 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
+import { cn } from "@/lib/cn";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Avatar, Progress, EmptyState } from "@/components/ui/misc";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
@@ -754,6 +755,27 @@ function AbaAvaliacoes({
   atualizarAval: ReturnType<typeof useColecao<"avaliacoes">>["atualizar"];
 }) {
   const [edicao, setEdicao] = useState<EdicaoNota | null>(null);
+  /* EDIÇÃO DIRETO NA LINHA (pedido do RH). Guarda o rascunho de UMA linha por
+     vez: com 27 pessoas na tela, deixar as 81 caixas sempre abertas viraria um
+     paredão de campos, e um clique errado em qualquer uma delas mexeria em nota
+     de gente. Clicar numa nota abre só aquela linha; Enter grava, Esc desiste. */
+  const [linha, setLinha] = useState<{ id: string; tecnico: string; comportamental: string; resultado: string } | null>(null);
+
+  const abrirLinha = (c: Colaborador) => {
+    const a = avalPorColab.get(c.id);
+    setLinha({
+      id: c.id,
+      tecnico: a?.notaTecnico != null ? String(a.notaTecnico) : "",
+      comportamental: a?.notaComportamental != null ? String(a.notaComportamental) : "",
+      resultado: a?.notaResultado != null ? String(a.notaResultado) : "",
+    });
+  };
+  const gravarLinha = (c: Colaborador) => {
+    if (!linha) return;
+    if (gravarNotas(c, avalPorColab.get(c.id), linha.tecnico, linha.comportamental, linha.resultado)) {
+      setLinha(null);
+    }
+  };
 
   function abrir(colab: Colaborador) {
     const aval = avalPorColab.get(colab.id);
@@ -776,22 +798,29 @@ function AbaAvaliacoes({
     return +(tec * ciclo.pesoTecnico + comp * ciclo.pesoComportamental + res * ciclo.pesoResultado).toFixed(1);
   }, [edicao, ciclo]);
 
-  function salvar() {
-    if (!edicao) return;
+  /* UMA regra de gravação para as DUAS entradas: a janela "Lançar nota" e a
+     edição direto na linha. Duplicar isto seria repetir o erro clássico daqui —
+     duas telas com réguas diferentes para o mesmo dado, e a que vale dependendo
+     de por onde se entrou. Devolve false quando não gravou. */
+  function gravarNotas(
+    colab: Colaborador,
+    aval: Avaliacao | undefined,
+    tecTxt: string, compTxt: string, resTxt: string,
+  ): boolean {
     if (!ciclo) {
       toast("Nenhum ciclo de avaliação configurado.", "erro");
-      return;
+      return false;
     }
-    const tec = num(edicao.tecnico);
-    const comp = num(edicao.comportamental);
-    const res = num(edicao.resultado);
+    const tec = num(tecTxt);
+    const comp = num(compTxt);
+    const res = num(resTxt);
     if (tec == null || comp == null || res == null) {
       toast("Informe as três notas (0–100).", "erro");
-      return;
+      return false;
     }
     if ([tec, comp, res].some((n) => n < 0 || n > 100)) {
       toast("As notas devem estar entre 0 e 100.", "erro");
-      return;
+      return false;
     }
 
     const notaFinal = +(
@@ -800,9 +829,9 @@ function AbaAvaliacoes({
       res * ciclo.pesoResultado
     ).toFixed(1);
     const statusDesempenho = statusDesempenhoDe(notaFinal);
-    const nivelIdx = indiceNivel(edicao.colab.nivelId);
+    const nivelIdx = indiceNivel(colab.nivelId);
     const elegivelPromocao = notaFinal >= ciclo.notaMinPromocao && nivelIdx > 0 && nivelIdx < 5;
-    const proximoNivel = elegivelPromocao ? `N${nivelIdx + 1}` : edicao.aval?.proximoNivel ?? null;
+    const proximoNivel = elegivelPromocao ? `N${nivelIdx + 1}` : aval?.proximoNivel ?? null;
 
     const patch = {
       notaTecnico: tec,
@@ -814,21 +843,28 @@ function AbaAvaliacoes({
       proximoNivel,
     };
 
-    if (edicao.aval) {
-      atualizarAval(edicao.aval.id, patch);
+    if (aval) {
+      atualizarAval(aval.id, patch);
     } else {
       criarAval({
         cicloId: ciclo.id,
-        colaboradorId: edicao.colab.id,
-        avaliadorId: edicao.colab.gestorId ?? null,
+        colaboradorId: colab.id,
+        avaliadorId: colab.gestorId ?? null,
         tipo: "GESTOR",
         ...patch,
         status: "Concluída",
         criadoEm: new Date().toISOString(),
       });
     }
-    toast(`Nota lançada para ${edicao.colab.nome.split(" ")[0]} (final ${notaFinal}).`, "sucesso");
-    setEdicao(null);
+    toast(`Nota lançada para ${colab.nome.split(" ")[0]} (final ${notaFinal}).`, "sucesso");
+    return true;
+  }
+
+  function salvar() {
+    if (!edicao) return;
+    if (gravarNotas(edicao.colab, edicao.aval, edicao.tecnico, edicao.comportamental, edicao.resultado)) {
+      setEdicao(null);
+    }
   }
 
   // Distribuição por status de desempenho (apenas avaliações lançadas).
@@ -888,8 +924,17 @@ function AbaAvaliacoes({
             <tbody>
               {escopo.map((c) => {
                 const a = avalPorColab.get(c.id);
+                const editandoEsta = linha?.id === c.id;
+                // Nota final ao vivo, com os mesmos pesos do ciclo que o salvar usa.
+                const previaLinha = editandoEsta && ciclo
+                  ? (() => {
+                      const t = num(linha!.tecnico), cm = num(linha!.comportamental), r = num(linha!.resultado);
+                      if (t == null || cm == null || r == null) return null;
+                      return +(t * ciclo.pesoTecnico + cm * ciclo.pesoComportamental + r * ciclo.pesoResultado).toFixed(1);
+                    })()
+                  : null;
                 return (
-                  <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                  <tr key={c.id} className={cn("border-b border-slate-50", editandoEsta ? "bg-brand/5" : "hover:bg-slate-50/50")}>
                     <td className="td">
                       <LinkFicha id={c.id} className="flex items-center gap-2" titulo="Abrir a ficha antes de lançar a nota">
                         <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
@@ -901,10 +946,53 @@ function AbaAvaliacoes({
                         </div>
                       </LinkFicha>
                     </td>
-                    <td className="td text-right tabular-nums text-slate-600">{a?.notaTecnico ?? "—"}</td>
-                    <td className="td text-right tabular-nums text-slate-600">{a?.notaComportamental ?? "—"}</td>
-                    <td className="td text-right tabular-nums text-slate-600">{a?.notaResultado ?? "—"}</td>
-                    <td className="td text-right tabular-nums font-semibold text-brand-ink">{a?.notaFinal ?? "—"}</td>
+                    {(["tecnico", "comportamental", "resultado"] as const).map((campo) => {
+                      const guardada = campo === "tecnico" ? a?.notaTecnico
+                        : campo === "comportamental" ? a?.notaComportamental : a?.notaResultado;
+                      if (!editandoEsta) {
+                        return (
+                          <td key={campo} className="td text-right tabular-nums text-slate-600">
+                            {gerir ? (
+                              <button
+                                type="button"
+                                onClick={() => abrirLinha(c)}
+                                title={`Editar as notas de ${c.nome}`}
+                                className="w-full rounded px-1 text-right transition hover:bg-white hover:ring-1 hover:ring-slate-200"
+                              >
+                                {guardada ?? "—"}
+                              </button>
+                            ) : (guardada ?? "—")}
+                          </td>
+                        );
+                      }
+                      return (
+                        <td key={campo} className="td text-right">
+                          <input
+                            /* autoFocus só no campo clicado seria melhor, mas
+                               exigiria guardar qual foi; o primeiro resolve o
+                               caso comum (lançar as três em sequência). */
+                            autoFocus={campo === "tecnico"}
+                            type="number" min={0} max={100} step={1}
+                            value={linha![campo]}
+                            aria-label={`Nota de ${campo} de ${c.nome}`}
+                            onChange={(e) => setLinha((r) => (r ? { ...r, [campo]: e.target.value } : r))}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); gravarLinha(c); }
+                              if (e.key === "Escape") { e.preventDefault(); setLinha(null); }
+                            }}
+                            className="input h-8 w-20 py-0 text-right text-sm tabular-nums"
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="td text-right tabular-nums font-semibold text-brand-ink">
+                      {/* Enquanto se digita, a nota final acompanha: sem isso a
+                          pessoa grava para descobrir no que deu, e desfazer
+                          nota já gravada é bem mais caro. */}
+                      {editandoEsta && previaLinha != null ? (
+                        <span className="text-brand">{previaLinha}</span>
+                      ) : (a?.notaFinal ?? "—")}
+                    </td>
                     <td className="td">
                       {a?.statusDesempenho ? (
                         <Badge variant={variantStatusDesempenho(a.statusDesempenho)}>{a.statusDesempenho}</Badge>
@@ -921,10 +1009,21 @@ function AbaAvaliacoes({
                     </td>
                     {gerir && (
                       <td className="td text-right">
-                        <button className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => abrir(c)}>
-                          <PencilLine className="h-3.5 w-3.5" />
-                          Lançar nota
-                        </button>
+                        {editandoEsta ? (
+                          <span className="flex justify-end gap-1.5">
+                            <button className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => setLinha(null)}>
+                              Cancelar
+                            </button>
+                            <button className="btn-primary px-2.5 py-1.5 text-xs" onClick={() => gravarLinha(c)}>
+                              Salvar
+                            </button>
+                          </span>
+                        ) : (
+                          <button className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => abrirLinha(c)}>
+                            <PencilLine className="h-3.5 w-3.5" />
+                            {a ? "Editar nota" : "Lançar nota"}
+                          </button>
+                        )}
                       </td>
                     )}
                   </tr>
