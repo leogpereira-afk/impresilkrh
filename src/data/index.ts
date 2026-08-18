@@ -8,6 +8,7 @@ import type {
   Advertencia, Ausencia, Contato, TemplateMensagem, Agendamento, ArquivoRepositorio,
   Treinamento, EtapaEvolucao, Usuario, Pagamento, ContaPlano, ClassificacaoConta, EventoCalendario,
   CertificacaoNR, Pesquisa, RespostaPesquisa, Vaga, Candidato, Ponto, Lancamento, FechamentoFolha,
+  Freelancer,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -80,6 +81,7 @@ export interface ColecaoMap {
   pontos: Ponto;
   lancamentos: Lancamento;
   fechamentos: FechamentoFolha;
+  freelancers: Freelancer;
 }
 
 export type NomeColecao = keyof ColecaoMap;
@@ -145,6 +147,8 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     pontos: [],
     lancamentos: [],
     fechamentos: [],
+    // Nasce vazia: quem presta serviço entra pela tela, um a um.
+    freelancers: [],
   });
 }
 

@@ -909,3 +909,49 @@ export interface FechamentoFolha {
   aprovadoEm?: string | null;
   atualizadoEm: string;
 }
+
+/**
+ * FREELANCER / PRESTADOR — quem trabalha para a casa SEM fazer parte do quadro.
+ *
+ * Existe porque essa gente estava num vão: entra nos sistemas (o Osmane fez 24
+ * O.S. no PCP), mas não tem ficha de colaborador, então nada registrava quem é,
+ * até quando o combinado vale, nem a quem perguntar. O efeito prático disso é
+ * cruel dos dois lados — ou a pessoa é cortada numa limpeza "porque está
+ * desligada no RH", ou o acesso dela fica aberto para sempre porque ninguém
+ * lembra de encerrar.
+ *
+ * NÃO é colaborador e não deve virar um: sem carteira, sem folha, sem férias,
+ * sem ponto. Por isso coleção própria, e não um `statusId` a mais na ficha —
+ * misturar faria a folha, o eSocial e o organograma contarem gente que não é
+ * do quadro.
+ *
+ * O `contratoFim` é o que fecha o acesso: ele vira `valido_ate` na conta da
+ * Central, e a porta fecha sozinha no dia. Por isso é obrigatório na tela.
+ */
+export interface Freelancer {
+  id: string;
+  nome: string;
+  /** O login dele nos sistemas — mesma regra do apelido do colaborador. */
+  apelido?: string;
+  cpf?: string;
+  /** Quando presta como empresa. */
+  cnpj?: string;
+  telefone?: string;
+  email?: string;
+  /** O que ele faz: "Instalador", "Montador", "Designer". */
+  funcao?: string;
+  contratoInicio?: string;
+  /** O dia em que o combinado acaba — e em que o acesso fecha sozinho. */
+  contratoFim?: string;
+  /** O que foi combinado (por serviço, por dia, por mês). */
+  valor?: number;
+  formaPagamento?: string;
+  /** Id do colaborador que responde por ele aqui dentro. */
+  responsavelId?: string;
+  /** Se já foi do quadro, o id da ficha antiga — o caso do Osmane. */
+  exColaboradorId?: string;
+  situacao: "ativo" | "encerrado";
+  observacoes?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
+}
