@@ -33,6 +33,46 @@ import {
 } from "@/lib/tiposEvento";
 import type { Area, Cargo, CicloAvaliacao, ModeloChecklist, Nivel, Perfil, StatusColaborador, Usuario } from "@/data/types";
 
+/* PESO DO CICLO — decimal digitável.
+ *
+ * Era `<Input type="number" step="0.05" value={peso} onChange={... Number(...)}>`,
+ * e com isso NÃO DAVA para digitar 0,4. O <input type="number"> devolve
+ * value="" para todo conteúdo que ele ainda não entende — e "0." é um deles.
+ * Number("") vira 0, o 0 voltava para a tela e apagava o ponto recém-digitado;
+ * quem continuasse e teclasse o 4 terminava com peso 4. Só as setinhas do campo
+ * chegavam ao valor certo.
+ *
+ * Peso 4 no lugar de 0,4 não dá erro nenhum: Desempenho.tsx multiplica a nota
+ * por ele, então a avaliação inteira do ciclo sai dez vezes maior naquele
+ * componente, calada. Este é o mesmo remédio já documentado em
+ * campo-editavel.tsx: campo de TEXTO com teclado numérico, guardando o que foi
+ * digitado enquanto se digita e convertendo só ao sair do campo.
+ *
+ * Fica no escopo do módulo, e não dentro do componente que o usa, justamente
+ * para não repetir o defeito de remontagem que esta varredura encontrou.
+ */
+function PesoInput({ valor, onGravar }: { valor: number; onGravar: (n: number) => void }) {
+  // null = "não estou digitando", então a tela mostra o valor guardado.
+  const [rascunho, setRascunho] = useState<string | null>(null);
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={rascunho ?? String(valor).replace(".", ",")}
+      onChange={(e) => setRascunho(e.target.value)}
+      onBlur={() => {
+        if (rascunho === null) return;
+        const n = Number(rascunho.trim().replace(",", "."));
+        /* Rascunho impossível (vazio, "abc", negativo) NÃO vira zero: zerar o
+           peso calado é pior que recusar, porque some com um componente inteiro
+           da nota sem ninguém ver. Nesse caso o valor volta a ser o que era. */
+        if (rascunho.trim() !== "" && Number.isFinite(n) && n >= 0) onGravar(n);
+        setRascunho(null);
+      }}
+    />
+  );
+}
+
 export default function PainelControle() {
   const sessao = useSessao();
   const master = ehMaster(sessao);
@@ -573,9 +613,9 @@ function AvaliacaoSecao() {
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <Campo label="Peso técnico"><Input type="number" step="0.05" value={c.pesoTecnico} onChange={(e) => atualizar(c.id, { pesoTecnico: Number(e.target.value) })} /></Campo>
-                <Campo label="Peso comp."><Input type="number" step="0.05" value={c.pesoComportamental} onChange={(e) => atualizar(c.id, { pesoComportamental: Number(e.target.value) })} /></Campo>
-                <Campo label="Peso result."><Input type="number" step="0.05" value={c.pesoResultado} onChange={(e) => atualizar(c.id, { pesoResultado: Number(e.target.value) })} /></Campo>
+                <Campo label="Peso técnico"><PesoInput valor={c.pesoTecnico} onGravar={(n) => atualizar(c.id, { pesoTecnico: n })} /></Campo>
+                <Campo label="Peso comp."><PesoInput valor={c.pesoComportamental} onGravar={(n) => atualizar(c.id, { pesoComportamental: n })} /></Campo>
+                <Campo label="Peso result."><PesoInput valor={c.pesoResultado} onGravar={(n) => atualizar(c.id, { pesoResultado: n })} /></Campo>
                 <Campo label="Nota mín. promo" hint="0 a 100"><Input type="number" min={0} max={100} value={c.notaMinPromocao} onChange={(e) => atualizar(c.id, { notaMinPromocao: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} /></Campo>
                 <Campo label="Meses mín."><Input type="number" value={c.mesesMinNivel} onChange={(e) => atualizar(c.id, { mesesMinNivel: Number(e.target.value) })} /></Campo>
               </div>

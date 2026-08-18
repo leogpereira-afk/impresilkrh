@@ -49,6 +49,174 @@ function corNode(c: Colaborador, ehGer: boolean): { dot: string; rotulo: string 
   return { dot: "bg-slate-300", rotulo: "Equipe" };
 }
 
+/* AS DUAS LINHAS DO ORGANOGRAMA MORAM AQUI FORA, e é de propósito.
+ *
+ * `Node` e `LinhaPessoa` eram declarados DENTRO do Organograma. Componente
+ * escrito dentro de outro nasce com identidade nova a cada desenho, e o React
+ * decide o que reaproveitar comparando o TIPO do elemento: tipo diferente = joga
+ * fora e monta de novo. A `key` não salva — ela só desempata entre irmãos do
+ * MESMO tipo.
+ *
+ * E `Node` é recursivo: ele se chama para cada subordinado. Então qualquer
+ * clique — abrir um ramo, recolher, trocar a visão, marcar "só ativos", ou uma
+ * sincronização chegando em segundo plano — destruía e refazia a árvore INTEIRA,
+ * com as fotos (data URL) redecodificadas todas de novo. Numa base de ~92
+ * pessoas isso engasga em máquina de chão de fábrica.
+ *
+ * Pelo teclado ficava pior que lento: o botão recém-clicado deixava de existir,
+ * o foco caía no corpo da página e o Tab recomeçava do topo — não dava para
+ * abrir dois ramos seguidos.
+ *
+ * A regra react/no-unstable-nested-components (eslint.config.mjs) agora barra a
+ * volta disso em todo o sistema.
+ */
+interface AcoesOrg {
+  podeEditar: boolean;
+  nomeCargo: (c: Colaborador) => string;
+  ehGerente: (c: Colaborador) => boolean;
+  onEditar: (c: Colaborador) => void;
+  onAdicionar: (c: Colaborador) => void;
+  onFoto: (id: string) => void;
+  onRemover: (c: Colaborador) => void;
+}
+
+// Cada nó é uma linha (estilo explorador de arquivos): a indentação por nível
+// vem do aninhamento dos <ul>, cada um com uma guia vertical à esquerda
+// conectando pais e filhos. Expandir/recolher por ramo. Nunca há sobreposição:
+// a árvore cresce apenas verticalmente.
+function Node({ c, filhosPorGestor, colapsados, toggle, acoes }: {
+  c: Colaborador;
+  filhosPorGestor: Map<string, Colaborador[]>;
+  colapsados: Set<string>;
+  toggle: (id: string) => void;
+  acoes: AcoesOrg;
+}) {
+  const filhos = filhosPorGestor.get(c.id) ?? [];
+  const temFilhos = filhos.length > 0;
+  const cor = corNode(c, acoes.ehGerente(c));
+  const colapsado = colapsados.has(c.id);
+
+  return (
+    <li>
+      <div className="group flex items-center gap-2 rounded-lg py-1.5 pl-1 pr-2 transition hover:bg-slate-50">
+        {/* Chevron de expandir/recolher (ocupa espaço fixo mesmo sem filhos) */}
+        {temFilhos ? (
+          <button
+            type="button"
+            onClick={() => toggle(c.id)}
+            title={colapsado ? "Expandir" : "Recolher"}
+            aria-label={colapsado ? `Expandir equipe de ${c.nome}` : `Recolher equipe de ${c.nome}`}
+            aria-expanded={!colapsado}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+          >
+            {colapsado ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        ) : (
+          <span className="h-5 w-5 shrink-0" aria-hidden />
+        )}
+
+        {/* Indicador colorido de papel (faixa lateral) */}
+        <span className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)} title={cor.rotulo} aria-hidden />
+
+        {/* Foto (cai nas iniciais quando não há) */}
+        <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="ring-1 ring-slate-200" />
+
+        {/* Nome + cargo (clicar navega para a ficha) */}
+        <Link to={`/colaboradores/${c.id}`} className="min-w-0 flex-1" title={`Abrir ficha de ${c.nome}`}>
+          <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">{c.nome}</p>
+          <p className="truncate text-[11px] text-slate-400">{acoes.nomeCargo(c)}</p>
+        </Link>
+
+        {/* Badge de subordinados diretos */}
+        {temFilhos && (
+          <Badge variant="neutral" className="shrink-0">
+            {filhos.length} {filhos.length === 1 ? "direto" : "diretos"}
+          </Badge>
+        )}
+
+        {/* Ações de RH (aparecem no hover quando podeEditar) */}
+        {acoes.podeEditar && (
+          <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => acoes.onEditar(c)}
+              title="Editar colaborador"
+              aria-label={`Editar ${c.nome}`}
+              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => acoes.onAdicionar(c)}
+              title="Adicionar subordinado"
+              aria-label={`Adicionar subordinado a ${c.nome}`}
+              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
+            >
+              <UserPlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => acoes.onFoto(c.id)}
+              title="Enviar foto"
+              aria-label={`Enviar foto de ${c.nome}`}
+              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
+            >
+              <Camera className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => acoes.onRemover(c)}
+              title="Remover do organograma"
+              aria-label={`Remover ${c.nome} do organograma`}
+              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"
+            >
+              <UserMinus className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Filhos: container indentado com guia vertical (a indentação se acumula
+          pelo aninhamento dos <ul>) */}
+      {temFilhos && !colapsado && (
+        <ul className="ml-4 border-l border-slate-200 pl-1.5">
+          {filhos.map((f) => (
+            <Node key={f.id} c={f} filhosPorGestor={filhosPorGestor} colapsados={colapsados} toggle={toggle} acoes={acoes} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+// Linha de pessoa para as visões agrupadas (por área / por empresa) — sem árvore.
+function LinhaPessoa({ c, visao, nomeArea, acoes }: {
+  c: Colaborador;
+  visao: string;
+  nomeArea: (id?: string | null) => string;
+  acoes: AcoesOrg;
+}) {
+  const cor = corNode(c, acoes.ehGerente(c));
+  return (
+    <div className="group flex items-center gap-2 rounded-lg border border-slate-100 p-2 transition hover:bg-slate-50">
+      <span className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)} title={cor.rotulo} aria-hidden />
+      <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="ring-1 ring-slate-200" />
+      <Link to={`/colaboradores/${c.id}`} className="min-w-0 flex-1" title={`Abrir ficha de ${c.nome}`}>
+        <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">{c.nome}</p>
+        <p className="truncate text-[11px] text-slate-400">{acoes.nomeCargo(c)}{visao === "area" && c.empresa ? ` · ${c.empresa}` : ""}{visao === "empresa" ? ` · ${nomeArea(c.areaId)}` : ""}</p>
+      </Link>
+      {acoes.podeEditar && (
+        <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+          <button type="button" onClick={() => acoes.onEditar(c)} title="Editar colaborador" aria-label={`Editar ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Pencil className="h-4 w-4" /></button>
+          <button type="button" onClick={() => acoes.onFoto(c.id)} title="Enviar foto" aria-label={`Enviar foto de ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Camera className="h-4 w-4" /></button>
+          <button type="button" onClick={() => acoes.onRemover(c)} title="Remover do organograma" aria-label={`Remover ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"><UserMinus className="h-4 w-4" /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Organograma() {
   const sessao = useSessao();
   const d = useDominio();
@@ -119,6 +287,7 @@ export default function Organograma() {
   // Recolher tudo: colapsa todos os nós que possuem subordinados.
   const recolherTudo = () => setColapsados(new Set(filhosPorGestor.keys()));
 
+
   // Vínculos da pessoa apontada para exclusão (folha, documentos, férias...).
   // É o que decide se dá para apagar de verdade ou se o certo é desligar.
   // Sem memo de propósito: só roda quando o aviso está aberto (uma pessoa por vez)
@@ -167,6 +336,19 @@ export default function Organograma() {
     fotoInputRef.current?.click();
   };
 
+  /* O que as linhas do organograma precisam para agir. Vai como VALOR, não como
+     tipo de componente: um objeto novo a cada desenho é inofensivo — quem
+     causava a remontagem era o componente estar declarado aqui dentro. */
+  const acoes: AcoesOrg = {
+    podeEditar,
+    nomeCargo: (c) => d.nomeCargo(c),
+    ehGerente,
+    onEditar: setEditarAlvo,
+    onAdicionar: setAdicionarEm,
+    onFoto: abrirSeletorFoto,
+    onRemover: setRemoverAlvo,
+  };
+
   const aoSelecionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const id = fotoAlvoRef.current;
@@ -187,143 +369,6 @@ export default function Organograma() {
     } catch {
       toast("Não foi possível processar a imagem.", "erro");
     }
-  };
-
-  // Cada nó é uma linha (estilo explorador de arquivos): a indentação por nível
-  // vem do aninhamento dos <ul>, cada um com uma guia vertical à esquerda
-  // conectando pais e filhos. Expandir/recolher por ramo. Nunca há sobreposição:
-  // a árvore cresce apenas verticalmente.
-  const Node = ({ c }: { c: Colaborador }) => {
-    const filhos = filhosPorGestor.get(c.id) ?? [];
-    const temFilhos = filhos.length > 0;
-    const ger = ehGerente(c);
-    const cor = corNode(c, ger);
-    const colapsado = colapsados.has(c.id);
-
-    return (
-      <li>
-        <div className="group flex items-center gap-2 rounded-lg py-1.5 pl-1 pr-2 transition hover:bg-slate-50">
-          {/* Chevron de expandir/recolher (ocupa espaço fixo mesmo sem filhos) */}
-          {temFilhos ? (
-            <button
-              type="button"
-              onClick={() => toggle(c.id)}
-              title={colapsado ? "Expandir" : "Recolher"}
-              aria-label={colapsado ? `Expandir equipe de ${c.nome}` : `Recolher equipe de ${c.nome}`}
-              aria-expanded={!colapsado}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-            >
-              {colapsado ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-          ) : (
-            <span className="h-5 w-5 shrink-0" aria-hidden />
-          )}
-
-          {/* Indicador colorido de papel (faixa lateral) */}
-          <span
-            className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)}
-            title={cor.rotulo}
-            aria-hidden
-          />
-
-          {/* Foto (cai nas iniciais quando não há) */}
-          <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="ring-1 ring-slate-200" />
-
-          {/* Nome + cargo (clicar navega para a ficha) */}
-          <Link
-            to={`/colaboradores/${c.id}`}
-            className="min-w-0 flex-1"
-            title={`Abrir ficha de ${c.nome}`}
-          >
-            <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">
-              {c.nome}
-            </p>
-            <p className="truncate text-[11px] text-slate-400">{d.nomeCargo(c)}</p>
-          </Link>
-
-          {/* Badge de subordinados diretos */}
-          {temFilhos && (
-            <Badge variant="neutral" className="shrink-0">
-              {filhos.length} {filhos.length === 1 ? "direto" : "diretos"}
-            </Badge>
-          )}
-
-          {/* Ações de RH (aparecem no hover quando podeEditar) */}
-          {podeEditar && (
-            <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
-              <button
-                type="button"
-                onClick={() => setEditarAlvo(c)}
-                title="Editar colaborador"
-                aria-label={`Editar ${c.nome}`}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdicionarEm(c)}
-                title="Adicionar subordinado"
-                aria-label={`Adicionar subordinado a ${c.nome}`}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
-              >
-                <UserPlus className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => abrirSeletorFoto(c.id)}
-                title="Enviar foto"
-                aria-label={`Enviar foto de ${c.nome}`}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"
-              >
-                <Camera className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setRemoverAlvo(c)}
-                title="Remover do organograma"
-                aria-label={`Remover ${c.nome} do organograma`}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"
-              >
-                <UserMinus className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Filhos: container indentado com guia vertical (a indentação se acumula
-            pelo aninhamento dos <ul>) */}
-        {temFilhos && !colapsado && (
-          <ul className="ml-4 border-l border-slate-200 pl-1.5">
-            {filhos.map((f) => (
-              <Node key={f.id} c={f} />
-            ))}
-          </ul>
-        )}
-      </li>
-    );
-  };
-
-  // Linha de pessoa para as visões agrupadas (por área / por empresa) — sem árvore.
-  const LinhaPessoa = ({ c }: { c: Colaborador }) => {
-    const cor = corNode(c, ehGerente(c));
-    return (
-      <div className="group flex items-center gap-2 rounded-lg border border-slate-100 p-2 transition hover:bg-slate-50">
-        <span className={cn("h-7 w-1 shrink-0 rounded-full", cor.dot)} title={cor.rotulo} aria-hidden />
-        <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="ring-1 ring-slate-200" />
-        <Link to={`/colaboradores/${c.id}`} className="min-w-0 flex-1" title={`Abrir ficha de ${c.nome}`}>
-          <p className="truncate text-sm font-semibold text-slate-800 group-hover:text-brand">{c.nome}</p>
-          <p className="truncate text-[11px] text-slate-400">{d.nomeCargo(c)}{visao === "area" && c.empresa ? ` · ${c.empresa}` : ""}{visao === "empresa" ? ` · ${d.nomeArea(c.areaId)}` : ""}</p>
-        </Link>
-        {podeEditar && (
-          <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
-            <button type="button" onClick={() => setEditarAlvo(c)} title="Editar colaborador" aria-label={`Editar ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Pencil className="h-4 w-4" /></button>
-            <button type="button" onClick={() => abrirSeletorFoto(c.id)} title="Enviar foto" aria-label={`Enviar foto de ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Camera className="h-4 w-4" /></button>
-            <button type="button" onClick={() => setRemoverAlvo(c)} title="Remover do organograma" aria-label={`Remover ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"><UserMinus className="h-4 w-4" /></button>
-          </div>
-        )}
-      </div>
-    );
   };
 
   const grupos = visao === "area" ? porArea : porEmpresa;
@@ -390,7 +435,7 @@ export default function Organograma() {
             {/* overflow-x-auto só atua como rede de segurança em telas muito estreitas */}
             <div className="overflow-x-auto">
               <ul className="min-w-[280px]">
-                {raizes.length > 0 ? raizes.map((c) => <Node key={c.id} c={c} />) : <p className="text-sm text-slate-500">Nenhum colaborador para mostrar.</p>}
+                {raizes.length > 0 ? raizes.map((c) => <Node key={c.id} c={c} filhosPorGestor={filhosPorGestor} colapsados={colapsados} toggle={toggle} acoes={acoes} />) : <p className="text-sm text-slate-500">Nenhum colaborador para mostrar.</p>}
               </ul>
             </div>
           </CardBody>
@@ -401,7 +446,7 @@ export default function Organograma() {
             <Card key={g.chave}>
               <CardHeader title={g.titulo} subtitle={`${g.pessoas.length} pessoa(s)`} icon={visao === "area" ? <LayoutGrid className="h-[18px] w-[18px]" /> : <Building2 className="h-[18px] w-[18px]" />} />
               <CardBody className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {g.pessoas.map((c) => <LinhaPessoa key={c.id} c={c} />)}
+                {g.pessoas.map((c) => <LinhaPessoa key={c.id} c={c} visao={visao} nomeArea={(id) => d.nomeArea(id)} acoes={acoes} />)}
               </CardBody>
             </Card>
           ))}

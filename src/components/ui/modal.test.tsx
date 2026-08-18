@@ -17,10 +17,25 @@
  * que este teste afirma é o que importa nos dois casos: depois de redesenhar,
  * o foco continua onde a pessoa o deixou.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
 import { useState, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Modal } from "./modal";
+
+/* O Modal decide o que é focável olhando `offsetParent` — o jeito clássico de
+   perguntar "isto está visível na tela?". O jsdom não calcula layout e devolve
+   nulo SEMPRE, então sem este remendo a lista de focáveis sairia vazia e os
+   testes de foco passariam sem provar nada: o foco cairia no diálogo por falta
+   de candidatos, e não porque o código escolheu certo. Aqui `offsetParent`
+   responde como num navegador — nulo só para quem está escondido. */
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "offsetParent", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.style.display === "none" ? null : this.parentElement;
+    },
+  });
+});
 
 // React 18 exige esta marca para não avisar a cada act().
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -98,5 +113,107 @@ describe("Modal — foco", () => {
     expect(document.activeElement).not.toBe(fora);
     expect(container.ownerDocument.activeElement?.closest('[role="dialog"]')).toBeTruthy();
     fora.remove();
+  });
+
+  it("não põe o foco inicial no X de fechar", () => {
+    /* O "X" é o primeiro focável do diálogo porque vem antes de tudo no HTML.
+       Deixar o foco nele fazia abrir o modal e digitar não escrever nada — e a
+       primeira tecla, sendo espaço ou Enter, FECHAVA o modal com tudo dentro. */
+    act(() => {
+      root = createRoot(container);
+      root.render(<Formulario />);
+    });
+    const fechar = document.querySelector<HTMLElement>('[aria-label="Fechar"]')!;
+    expect(fechar).toBeTruthy(); // o botão existe, então o teste tem sentido
+    expect(document.activeElement).not.toBe(fechar);
+  });
+
+  it("respeita o autoFocus de quem escreveu a tela", () => {
+    function ComAutoFocus() {
+      return (
+        <Modal aberto onFechar={() => {}} titulo="Nova vaga">
+          <input data-testid="a" />
+          <input data-testid="titulo" autoFocus />
+        </Modal>
+      );
+    }
+    act(() => {
+      root = createRoot(container);
+      root.render(<ComAutoFocus />);
+    });
+    // Não é o primeiro campo do corpo: é o que a tela pediu.
+    expect(document.activeElement).toBe(document.querySelector('[data-testid="titulo"]'));
+  });
+});
+
+describe("Modal — modal sobre modal", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  /* O caso real: a prévia da sincronização (a tela mais destrutiva do sistema,
+     que avisa quantos registros somem da nuvem) abre POR CIMA do painel de
+     Sincronização. Antes, os dois ouviam a mesma tecla. */
+  function Empilhados({ deCima }: { deCima: boolean }) {
+    const [fechouDeBaixo, setFechouDeBaixo] = useState(false);
+    return (
+      <>
+        <Modal aberto={!fechouDeBaixo} onFechar={() => setFechouDeBaixo(true)} titulo="Sincronização">
+          <input data-testid="fundo" />
+        </Modal>
+        {deCima && (
+          <Modal aberto onFechar={() => {}} titulo="Prévia">
+            <input data-testid="topo" />
+          </Modal>
+        )}
+        <span data-testid="estado">{fechouDeBaixo ? "fechado" : "aberto"}</span>
+      </>
+    );
+  }
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it("Escape no de cima não fecha o de baixo", () => {
+    act(() => {
+      root = createRoot(container);
+      root.render(<Empilhados deCima />);
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    // O de baixo continua aberto: quem responde é só o modal do topo.
+    expect(document.querySelector('[data-testid="estado"]')?.textContent).toBe("aberto");
+  });
+
+  it("fechar o de cima não devolve a rolagem enquanto o de baixo está aberto", () => {
+    act(() => {
+      root = createRoot(container);
+      root.render(<Empilhados deCima />);
+    });
+    expect(document.body.style.overflow).toBe("hidden");
+    act(() => root.render(<Empilhados deCima={false} />));
+    // Ainda há um modal aberto — a página de trás não pode voltar a rolar.
+    expect(document.body.style.overflow).toBe("hidden");
+  });
+
+  it("com todos fechados, a rolagem volta", () => {
+    act(() => {
+      root = createRoot(container);
+      root.render(<Empilhados deCima />);
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    act(() => root.render(<Empilhados deCima={false} />));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.body.style.overflow).toBe("");
   });
 });

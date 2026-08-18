@@ -727,6 +727,46 @@ function PainelPendencias({
 }
 
 // ---------- Card de checklist de um colaborador ----------
+/* ACOESITEM MORA AQUI FORA, e é de propósito.
+ *
+ * Era declarado DENTRO do CardChecklist — e ainda lia `gere`, que só era
+ * declarado 20 linhas ABAIXO dele. Componente escrito dentro de outro nasce com
+ * identidade nova a cada desenho, então o React destruía e refazia estes botões
+ * a cada letra digitada no campo de renomear: os ícones de lápis e lixeira de
+ * todas as linhas do cartão piscavam junto.
+ *
+ * O risco não é estético. Um toque que caia bem no meio de um desses redesenhos
+ * não registra; a pessoa toca de novo, e este segundo toque cai a 4px do Toggle
+ * de "concluído" — exatamente a vizinhança perigosa que o comentário do botão de
+ * excluir, logo abaixo, já alertava.
+ */
+function AcoesItem({ item, gere, onRenomear, onExcluir }: {
+  item: Tarefa;
+  gere: boolean;
+  onRenomear: (t: Tarefa) => void;
+  onExcluir: (t: Tarefa) => void;
+}) {
+  if (!gere) return null;
+  return (
+    <span className="flex shrink-0 items-center">
+      <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-brand" title="Renomear item" aria-label="Renomear item"
+        onClick={() => onRenomear(item)}>
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      {/* PERGUNTA ANTES DE APAGAR. Este botão fica a 4px do Toggle, que é o
+          controle clicado dezenas de vezes por cartão — e a ação era
+          irreversível e sem aviso. Um erro de mira não "deixava de marcar":
+          apagava a linha, e o item sumia bem no instante em que a pessoa
+          tentou marcá-lo. */}
+      <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-red-600"
+        title="Remover item do checklist" aria-label={`Remover o item ${item.titulo}`}
+        onClick={() => onExcluir(item)}>
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
+}
+
 function CardChecklist({
   colaboradorId,
   tipo,
@@ -757,26 +797,6 @@ function CardChecklist({
     atualizarTarefa(renomeando.id, { titulo: texto });
     setRenomeando(null);
   };
-  const AcoesItem = ({ t: item }: { t: Tarefa }) => (
-    gere ? (
-      <span className="flex shrink-0 items-center">
-        <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-brand" title="Renomear item" aria-label="Renomear item"
-          onClick={() => setRenomeando({ id: item.id, texto: item.titulo })}>
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        {/* PERGUNTA ANTES DE APAGAR. Este botão fica a 4px do Toggle, que é o
-            controle clicado dezenas de vezes por cartão — e a ação era
-            irreversível e sem aviso. Um erro de mira não "deixava de marcar":
-            apagava a linha, e o item sumia bem no instante em que a pessoa
-            tentou marcá-lo. */}
-        <button type="button" className="btn-ghost p-1 text-slate-300 hover:text-red-600"
-          title="Remover item do checklist" aria-label={`Remover o item ${item.titulo}`}
-          onClick={() => setExcluindoItem(item)}>
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </span>
-    ) : null
-  );
   const { atualizar: atualizarColab } = useColecao("colaboradores");
   const gere = podeGerir(sessao);
 
@@ -1085,7 +1105,7 @@ function CardChecklist({
                 </p>
               </div>
               <div className="mt-0.5 flex shrink-0 items-center gap-1">
-                <AcoesItem t={t} />
+                <AcoesItem item={t} gere={gere} onRenomear={(x) => setRenomeando({ id: x.id, texto: x.titulo })} onExcluir={setExcluindoItem} />
                 <Toggle
                   checked={t.concluida}
                   onChange={(v) => onAlternar(t, v)}
@@ -1152,7 +1172,7 @@ function CardChecklist({
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <AcoesItem t={t} />
+                    <AcoesItem item={t} gere={gere} onRenomear={(x) => setRenomeando({ id: x.id, texto: x.titulo })} onExcluir={setExcluindoItem} />
                     <Toggle
                       checked={t.concluida}
                       onChange={(v) => onAlternar(t, v)}

@@ -6,6 +6,23 @@ import { cn } from "@/lib/cn";
 const SELETOR_FOCAVEL =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/* PILHA DOS MODAIS ABERTOS.
+ *
+ * O sistema empilha modal sobre modal — a prévia da sincronização, que é a
+ * tela mais destrutiva que existe aqui, abre POR CIMA do painel de
+ * Sincronização. Sem esta pilha, todos os modais abertos ouviam a mesma tecla:
+ *
+ *  - um Escape para desistir da prévia fechava também o painel de trás, sem
+ *    aviso;
+ *  - o Tab era disputado por dois donos ao mesmo tempo, cada um devolvendo o
+ *    cursor para o começo do SEU modal — na prática o cursor ficava preso e
+ *    "Cancelar" e "Sobrescrever" só davam para alcançar com o mouse.
+ *
+ * É a pilha também que decide quando devolver a rolagem ao fundo: quem fecha
+ * por cima não pode destravar a página enquanto ainda houver modal aberto.
+ */
+const pilha: HTMLElement[] = [];
+
 export function Modal({
   aberto,
   onFechar,
@@ -44,18 +61,39 @@ export function Modal({
     if (!aberto) return;
     const anteriorFoco = document.activeElement as HTMLElement | null;
     const dialog = dialogRef.current;
+    if (!dialog) return;
 
-    const focaveis = () =>
-      dialog
-        ? Array.from(dialog.querySelectorAll<HTMLElement>(SELETOR_FOCAVEL)).filter(
-            (el) => el.offsetParent !== null,
-          )
-        : [];
+    pilha.push(dialog);
+    document.body.style.overflow = "hidden";
 
-    // Foco inicial dentro do modal (primeiro campo; senão o próprio diálogo).
-    (focaveis()[0] ?? dialog)?.focus();
+    const visiveis = (raiz: HTMLElement) =>
+      Array.from(raiz.querySelectorAll<HTMLElement>(SELETOR_FOCAVEL)).filter(
+        (el) => el.offsetParent !== null,
+      );
+    const focaveis = () => visiveis(dialog);
+
+    /* FOCO INICIAL: o corpo, nunca o cabeçalho.
+       O primeiro focável do diálogo inteiro é o "X" de fechar, porque ele vem
+       antes de tudo no HTML. Mandar o foco para lá quer dizer que abrir um
+       modal e começar a digitar não escreve nada — e que a primeira tecla, se
+       for espaço ou Enter, FECHA o modal e leva o preenchimento junto.
+
+       Se o conteúdo já pegou o foco sozinho (autoFocus, como no campo Título de
+       "Nova vaga"), não se mexe: quem escreveu o autoFocus sabia onde queria o
+       cursor, e roubá-lo de volta desfaz a intenção.
+
+       Sem nada focável no corpo — o caso do ConfirmDialog, que é só um texto —
+       o foco vai para o próprio diálogo, e não para o botão de confirmar: num
+       diálogo de exclusão, deixar "Excluir" focado transforma um Enter distraído
+       em registro apagado. */
+    if (!dialog.contains(document.activeElement)) {
+      const corpo = dialog.querySelector<HTMLElement>("[data-modal-corpo]");
+      (((corpo && visiveis(corpo)[0]) || dialog)).focus();
+    }
 
     const onKey = (e: KeyboardEvent) => {
+      // Só o modal do topo responde: ver o comentário da pilha, acima.
+      if (pilha[pilha.length - 1] !== dialog) return;
       if (e.key === "Escape") {
         fecharRef.current();
         return;
@@ -64,26 +102,28 @@ export function Modal({
       const els = focaveis();
       if (els.length === 0) {
         e.preventDefault();
-        dialog?.focus();
+        dialog.focus();
         return;
       }
       const primeiro = els[0];
       const ultimo = els[els.length - 1];
       const ativo = document.activeElement;
-      if (e.shiftKey && (ativo === primeiro || !dialog?.contains(ativo))) {
+      if (e.shiftKey && (ativo === primeiro || !dialog.contains(ativo))) {
         e.preventDefault();
         ultimo.focus();
-      } else if (!e.shiftKey && (ativo === ultimo || !dialog?.contains(ativo))) {
+      } else if (!e.shiftKey && (ativo === ultimo || !dialog.contains(ativo))) {
         e.preventDefault();
         primeiro.focus();
       }
     };
 
     window.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      const i = pilha.indexOf(dialog);
+      if (i >= 0) pilha.splice(i, 1);
+      // Só devolve a rolagem quando o ÚLTIMO modal sai de cena.
+      if (pilha.length === 0) document.body.style.overflow = "";
       anteriorFoco?.focus?.(); // devolve o foco a quem abriu o modal
     };
     // Só `aberto`: ver o comentário do fecharRef acima.
@@ -114,7 +154,9 @@ export function Modal({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        {/* data-modal-corpo: é daqui que sai o foco inicial — do CORPO, não do
+            cabeçalho, onde mora o "X". Ver o efeito lá em cima. */}
+        <div data-modal-corpo className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
         {rodape && (
           <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
             {rodape}

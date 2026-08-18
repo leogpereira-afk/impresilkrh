@@ -73,6 +73,25 @@ const TIPOS: { id: BlocoTipo; label: string }[] = [
 
 const ehLista = (t: BlocoTipo) => t === "lista" || t === "passos";
 
+/**
+ * Tira as linhas em branco das listas, na hora de GRAVAR.
+ *
+ * O editor deixa a linha vazia existir enquanto se digita — sem isso o Enter
+ * não funciona, porque a linha que ele acabou de criar seria apagada no mesmo
+ * instante (ver o comentário no Textarea da lista). Aqui, no salvamento, ela já
+ * não serve para nada: vira item em branco no documento publicado.
+ *
+ * Espaço no começo e no fim também sai: "  Conferir EPI" e "Conferir EPI" são o
+ * mesmo item para quem lê, e guardar os dois separados só atrapalha na busca.
+ */
+export function limparBlocos(blocos: Bloco[]): Bloco[] {
+  return blocos.map((b) =>
+    b.itens
+      ? { ...b, itens: b.itens.map((l) => l.trim()).filter((l) => l !== "") }
+      : b,
+  );
+}
+
 export function BlockEditor({
   blocos,
   onChange,
@@ -128,9 +147,17 @@ export function BlockEditor({
             </div>
           </div>
           {ehLista(b.tipo) ? (
+            /* SEM FILTRAR DURANTE A DIGITAÇÃO.
+               Antes o onChange descartava as linhas vazias na hora — e a linha
+               que o Enter acabou de criar É uma linha vazia. Ela era apagada no
+               mesmo instante, o texto voltava a ser o de antes e o cursor
+               pulava para o fim: apertar Enter simplesmente não fazia nada, e
+               quem continuava digitando via tudo virar um item só, colado.
+               Linha em branco morre na hora de SALVAR (limparBlocos), que é
+               quando ela de fato não serve para nada. */
             <Textarea
               value={(b.itens ?? []).join("\n")}
-              onChange={(e) => set(i, { itens: e.target.value.split("\n").filter((l) => l.trim() !== "") })}
+              onChange={(e) => set(i, { itens: e.target.value.split("\n") })}
               placeholder="Um item por linha"
               rows={Math.max(3, (b.itens ?? []).length)}
             />

@@ -19,6 +19,7 @@ import { useColecao } from "@/lib/store";
 import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { SyncButton } from "./sync-button";
+import type { Perfil } from "@/data/types";
 
 interface ItemNav {
   href: string;
@@ -72,6 +73,128 @@ const GRUPOS = ["Visão geral", "Pessoas", "Cargos & Custos", "Comunicação & C
 // Preferência de quem usa (grupos recolhidos na barra), não dado do sistema:
 // mora no navegador e não entra no backup nem na sincronização.
 const CHAVE_NAV_RECOLHIDOS = "impresilk.rh.v1:nav-recolhidos";
+
+/* NAVCONTEUDO E RODAPE MORAM AQUI FORA, e é de propósito.
+ *
+ * Os dois eram declarados DENTRO do AppShell. Um componente escrito dentro de
+ * outro nasce com identidade nova a cada desenho, e o React decide o que
+ * reaproveitar comparando o TIPO do elemento: tipo diferente = joga fora e
+ * monta de novo. Ou seja, a barra lateral inteira era destruída e refeita o
+ * tempo todo — e o <nav> é justamente quem tem a rolagem, com 24 itens em 6
+ * grupos no perfil do RH.
+ *
+ * O AppShell redesenha muito: a cada navegação (useLocation), a cada mudança em
+ * colaboradores/cargos/áreas/usuários (inclusive as que a sincronização traz em
+ * segundo plano) e a cada grupo recolhido. O efeito para quem usa:
+ *
+ *  - rolava a barra até "Custos de Colaboradores" lá embaixo, clicava, e o menu
+ *    pulava de volta para o topo — com outro item embaixo do cursor;
+ *  - recolher um grupo, que é o recurso feito para encurtar o menu longo,
+ *    também jogava a rolagem para o começo;
+ *  - quem anda pelo teclado perdia o foco a cada clique: o Tab recomeçava do
+ *    topo da página.
+ *
+ * Medido montando o AppShell de verdade: depois de um clique no menu, o <nav>
+ * é OUTRO nó do DOM, a rolagem volta a zero e o foco cai no corpo da página —
+ * enquanto <header> e <aside> continuam sendo os mesmos nós, o que isola a
+ * causa nesta subárvore.
+ *
+ * useCallback/useMemo NÃO resolveriam: o problema é o tipo do componente, não
+ * uma dependência. Ele precisa ser a mesma função entre um desenho e outro, e
+ * é isso que estar no escopo do módulo garante.
+ */
+function NavConteudo({
+  itensVisiveis, recolhidos, alternarGrupo, caminho, aoNavegar,
+}: {
+  itensVisiveis: ItemNav[];
+  recolhidos: Set<string>;
+  alternarGrupo: (grupo: string) => void;
+  caminho: string;
+  aoNavegar: () => void;
+}) {
+  return (
+    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+      {GRUPOS.map((grupo) => {
+        const itens = itensVisiveis.filter((i) => i.grupo === grupo);
+        if (!itens.length) return null;
+        const recolhido = recolhidos.has(grupo);
+        return (
+          <div key={grupo}>
+            {/* O título do grupo virou botão: em tela baixa (ou com o menu
+                inteiro liberado) a barra passa de 20 itens e o rodapé fica
+                fora de alcance. Recolher o que não se usa encurta a lista, e
+                a escolha fica guardada entre sessões. */}
+            <button
+              type="button"
+              onClick={() => alternarGrupo(grupo)}
+              aria-expanded={!recolhido}
+              className="mb-1.5 flex w-full items-center gap-1.5 rounded-lg px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 transition hover:bg-white/5 hover:text-white/70"
+            >
+              <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform duration-200", !recolhido && "rotate-90")} />
+              <span className="flex-1 text-left">{grupo}</span>
+              {/* Quantos itens sumiram: um grupo recolhido sem contador some da
+                  cabeça de quem usa e vira "o sistema perdeu a tela". */}
+              {recolhido && <span className="rounded-full bg-white/10 px-1.5 text-[10px] tracking-normal text-white/50">{itens.length}</span>}
+            </button>
+            <div className={cn("space-y-0.5", recolhido && "hidden")}>
+              {itens.map((item) => {
+                const ativo = caminho === item.href || caminho.startsWith(item.href + "/");
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.href}
+                    to={item.href}
+                    onClick={aoNavegar}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
+                      item.sub && "!py-1.5 !pl-9 text-[13px]", // subitem aninhado (ex.: sob Colaboradores)
+                      // Sidebar navy: item em destaque = pílula dourada; ativo = realce
+                      // claro translúcido; inativo = texto claro com hover suave.
+                      item.destaque
+                        ? ativo
+                          ? "bg-gold-600 text-white shadow-sm"
+                          : "bg-gold text-white shadow-sm hover:bg-gold-500"
+                        : ativo
+                          ? "bg-white/15 text-white shadow-sm"
+                          : "text-slate-200 hover:bg-white/10 hover:text-white",
+                    )}
+                  >
+                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", item.destaque ? "text-gold-100" : ativo ? "text-gold-300" : "text-slate-300 group-hover:text-white")} />
+                    <span className="flex-1">{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function Rodape({ user, aoSair }: {
+  user: { nome: string; perfil: Perfil; foto: string | null };
+  aoSair: () => void;
+}) {
+  return (
+    <div className="space-y-2 border-t border-white/10 p-3">
+      <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
+        <Avatar nome={user.nome} foto={user.foto} size="sm" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-white">{user.nome}</p>
+          <p className="truncate text-xs text-slate-400">{PERFIL_LABEL[user.perfil]}</p>
+        </div>
+        <button
+          onClick={aoSair}
+          className="btn-ghost p-1.5 text-slate-300 hover:text-red-400"
+          title="Sair"
+        >
+          <LogOut className="h-[18px] w-[18px]" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function AppShell() {
   const location = useLocation();
@@ -137,95 +260,14 @@ export function AppShell() {
   const moduloAtual = location.pathname.split("/")[1] || "painel";
   const rotaBloqueada = !moduloAcessivel(moduloAtual, liberados);
 
-  const NavConteudo = () => (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-      {GRUPOS.map((grupo) => {
-        const itens = itensVisiveis.filter((i) => i.grupo === grupo);
-        if (!itens.length) return null;
-        const recolhido = recolhidos.has(grupo);
-        return (
-          <div key={grupo}>
-            {/* O título do grupo virou botão: em tela baixa (ou com o menu
-                inteiro liberado) a barra passa de 20 itens e o rodapé fica
-                fora de alcance. Recolher o que não se usa encurta a lista, e
-                a escolha fica guardada entre sessões. */}
-            <button
-              type="button"
-              onClick={() => alternarGrupo(grupo)}
-              aria-expanded={!recolhido}
-              className="mb-1.5 flex w-full items-center gap-1.5 rounded-lg px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 transition hover:bg-white/5 hover:text-white/70"
-            >
-              <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform duration-200", !recolhido && "rotate-90")} />
-              <span className="flex-1 text-left">{grupo}</span>
-              {/* Quantos itens sumiram: um grupo recolhido sem contador some da
-                  cabeça de quem usa e vira "o sistema perdeu a tela". */}
-              {recolhido && <span className="rounded-full bg-white/10 px-1.5 text-[10px] tracking-normal text-white/50">{itens.length}</span>}
-            </button>
-            <div className={cn("space-y-0.5", recolhido && "hidden")}>
-              {itens.map((item) => {
-                const ativo = location.pathname === item.href || location.pathname.startsWith(item.href + "/");
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.href}
-                    to={item.href}
-                    onClick={() => setAberto(false)}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
-                      item.sub && "!py-1.5 !pl-9 text-[13px]", // subitem aninhado (ex.: sob Colaboradores)
-                      // Sidebar navy: item em destaque = pílula dourada; ativo = realce
-                      // claro translúcido; inativo = texto claro com hover suave.
-                      item.destaque
-                        ? ativo
-                          ? "bg-gold-600 text-white shadow-sm"
-                          : "bg-gold text-white shadow-sm hover:bg-gold-500"
-                        : ativo
-                          ? "bg-white/15 text-white shadow-sm"
-                          : "text-slate-200 hover:bg-white/10 hover:text-white",
-                    )}
-                  >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", item.destaque ? "text-gold-100" : ativo ? "text-gold-300" : "text-slate-300 group-hover:text-white")} />
-                    <span className="flex-1">{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </nav>
-  );
-
-  const Rodape = () => (
-    <div className="space-y-2 border-t border-white/10 p-3">
-      <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
-        <Avatar nome={user.nome} foto={user.foto} size="sm" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">{user.nome}</p>
-          <p className="truncate text-xs text-slate-400">{PERFIL_LABEL[user.perfil]}</p>
-        </div>
-        <button
-          onClick={() => {
-            logoutAuth();
-            navigate("/login");
-          }}
-          className="btn-ghost p-1.5 text-slate-300 hover:text-red-400"
-          title="Sair"
-        >
-          <LogOut className="h-[18px] w-[18px]" />
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <div className="flex min-h-screen bg-[var(--bg)]">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 bg-brand lg:flex">
         <div className="flex h-20 items-center justify-center border-b border-white/10 px-5">
           <Logo variant="white" className="h-12" />
         </div>
-        <NavConteudo />
-        <Rodape />
+        <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
+        <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} />
       </aside>
 
       {aberto && (
@@ -238,8 +280,8 @@ export function AppShell() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <NavConteudo />
-            <Rodape />
+            <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
+            <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} />
           </aside>
         </div>
       )}

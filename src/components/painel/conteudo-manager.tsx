@@ -5,7 +5,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
-import { BlockEditor } from "@/components/ui/rich";
+import { BlockEditor, limparBlocos } from "@/components/ui/rich";
 import { useColecao } from "@/lib/store";
 import { useToast } from "@/components/ui/toast";
 import { formatDate } from "@/lib/format";
@@ -163,7 +163,7 @@ function EditorConteudo({
                 versao,
                 ...(comSla ? { sla } : {}),
                 ...(comCategoria ? { categoria } : {}),
-                blocos,
+                blocos: limparBlocos(blocos),
                 conteudo: undefined,
                 atualizadoEm: new Date().toISOString(),
               })

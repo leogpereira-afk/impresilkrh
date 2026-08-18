@@ -1096,13 +1096,27 @@ function NaoBatePontoModal({
   onFechar: () => void;
 }) {
   const [busca, setBusca] = useState("");
+  /* A ordem é congelada na ABERTURA, e é de propósito.
+     Antes ela era recalculada a cada clique, com os marcados no topo: marcar
+     alguém do meio da lista fazia o nome saltar para cima e todos os outros
+     deslizarem sob o dedo. O toque seguinte caía em quem tomou o lugar — e
+     marcava "não bate ponto" no cadastro de quem BATE, tirando essa pessoa da
+     conferência do ponto do mês sem ninguém perceber. Não dava erro nenhum: o
+     estrago só apareceria no fechamento da folha.
+     Este retrato mantém o proveito (quem já estava marcado aparece primeiro ao
+     abrir) sem mexer no chão enquanto a pessoa trabalha. O modal monta do zero
+     a cada abertura, então o retrato nunca fica velho. */
+  const [marcadosAoAbrir] = useState(
+    () => new Set(colaboradores.filter((c) => c.naoBatePonto).map((c) => c.id)),
+  );
   const lista = useMemo(() => {
     const t = busca.trim().toLowerCase();
+    const jaEstava = (c: Colaborador) => Number(marcadosAoAbrir.has(c.id));
     return colaboradores
       .filter((c) => !c.ehDirecao && noQuadro(c))
       .filter((c) => (t ? c.nome.toLowerCase().includes(t) : true))
-      .sort((a, b) => Number(!!b.naoBatePonto) - Number(!!a.naoBatePonto) || a.nome.localeCompare(b.nome));
-  }, [colaboradores, busca]);
+      .sort((a, b) => jaEstava(b) - jaEstava(a) || a.nome.localeCompare(b.nome));
+  }, [colaboradores, busca, marcadosAoAbrir]);
   // Sai de `lista` (já filtrada), não da coleção inteira: o número tem de contar
   // exatamente as linhas que estão logo abaixo dele.
   const marcados = lista.filter((c) => c.naoBatePonto).length;

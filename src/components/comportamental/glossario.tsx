@@ -51,6 +51,43 @@ function Acordeao({
 }
 
 // Corpo padrão (sinais + como agir) para humor / estilos / risco.
+/* TONS e BLOCO ficam no escopo do módulo.
+ *
+ * `Bloco` era declarado dentro do componente: componente escrito dentro de
+ * outro nasce com identidade nova a cada desenho, e o React joga fora a
+ * subárvore inteira em vez de atualizá-la. Aqui o estrago é pequeno (dois
+ * quadros de texto), mas é a mesma doença que fazia o menu lateral pular e a
+ * árvore do organograma piscar — e a regra react/no-unstable-nested-components
+ * agora barra os três de uma vez.
+ *
+ * O mapa de tons também saiu: ele era recriado a cada desenho sem precisar. */
+const TONS: Record<string, { borda: string; bg: string; txt: string; dot: string }> = {
+  amber: { borda: "border-amber-200", bg: "bg-amber-50/50", txt: "text-amber-700", dot: "bg-amber-500" },
+  green: { borda: "border-green-200", bg: "bg-green-50/50", txt: "text-green-700", dot: "bg-green-500" },
+  blue: { borda: "border-blue-200", bg: "bg-blue-50/50", txt: "text-blue-700", dot: "bg-blue-500" },
+};
+
+function Bloco({ b, Icon }: {
+  b: { titulo: string; itens: string[]; tom: "amber" | "green" | "blue" };
+  Icon: React.ComponentType<{ className?: string }>;
+}) {
+  const t = TONS[b.tom];
+  return (
+    <div className={cn("rounded-lg border p-3", t.borda, t.bg)}>
+      <p className={cn("mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide", t.txt)}>
+        <Icon className="h-3.5 w-3.5" /> {b.titulo}
+      </p>
+      <ul className="space-y-1">
+        {b.itens.map((x, i) => (
+          <li key={i} className="flex gap-1.5 text-sm text-slate-600">
+            <span className={cn("mt-1.5 h-1 w-1 shrink-0 rounded-full", t.dot)} />{x}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function CorpoGuia({
   texto, blocoA, blocoB,
 }: {
@@ -58,28 +95,6 @@ function CorpoGuia({
   blocoA?: { titulo: string; itens: string[]; tom: "amber" | "green" | "blue" };
   blocoB?: { titulo: string; itens: string[]; tom: "amber" | "green" | "blue" };
 }) {
-  const tons: Record<string, { borda: string; bg: string; txt: string; dot: string }> = {
-    amber: { borda: "border-amber-200", bg: "bg-amber-50/50", txt: "text-amber-700", dot: "bg-amber-500" },
-    green: { borda: "border-green-200", bg: "bg-green-50/50", txt: "text-green-700", dot: "bg-green-500" },
-    blue: { borda: "border-blue-200", bg: "bg-blue-50/50", txt: "text-blue-700", dot: "bg-blue-500" },
-  };
-  const Bloco = ({ b, Icon }: { b: NonNullable<typeof blocoA>; Icon: React.ComponentType<{ className?: string }> }) => {
-    const t = tons[b.tom];
-    return (
-      <div className={cn("rounded-lg border p-3", t.borda, t.bg)}>
-        <p className={cn("mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide", t.txt)}>
-          <Icon className="h-3.5 w-3.5" /> {b.titulo}
-        </p>
-        <ul className="space-y-1">
-          {b.itens.map((x, i) => (
-            <li key={i} className="flex gap-1.5 text-sm text-slate-600">
-              <span className={cn("mt-1.5 h-1 w-1 shrink-0 rounded-full", t.dot)} />{x}
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  };
   return (
     <div className="space-y-3">
       <p className="text-sm leading-relaxed text-slate-600">{texto}</p>
