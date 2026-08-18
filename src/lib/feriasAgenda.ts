@@ -32,6 +32,14 @@ export const MAX_FRACOES = 3;
 /** Teto do abono pecuniário: 1/3 dos 30 dias (art. 143). */
 export const MAX_ABONO_DIAS = 10;
 
+/* O campo de data do navegador aceita ano de cinco dígitos — digitar 20266 no
+   lugar de 2026 é o erro de dedo mais comum aqui, e ele NÃO é recusado pelo
+   campo. A data que sai disso "existe" (é truthy) mas não vale nada: qualquer
+   comparação com ela dá NaN, e NaN não é maior nem menor que coisa alguma.
+   A mensagem aponta o ano porque é lá que está o problema — dizer só "data
+   inválida" mandaria a pessoa procurar no dia e no mês. */
+export const DATA_INVALIDA = "Data inválida. Confira o ano — ele precisa ter quatro dígitos.";
+
 export type Nivel = "erro" | "aviso";
 export interface Achado {
   nivel: Nivel;
@@ -108,8 +116,15 @@ export function validarAgendamento(d: DadosAgendamento): Achado[] {
   const jaLancados = Math.max(0, Number(d.diasJaLancados ?? 0));
   const abono = Math.max(0, Number(d.abono ?? 0));
 
-  if (!d.inicio || isNaN(d.inicio.getTime())) {
+  if (!d.inicio) {
     achados.push({ nivel: "erro", texto: "Escolha a data de início." });
+    return achados;
+  }
+  /* Campo preenchido, mas com data impossível: dizer "escolha a data" aqui
+     confundiria, porque para quem preencheu ela ESTÁ escolhida — a mensagem
+     precisa apontar o ano, que é onde o dedo escorregou. */
+  if (isNaN(d.inicio.getTime())) {
+    achados.push({ nivel: "erro", texto: DATA_INVALIDA });
     return achados;
   }
 
@@ -200,6 +215,14 @@ export function validarPeriodo(inicio: Date | null, retorno: Date | null): Achad
   if (!inicio) achados.push({ nivel: "erro", texto: "Informe o início do gozo (ou apague o retorno para deixar o período em aberto)." });
   if (!retorno) achados.push({ nivel: "erro", texto: "Informe a data de retorno (ou apague o início para deixar o período em aberto)." });
   if (!inicio || !retorno) return achados;
+  /* Sem esta linha, uma data impossível passava por TODAS as conferências
+     abaixo: comparar com ela dá NaN, e NaN não é maior nem menor que nada —
+     então nem "retorno antes do início" nem "mais de 30 dias" pegavam, e o
+     registro era gravado. Ver feriasDataInvalida.test.ts. */
+  if (isNaN(inicio.getTime()) || isNaN(retorno.getTime())) {
+    achados.push({ nivel: "erro", texto: DATA_INVALIDA });
+    return achados;
+  }
 
   const dias = diasEntre(inicio, retorno);
   if (dias <= 0) {

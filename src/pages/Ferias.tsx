@@ -343,7 +343,20 @@ export default function Ferias() {
     return { colab, dela, sit };
   }, [colabId, escopo, ferias]);
 
-  const inicioData = dataInicio ? new Date(`${dataInicio}T12:00:00`) : null;
+  /* `new Date(...)` solto no corpo do componente devolve um objeto NOVO a cada
+     desenho, e este é dependência do useMemo logo abaixo — que por isso nunca
+     aproveitava o cache e refazia todas as conferências da CLT a cada tecla
+     digitada. Com o useMemo o objeto só muda quando o texto do campo muda. */
+  const inicioData = useMemo(
+    () => (dataInicio ? new Date(`${dataInicio}T12:00:00`) : null),
+    [dataInicio],
+  );
+  /* O campo de data aceita ano de cinco dígitos, e a data que sai disso EXISTE
+     (é truthy) sem valer nada. Guardar só `inicioData` no `&&` do desenho lá
+     embaixo deixava passar, e a linha "Fica fora de …" chamava .toISOString()
+     nela: erro no meio do desenho derruba a tela inteira e quem preenchia perde
+     tudo. Ver feriasDataInvalida.test.ts. */
+  const inicioValido = !!inicioData && !isNaN(inicioData.getTime());
   const diasNum = Number(dias);
   const abonoNum = Number(abono);
 
@@ -408,8 +421,16 @@ export default function Ferias() {
      achava a pessoa, porque a janela era negativa), 999 dias gozados e saldo
      de 99 — números que a CLT não permite e que ninguém digitaria de propósito,
      mas que passavam calados quando o dedo escorregava. */
-  const edInicio = edForm.dataInicio ? new Date(`${edForm.dataInicio}T12:00:00`) : null;
-  const edRetorno = edForm.dataRetorno ? new Date(`${edForm.dataRetorno}T12:00:00`) : null;
+  // Memoizados pelo mesmo motivo do inicioData acima: sem isto o useMemo de
+  // baixo refaz todas as conferências a cada tecla.
+  const edInicio = useMemo(
+    () => (edForm.dataInicio ? new Date(`${edForm.dataInicio}T12:00:00`) : null),
+    [edForm.dataInicio],
+  );
+  const edRetorno = useMemo(
+    () => (edForm.dataRetorno ? new Date(`${edForm.dataRetorno}T12:00:00`) : null),
+    [edForm.dataRetorno],
+  );
   const edAchados: Achado[] = useMemo(() => {
     if (!editando) return [];
     const a = validarPeriodo(edInicio, edRetorno);
@@ -802,7 +823,7 @@ export default function Ferias() {
               <Input type="number" min={0} max={MAX_ABONO_DIAS} step={1} value={abono}
                 onChange={(e) => setAbono(e.target.value)} />
             </Campo>
-            {dataInicio && inicioData && Number.isFinite(diasNum) && diasNum > 0 && (
+            {dataInicio && inicioValido && Number.isFinite(diasNum) && diasNum > 0 && (
               <p className="text-xs text-slate-500">
                 Fica fora de <span className="font-medium text-slate-700">{formatDate(inicioData.toISOString())}</span>
                 {" "}a <span className="font-medium text-slate-700">{formatDate(retornoDe(inicioData, diasNum - 1).toISOString())}</span>
