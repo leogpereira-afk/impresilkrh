@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays, MessageSquare,
-  Sun, Moon, ChevronRight,
+  Sun, Moon, ChevronRight, Search,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -19,6 +19,7 @@ import { useColecao } from "@/lib/store";
 import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { SyncButton } from "./sync-button";
+import { BuscaTelas } from "./busca-telas";
 import type { Perfil } from "@/data/types";
 
 interface ItemNav {
@@ -209,6 +210,11 @@ export function AppShell() {
   const { items: usuarios } = useColecao("usuarios");
   const toast = useToast();
   const [aberto, setAberto] = useState(false);
+  /* IR PARA UMA TELA DIGITANDO O NOME (Ctrl+K / ⌘K).
+     São 25 itens em 6 grupos no perfil do RH, e vários rótulos não são o nome
+     que a casa usa — ninguém procura "Frequência e Advertências", procura "o
+     ponto". Sem busca, chegar numa tela era rolar a barra e reconhecer. */
+  const [buscando, setBuscando] = useState(false);
 
   // Grupos recolhidos da barra lateral. Guardado no navegador porque é
   // preferência de quem usa, não estado da sessão — recolher "Administração"
@@ -251,6 +257,22 @@ export function AppShell() {
     return () => window.removeEventListener("impresilk:armazenamento-cheio", aviso);
   }, [toast]);
 
+  /* O atalho não dispara com o cursor dentro de campo de texto: Ctrl+K em
+     alguns teclados/editores é usado para outra coisa, e roubar a tecla de
+     quem está escrevendo uma observação seria pior que não ter atalho. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.key === "k" || e.key === "K") || !(e.metaKey || e.ctrlKey)) return;
+      const alvo = e.target as HTMLElement | null;
+      const tag = alvo?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || alvo?.isContentEditable) return;
+      e.preventDefault();
+      setBuscando((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (!sessao) return null;
   const colab = colabById.get(sessao.colaboradorId);
   const user = { nome: colab?.nome ?? "Usuário", perfil: sessao.perfil, foto: colab?.fotoDataUrl ?? null };
@@ -290,10 +312,29 @@ export function AppShell() {
         </div>
       )}
 
+      {/* Só as telas que este perfil enxerga: a busca não pode revelar a
+          existência de uma tela que a pessoa não pode abrir. */}
+      <BuscaTelas
+        telas={itensVisiveis.map((i) => ({ href: i.href, label: i.label, grupo: i.grupo }))}
+        aberto={buscando}
+        onFechar={() => setBuscando(false)}
+      />
+
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
         <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
           <button onClick={() => setAberto(true)} className="btn-ghost p-1.5 lg:hidden" aria-label="Abrir menu">
             <Menu className="h-5 w-5" />
+          </button>
+          {/* A lupa fica ao lado do menu: no celular é o único jeito de chegar
+              numa tela sem abrir a gaveta e rolar 25 itens. */}
+          <button
+            onClick={() => setBuscando(true)}
+            className="btn-ghost flex items-center gap-2 px-2 py-1.5 text-slate-500"
+            aria-label="Ir para uma tela"
+            title="Ir para uma tela (Ctrl+K)"
+          >
+            <Search className="h-[18px] w-[18px]" />
+            <span className="hidden text-xs text-slate-400 sm:inline">Ctrl+K</span>
           </button>
           <div className="flex flex-1 items-center justify-between">
             <div className="lg:hidden">

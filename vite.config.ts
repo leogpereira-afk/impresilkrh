@@ -35,9 +35,21 @@ export default defineConfig({
     chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
+        /* NÃO agrupe o recharts à mão aqui.
+           Havia `charts: ["recharts"]` nesta lista, e o efeito era o contrário
+           do pretendido: um chunk manual entra no grafo estático da entrada, e
+           o Vite emite `<link rel="modulepreload">` para ele no index.html. Ou
+           seja, TODO mundo baixava 106 kB de biblioteca de gráfico já na tela
+           de LOGIN, que não tem gráfico nenhum — 35% de tudo que a primeira
+           tela pedia.
+           Sem a linha, o Rollup continua criando um chunk só para o recharts
+           (compartilhado entre as telas que usam), mas ele passa a ser carregado
+           sob demanda, quando abre uma tela com gráfico. Medido na rede: a
+           primeira tela caiu de 303 kB para 197 kB.
+           O `react` fica: esse é usado desde o primeiro desenho, e agrupá-lo
+           deixa o cache do navegador aproveitá-lo entre publicações. */
         manualChunks: {
           react: ["react", "react-dom", "react-router-dom"],
-          charts: ["recharts"],
         },
       },
     },
