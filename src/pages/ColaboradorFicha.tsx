@@ -642,6 +642,27 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 gravar({ cpf: n });
               }}
             />
+            {/* O APELIDO É O LOGIN DA PESSOA EM TODOS OS SISTEMAS. Fica ao lado
+                do CPF porque é dado de identidade, não de contato — e porque é
+                aqui que alguém repara que falta, no dia de dar acesso. */}
+            <CampoEditavel
+              label="Apelido (login)" exibicao={c.apelido || "—"} valor={c.apelido ?? ""}
+              editavel={edit} placeholder="Ex.: adilando" dica="entra com ele em todos os sistemas"
+              onSalvar={(v) => {
+                const a = (v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+                  .toLowerCase().replace(/[^a-z0-9]/g, "");
+                if (!a) return gravar({ apelido: "" });
+                if (a.length < 3) return "O apelido precisa de ao menos 3 letras.";
+                /* DOIS APELIDOS IGUAIS FAZEM DUAS PESSOAS DISPUTAREM A MESMA
+                   PORTA. O banco também recusa (índice único), mas avisar aqui
+                   diz DE QUEM é o apelido — o erro do banco não diz. */
+                const outro = d.colaboradores.find((x) => x.id !== c.id && (x.apelido ?? "") === a);
+                if (outro) return `Este apelido já é de ${outro.nome}. Use outro — por exemplo com o sobrenome.`;
+                // Grava o normalizado, não o digitado: quem escrever "Adilando"
+                // ou "adilando " entra com `adilando` do mesmo jeito.
+                gravar({ apelido: a });
+              }}
+            />
             <CampoEditavel
               label="Nascimento" exibicao={formatDate(c.dataNascimento)} valor={(c.dataNascimento ?? "").slice(0, 10)}
               tipo="data" editavel={edit}

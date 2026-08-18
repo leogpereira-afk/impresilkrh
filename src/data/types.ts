@@ -70,6 +70,17 @@ export interface StatusColaborador {
 export interface Colaborador {
   id: string;
   nome: string;
+  /**
+   * O LOGIN DA PESSOA EM TODOS OS SISTEMAS DA CASA. Nasce aqui, na ficha, e é a
+   * mesma palavra que ela digita no Painel, no PCP, no Brief, no Compras e no
+   * POPs — a entrada é única, então basta uma.
+   *
+   * Único entre as fichas vivas, e o banco recusa repetido: dois apelidos iguais
+   * fariam duas pessoas disputarem a mesma porta. A regra que valeu ao gerar os
+   * 88 foi "como a equipe já chama a pessoa" — por isso o José Adilando é
+   * `adilando`, que é como o PCP escreve, e não `jose`.
+   */
+  apelido?: string;
   cpf?: string;
   email?: string;
   telefone?: string;
