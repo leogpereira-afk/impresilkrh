@@ -26,6 +26,20 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const tituloId = useId();
 
+  /* `onFechar` quase sempre é escrito na hora — `onFechar={() => setNovo(false)}`,
+     em 90 das 132 chamadas de <Modal> no sistema. Uma função escrita assim nasce
+     diferente a cada desenho, então tê-la na lista de dependências abaixo fazia
+     o efeito rodar OUTRA VEZ a cada letra digitada, e a cada vez ele devolvia o
+     foco ao começo do modal (o "X" de fechar). Quem preenchia digitava uma letra
+     e o cursor sumia do campo; com o foco no "X", um espaço fechava o modal e
+     levava o preenchimento junto.
+
+     O ref guarda sempre a versão mais nova da função sem que a identidade dela
+     mande no efeito — o efeito passa a rodar só quando o modal abre ou fecha,
+     que é quando o foco de fato precisa mudar. Provado em modal.test.tsx. */
+  const fecharRef = useRef(onFechar);
+  useEffect(() => { fecharRef.current = onFechar; }, [onFechar]);
+
   useEffect(() => {
     if (!aberto) return;
     const anteriorFoco = document.activeElement as HTMLElement | null;
@@ -43,7 +57,7 @@ export function Modal({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onFechar();
+        fecharRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -72,7 +86,8 @@ export function Modal({
       document.body.style.overflow = "";
       anteriorFoco?.focus?.(); // devolve o foco a quem abriu o modal
     };
-  }, [aberto, onFechar]);
+    // Só `aberto`: ver o comentário do fecharRef acima.
+  }, [aberto]);
 
   if (!aberto) return null;
 
