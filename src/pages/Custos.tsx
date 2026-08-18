@@ -169,7 +169,14 @@ export default function Custos() {
      mudar o divisor, muda lá e vale nas duas telas. */
   const [heDia, setHeDia] = useState<string>("");
   const [heDuracao, setHeDuracao] = useState<string>("");
-  const [heFator, setHeFator] = useState<number>(FATOR_HE_PADRAO);
+  /* O RH pediu para poder AJUSTAR a conta ("é melhor deixar de uma maneira
+     onde eu posso alterar e ajustar o cálculo"). Por isso o adicional é um
+     percentual digitável, e não uma lista de dois itens: contabilidade que usa
+     60%, ou adicional de acordo coletivo, não cabia nas opções fixas. */
+  const [hePercentual, setHePercentual] = useState<string>("50");
+  /* A jornada mensal também. 220h é a da Impresilk (44h/semana), mas quem faz
+     40h/semana usa 200 — e quem faz a folha lá fora pode usar outro número. */
+  const [heDivisor, setHeDivisor] = useState<string>(String(DIVISOR_MENSAL_PADRAO));
   const [heSalario, setHeSalario] = useState<string>("");
   /* O valor calculado preenche o campo, mas o RH pode escrever por cima —
      "tem horas que tem bônus". Esta marca lembra que ele mexeu, para o
@@ -701,7 +708,8 @@ export default function Custos() {
   function limparHoraExtra() {
     setHeDia("");
     setHeDuracao("");
-    setHeFator(FATOR_HE_PADRAO);
+    setHePercentual("50");
+    setHeDivisor(String(DIVISOR_MENSAL_PADRAO));
     // Vem do cadastro; quem não tem aparece vazio para o RH digitar.
     setHeSalario(d.colabById.get(colabId)?.salario ? String(d.colabById.get(colabId)!.salario) : "");
     setValorTocado(false);
@@ -727,9 +735,14 @@ export default function Custos() {
   // vazio, que é só "ainda não preencheu".
   const heMinutos = ehLancHE ? minutosDaDuracao(heDuracao) : null;
   const heSalarioNum = valorDigitado(heSalario);
+  // "+50%" quer dizer hora × 1,5. Percentual vazio ou impossível cai no padrão
+  // em vez de zerar o valor calado.
+  const hePctNum = valorDigitado(hePercentual);
+  const heFator = Number.isFinite(hePctNum) && hePctNum >= 0 ? 1 + hePctNum / 100 : FATOR_HE_PADRAO;
+  const heDivisorNum = valorDigitado(heDivisor) || DIVISOR_MENSAL_PADRAO;
   const heCalc = useMemo(
-    () => calcularHoraExtra({ salario: heSalarioNum, minutos: heMinutos ?? 0, fator: heFator }),
-    [heSalarioNum, heMinutos, heFator],
+    () => calcularHoraExtra({ salario: heSalarioNum, minutos: heMinutos ?? 0, fator: heFator, divisor: heDivisorNum }),
+    [heSalarioNum, heMinutos, heFator, heDivisorNum],
   );
   const heValido = ehLancHE && heMinutos != null && heMinutos > 0 && !heCalc.semSalario;
 
@@ -766,7 +779,11 @@ export default function Custos() {
       const partes = [
         `${minParaHora(heMinutos ?? 0)} de hora extra`,
         heDia ? `em ${formatDate(heDia)}` : null,
-        ADICIONAIS_HE.find((a) => a.fator === heFator)?.curto ?? null,
+        `+${hePctNum.toLocaleString("pt-BR")}%`,
+        // O divisor entra na descrição só quando não é o da casa: registrar
+        // "220h" em todo lançamento vira ruído; registrar quando é OUTRO é o
+        // que explica um valor diferente meses depois.
+        heDivisorNum !== DIVISOR_MENSAL_PADRAO ? `jornada ${heDivisorNum}h` : null,
         `base ${formatBRL(heSalarioNum)}`,
         `calculado ${formatBRL(heCalc.valor)}`,
         heDiferenca !== 0 ? `${heDiferenca > 0 ? "+" : "−"}${formatBRL(Math.abs(heDiferenca))} à mão` : null,
@@ -2213,11 +2230,24 @@ export default function Custos() {
                   />
                 </Campo>
               </div>
-              <Campo label="Adicional">
-                <Select value={heFator} onChange={(e) => { setHeFator(Number(e.target.value)); setValorTocado(false); }}>
-                  {ADICIONAIS_HE.map((a) => <option key={a.fator} value={a.fator}>{a.label}</option>)}
-                </Select>
-              </Campo>
+              <div className="grid grid-cols-2 gap-3">
+                <Campo label="Adicional (%)" hint="50 em dia útil · 100 em domingo/feriado">
+                  <Input
+                    value={hePercentual}
+                    onChange={(e) => { setHePercentual(e.target.value); setValorTocado(false); }}
+                    placeholder="50"
+                    inputMode="decimal"
+                  />
+                </Campo>
+                <Campo label="Jornada mensal (h)" hint="220 = 44h/semana · 200 = 40h">
+                  <Input
+                    value={heDivisor}
+                    onChange={(e) => { setHeDivisor(e.target.value); setValorTocado(false); }}
+                    placeholder="220"
+                    inputMode="decimal"
+                  />
+                </Campo>
+              </div>
               <Campo
                 label="Salário base (R$)"
                 hint={colabDoLanc?.salario ? "Veio do cadastro — pode corrigir só para esta conta" : "Sem salário no cadastro: digite para calcular"}
@@ -2241,9 +2271,16 @@ export default function Custos() {
                   Falta o salário base para calcular. Digite acima — e vale cadastrar em Colaboradores para não precisar de novo.
                 </p>
               ) : heValido ? (
+                /* A conta escrita passo a passo, com os MESMOS números que o
+                   sistema usa. Antes ela mostrava os passos arredondados e
+                   cravava um total que eles não produzem: dizia "R$ 16,79/h ×
+                   4,5h" e gravava R$ 75,52, quando na calculadora dá R$ 75,56.
+                   Três centavos bastaram para o RH dizer "está calculando
+                   errado" — e estava, no que importa. Agora cada linha daqui
+                   refaz na mão e bate. */
                 <p className="text-xs text-slate-500">
-                  {formatBRL(heSalarioNum)} ÷ {DIVISOR_MENSAL_PADRAO}h = {formatBRL(heCalc.valorHoraNormal)}/h
-                  {" · "}com {ADICIONAIS_HE.find((a) => a.fator === heFator)?.curto} = {formatBRL(heCalc.valorHoraExtra)}/h
+                  {formatBRL(heSalarioNum)} ÷ {heDivisorNum.toLocaleString("pt-BR")}h = {formatBRL(heCalc.valorHoraNormal)}/h
+                  {" · "}+{hePctNum.toLocaleString("pt-BR")}% = {formatBRL(heCalc.valorHoraExtra)}/h
                   {" · "}× {horasDecimais(heMinutos ?? 0).toLocaleString("pt-BR")}h ={" "}
                   <b className="text-slate-700">{formatBRL(heCalc.valor)}</b>
                 </p>

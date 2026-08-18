@@ -53,22 +53,57 @@ describe("duração digitada", () => {
 describe("a conta, com os números reais da planilha", () => {
   it("salário 2.800 e 02:50 de hora extra a +50%", () => {
     const r = calcularHoraExtra({ salario: 2800, minutos: 170 });
-    // 2800 ÷ 220 = 12,7273/h · × 1,5 = 19,0909 · × 2,8333h = 54,09
+    // 2800 ÷ 220 = R$ 12,73/h · × 1,5 = R$ 19,10/h · × 2,8333h = R$ 54,12
     expect(r.valorHoraNormal).toBeCloseTo(12.73, 2);
-    expect(r.valor).toBeCloseTo(54.09, 2);
+    expect(r.valorHoraExtra).toBeCloseTo(19.10, 2);
+    expect(r.valor).toBeCloseTo(54.12, 2);
     expect(r.semSalario).toBe(false);
   });
 
   it("salário 2.140 e 05:00 a +50%", () => {
     const r = calcularHoraExtra({ salario: 2140, minutos: 300 });
-    // 2140 ÷ 220 × 1,5 × 5 = 72,95
-    expect(r.valor).toBeCloseTo(72.95, 2);
+    // 2140 ÷ 220 = R$ 9,73/h · × 1,5 = R$ 14,60/h · × 5h = R$ 73,00
+    expect(r.valorHoraNormal).toBeCloseTo(9.73, 2);
+    expect(r.valor).toBeCloseTo(73.00, 2);
   });
 
   it("domingo/feriado dobra a hora, não soma 50%", () => {
-    // 2140 ÷ 220 × 2 × 5h = 97,27 (contra 72,95 no dia útil).
-    expect(calcularHoraExtra({ salario: 2140, minutos: 300, fator: 2 }).valor).toBeCloseTo(97.27, 2);
-    expect(calcularHoraExtra({ salario: 2140, minutos: 300, fator: 1.5 }).valor).toBeCloseTo(72.95, 2);
+    // R$ 9,73/h × 2 = R$ 19,46/h × 5h = R$ 97,30 (contra R$ 73,00 no dia útil).
+    expect(calcularHoraExtra({ salario: 2140, minutos: 300, fator: 2 }).valor).toBeCloseTo(97.30, 2);
+    expect(calcularHoraExtra({ salario: 2140, minutos: 300, fator: 1.5 }).valor).toBeCloseTo(73.00, 2);
+  });
+
+  /* O DEFEITO QUE O RH PEGOU (18/08/2026, lançamento do Saulo).
+     A tela escrevia "R$ 11,19/h · com +50% = R$ 16,79/h · × 4,5h" e gravava
+     R$ 75,52 — mas 16,79 × 4,5 dá R$ 75,56. Três centavos de diferença bastam
+     para o número perder a credibilidade e o RH voltar para a planilha.
+     A regra agora é: a conta que a tela mostra é a conta que o sistema faz. */
+  it("a conta MOSTRADA reproduz o total — passo a passo, na calculadora", () => {
+    const r = calcularHoraExtra({ salario: 2461.54, minutos: 270 }); // 04:30
+    expect(r.valorHoraNormal).toBeCloseTo(11.19, 2);
+    expect(r.valorHoraExtra).toBeCloseTo(16.79, 2);
+    expect(r.valor).toBeCloseTo(75.56, 2);
+    // O que importa de verdade: refazer a conta com os números da TELA dá o
+    // mesmo. Em centavos inteiros porque é assim que a pessoa faz — ela lê
+    // "16,79", que é 1679 centavos, e multiplica. Em float, 16.79 * 4.5 dá
+    // 75.4999… e o próprio teste erraria por um centavo.
+    const naMao = Math.round(Math.round(r.valorHoraExtra * 100) * (r.minutos / 60)) / 100;
+    expect(r.valor).toBe(naMao);
+  });
+
+  it("cada passo mostrado reproduz o seguinte, em vários salários", () => {
+    for (const salario of [1518, 2140, 2461.54, 2800, 3333.33, 4127.9]) {
+      for (const minutos of [60, 90, 170, 270, 300, 455]) {
+        for (const fator of [1.5, 2]) {
+          const r = calcularHoraExtra({ salario, minutos, fator });
+          // Sempre partindo do valor MOSTRADO, em centavos inteiros.
+          const centHoraNormal = Math.round(r.valorHoraNormal * 100);
+          const centHoraExtra = Math.round(r.valorHoraExtra * 100);
+          expect(centHoraExtra).toBe(Math.round(centHoraNormal * fator));
+          expect(r.valor).toBe(Math.round(centHoraExtra * (minutos / 60)) / 100);
+        }
+      }
+    }
   });
 
   it("sem salário no cadastro avisa, não devolve zero mudo", () => {

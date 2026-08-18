@@ -45,7 +45,27 @@ export interface CalculoHoraExtra {
   semSalario: boolean;    // true = cadastro sem salário; a tela deve avisar
 }
 
-/** Hora extra em R$: (salário ÷ divisor) × fator × horas. */
+/**
+ * Hora extra em R$: (salário ÷ divisor) → arredonda → × fator → arredonda →
+ * × horas → arredonda.
+ *
+ * ARREDONDA A CADA PASSO, e é de propósito — foi um conserto, não um descuido.
+ *
+ * Antes a conta era feita inteira em precisão cheia e só arredondava no fim.
+ * Matematicamente é mais exato, e mesmo assim estava ERRADO onde importa: a
+ * tela mostrava os passos já arredondados ("R$ 11,19/h · com +50% = R$ 16,79/h
+ * · × 4,5h") e cravava um total que aqueles números não produzem. Quem conferia
+ * na calculadora fazia 16,79 × 4,5 e achava R$ 75,56, enquanto o sistema
+ * gravava R$ 75,52. Três centavos bastam para o RH parar de confiar no número —
+ * e um número em que não se confia manda a pessoa de volta para a planilha.
+ *
+ * Arredondando a cada passo, a conta que a tela mostra é a conta que o sistema
+ * faz, e dá para conferir na mão. É também como a folha faz: o valor-hora vai
+ * ao holerite com dois decimais, e a linha é quantidade × esse valor.
+ *
+ * O valor-hora com adicional sai do valor-hora JÁ ARREDONDADO (1119 → ×1,5 →
+ * 1679), que é o caminho que a pessoa percorre lendo a tela.
+ */
 export function calcularHoraExtra({
   salario, minutos, fator = FATOR_HE_PADRAO, divisor = DIVISOR_MENSAL_PADRAO,
 }: {
@@ -57,19 +77,22 @@ export function calcularHoraExtra({
   const min = positivo(minutos);
   const horas = min / 60;
   const f = positivo(fator) || FATOR_HE_PADRAO;
-  const vhNormal = valorHora(salario, divisor);
-  const vhExtra = centavos(vhNormal * f);
-  // Arredonda uma vez só, no fim: arredondar a hora e o fator antes de
-  // multiplicar pelas horas embutia erro sistemático (sempre p/ o mesmo lado).
   const s = positivo(salario);
   const d = positivo(divisor) || DIVISOR_MENSAL_PADRAO;
+
+  // Em CENTAVOS inteiros: evita que 16,79 × 4,5 = 7555,4999… vire 75,55 por
+  // conta de float, quando a conta na mão dá 75,56.
+  const centHoraNormal = Math.round((s / d) * 100);
+  const centHoraExtra = Math.round(centHoraNormal * f);
+  const centTotal = Math.round(centHoraExtra * horas);
+
   return {
     minutos: min,
     horas,
-    valorHoraNormal: vhNormal,
-    valorHoraExtra: vhExtra,
+    valorHoraNormal: centHoraNormal / 100,
+    valorHoraExtra: centHoraExtra / 100,
     fator: f,
-    valor: centavos((s / d) * f * horas),
+    valor: centTotal / 100,
     // Hora extra NÃO recebe reflexo de DSR aqui (decisão do usuário em
     // 31/07/2026 — o escritório contábil é quem faz esse cálculo, se fizer).
     semSalario: positivo(salario) === 0,
