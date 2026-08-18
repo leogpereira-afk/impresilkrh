@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { exameDuplicado, quantosIguais, type ExameLike } from "@/lib/exameDuplicado";
+import { exameDuplicado, quantosIguais, semExameOcupacional, type ExameLike } from "@/lib/exameDuplicado";
 
 const e = (id: string, colab: string, cat: string, venc: string): ExameLike =>
   ({ id, colaboradorId: colab, categoria: cat, dataVencimento: venc });
@@ -72,5 +72,44 @@ describe("quantosIguais", () => {
 
   it("sem nenhum igual, é um", () => {
     expect(quantosIguais([], e("y", "joao", "ASO", "2027-01-16"))).toBe(1);
+  });
+});
+
+describe("quem não tem exame nenhum", () => {
+  const pessoas = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("acha quem não tem nenhum ASO nem periódico", () => {
+    const docs = [
+      { id: "d1", colaboradorId: "a", categoria: "ASO", dataVencimento: "2027-01-16" },
+      { id: "d2", colaboradorId: "b", categoria: "Exame Periódico", dataVencimento: "2027-01-16" },
+    ];
+    expect(semExameOcupacional(pessoas, docs).map((p) => p.id)).toEqual(["c"]);
+  });
+
+  it("exame VENCIDO ainda é exame — a pessoa não entra nesta lista", () => {
+    /* São dois problemas diferentes e a tela já tem card para o vencido.
+       Misturar faria a mesma pessoa aparecer duas vezes e o número não fechar. */
+    const docs = [{ id: "d1", colaboradorId: "a", categoria: "ASO", dataVencimento: "2020-01-01" }];
+    expect(semExameOcupacional([{ id: "a" }], docs)).toEqual([]);
+  });
+
+  it("documento de OUTRA categoria não conta como exame", () => {
+    // Contrato não é exame ocupacional; contar faria a lista mentir para menos.
+    const docs = [{ id: "d1", colaboradorId: "a", categoria: "Contrato", dataVencimento: null }];
+    expect(semExameOcupacional([{ id: "a" }], docs).map((p) => p.id)).toEqual(["a"]);
+  });
+
+  it("documento solto, sem dono, não isenta ninguém", () => {
+    const docs = [{ id: "d1", colaboradorId: null, categoria: "ASO", dataVencimento: "2027-01-16" }];
+    expect(semExameOcupacional([{ id: "a" }], docs).map((p) => p.id)).toEqual(["a"]);
+  });
+
+  it("categoria com espaço sobrando continua contando", () => {
+    const docs = [{ id: "d1", colaboradorId: "a", categoria: " ASO ", dataVencimento: "2027-01-16" }];
+    expect(semExameOcupacional([{ id: "a" }], docs)).toEqual([]);
+  });
+
+  it("sem ninguém no grupo, lista vazia — não estoura", () => {
+    expect(semExameOcupacional([], [])).toEqual([]);
   });
 });

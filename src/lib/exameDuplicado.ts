@@ -65,3 +65,42 @@ export function quantosIguais<T extends ExameLike>(
   ).length;
   return outros + 1;
 }
+
+// ============================================================================
+// QUEM NÃO TEM EXAME NENHUM.
+//
+// A tela de SST contava EXAMES — total, válidos, a vencer, vencidos — e nunca
+// contava PESSOAS. Quem não tem exame não tem linha, então não aparecia em
+// nenhum dos quatro números: ficava invisível justamente por estar no pior
+// estado possível.
+//
+// Medido na base real em 18/08/2026: 9 das 33 pessoas do quadro não tinham
+// nenhum ASO nem exame periódico. Nada na tela dizia isso.
+//
+// É o mesmo erro que a tela de Feedback tinha: contar o que existe e deixar a
+// ausência fora da conta. A ausência é a informação.
+// ============================================================================
+
+/** As categorias que valem como exame ocupacional. */
+export const CATEGORIAS_EXAME = ["ASO", "Exame Periódico"] as const;
+
+export interface PessoaLike { id: string }
+
+/**
+ * Do grupo informado, quem não tem NENHUM exame ocupacional.
+ *
+ * Recebe as pessoas já filtradas por quem chama (quadro, escopo do gestor):
+ * decidir aqui quem "conta" esconderia a regra num canto onde ninguém procura.
+ */
+export function semExameOcupacional<P extends PessoaLike, D extends ExameLike>(
+  pessoas: readonly P[],
+  documentos: readonly D[],
+): P[] {
+  const cats = new Set<string>(CATEGORIAS_EXAME);
+  const comExame = new Set(
+    documentos
+      .filter((x) => cats.has((x.categoria ?? "").trim()) && x.colaboradorId)
+      .map((x) => x.colaboradorId as string),
+  );
+  return pessoas.filter((p) => !comExame.has(p.id));
+}

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil, MessageCircle, CalendarClock, ChevronDown, ChevronRight } from "lucide-react";
+import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil, MessageCircle, CalendarClock, ChevronDown, ChevronRight, UserX,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -13,7 +14,7 @@ import { Campo, Input, Select } from "@/components/ui/form";
 import { RichContent } from "@/components/ui/rich";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
-import { exameDuplicado } from "@/lib/exameDuplicado";
+import { exameDuplicado, semExameOcupacional } from "@/lib/exameDuplicado";
 import { useColecao, useConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -102,6 +103,20 @@ export default function SST() {
     return documentos.filter((doc) => cats.has(doc.categoria) && saiu.has(doc.colaboradorId)).length;
   }, [documentos, sessao, d.colaboradores]);
 
+  /* QUEM NÃO TEM EXAME NENHUM.
+     Os quatro números acima contam EXAMES. Quem não tem exame não tem linha, e
+     por isso não aparecia em nenhum deles — ficava invisível justamente por
+     estar no pior estado possível. Medido na base real em 18/08/2026: 9 das 33
+     pessoas do quadro. Nada na tela dizia isso.
+     Mesmo escopo da lista (sem direção, e respeitando "incluir quem saiu"),
+     senão o número aqui e a tabela abaixo contariam gente diferente. */
+  const semExame = useMemo(() => {
+    const escopo = colaboradoresVisiveis(sessao, d.colaboradores)
+      .filter((c) => !c.ehDirecao && (incluirSaiu || noQuadro(c)));
+    return semExameOcupacional(escopo, documentos)
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [sessao, d.colaboradores, documentos, incluirSaiu]);
+
   const total = exames.length;
   const vencidos = exames.filter((doc) => situacaoDoc(doc.dataVencimento) === "Vencido").length;
   const aVencer = exames.filter((doc) => situacaoDoc(doc.dataVencimento) === "A vencer").length;
@@ -109,7 +124,14 @@ export default function SST() {
 
   // Os 4 números saem da mesma tabela abaixo, então clicar filtra em vez de abrir outra tela.
   const [focoExame, setFocoExame] = useState<Situacao | null>(null);
-  const alternarFoco = (s: Situacao) => setFocoExame((atual) => (atual === s ? null : s));
+  /* Foco separado: "sem exame" não é uma situação de exame, é a AUSÊNCIA dele.
+     Enfiar na mesma variável faria a tabela de exames filtrar por um estado que
+     nenhum exame tem, e a lista sairia vazia sem explicar por quê. */
+  const [verSemExame, setVerSemExame] = useState(false);
+  const alternarFoco = (s: Situacao) => {
+    setVerSemExame(false);
+    setFocoExame((atual) => (atual === s ? null : s));
+  };
   const examesVisiveis = useMemo(
     () => (focoExame ? exames.filter((doc) => situacaoDoc(doc.dataVencimento) === focoExame) : exames),
     [exames, focoExame],
@@ -188,7 +210,62 @@ export default function SST() {
         <StatCard label="Válidos" value={validos} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={focoExame === "Válido"} title="Ver só os exames válidos" />
         <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={focoExame === "A vencer"} title="Ver só os exames a vencer" />
         <StatCard label="Vencidos" value={vencidos} icon={<AlertTriangle className="h-5 w-5" />} accent={vencidos ? "red" : "green"} onClick={() => alternarFoco("Vencido")} ativo={focoExame === "Vencido"} title="Ver só os exames vencidos" />
+        <StatCard
+          label="Sem exame nenhum"
+          value={semExame.length}
+          hint="pessoas, não exames"
+          icon={<UserX className="h-5 w-5" />}
+          accent={semExame.length ? "red" : "green"}
+          onClick={() => { setFocoExame(null); setVerSemExame((v) => !v); }}
+          ativo={verSemExame}
+          title="Ver quem do quadro não tem ASO nem exame periódico"
+        />
       </div>
+
+      {/* A lista de quem não tem nada aparece ACIMA da tabela de exames: é o
+          estado mais grave e o único que a tabela, por natureza, não mostra. */}
+      {verSemExame && (
+        <Card className="mb-6 border-red-100">
+          <CardHeader
+            title={`${semExame.length} ${semExame.length === 1 ? "pessoa" : "pessoas"} sem exame ocupacional`}
+            subtitle="Sem ASO e sem exame periódico registrados — nem vencido"
+            icon={<UserX className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {semExame.length === 0 ? (
+              <p className="text-sm text-slate-500">Todo mundo do quadro tem pelo menos um exame registrado.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {semExame.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 py-2">
+                    <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <LinkFicha id={c.id} className="truncate text-sm font-medium text-slate-800 hover:text-brand">
+                        {c.nome}
+                      </LinkFicha>
+                      <p className="truncate text-xs text-slate-400">
+                        {d.nomeCargo(c)}{c.dataAdmissao ? ` · na casa desde ${formatDate(c.dataAdmissao)}` : ""}
+                      </p>
+                    </div>
+                    {gere && (
+                      /* Leva para a ficha, que é onde o exame é lançado de
+                         verdade — esta tela só lê. Botão que promete o que a
+                         tela não faz é pior que botão nenhum. */
+                      <LinkFicha
+                        id={c.id}
+                        className="btn-outline shrink-0 px-2.5 py-1.5 text-xs"
+                        titulo={`Abrir a ficha de ${c.nome} para lançar o exame`}
+                      >
+                        Lançar na ficha
+                      </LinkFicha>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <CardHeader
