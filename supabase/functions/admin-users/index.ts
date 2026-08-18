@@ -33,8 +33,13 @@ async function ehAdminRH(req: Request): Promise<boolean> {
   if (!m) return false;
   const { data, error } = await admin.auth.getUser(m[1]); // valida o JWT do usuário
   if (error || !data?.user) return false;
-  const { data: perfil } = await admin.from("perfis").select("perfil").eq("user_id", data.user.id).maybeSingle();
-  return perfil?.perfil === "ADMIN_RH";
+  /* `ativo` TAMBEM, e nao so o cargo. A coluna nasceu em 17/08/2026 e o `sync`
+     passou a exigi-la no mesmo dia -- estas duas irmas ficaram para tras, e uma
+     trava que vale em metade das portas nao e trava: quem fosse desligado
+     continuava entrando por aqui com o cargo antigo. */
+  const { data: perfil } = await admin.from("perfis")
+    .select("perfil, ativo").eq("user_id", data.user.id).maybeSingle();
+  return perfil?.perfil === "ADMIN_RH" && perfil?.ativo !== false;
 }
 
 Deno.serve(async (req) => {
