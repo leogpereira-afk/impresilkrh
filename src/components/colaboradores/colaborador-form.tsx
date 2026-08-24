@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
-import { Campo, Input, Select } from "@/components/ui/form";
+import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useColecao } from "@/lib/store";
 import { useDominio, enquadrar, noQuadro } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
@@ -357,6 +357,21 @@ export function ColaboradorForm({
               <option value="">—</option>
               {ESTILOS_APRENDIZAGEM.map((x) => <option key={x} value={x}>{x}</option>)}
             </Select>
+          </Campo>
+          {/* Ocupam a linha inteira: são texto corrido, e um campo estreito
+              faria o RH resumir em duas palavras justamente onde o detalhe é
+              o que serve na conversa. */}
+          <Campo label="Pontos fortes" className="sm:col-span-2"
+            hint="Com as palavras da casa — vale mais que etiqueta genérica.">
+            <Textarea rows={2} value={form.pontosFortes ?? ""}
+              onChange={(e) => set({ pontosFortes: e.target.value })}
+              placeholder="Ex.: pega o corte no laser rápido; assume a frente quando falta gente" />
+          </Campo>
+          <Campo label="Pontos de melhoria" className="sm:col-span-2"
+            hint="O que ajudaria essa pessoa a crescer — não é advertência.">
+            <Textarea rows={2} value={form.pontosMelhoria ?? ""}
+              onChange={(e) => set({ pontosMelhoria: e.target.value })}
+              placeholder="Ex.: avisar quando o prazo vai estourar, em vez de deixar chegar no dia" />
           </Campo>
           <Campo label="Padrinho (mentor)">
             <Select value={form.padrinhoId ?? ""} onChange={(e) => set({ padrinhoId: e.target.value || null })}>

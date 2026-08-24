@@ -21,7 +21,13 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const chave = (colecao: string, id: string) => `${colecao}::${id}`;
-const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia"];
+const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia",
+  /* PONTOS FORTES E DE MELHORIA sao AVALIACAO sobre a pessoa, escrita pelo RH.
+     Sem entrar aqui, a colecao `colaboradores` (nivel "todos") entregaria a
+     todos os 33 logados o que o RH escreveu sobre os pontos fracos de cada
+     colega. Cada um continua vendo os SEUS -- a mascara so poda registro de
+     outro. */
+  "pontosFortes", "pontosMelhoria"];
 
 interface Perfil { colaborador_id: string; perfil: "ADMIN_RH" | "GESTOR" | "COLABORADOR" }
 

@@ -105,6 +105,21 @@ export function DossieDaConversa({ d, ajuste }: { d: Dossie; ajuste: boolean }) 
                   </p>
                 )}
                 {ajuste && p.evite && <p className="text-amber-700">Evite: {p.evite}</p>}
+
+                {/* O QUE O RH ESCREVEU sobre a pessoa. Separado do resto por
+                    uma linha, de propósito: tudo acima é número apurado, isto
+                    é opinião de quem acompanha. Misturar os dois faria a
+                    opinião parecer medição. */}
+                {(p.pontosFortes || p.pontosMelhoria) && (
+                  <div className="mt-1.5 space-y-1 border-t border-slate-100 pt-1.5">
+                    {p.pontosFortes && (
+                      <p><span className="font-medium text-emerald-700">Fortes:</span> {p.pontosFortes}</p>
+                    )}
+                    {p.pontosMelhoria && (
+                      <p><span className="font-medium text-amber-700">A melhorar:</span> {p.pontosMelhoria}</p>
+                    )}
+                  </div>
+                )}
               </div>
             ) : <SemRegistro onde="perfil comportamental" />}
           </Bloco>

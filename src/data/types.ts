@@ -124,6 +124,24 @@ export interface Colaborador {
   funcao?: string; // função original da planilha (quando não mapeada a um cargo)
   sexo?: string; // Masculino, Feminino
   perfilComportamental?: string; // Colérico, Sanguíneo, Fleumático, Melancólico
+  /* PONTOS FORTES E PONTOS DE MELHORIA — escritos pelo RH, não deduzidos.
+   *
+   * Moram na FICHA e não em cada feedback, de propósito: ponto forte é
+   * característica que evolui, não evento de uma conversa. Na ficha existe uma
+   * versão atual, que é o que serve na hora de falar com a pessoa, de montar
+   * plano de carreira ou de decidir quem toca uma obra.
+   *
+   * A evolução não se perde: toda alteração de ficha entra no histórico de
+   * `alteracoes`, com autor e data. Guardar por conversa daria histórico e
+   * NENHUMA visão atual — a informação ficaria espalhada em dezenas de
+   * registros e ninguém montaria a foto de hoje.
+   *
+   * Texto livre, e não lista fechada: o RH descreve com as palavras da casa
+   * ("pega o corte no laser rápido"), que valem mais numa conversa do que uma
+   * etiqueta genérica.
+   */
+  pontosFortes?: string | null;
+  pontosMelhoria?: string | null;
   humor?: string; // Motivado, Estável, Desmotivado (engajamento/clima)
   estiloAprendizagem?: string; // Visual, Auditivo, Cinestésico
   adicionais?: number; // adicionais/benefícios (R$) — painel financeiro

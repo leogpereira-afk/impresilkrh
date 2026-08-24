@@ -182,3 +182,25 @@ describe("o dossiê inteiro", () => {
     expect(d.ganhos.total).toBe(100);
   });
 });
+
+describe("pontos fortes e de melhoria (escritos pelo RH)", () => {
+  it("aparecem no perfil quando preenchidos", () => {
+    const p = perfilParaConversa({
+      pontosFortes: "  pega o corte no laser rápido  ",
+      pontosMelhoria: "avisar quando o prazo vai estourar",
+    });
+    expect(p.temDados).toBe(true);
+    expect(p.pontosFortes).toBe("pega o corte no laser rápido");
+    expect(p.pontosMelhoria).toBe("avisar quando o prazo vai estourar");
+  });
+
+  it("só eles já bastam para o bloco existir, sem perfil comportamental", () => {
+    // Quem ainda não teve o perfil mapeado mas já tem observação do RH não
+    // pode cair em "sem registro" — a observação é o que vale na conversa.
+    expect(perfilParaConversa({ pontosFortes: "assume a frente" }).temDados).toBe(true);
+  });
+
+  it("texto em branco não conta como preenchido", () => {
+    expect(perfilParaConversa({ pontosFortes: "   ", pontosMelhoria: "" }).temDados).toBe(false);
+  });
+});

@@ -50,6 +50,8 @@ export const CAMPOS_FICHA: CampoFicha[] = [
   { chave: "nivelId", rotulo: "Nível", peso: "complementar" },
   { chave: "perfilComportamental", rotulo: "Perfil comportamental", peso: "complementar" },
   { chave: "estiloAprendizagem", rotulo: "Estilo de aprendizagem", peso: "complementar" },
+  { chave: "pontosFortes", rotulo: "Pontos fortes", peso: "complementar" },
+  { chave: "pontosMelhoria", rotulo: "Pontos de melhoria", peso: "complementar" },
   { chave: "fotoDataUrl", rotulo: "Foto", peso: "complementar" },
   { chave: "cnh", rotulo: "CNH", peso: "complementar" },
   { chave: "dataInicioCargo", rotulo: "Início no cargo", peso: "complementar" },

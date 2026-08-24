@@ -136,6 +136,11 @@ export function ganhosAlemDoSalario(
 export interface Perfil {
   temDados: boolean;
   comportamental?: string;
+  /* Escritos pelo RH na ficha — não vêm de conta nenhuma. São a única parte
+     do dossiê que é OPINIÃO, e por isso a tela os separa do resto: número
+     apurado e avaliação de gente não podem parecer a mesma coisa. */
+  pontosFortes?: string;
+  pontosMelhoria?: string;
   humor?: string;
   aprendizagem?: string;
   /** Como dar feedback a esse perfil — o campo `feedback` do arquétipo. */
@@ -151,10 +156,13 @@ export interface Perfil {
 /** O perfil comportamental e o que ele orienta na conversa. */
 export function perfilParaConversa(colab: {
   perfilComportamental?: string; humor?: string; estiloAprendizagem?: string;
+  pontosFortes?: string | null; pontosMelhoria?: string | null;
 }): Perfil {
   const p = String(colab.perfilComportamental ?? "").trim();
   const a = ARQUETIPOS[p];
-  if (!p && !colab.humor && !colab.estiloAprendizagem) return { temDados: false };
+  const fortes = String(colab.pontosFortes ?? "").trim();
+  const melhoria = String(colab.pontosMelhoria ?? "").trim();
+  if (!p && !colab.humor && !colab.estiloAprendizagem && !fortes && !melhoria) return { temDados: false };
   /* O arquétipo tem um campo `feedback` FEITO para isto, e um `noticiasRuins`
      para a conversa de ajuste. Esse texto já estava escrito em constants.ts e
      nunca tinha chegado a uma tela de feedback — que é exatamente onde ele
@@ -162,6 +170,8 @@ export function perfilParaConversa(colab: {
   return {
     temDados: true,
     comportamental: p || undefined,
+    pontosFortes: fortes || undefined,
+    pontosMelhoria: melhoria || undefined,
     humor: colab.humor || undefined,
     aprendizagem: colab.estiloAprendizagem || undefined,
     comoFalar: a?.comoLidar?.feedback,
@@ -232,7 +242,10 @@ export interface Dossie {
 
 /** Junta tudo para uma pessoa. */
 export function dossieDoColaborador(
-  colab: { id: string; perfilComportamental?: string; humor?: string; estiloAprendizagem?: string },
+  colab: {
+    id: string; perfilComportamental?: string; humor?: string; estiloAprendizagem?: string;
+    pontosFortes?: string | null; pontosMelhoria?: string | null;
+  },
   fontes: {
     pontos?: readonly PontoLike[];
     pagamentos?: readonly PagamentoLike[];

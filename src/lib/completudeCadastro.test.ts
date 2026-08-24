@@ -108,3 +108,13 @@ describe("a cor", () => {
     expect(tomDaCompletude(r)).toBe("atencao");
   });
 });
+
+describe("os pontos fortes e de melhoria", () => {
+  it("entram na conta como complementar — ausência não trava nada", () => {
+    const semPontos = { ...cheia(), pontosFortes: "", pontosMelhoria: "" };
+    const r = completudeDaFicha(semPontos);
+    expect(r.essenciaisOk).toBe(true);
+    expect(r.pct).toBeLessThan(100);
+    expect(r.faltam.map((f) => f.rotulo)).toEqual(["Pontos fortes", "Pontos de melhoria"]);
+  });
+});
