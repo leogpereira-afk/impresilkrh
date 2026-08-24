@@ -37,6 +37,7 @@ import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/cl
 import { vinculosDoColaborador } from "@/lib/vinculos";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import type { Colaborador } from "@/data/types";
+import { BlocoCompletude } from "@/components/colaboradores/completude";
 
 const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 
@@ -331,6 +332,11 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
           </div>
         </CardBody>
       </Card>
+
+      {/* QUANTO DA FICHA ESTÁ PREENCHIDO. Fica no topo, antes das abas: é a
+          primeira coisa a saber sobre um cadastro, e o único lugar onde a
+          lacuna aparece antes de ser necessária. */}
+      {podeEditar && <BlocoCompletude colab={c as unknown as Record<string, unknown>} />}
 
       <Tabs
         idPersistencia="ficha-colaborador"

@@ -20,6 +20,7 @@ import { situacaoExperiencia, type SituacaoExperiencia } from "@/lib/clt";
 import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
 import type { Colaborador, Pagamento } from "@/data/types";
+import { SeloCompletude } from "@/components/colaboradores/completude";
 
 // Cor do selo de perfil comportamental (temperamentos). Sem perfil = neutro.
 const COR_PERFIL: Record<string, string> = {
@@ -799,6 +800,11 @@ export default function Colaboradores() {
                           <p className="truncate font-medium text-slate-800">{c.nome}</p>
                           <p className="truncate text-xs text-slate-500">{d.nomeCargo(c)}</p>
                         </div>
+                        {/* % de preenchimento. Só aparece quando NÃO está 100%:
+                            selo em toda linha vira ruído e ensina a ignorar.
+                            O ⚠ marca falta de campo obrigatório, que é outra
+                            gravidade — na base real são 5 fichas de 33. */}
+                        <SeloCompletude colab={c as unknown as Record<string, unknown>} />
                       </Link>
                     </td>
                     {visaoLinha === "cadastro" && (

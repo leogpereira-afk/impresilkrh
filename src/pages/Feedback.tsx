@@ -37,6 +37,8 @@ import {
   type Cadencia, type SituacaoFeedback, type MotivoBloqueio,
 } from "@/lib/feedbackCadencia";
 import { situacaoExperiencia } from "@/lib/clt";
+import { dossieDoColaborador, type Dossie } from "@/lib/dossieFeedback";
+import { DossieDaConversa } from "@/components/feedback/dossie";
 import { cn } from "@/lib/cn";
 import type { Colaborador, Feedback as FeedbackReg } from "@/data/types";
 
@@ -76,11 +78,23 @@ export default function Feedback() {
   const sessao = useSessao();
   const toast = useToast();
   const { items: feedbacks, criar, atualizar } = useColecao("feedbacks");
+  /* As fontes do dossiê. Lidas UMA vez aqui, e não dentro do modal: são
+     coleções inteiras, e reler a cada abertura pesaria à toa. */
+  const { items: pontos } = useColecao("pontos");
+  const { items: pagamentos } = useColecao("pagamentos");
+  const { items: treinamentos } = useColecao("treinamentos");
+  const { items: avaliacoes } = useColecao("avaliacoes");
   const [busca, setBusca] = useState("");
   const [foco, setFoco] = useState<SituacaoFeedback | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "fila", asc: true });
   const [aberta, setAberta] = useState<string | null>(null);
   const [novoPara, setNovoPara] = useState<Colaborador | null>(null);
+  const dossie = useMemo(
+    () => (novoPara
+      ? dossieDoColaborador(novoPara, { pontos, pagamentos, treinamentos, avaliacoes })
+      : null),
+    [novoPara, pontos, pagamentos, treinamentos, avaliacoes],
+  );
 
   /* Só quem está no quadro. Feedback é conversa com quem trabalha aqui — listar
      desligado seria fila de trabalho que ninguém pode executar. */
@@ -255,6 +269,7 @@ export default function Feedback() {
 
       {novoPara && (
         <ModalNovoFeedback
+          dossie={dossie}
           colab={novoPara}
           setor={novoPara.areaId ?? undefined}
           aberto={combinadoEmAberto(
@@ -398,9 +413,13 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
    "feedback" — apreciação, coaching e avaliação — e a falha mais comum é quem
    fala mandar uma e quem ouve escutar outra. Misturar avaliação num elogio
    destrói os dois. Aqui a avaliação nem entra: tem módulo próprio. */
-function ModalNovoFeedback({ colab, setor, aberto: emAberto, onSalvar, onDesfecho, onFechar }: {
+function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, onDesfecho, onFechar }: {
   colab: Colaborador;
   setor?: string;
+  /* O que o sistema já sabe da pessoa. Montado no pai porque as fontes
+     (ponto, pagamentos, treinamento, avaliação) são coleções inteiras: puxar
+     aqui dentro faria cada abertura do modal reler tudo. */
+  dossie: Dossie | null;
   aberto: FeedbackReg | null;
   onSalvar: (d: Partial<FeedbackReg>) => void;
   onDesfecho: (id: string, desfecho: string) => void;
@@ -502,6 +521,11 @@ function ModalNovoFeedback({ colab, setor, aberto: emAberto, onSalvar, onDesfech
       </>}
     >
       <div className="space-y-4">
+        {/* O DOSSIÊ: o que o sistema já sabe da pessoa. Vem ANTES do formulário
+            porque é o que informa o que escrever — e depois do combinado, que
+            é a única coisa mais urgente que ele. */}
+        {dossie && <DossieDaConversa d={dossie} ajuste={ajuste} />}
+
         {/* O COMBINADO ANTERIOR vem antes de tudo — é o único lugar que o
             encarregado disse que vale. Responder é sempre OPCIONAL: a trava que
             exigia desfecho produzia clique em "Feito" sem conferir nada, ou
