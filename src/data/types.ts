@@ -359,6 +359,29 @@ export interface Feedback {
      OPCIONAIS no tipo porque os registros antigos não os têm; a tela exige o
      que precisa exigir. */
 
+  /* ── AS TRÊS ETAPAS ────────────────────────────────────────────────────────
+     A tela assumia que a conversa JÁ tinha acontecido: só havia "Registrar".
+     Na prática o líder prepara antes (olhando faltas, ganhos, perfil), combina
+     o dia, e só depois conversa. Sem isso, ou ele improvisa na hora ou anota
+     num papel que ninguém mais vê.
+
+     PREPARADO -> AGENDADO -> DADO. O que decide a etapa é qual data existe:
+       preparadoEm  = escreveu o roteiro
+       agendadaPara = marcou o dia de conversar
+       ocorridoEm   = a conversa aconteceu (é ela que fecha o ciclo)
+
+     REGRA QUE NÃO PODE QUEBRAR: feedback preparado NÃO conta como feedback
+     dado. Se contasse, preparar tiraria a pessoa da fila sem ninguém ter
+     falado com ela — o pior resultado possível para uma tela cuja função é
+     lembrar de conversar. Ver `jaFoiDado` em lib/feedbackCadencia. */
+
+  /** Quando o roteiro foi escrito. */
+  preparadoEm?: string | null;
+  /** O que o líder pretende dizer — escrito ANTES da conversa. */
+  roteiro?: string | null;
+  /** O dia combinado para conversar. */
+  agendadaPara?: string | null;
+
   /** Quando a conversa aconteceu — diferente de quando foi digitada. */
   ocorridoEm?: string;
   /** Carimbo do SERVIDOR no momento da gravação. Nunca o relógio do aparelho. */

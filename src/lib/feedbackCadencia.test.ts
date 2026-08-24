@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  cadenciaDe, ultimoFeedback, compararFila, CADENCIA_FEEDBACK_DIAS,
+  cadenciaDe, jaFoiDado, ultimoFeedback, compararFila, CADENCIA_FEEDBACK_DIAS,
   bloqueio, combinadoEmAberto, combinadoVencido, cadenciaDaPessoa, montarConteudo,
   type FeedbackLike,
 } from "@/lib/feedbackCadencia";
@@ -266,5 +266,44 @@ describe("feedback de TREINAMENTO não é conversa de trabalho", () => {
     const r = cadenciaDe([trein("t", 1), fb("ind", 10)], diasAtras(900).slice(0, 10), HOJE);
     expect(r.situacao).toBe("em-dia");
     expect(r.diasDesde).toBe(10);
+  });
+});
+
+describe("preparar não é conversar", () => {
+  /* A regra mais importante das três etapas. Se um feedback PREPARADO contasse
+     como dado, preparar tiraria a pessoa da fila sem ninguém ter falado com
+     ela — e a tela passaria a dizer "em dia" para quem espera há meses. É o
+     pior defeito possível numa tela cuja função é lembrar de conversar. */
+  const base = { id: "f1", colaboradorId: "ana", criadoEm: "2026-08-19T12:00:00Z" };
+
+  it("preparado NÃO conta como dado", () => {
+    expect(jaFoiDado({ ...base, preparadoEm: "2026-08-19" })).toBe(false);
+  });
+
+  it("agendado ainda NÃO conta", () => {
+    expect(jaFoiDado({ ...base, preparadoEm: "2026-08-19", agendadaPara: "2026-08-22" })).toBe(false);
+  });
+
+  it("com a conversa ocorrida, conta", () => {
+    expect(jaFoiDado({ ...base, preparadoEm: "2026-08-19", agendadaPara: "2026-08-22", ocorridoEm: "2026-08-22" })).toBe(true);
+  });
+
+  it("registro ANTIGO (sem nenhuma das datas novas) conta como dado", () => {
+    /* Na época só se registrava depois da conversa. Exigir `ocorridoEm`
+       jogaria o histórico inteiro para "nunca recebeu". */
+    expect(jaFoiDado({ ...base, ocorridoEm: undefined })).toBe(true);
+  });
+
+  it("a FILA ignora o preparado: quem só tem preparo continua atrasado", () => {
+    const soPreparado = [{ ...base, preparadoEm: "2026-08-19", agendadaPara: "2026-08-22" }];
+    const c = cadenciaDe(soPreparado, "2020-01-01", new Date("2026-08-19T12:00:00"));
+    expect(c.situacao).toBe("atrasado");
+    expect(c.ultimo).toBeNull();
+  });
+
+  it("depois da conversa, a fila zera", () => {
+    const dado = [{ ...base, preparadoEm: "2026-08-01", agendadaPara: "2026-08-05", ocorridoEm: "2026-08-05" }];
+    const c = cadenciaDe(dado, "2020-01-01", new Date("2026-08-19T12:00:00"));
+    expect(c.situacao).toBe("em-dia");
   });
 });

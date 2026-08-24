@@ -13,7 +13,7 @@
  * sem nunca chegar a uma tela de feedback.
  */
 import { useMemo, useState } from "react";
-import { MessageSquare, Search, Plus, Sparkles, ArrowDownAZ, ChevronDown, ChevronRight, ThumbsUp, Wrench } from "lucide-react";
+import { MessageSquare, Search, Plus, Sparkles, ArrowDownAZ, ChevronDown, ChevronRight, ThumbsUp, Wrench, ClipboardList, CalendarPlus, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,13 +26,13 @@ import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis } from "@/lib/rbac";
-import { formatDate, diaLocalISO } from "@/lib/format";
+import { formatDate, diaLocalISO, diasDeCalendario } from "@/lib/format";
 import {
   ARQUETIPOS, EFEITOS_AJUSTE, EFEITOS_ELOGIO, COMBINADOS_SUGERIDOS,
   AVISO_NAO_E_PUNICAO, tipoFeedbackLegado,
 } from "@/lib/constants";
 import {
-  cadenciaDe, cadenciaDaPessoa, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
+  cadenciaDe, jaFoiDado, cadenciaDaPessoa, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
   bloqueio, combinadoEmAberto, combinadoVencido, ehRotaSeguranca, montarConteudo,
   type Cadencia, type SituacaoFeedback, type MotivoBloqueio,
 } from "@/lib/feedbackCadencia";
@@ -48,6 +48,9 @@ const SELO: Record<SituacaoFeedback, { texto: string; variante: "danger" | "warn
   "a-vencer": { texto: "Chegando a hora", variante: "warning" },
   "em-dia": { texto: "Em dia", variante: "success" },
 };
+
+/** Em que ponto do ciclo a pessoa está: preparar → marcar o dia → registrar. */
+export type Etapa = "preparar" | "agendar" | "registrar";
 
 type CampoOrdem = "fila" | "nome" | "ultimo" | "situacao";
 interface Ordem { campo: CampoOrdem; asc: boolean }
@@ -89,6 +92,21 @@ export default function Feedback() {
   const [ordem, setOrdem] = useState<Ordem>({ campo: "fila", asc: true });
   const [aberta, setAberta] = useState<string | null>(null);
   const [novoPara, setNovoPara] = useState<Colaborador | null>(null);
+  const [etapa, setEtapa] = useState<Etapa>("preparar");
+
+  /* O feedback PREPARADO e ainda não conversado de cada pessoa. Um por pessoa:
+     preparar duas vezes seguidas seria dois roteiros para a mesma conversa, e
+     a linha não saberia qual mostrar — então o segundo clique reabre o
+     primeiro. */
+  const preparoDe = useMemo(() => {
+    const m = new Map<string, FeedbackReg>();
+    for (const f of feedbacks as FeedbackReg[]) {
+      if (jaFoiDado(f)) continue;
+      const atual = m.get(f.colaboradorId);
+      if (!atual || String(f.criadoEm) > String(atual.criadoEm)) m.set(f.colaboradorId, f);
+    }
+    return m;
+  }, [feedbacks]);
   const dossie = useMemo(
     () => (novoPara
       ? dossieDoColaborador(novoPara, { pontos, pagamentos, treinamentos, avaliacoes })
@@ -258,7 +276,8 @@ export default function Feedback() {
                     cargo={d.nomeCargo(c)}
                     aberta={aberta === c.id}
                     onAlternar={() => setAberta((x) => (x === c.id ? null : c.id))}
-                    onNovo={() => setNovoPara(c)}
+                    emPreparo={preparoDe.get(c.id) ?? null}
+                    onNovo={(etapa) => { setEtapa(etapa); setNovoPara(c); }}
                   />
                 ))}
               </tbody>
@@ -270,6 +289,8 @@ export default function Feedback() {
       {novoPara && (
         <ModalNovoFeedback
           dossie={dossie}
+          etapa={etapa}
+          preparo={preparoDe.get(novoPara.id) ?? null}
           colab={novoPara}
           setor={novoPara.areaId ?? undefined}
           aberto={combinadoEmAberto(
@@ -281,15 +302,28 @@ export default function Feedback() {
             toast("Combinado anterior atualizado.");
           }}
           onSalvar={(dados) => {
-            criar({
-              ...dados,
-              colaboradorId: novoPara.id,
-              autorId: sessao?.colaboradorId ?? null,
-              // Carimbo do momento da gravação — diferente de quando a conversa foi.
-              registradoEm: new Date().toISOString(),
-              criadoEm: new Date().toISOString(),
-            });
-            toast(`Conversa registrada para ${novoPara.nome}.`);
+            /* Com `id`, ATUALIZA o registro que já foi preparado. Sem, cria.
+               As três etapas escrevem no MESMO registro: preparar cria, marcar
+               o dia e registrar completam. Criar um novo a cada etapa deixaria
+               roteiro órfão e conversa solta — e a fila contaria errado. */
+            const { id, ...resto } = dados as { id?: string } & Record<string, unknown>;
+            if (id) {
+              atualizar(id, { ...resto, registradoEm: new Date().toISOString() });
+            } else {
+              criar({
+                ...resto,
+                colaboradorId: novoPara.id,
+                autorId: sessao?.colaboradorId ?? null,
+                // Carimbo do momento da gravação — diferente de quando a conversa foi.
+                registradoEm: new Date().toISOString(),
+                criadoEm: new Date().toISOString(),
+              });
+            }
+            toast(
+              etapa === "preparar" ? `Preparação salva. Agora marque o dia com ${novoPara.nome.split(" ")[0]}.`
+              : etapa === "agendar" ? `Conversa marcada com ${novoPara.nome.split(" ")[0]}.`
+              : `Conversa registrada para ${novoPara.nome}.`,
+            );
             setNovoPara(null);
           }}
         />
@@ -298,10 +332,17 @@ export default function Feedback() {
   );
 }
 
-function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
+function LinhaPessoa({ n, colab, cad, cargo, aberta, emPreparo, onAlternar, onNovo }: {
   n: number; colab: Colaborador; cad: Cadencia; cargo: string;
-  aberta: boolean; onAlternar: () => void; onNovo: () => void;
+  aberta: boolean; onAlternar: () => void;
+  /* O feedback desta pessoa que já foi preparado e ainda não aconteceu. É ele
+     que decide qual dos três botões a linha mostra. */
+  emPreparo: FeedbackReg | null;
+  onNovo: (etapa: Etapa) => void;
 }) {
+  // Passou do dia combinado e a conversa não foi registrada.
+  const venceuAgenda = !!emPreparo?.agendadaPara
+    && diasDeCalendario(emPreparo.agendadaPara, new Date()) < 0;
   const selo = SELO[cad.situacao];
   /* A orientação de COMO dar feedback àquele temperamento já existia em
      constants.ts e nunca tinha chegado a uma tela de feedback. É a diferença
@@ -364,9 +405,30 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
           {cad.diasDesde != null ? `${cad.diasDesde} dias` : "—"}
         </td>
         <td className="td text-right">
-          <button type="button" className="btn-outline" onClick={onNovo}>
-            <Plus className="h-4 w-4" /> Registrar
-          </button>
+          {/* AS TRÊS ETAPAS. A tela só tinha "Registrar", que assume a conversa
+              já feita — e na prática o líder prepara antes, combina o dia e só
+              depois conversa. Cada linha mostra UM botão: o da etapa em que
+              aquela pessoa está, e não um menu de três para escolher. */}
+          {!emPreparo ? (
+            <button type="button" className="btn-outline" onClick={() => onNovo("preparar")}>
+              <ClipboardList className="h-4 w-4" /> Preparar feedback
+            </button>
+          ) : !emPreparo.agendadaPara ? (
+            <button type="button" className="btn-outline" onClick={() => onNovo("agendar")}>
+              <CalendarPlus className="h-4 w-4" /> Marcar o dia
+            </button>
+          ) : (
+            <span className="flex items-center justify-end gap-2">
+              {/* O dia combinado fica visível: sem ele, "Registrar" some do
+                  contexto e o líder não lembra para quando marcou. */}
+              <span className={cn("text-xs", venceuAgenda ? "font-medium text-red-600" : "text-slate-500")}>
+                {venceuAgenda ? "era " : ""}{formatDate(emPreparo.agendadaPara)}
+              </span>
+              <button type="button" className="btn-primary" onClick={() => onNovo("registrar")}>
+                <Check className="h-4 w-4" /> Registrar
+              </button>
+            </span>
+          )}
         </td>
       </tr>
       {aberta && (
@@ -413,13 +475,19 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, onAlternar, onNovo }: {
    "feedback" — apreciação, coaching e avaliação — e a falha mais comum é quem
    fala mandar uma e quem ouve escutar outra. Misturar avaliação num elogio
    destrói os dois. Aqui a avaliação nem entra: tem módulo próprio. */
-function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, onDesfecho, onFechar }: {
+function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAberto, onSalvar, onDesfecho, onFechar }: {
   colab: Colaborador;
   setor?: string;
   /* O que o sistema já sabe da pessoa. Montado no pai porque as fontes
      (ponto, pagamentos, treinamento, avaliação) são coleções inteiras: puxar
      aqui dentro faria cada abertura do modal reler tudo. */
   dossie: Dossie | null;
+  /* Em que ponto do ciclo este clique entrou. A janela é a mesma nas três
+     etapas — muda o que ela pede e o que grava. Três janelas separadas
+     repetiriam o dossiê e o roteiro em todas. */
+  etapa: Etapa;
+  /** O roteiro já escrito, quando a etapa é marcar o dia ou registrar. */
+  preparo: FeedbackReg | null;
   aberto: FeedbackReg | null;
   onSalvar: (d: Partial<FeedbackReg>) => void;
   onDesfecho: (id: string, desfecho: string) => void;
@@ -429,6 +497,7 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
   const [tipo, setTipo] = useState<"Reconhecimento" | "Ajuste" | null>(null);
   const [ocorridoEm, setOcorridoEm] = useState(() => diaLocalISO(new Date()));
   const [oQue, setOQue] = useState("");
+  const [roteiro, setRoteiro] = useState(() => preparo?.roteiro ?? "");
   const [efeito, setEfeito] = useState("");
   const [os, setOs] = useState("");
   const [combinado, setCombinado] = useState("");
@@ -443,7 +512,38 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
 
   const emDias = (n: number) => diaLocalISO(new Date(Date.now() + n * 86_400_000));
 
+  /* MARCAR O DIA é a etapa mais curta: só a data, e nada mais. Exigir o
+     formulário inteiro aqui faria o líder reescrever o que já preparou. */
+  const [dia, setDia] = useState(() => preparo?.agendadaPara ?? "");
+  const marcarDia = () => {
+    if (!dia) return toast("Escolha o dia da conversa.", "erro");
+    onSalvar({ id: preparo?.id, agendadaPara: dia } as Partial<FeedbackReg>);
+    onFechar();
+  };
+
   const salvar = () => {
+    /* PREPARAR grava o roteiro e mais nada: a conversa ainda não aconteceu,
+       então não há "o que aconteceu" para contar nem efeito para marcar. Pedir
+       isso agora obrigaria o líder a inventar o passado. */
+    if (etapa === "preparar") {
+      if (roteiro.trim().length < 15) return toast("Escreva o que pretende dizer — uma frase basta.", "erro");
+      const b = bloqueio(roteiro);
+      if (b) { setBarrado(b); return; }
+      if (!tipo) return;
+      onSalvar({
+        id: preparo?.id,
+        tipo,
+        roteiro: roteiro.trim(),
+        preparadoEm: new Date().toISOString(),
+        /* `conteudo` fica vazio de propósito: ele é o que a PESSOA vê na ficha
+           dela, e roteiro é anotação de quem vai falar. Só vira conteúdo
+           quando a conversa acontece. */
+        conteudo: "",
+      } as Partial<FeedbackReg>);
+      onFechar();
+      return;
+    }
+
     if (oQue.trim().length < 15) return toast("Conte o que aconteceu — uma frase basta.", "erro");
     /* Bloqueio ANTES de gravar, e sem guardar o texto: avisar, permitir e
        guardar seria a pior das três opções. */
@@ -460,7 +560,13 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
       os: os.trim() || undefined,
       ...(ajuste ? { combinado: combinado.trim(), combinadoPrazo: prazo.data, combinadoGatilho: prazo.gatilho } : {}),
     };
-    onSalvar({ ...base, conteudo: montarConteudo(base) });
+    onSalvar({
+      // Fecha o MESMO registro que foi preparado, em vez de criar outro: senão
+      // a pessoa ficaria com um roteiro órfão e um feedback solto.
+      id: preparo?.id,
+      ...base,
+      conteudo: montarConteudo(base),
+    } as Partial<FeedbackReg>);
   };
 
   if (barrado) {
@@ -513,11 +619,21 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
     <Modal
       aberto
       onFechar={onFechar}
-      titulo={`${ajuste ? "Ajustar" : "Elogiar"} — ${colab.nome}`}
+      titulo={
+        etapa === "preparar" ? `Preparar — ${colab.nome}`
+        : etapa === "agendar" ? `Marcar o dia — ${colab.nome}`
+        : `${ajuste ? "Ajustar" : "Elogiar"} — ${colab.nome}`
+      }
       largura="max-w-lg"
       rodape={<>
-        <button className="btn-outline" onClick={() => setTipo(null)}>Voltar</button>
-        <button className="btn-primary" onClick={salvar}>Salvar</button>
+        <button className="btn-outline" onClick={() => (etapa === "agendar" ? onFechar() : setTipo(null))}>
+          {etapa === "agendar" ? "Cancelar" : "Voltar"}
+        </button>
+        <button className="btn-primary" onClick={etapa === "agendar" ? marcarDia : salvar}>
+          {etapa === "preparar" ? "Salvar preparação"
+            : etapa === "agendar" ? "Marcar o dia"
+            : "Registrar a conversa"}
+        </button>
       </>}
     >
       <div className="space-y-4">
@@ -525,6 +641,51 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
             porque é o que informa o que escrever — e depois do combinado, que
             é a única coisa mais urgente que ele. */}
         {dossie && <DossieDaConversa d={dossie} ajuste={ajuste} />}
+
+        {/* PREPARAR: só o roteiro. A conversa ainda não aconteceu, então não
+            há "o que aconteceu" nem efeito para marcar — pedir isso agora
+            obrigaria o líder a inventar o passado. */}
+        {etapa === "preparar" && (
+          <Campo
+            label="O que você pretende dizer"
+            obrigatorio
+            hint="Só você vê isto. Na hora de registrar, ele fica à mão."
+          >
+            <Textarea
+              rows={5}
+              value={roteiro}
+              onChange={(e) => setRoteiro(e.target.value)}
+              placeholder={ajuste
+                ? "Ex.: falar da peça que voltou do laser fora do esquadro na terça, e combinar conferir o gabarito antes de cortar."
+                : "Ex.: reconhecer que ele assumiu a frente quando faltou gente na semana passada, e que a entrega saiu no prazo."}
+            />
+          </Campo>
+        )}
+
+        {/* MARCAR O DIA: só a data, com o roteiro à vista para lembrar do que
+            se trata. */}
+        {etapa === "agendar" && (
+          <div className="space-y-3">
+            {preparo?.roteiro && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">O que você preparou</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">{preparo.roteiro}</p>
+              </div>
+            )}
+            <Campo label="Dia da conversa" obrigatorio hint="A tela cobra se o dia passar sem o registro.">
+              <Input type="date" value={dia} onChange={(e) => setDia(e.target.value)} />
+            </Campo>
+          </div>
+        )}
+
+        {/* REGISTRAR: o roteiro aparece no topo, para o líder conferir se
+            falou o que planejou. */}
+        {etapa === "registrar" && preparo?.roteiro && (
+          <div className="rounded-xl border border-brand/20 bg-brand/5 p-3">
+            <p className="text-xs text-brand-ink/70">Você tinha preparado</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-sm text-brand-ink">{preparo.roteiro}</p>
+          </div>
+        )}
 
         {/* O COMBINADO ANTERIOR vem antes de tudo — é o único lugar que o
             encarregado disse que vale. Responder é sempre OPCIONAL: a trava que
@@ -549,6 +710,10 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
           </div>
         )}
 
+        {/* DAQUI PARA BAIXO é o registro do que ACONTECEU. Some nas outras
+            duas etapas: na preparação a conversa ainda não houve, e ao marcar
+            o dia o líder só escolhe a data. */}
+        {etapa === "registrar" && <>
         <Campo label="Quando foi a conversa">
           <div className="mb-2 flex flex-wrap gap-1.5">
             {[["Hoje", 0], ["Ontem", -1]].map(([r, n]) => (
@@ -630,6 +795,17 @@ function ModalNovoFeedback({ colab, setor, dossie, aberto: emAberto, onSalvar, o
           Quem vê: você, o RH, a direção — e a própria pessoa, na ficha dela.<br />
           {AVISO_NAO_E_PUNICAO}
         </p>
+        </>}
+
+        {/* Na PREPARAÇÃO o aviso é outro: o roteiro é anotação de quem vai
+            falar, e a pessoa não o vê. Dizer isso evita que o líder escreva
+            com medo — ou, pior, que escreva achando que ela lerá. */}
+        {etapa === "preparar" && (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+            A preparação é sua: a pessoa não vê este texto. Ela só verá o que
+            você registrar depois da conversa.
+          </p>
+        )}
       </div>
     </Modal>
   );
