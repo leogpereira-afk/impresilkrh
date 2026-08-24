@@ -30,11 +30,24 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// ----- ativação: remove caches de versões anteriores -----
+/* ----- ativação: remove caches de versões anteriores DESTE sistema -----
+ *
+ * `caches` é por ORIGEM, não por escopo: o RH, o Painel (painel-v1) e o POPs
+ * (pops-shell-v11) moram todos em leogpereira-afk.github.io. Apagando "tudo o
+ * que não é o meu", cada visita ao RH zerava o disco dos outros dois -- e os
+ * três faziam a mesma coisa, um contra o outro, então o ganho de velocidade de
+ * cada um evaporava ao trocar de sistema. O prefixo separa a MINHA prateleira
+ * velha da casa alheia. (Achado na conferência do Painel, 24/08/2026.)
+ */
+const MEU_PREFIXO = "impresilk-rh-";
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((chaves) =>
-      Promise.all(chaves.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+      Promise.all(
+        chaves
+          .filter((k) => k !== CACHE && k.startsWith(MEU_PREFIXO))
+          .map((k) => caches.delete(k)),
+      ),
     ).then(() => self.clients.claim()),
   );
 });
