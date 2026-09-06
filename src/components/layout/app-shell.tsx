@@ -75,9 +75,9 @@ const NAV: ItemNav[] = [
 ];
 
 const GRUPOS = ["Visão geral", "Pessoas", "Cargos & Custos", "Comunicação & Conteúdo", "Administração", "Conta"];
-// Preferência de quem usa (grupos recolhidos na barra), não dado do sistema:
-// mora no navegador e não entra no backup nem na sincronização.
-const CHAVE_NAV_RECOLHIDOS = "impresilk.rh.v1:nav-recolhidos";
+const EMOJIS: Record<string, string> = {
+  painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
+};
 
 /* NAVCONTEUDO E RODAPE MORAM AQUI FORA, e é de propósito.
  *
@@ -118,7 +118,7 @@ function NavConteudo({
   aoNavegar: () => void;
 }) {
   return (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+    <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 py-5">
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
         if (!itens.length) return null;
@@ -133,13 +133,13 @@ function NavConteudo({
               type="button"
               onClick={() => alternarGrupo(grupo)}
               aria-expanded={!recolhido}
-              className="mb-1.5 flex w-full items-center gap-1.5 rounded-lg px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 transition hover:bg-white/5 hover:text-white/70"
+              className="nav-section mb-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-3 text-xs font-bold uppercase tracking-[0.12em] transition hover:bg-slate-100"
             >
               <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform duration-200", !recolhido && "rotate-90")} />
               <span className="flex-1 text-left">{grupo}</span>
               {/* Quantos itens sumiram: um grupo recolhido sem contador some da
                   cabeça de quem usa e vira "o sistema perdeu a tela". */}
-              {recolhido && <span className="rounded-full bg-white/10 px-1.5 text-[10px] tracking-normal text-white/50">{itens.length}</span>}
+              {recolhido && <span className="rounded-full bg-slate-100 px-1.5 text-xs tracking-normal text-slate-600">{itens.length}</span>}
             </button>
             <div className={cn("space-y-0.5", recolhido && "hidden")}>
               {itens.map((item) => {
@@ -151,8 +151,8 @@ function NavConteudo({
                     to={item.href}
                     onClick={aoNavegar}
                     className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.98]",
-                      item.sub && "!py-1.5 !pl-9 text-[13px]", // subitem aninhado (ex.: sob Colaboradores)
+                      "group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-semibold leading-snug transition-all duration-200 active:scale-[0.98]",
+                      item.sub && "!pl-7 text-[14px]", // subitem aninhado (ex.: sob Colaboradores)
                       // Sidebar navy: item em destaque = pílula dourada; ativo = realce
                       // claro translúcido; inativo = texto claro com hover suave.
                       item.destaque
@@ -160,11 +160,11 @@ function NavConteudo({
                           ? "bg-gold-600 text-white shadow-sm"
                           : "bg-gold text-white shadow-sm hover:bg-gold-500"
                         : ativo
-                          ? "bg-white/15 text-white shadow-sm"
-                          : "text-slate-200 hover:bg-white/10 hover:text-white",
+                          ? "bg-emerald-50 text-slate-800 shadow-[inset_3px_0_0_#28796a]"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-800",
                     )}
                   >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", item.destaque ? "text-gold-100" : ativo ? "text-gold-300" : "text-slate-300 group-hover:text-white")} />
+                    {EMOJIS[item.href.slice(1)] ? <span aria-hidden="true" className="w-6 shrink-0 text-center text-xl">{EMOJIS[item.href.slice(1)]}</span> : <Icon className="h-5 w-5 shrink-0" />}
                     <span className="flex-1">{item.label}</span>
                   </NavLink>
                 );
@@ -182,16 +182,16 @@ function Rodape({ user, aoSair }: {
   aoSair: () => void;
 }) {
   return (
-    <div className="space-y-2 border-t border-white/10 p-3">
+    <div className="space-y-2 border-t border-slate-200 p-3">
       <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
         <Avatar nome={user.nome} foto={user.foto} size="sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">{user.nome}</p>
+          <p className="truncate text-sm font-semibold text-slate-700">{user.nome}</p>
           <p className="truncate text-xs text-slate-400">{PERFIL_LABEL[user.perfil]}</p>
         </div>
         <button
           onClick={aoSair}
-          className="btn-ghost p-1.5 text-slate-300 hover:text-red-400"
+          className="btn-ghost min-h-11 min-w-11 p-2 text-slate-500 hover:text-red-600"
           title="Sair"
         >
           <LogOut className="h-[18px] w-[18px]" />
@@ -216,34 +216,30 @@ export function AppShell() {
      ponto". Sem busca, chegar numa tela era rolar a barra e reconhecer. */
   const [buscando, setBuscando] = useState(false);
 
-  // Grupos recolhidos da barra lateral. Guardado no navegador porque é
-  // preferência de quem usa, não estado da sessão — recolher "Administração"
-  // toda vez que abre o sistema seria pior do que não ter o recurso.
-  //
-  // O grupo da tela ATUAL nunca começa recolhido: dar F5 numa página e não
-  // encontrá-la no menu faz o usuário achar que a tela sumiu.
-  const [recolhidos, setRecolhidos] = useState<Set<string>>(() => {
-    try {
-      const salvo = JSON.parse(window.localStorage.getItem(CHAVE_NAV_RECOLHIDOS) ?? "[]") as string[];
-      const atual = NAV.find((i) => location.pathname === i.href || location.pathname.startsWith(i.href + "/"))?.grupo;
-      return new Set(salvo.filter((g) => g !== atual));
-    } catch {
-      return new Set();
-    }
+  // Os grupos abrem expandidos a cada entrada, conforme o padrão do painel.
+  // Recolher durante o uso mantém a navegação curta sem esconder links no retorno.
+  const [recolhidos, setRecolhidos] = useState<Set<string>>(() => new Set());
+  const alternarGrupo = (grupo: string) => setRecolhidos(s => {
+    const x = new Set(s); if (x.has(grupo)) x.delete(grupo); else x.add(grupo); return x;
   });
-  const alternarGrupo = (grupo: string) => {
-    setRecolhidos((s) => {
-      const x = new Set(s);
-      if (x.has(grupo)) x.delete(grupo);
-      else x.add(grupo);
-      try {
-        window.localStorage.setItem(CHAVE_NAV_RECOLHIDOS, JSON.stringify([...x]));
-      } catch {
-        /* sem espaço: a preferência não persiste, mas a tela continua funcionando */
-      }
-      return x;
-    });
-  };
+  useEffect(() => {
+    if (!aberto) return;
+    const anterior = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const nav = document.querySelector<HTMLElement>("[data-menu-rh]");
+    nav?.querySelector<HTMLElement>("button, a")?.focus();
+    const teclado = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); setAberto(false); }
+      if (e.key !== "Tab" || !nav) return;
+      const itens = [...nav.querySelectorAll<HTMLElement>("a,button")].filter(el => el.getClientRects().length && !(el as HTMLButtonElement).disabled);
+      const primeiro = itens[0], ultimo = itens[itens.length - 1];
+      if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo?.focus(); }
+      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro?.focus(); }
+    };
+    document.addEventListener("keydown", teclado);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener("keydown", teclado); anterior?.focus(); };
+  }, [aberto]);
 
   // Aviso quando o armazenamento do navegador encher (cota do localStorage).
   // Sem isto, gravações falhavam em silêncio e os dados "sumiam" ao recarregar.
@@ -288,9 +284,9 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-[var(--bg)]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 bg-brand lg:flex">
-        <div className="flex h-20 items-center justify-center border-b border-white/10 px-5">
-          <Logo variant="white" className="h-12" />
+      <aside className="rh-sidebar fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="flex h-20 items-center justify-center border-b border-slate-100 px-5">
+          <Logo variant="color" className="h-12" />
         </div>
         <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
         <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} />
@@ -299,10 +295,10 @@ export function AppShell() {
       {aberto && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm animate-fade-in" onClick={() => setAberto(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-brand shadow-soft animate-scale-in">
-            <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
-              <Logo variant="white" className="h-11" />
-              <button onClick={() => setAberto(false)} className="btn-ghost p-1.5 text-slate-300 hover:text-white">
+          <aside data-menu-rh role="dialog" aria-modal="true" aria-label="Menu do RH" className="rh-sidebar absolute inset-y-0 left-0 flex w-72 max-w-[90vw] flex-col bg-white shadow-soft animate-scale-in">
+            <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
+              <Logo variant="color" className="h-11" />
+              <button aria-label="Fechar menu" onClick={() => setAberto(false)} className="btn-ghost min-h-11 min-w-11 p-2 text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -320,7 +316,7 @@ export function AppShell() {
         onFechar={() => setBuscando(false)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-72">
         <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
           <button onClick={() => setAberto(true)} className="btn-ghost p-1.5 lg:hidden" aria-label="Abrir menu">
             <Menu className="h-5 w-5" />

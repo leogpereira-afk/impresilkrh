@@ -45,6 +45,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Conferir antes de publicar
+        run: npm run verificar
+
       # As chaves PÚBLICAS do Supabase (URL + publishable/anon) já vêm de
       # .env.production (versionado — são valores que vão no navegador de todo
       # jeito). Nenhuma variável precisa ser configurada no GitHub.

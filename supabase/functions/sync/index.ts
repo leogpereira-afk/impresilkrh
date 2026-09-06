@@ -29,7 +29,7 @@ const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "t
      outro. */
   "pontosFortes", "pontosMelhoria"];
 
-interface Perfil { colaborador_id: string; perfil: "ADMIN_RH" | "GESTOR" | "COLABORADOR" }
+interface Perfil { auth_id?: string; colaborador_id: string; perfil: "ADMIN_RH" | "GESTOR" | "COLABORADOR" }
 
 // Identifica quem está chamando: valida o JWT do usuário (cliente com anon key,
 // só para VERIFICAR o token) e busca o perfil dele (cliente de serviço, sem RLS).
@@ -41,7 +41,7 @@ async function sessaoDoPedido(req: Request): Promise<Perfil | null> {
   if (error || !data?.user) return null;
   const { data: perfil } = await admin.from("perfis")
     .select("colaborador_id, perfil, ativo").eq("user_id", data.user.id).maybeSingle();
-  if (!perfil) return null;
+  if (!perfil || !["ADMIN_RH", "GESTOR", "COLABORADOR"].includes(perfil.perfil) || !perfil.colaborador_id) return null;
   /* DESLIGAR TEM DE FECHAR AQUI TAMBEM. Ate 17/08/2026 `perfis` nao tinha
      coluna de ativo, e o sync nunca consultava o quadro unico -- entao quem
      fosse desativado na tela de Acessos continuava entrando no RH digitando o
@@ -52,24 +52,10 @@ async function sessaoDoPedido(req: Request): Promise<Perfil | null> {
      sessoes (painel-acesso), mas esta trava e a que vale mesmo se sobrar
      alguma. */
   if ((perfil as { ativo?: boolean }).ativo === false) return null;
-  return perfil as Perfil;
+  return { ...perfil, auth_id: data.user.id } as Perfil;
 }
 
-// Contador de versão dos dados: um número global (rev) + um mapa por coleção
-// (porColecao). O cliente consulta e baixa SÓ as coleções cujo número mudou —
-// em vez de rebaixar tudo a cada ciclo. Best-effort (read-modify-write): se
-// duas escritas correrem juntas, o pior caso é um pull completo a mais.
-async function marcarMudanca(colecoes: string | string[]): Promise<void> {
-  const lista = (Array.isArray(colecoes) ? colecoes : [colecoes]).filter(Boolean);
-  const agora = Date.now();
-  try {
-    const { data } = await admin.from("meta").select("valor").eq("chave", "rev").maybeSingle();
-    const atual = (data?.valor as { rev?: number; porColecao?: Record<string, number> } | undefined) ?? {};
-    const porColecao = { ...(atual.porColecao ?? {}) };
-    for (const c of lista) porColecao[c] = agora;
-    await admin.from("meta").upsert({ chave: "rev", valor: { rev: agora, porColecao } });
-  } catch { /* best-effort: rev é só uma dica de cache */ }
-}
+// Revisões são mantidas em transação pelo banco, inclusive nas importações.
 
 /* ============================================================================
    O ESCOPO, COLECAO POR COLECAO — LISTA BRANCA.
@@ -194,6 +180,15 @@ Deno.serve(async (req) => {
   // trabalho de gestão, não de colaborador comum.
   const ehGestao = ehAdmin || sessao.perfil === "GESTOR";
   const meuId = sessao.colaborador_id;
+  const equipe = new Set<string>([meuId]);
+  const areasEquipe = new Set<string>();
+  const pessoaisGestao = new Set(["ferias", "ausencias", "pontos", "treinamentos", "avaliacoes", "metas", "pdis", "advertencias", "certificacoesNr", "documentos", "contatos", "tarefas", "fechamentos", "lancamentos", "viagens"]);
+  const pertenceEquipe = (col: string, r: any) => r?.colaboradorId ? equipe.has(r.colaboradorId) : col === "metas" && !!r?.areaId && areasEquipe.has(r.areaId);
+  const consulta = async (col: string, id: string) => {
+    const { data, error } = await admin.from("registros").select("registro, apagado, rh_versao").eq("colecao", col).eq("id", id).maybeSingle();
+    if (error) throw new Error("Não foi possível conferir o registro. Tente novamente.");
+    return data;
+  };
 
   /* LEITURA. A tabela ESCOPO manda; o que nao esta la e negado (escopoDe cai em
      "rh" e reclama no log). O ADMIN_RH continua vendo tudo -- e a unica excecao
@@ -218,16 +213,35 @@ Deno.serve(async (req) => {
       } };
     }
     if (ehAdmin) return env;
+    if (env.colecao === "usuarios") {
+      if (env.registro?.colaboradorId !== meuId) return null;
+      const { id, colaboradorId, perfil, permissoes, ativo, atualizadoEm } = env.registro;
+      return { colecao: env.colecao, registro: { id, colaboradorId, perfil, permissoes, ativo, atualizadoEm } };
+    }
+    if (env.colecao === "colaboradores" && !equipe.has(env.registro?.id)) {
+      // O organograma continua mostrando a equipe. Fora da própria hierarquia,
+      // entrega apenas o diretório profissional, sem avaliações ou dados pessoais.
+      const r = env.registro;
+      if (r.statusId === "inativo") return null;
+      return { colecao: env.colecao, registro: { id: r.id, nome: r.nome, cargoId: r.cargoId, nivelId: r.nivelId, areaId: r.areaId, gestorId: r.gestorId, statusId: "ativo", _rhRev: r._rhRev } };
+    }
+    if (env.colecao === "feedbacks" && ehGestao && pertenceEquipe("feedbacks", env.registro)) return env;
     const { nivel, campos } = escopoDe(env.colecao);
     if (nivel === "rh") return null;
-    if (nivel === "gestao" && !ehGestao) return null;
+    if (nivel === "gestao") {
+      if (!ehGestao && (!["documentos", "treinamentos", "ferias", "ausencias", "tarefas"].includes(env.colecao) || !meuRegistro(env.colecao, env.registro))) return null;
+      if (ehGestao && pessoaisGestao.has(env.colecao) && !pertenceEquipe(env.colecao, env.registro)) return null;
+    }
     if (nivel === "meu" && !meuRegistro(env.colecao, env.registro)) return null;
     /* Campo a campo, e nao a linha inteira: todo mundo precisa do NOME do cargo
        e ninguem precisa do salario praticado; todo mundo precisa saber quem e
        colega e ninguem precisa do CPF e do endereco do colega. */
-    if (campos && !meuRegistro(env.colecao, env.registro)) {
+    if (campos) {
       const r = { ...env.registro };
-      for (const k of campos) delete r[k];
+      if (!meuRegistro(env.colecao, env.registro)) for (const k of campos) delete r[k];
+      if (env.colecao === "colaboradores" && !ehGestao) {
+        for (const k of ["riscoSaida", "potencial", "perfilComportamental", "pontosFortes", "pontosMelhoria", "humor", "estiloAprendizagem", "motivacao", "motivacaoAnterior", "enquadramento", "observacaoEnquadramento"]) delete r[k];
+      }
       return { ...env, registro: r };
     }
     return env;
@@ -239,13 +253,12 @@ Deno.serve(async (req) => {
      de cargos pelo sync. */
   const podeEscrever = (colecao: string, reg: any): boolean => {
     if (ehAdmin) return true;
+    if (["pagamentos", "movimentacoes"].includes(colecao)) return false;
+    if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId && pertenceEquipe(colecao, reg);
     const { nivel } = escopoDe(colecao);
     if (nivel === "rh" || nivel === "todos") return false;
     if (nivel === "gestao") {
-      // Feedback e treinamento sao de gestao, mas em NOME PROPRIO: sem isto da
-      // para forjar um feedback no nome de outra pessoa.
-      if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId;
-      return ehGestao;
+      return ehGestao && (!pessoaisGestao.has(colecao) || pertenceEquipe(colecao, reg));
     }
     // "meu": a propria linha, e so ela.
     return meuRegistro(colecao, reg);
@@ -256,20 +269,57 @@ Deno.serve(async (req) => {
      leitura de proposito (diz o que mudou, com valor), e por isso precisa desta
      excecao explicita aqui. */
   const podeEscreverAlteracao = (reg: any) =>
-    ehAdmin || reg?.usuarioColaboradorId === meuId || reg?.colaboradorId === meuId;
+    reg?.usuarioColaboradorId === meuId;
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ erro: "JSON inválido." }, 400); }
+  if (!body || Array.isArray(body) || typeof body !== "object") return json({ erro: "Requisição inválida." }, 400);
   const action = String(body.action ?? "");
+  const versao = (r: any) => Number.isSafeInteger(r) && r >= 0 ? r : null;
+  const validarColecao = (c: string) => Object.prototype.hasOwnProperty.call(ESCOPO, c);
+  const validarId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-Z0-9_.:-]{1,200}$/.test(id);
+  const rpc = async (nome: string, args: Record<string, unknown>) => {
+    const { data, error } = await admin.rpc(nome, args);
+    if (error) throw new Error("Não foi possível aplicar a alteração com segurança. Tente novamente.");
+    return data;
+  };
+  const mutacao = () => typeof body.mutationId === "string" && /^[a-zA-Z0-9_-]{1,120}$/.test(body.mutationId)
+    ? `${sessao.auth_id}:${body.mutationId}` : null;
 
   try {
+    if (sessao.perfil === "GESTOR" && ["list", "upsert", "delete", "getPhoto", "putPhoto"].includes(action)) {
+      const pessoas: any[] = [];
+      for (let inicio = 0; ; inicio += 500) {
+        const { data, error } = await admin.from("registros").select("id, registro").eq("colecao", "colaboradores").eq("apagado", false).order("id").range(inicio, inicio + 499);
+        if (error) throw new Error("Não foi possível conferir sua equipe. Tente novamente.");
+        pessoas.push(...(data || []));
+        if (!data || data.length < 500) break;
+      }
+      let mudou = true;
+      while (mudou) { mudou = false; for (const p of pessoas) if (equipe.has(p.registro?.gestorId) && !equipe.has(p.id)) { equipe.add(p.id); mudou = true; } }
+      for (const p of pessoas) if (equipe.has(p.id) && p.registro?.areaId) areasEquipe.add(p.registro.areaId);
+    }
+    const autorizarArquivo = async (id: string, escrita: boolean) => {
+      if (!/^(?:doc:|cv:)?[a-zA-Z0-9_.:-]{1,180}$/.test(id)) return false;
+      if (ehAdmin) return true;
+      if (id.startsWith("cv:")) return false;
+      if (id.startsWith("doc:")) {
+        const doc = await consulta("documentos", id.slice(4));
+        if (doc) return !doc.apagado && (escrita ? podeEscrever("documentos", doc.registro) : !!mascarar({ colecao: "documentos", registro: doc.registro }));
+        const institucional = await consulta("repositorio", id.slice(4));
+        return !!institucional && !institucional.apagado && !escrita;
+      }
+      const pessoa = await consulta("colaboradores", id);
+      return !!pessoa && !pessoa.apagado && (escrita ? id === meuId : equipe.has(id));
+    };
     switch (action) {
       case "ping":
         return json({ ok: true, ts: new Date().toISOString() });
 
       // ---- versão dos dados (global + por coleção) ----
       case "rev": {
-        const { data } = await admin.from("meta").select("valor").eq("chave", "rev").maybeSingle();
+        const { data, error } = await admin.from("meta").select("valor").eq("chave", "rev").maybeSingle();
+        if (error) throw new Error("Não foi possível consultar a revisão dos dados.");
         const v = (data?.valor as { rev?: number; porColecao?: Record<string, number> } | undefined) ?? {};
         return json({ rev: v.rev ?? null, porColecao: v.porColecao ?? {} });
       }
@@ -279,9 +329,10 @@ Deno.serve(async (req) => {
         const after = body.after != null ? String(body.after) : null;
         const offset = Math.max(0, Number(body.offset ?? 0) | 0);
         const colecoes = Array.isArray(body.colecoes) ? (body.colecoes as unknown[]).map(String).filter(Boolean) : null;
-        let query = admin.from("registros").select("colecao, id, registro").order("colecao", { ascending: true }).order("id", { ascending: true }).limit(PAGINA);
+        let query = admin.from("registros").select("colecao, id, registro, rh_versao").order("colecao", { ascending: true }).order("id", { ascending: true }).limit(PAGINA);
         if (colecoes && colecoes.length) query = query.in("colecao", colecoes);
         if (after !== null) {
+          if (!/^[a-zA-Z0-9_]{1,80}::[a-zA-Z0-9_.:-]{1,200}$/.test(after)) return json({ erro: "Página inválida." }, 400);
           const [c, ...resto] = after.split("::");
           const i = resto.join("::");
           // (colecao, id) > (after_colecao, after_id) — ordem lexicográfica composta.
@@ -292,22 +343,20 @@ Deno.serve(async (req) => {
         const { data, error } = await query;
         if (error) throw new Error(error.message);
         const linhas = data ?? [];
-        const visiveis = linhas.map((l) => mascarar({ colecao: l.colecao, registro: l.registro })).filter(Boolean);
+        const visiveis = linhas.map((l) => mascarar({ colecao: l.colecao, registro: { ...l.registro, _rhRev: l.rh_versao } })).filter(Boolean);
         const temMais = linhas.length === PAGINA;
         const ultima = linhas[linhas.length - 1];
         const nextAfter = temMais && ultima ? chave(ultima.colecao, ultima.id) : null;
         const nextOffset = temMais ? offset + PAGINA : null;
-        let contagem = admin.from("registros").select("*", { count: "exact", head: true });
-        if (colecoes && colecoes.length) contagem = contagem.in("colecao", colecoes);
-        const { count } = await contagem;
-        return json({ registros: visiveis, nextAfter, nextOffset, total: count ?? linhas.length });
+        // A página não faz uma contagem de toda a tabela a cada 150 registros.
+        return json({ registros: visiveis, nextAfter, nextOffset });
       }
 
       // ---- upsert (1 registro, com detecção de conflito) ----
       case "upsert": {
         const colecao = String(body.colecao ?? "");
         const registro = body.registro as { id?: string; atualizadoEm?: string; _apagado?: boolean } | undefined;
-        if (!colecao || !registro?.id) return json({ erro: "colecao e registro.id obrigatórios." }, 400);
+        if (!registro || typeof registro !== "object" || Array.isArray(registro) || !validarColecao(colecao) || !validarId(registro.id)) return json({ erro: "colecao e registro.id obrigatórios." }, 400);
         /* `alteracoes` e `acessos` sao o RASTRO: todo mundo escreve (e o registro
            do que a pessoa fez), e ninguem le alem do RH. Por isso nao passam
            pelo podeEscrever normal, que os negaria pelo nivel de leitura -- mas
@@ -317,92 +366,71 @@ Deno.serve(async (req) => {
           ? podeEscreverAlteracao(registro)
           : podeEscrever(colecao, registro);
         if (!escritaOk) return json({ erro: "Sem permissão para gravar este registro." }, 403);
-        const { data: atual } = await admin.from("registros").select("registro").eq("colecao", colecao).eq("id", registro.id).maybeSingle();
-        const servidorTs = (atual?.registro as { atualizadoEm?: string } | undefined)?.atualizadoEm;
-        const enviadoTs = registro.atualizadoEm;
-        if (servidorTs && enviadoTs && servidorTs > enviadoTs) {
-          return json({ conflito: true, servidor: { colecao, registro: atual!.registro } });
-        }
-        // apagado reflete o registro: um upsert normal "ressuscita" (apagado=false),
-        // senão uma edição depois de uma exclusão ficaria presa como lápide.
-        const { error } = await admin.from("registros").upsert({ colecao, id: registro.id, registro, apagado: !!registro._apagado, atualizado_em: enviadoTs ? new Date(enviadoTs).toISOString() : new Date().toISOString() });
-        if (error) throw new Error(error.message);
-        await marcarMudanca(colecao);
-        return json({ ok: true, atualizadoEm: enviadoTs ?? null });
+        const atual = await consulta(colecao, registro.id);
+        if (!ehAdmin && (registro._apagado || (atual && !(colecao === "alteracoes" || colecao === "acessos" ? podeEscreverAlteracao(atual.registro) : podeEscrever(colecao, atual.registro))))) return json({ erro: "Sem permissão para alterar este registro." }, 403);
+        if (!ehAdmin && (colecao === "alteracoes" || colecao === "acessos") && atual) return json({ erro: "O histórico existente não pode ser reescrito." }, 403);
+        const resultado = await rpc("rh_gravar_seguro", {
+          p_colecao: colecao, p_id: registro.id, p_registro: registro,
+          p_versao: versao(body.baseVersao), p_mutacao: mutacao(), p_apagar: false,
+        });
+        if (resultado?.conflito && resultado.servidor) resultado.servidor = mascarar(resultado.servidor);
+        return json(resultado);
       }
 
-      // ---- upsert em lote (push autoritativo, sem conflito) ----
-      case "bulkUpsert": {
-        if (!ehAdmin) return json({ erro: "Operação em massa restrita ao RH." }, 403);
-        const lote = (body.registros ?? []) as { colecao: string; registro: { id: string; atualizadoEm?: string; _apagado?: boolean } }[];
-        const linhas = lote.filter((x) => x?.colecao && x?.registro?.id).map((x) => ({
-          colecao: x.colecao, id: x.registro.id, registro: x.registro, apagado: !!x.registro._apagado,
-          atualizado_em: x.registro.atualizadoEm ? new Date(x.registro.atualizadoEm).toISOString() : new Date().toISOString(),
-        }));
-        if (linhas.length) { const { error } = await admin.from("registros").upsert(linhas); if (error) throw new Error(error.message); }
-        await marcarMudanca([...new Set(linhas.map((l) => l.colecao))]);
-        return json({ ok: true, gravados: linhas.length });
+      // Importação atômica: conserva cópia, confere a revisão e só então aplica.
+      case "aplicarRetrato": {
+        if (!ehAdmin) return json({ erro: "Importação restrita ao RH." }, 403);
+        const dados = body.dados;
+        if (!dados || typeof dados !== "object" || Array.isArray(dados) || Object.keys(dados).some(c => !validarColecao(c))) return json({ erro: "Coleções inválidas." }, 400);
+        return json(await rpc("rh_aplicar_retrato", { p_dados: dados, p_rev: versao(body.rev), p_substituir: body.substituir === true, p_config: body.config ?? null }));
       }
+      case "bulkUpsert":
+        return json({ erro: "Atualize esta página para usar a importação protegida por cópia de segurança." }, 409);
 
       // ---- delete (lápide, igual ao Blobs: nunca remove a linha) ----
       case "delete": {
         const colecao = String(body.colecao ?? "");
         const id = String(body.id ?? "");
-        if (!colecao || !id) return json({ erro: "colecao e id obrigatórios." }, 400);
-        if (!ehAdmin) {
-          if (colecao === "colaboradores" && id !== meuId) return json({ erro: "Sem permissão." }, 403);
-          if (colecao === "pagamentos") return json({ erro: "Sem permissão." }, 403);
-          // Trilha de auditoria não se apaga: quem pode apagar o próprio rastro
-          // não deixa rastro. Só o RH poda o histórico.
-          if (colecao === "alteracoes" || colecao === "acessos") return json({ erro: "Sem permissão." }, 403);
-        }
-        const agora = new Date().toISOString();
-        const { error } = await admin.from("registros").upsert({ colecao, id, registro: { id, _apagado: true, atualizadoEm: agora }, apagado: true, atualizado_em: agora });
-        if (error) throw new Error(error.message);
-        await Promise.all([id, `doc:${id}`, `cv:${id}`].map((k) => admin.storage.from("arquivos").remove([k])));
-        await marcarMudanca(colecao);
-        return json({ ok: true });
+        if (!validarColecao(colecao) || !validarId(id)) return json({ erro: "colecao e id obrigatórios." }, 400);
+        const atual = await consulta(colecao, id);
+        if (!ehAdmin && (!atual || ["alteracoes", "acessos"].includes(colecao) || !podeEscrever(colecao, atual.registro))) return json({ erro: "Sem permissão para remover este registro." }, 403);
+        if (!atual) return json({ ok: true });
+        const resultado = await rpc("rh_gravar_seguro", { p_colecao: colecao, p_id: id, p_registro: null, p_versao: versao(body.baseVersao), p_mutacao: mutacao(), p_apagar: true });
+        if (resultado?.conflito && resultado.servidor) resultado.servidor = mascarar(resultado.servidor);
+        return json(resultado);
       }
 
       // ---- limpar coleção inteira ----
       case "limparColecao": {
         if (!ehAdmin) return json({ erro: "Limpar coleção é restrito ao RH." }, 403);
         const colecao = String(body.colecao ?? "");
-        if (!colecao) return json({ erro: "colecao obrigatória." }, 400);
-        const { error, count } = await admin.from("registros").delete({ count: "exact" }).eq("colecao", colecao);
-        if (error) throw new Error(error.message);
-        await marcarMudanca(colecao);
-        return json({ ok: true, apagados: count ?? 0 });
+        if (!validarColecao(colecao)) return json({ erro: "Coleção inválida." }, 400);
+        const resultado = await rpc("rh_aplicar_retrato", { p_dados: { [colecao]: [] }, p_rev: versao(body.rev), p_substituir: true, p_config: null });
+        return json(resultado);
       }
 
       // ---- resumo: contagem de registros ATIVOS por coleção (prévia do "oficial") ----
       case "resumo": {
         if (!ehAdmin) return json({ erro: "Resumo restrito ao RH." }, 403);
-        const { data, error } = await admin.from("registros").select("colecao").eq("apagado", false);
-        if (error) throw new Error(error.message);
         const contagem: Record<string, number> = {};
-        for (const r of data ?? []) contagem[r.colecao] = (contagem[r.colecao] ?? 0) + 1;
-        return json({ contagem });
+        const ids: Record<string, string[]> = {};
+        for (let inicio = 0; ; inicio += 500) {
+          const { data, error } = await admin.from("registros").select("colecao, id").eq("apagado", false).order("colecao").order("id").range(inicio, inicio + 499);
+          if (error) throw new Error("Não foi possível conferir a base.");
+          for (const r of data ?? []) { contagem[r.colecao] = (contagem[r.colecao] ?? 0) + 1; (ids[r.colecao] ??= []).push(r.id); }
+          if (!data || data.length < 500) break;
+        }
+        return json({ contagem, ids });
       }
 
-      // ---- faxina de lápides antigas (marcadores de exclusão já vistos por todos) ----
-      case "limparLapides": {
-        if (!ehAdmin) return json({ erro: "Faxina restrita ao RH." }, 403);
-        const dias = Math.max(0, Number(body.dias ?? 180) | 0);
-        const simular = !!body.simular;
-        const corte = new Date(Date.now() - dias * 86_400_000).toISOString();
-        if (simular) {
-          const { count } = await admin.from("registros").select("*", { count: "exact", head: true }).eq("apagado", true).lt("atualizado_em", corte);
-          return json({ encontradas: count ?? 0 });
-        }
-        const { error, count } = await admin.from("registros").delete({ count: "exact" }).eq("apagado", true).lt("atualizado_em", corte);
-        if (error) throw new Error(error.message);
-        return json({ removidas: count ?? 0 }); // não mexe no rev: remover lápide é invisível para os clientes
-      }
+      // Registros arquivados compõem a recuperação, não são lixo de cache.
+      case "limparLapides":
+        return json({ erro: "Os registros arquivados são preservados para recuperação. A limpeza automática foi desativada." }, 409);
 
       // ---- config global ----
       case "getCfg": {
-        const { data } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
+        const { data, error } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
+        if (error) throw new Error("Não foi possível consultar a configuração.");
         return json({ config: data ? { config: data.config } : null });
       }
       case "setCfg": {
@@ -416,14 +444,21 @@ Deno.serve(async (req) => {
       case "putPhoto": {
         const id = String(body.id ?? "");
         if (!id || !body.dataUrl) return json({ erro: "id e dataUrl obrigatórios." }, 400);
+        if (!await autorizarArquivo(id, true)) return json({ erro: "Sem permissão para enviar este arquivo." }, 403);
+        const arquivo = String(body.dataUrl);
+        if (arquivo.length > 15_000_000 || !/^data:(?:application\/(?:pdf|msword|vnd[.][a-zA-Z0-9.+-]+)|image\/(?:jpeg|png|webp));base64,[a-zA-Z0-9+/=\r\n]+$/.test(arquivo)) return json({ erro: "Use PDF, documento do Office ou imagem JPG, PNG ou WebP de até 10 MB." }, 400);
+        const base64 = arquivo.slice(arquivo.indexOf(",") + 1).replace(/\s/g, "");
+        const bytes = Math.floor(base64.length * 3 / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0);
+        if (bytes > 10 * 1024 * 1024 || base64.length % 4 !== 0 || !/^[a-zA-Z0-9+/]+={0,2}$/.test(base64)) return json({ erro: "Arquivo inválido ou maior que 10 MB." }, 400);
         const { error } = await admin.storage.from("arquivos").upload(id, new Blob([String(body.dataUrl)], { type: "text/plain" }), { upsert: true });
         if (error) throw new Error(error.message);
         return json({ ok: true });
       }
       case "getPhoto": {
         const id = String(body.id ?? "");
+        if (!await autorizarArquivo(id, false)) return json({ erro: "Sem permissão para consultar este arquivo." }, 403);
         const { data, error } = await admin.storage.from("arquivos").download(id);
-        if (error || !data) return json({ dataUrl: null });
+        if (error || !data) return json({ erro: "Não foi possível carregar o arquivo. Tente novamente." }, 502);
         return json({ dataUrl: await data.text() });
       }
 

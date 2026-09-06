@@ -11,7 +11,7 @@
  * forçar a limpeza do cache antigo. (Assets do Vite têm hash no nome, então o
  * essencial é versionar o casco/HTML.)
  * ======================================================================== */
-const CACHE = "impresilk-rh-v8";
+const CACHE = "impresilk-rh-v9";
 
 // Caminho onde o app é servido = a pasta do próprio SW ("/impresilkrh/" no
 // GitHub Pages, "/" num domínio próprio). Tudo abaixo é relativo a isto — senão
@@ -62,6 +62,7 @@ self.addEventListener("fetch", (event) => {
 
   // 2) Só cuidamos do nosso próprio domínio (deixa Supabase, fontes/CDN externos à parte).
   if (url.origin !== self.location.origin) return;
+  if (!url.pathname.startsWith(BASE)) return;
 
   // 3) Network-first: tenta a rede; em sucesso, atualiza o cache; em falha
   //    (offline), entrega do cache. Para navegação (HTML), o fallback é o casco.
@@ -79,10 +80,11 @@ self.addEventListener("fetch", (event) => {
         return resp;
       })
       .catch(async () => {
-        const cacheado = await caches.match(req);
+        const cache = await caches.open(CACHE);
+        const cacheado = await cache.match(req);
         if (cacheado) return cacheado;
         if (req.mode === "navigate") {
-          const casco = await caches.match(BASE + "index.html");
+          const casco = await cache.match(BASE + "index.html");
           if (casco) return casco;
         }
         return Response.error();

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Download, Upload, RotateCcw, AlertTriangle, ArrowRight } from "lucide-react";
-import { exportarDados, importarDados, analisarBackup, restaurarPadrao, type AnaliseBackup } from "@/lib/store";
+import { exportarDados, exportarCopiaAnterior, importarDados, analisarBackup, restaurarPadrao, type AnaliseBackup } from "@/lib/store";
+import { useSessao } from "@/lib/session";
 import { useToast } from "@/components/ui/toast";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 
@@ -8,6 +9,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 // O export/import .json é a forma de salvar, restaurar e transferir tudo.
 export function DadosControls({ compacto = false }: { compacto?: boolean }) {
   const toast = useToast();
+  const sessao = useSessao();
   const inputRef = useRef<HTMLInputElement>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   // Arquivo escolhido, esperando conferência antes de trocar a base.
@@ -61,7 +63,7 @@ export function DadosControls({ compacto = false }: { compacto?: boolean }) {
     : "btn-outline";
 
   const a = pendente?.analise;
-  const mudam = a?.linhas.filter((l) => l.diferenca !== 0) ?? [];
+  const mudam = a?.linhas.filter((l) => l.removidos || l.adicionados || l.alterados) ?? [];
 
   return (
     <>
@@ -92,6 +94,16 @@ export function DadosControls({ compacto = false }: { compacto?: boolean }) {
             <RotateCcw className="h-4 w-4" /> Restaurar padrão
           </button>
         )}
+        {!compacto && sessao?.perfil === "ADMIN_RH" && (
+          <button className="btn-ghost" onClick={async () => {
+            try {
+              const copia = await exportarCopiaAnterior();
+              if (!copia) { toast("Não há cópia anterior neste aparelho.", "info"); return; }
+              baixar(copia, `impresilk-rh-copia-anterior-${new Date().toISOString().slice(0, 10)}.json`);
+              toast("Cópia anterior baixada para conferência. Nenhum dado foi reenviado.", "info");
+            } catch (e) { toast(e instanceof Error ? e.message : "Não foi possível baixar a cópia anterior.", "erro"); }
+          }}><Download className="h-4 w-4" /> Cópia anterior deste aparelho</button>
+        )}
       </div>
 
       {/* Prévia da restauração — antes isto trocava tudo sem perguntar nada */}
@@ -106,7 +118,7 @@ export function DadosControls({ compacto = false }: { compacto?: boolean }) {
             <>
               <button className="btn-outline" onClick={() => setPendente(null)}>Cancelar</button>
               <button className="btn-danger" onClick={confirmarRestauracao}>
-                Restaurar mesmo assim
+                Restaurar arquivo
               </button>
             </>
           }
@@ -134,7 +146,7 @@ export function DadosControls({ compacto = false }: { compacto?: boolean }) {
             </div>
 
             {mudam.length === 0 ? (
-              <p className="text-sm text-slate-500">Nada muda: o arquivo tem exatamente o que já está aqui.</p>
+              <p className="text-sm text-slate-500">Não foram encontradas mudanças nos registros das coleções incluídas.</p>
             ) : (
               <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200">
                 <table className="w-full text-sm">
@@ -153,7 +165,7 @@ export function DadosControls({ compacto = false }: { compacto?: boolean }) {
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{l.agora}</td>
                         <td className="px-3 py-1.5 text-center text-slate-300"><ArrowRight className="mx-auto h-3.5 w-3.5" /></td>
                         <td className={`px-3 py-1.5 text-right font-medium tabular-nums ${l.diferenca < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                          {l.noArquivo} <span className="text-xs">({l.diferenca > 0 ? "+" : ""}{l.diferenca})</span>
+                          {l.noArquivo} · {l.alterados} alterado(s) <span className="text-xs">({l.diferenca > 0 ? "+" : ""}{l.diferenca})</span>
                         </td>
                       </tr>
                     ))}

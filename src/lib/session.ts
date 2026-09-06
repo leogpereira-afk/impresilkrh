@@ -49,26 +49,23 @@ function ler(): Sessao | null {
   if (cache !== undefined) return cache;
   let val: Sessao | null = null;
   if (temWindow) {
-    const raw = window.localStorage.getItem(SESSAO_KEY);
-    if (raw) {
-      try {
+    try {
+      const raw = window.localStorage.getItem(SESSAO_KEY);
+      if (raw) {
         const g = JSON.parse(raw) as SessaoGravada;
         // Sessão antiga (sem carimbo) ganha um carimbo agora em vez de derrubar
         // quem já estava logado no momento da atualização.
         const visto = typeof g?.visto === "number" ? g.visto : Date.now();
         const limite = g?.lembrar ? VALIDADE_LEMBRAR_MS : VALIDADE_MS;
-        if (g?.perfil && g?.colaboradorId && Date.now() - visto <= limite) {
+        if (["ADMIN_RH", "GESTOR", "COLABORADOR"].includes(g?.perfil) && typeof g?.colaboradorId === "string" && g.colaboradorId && Number.isFinite(visto) && Date.now() - visto < limite) {
           val = { perfil: g.perfil, colaboradorId: g.colaboradorId };
-          // Renova o carimbo E PRESERVA a escolha: sem repassar `lembrar`, o
-          // primeiro uso apagava a marcação e a sessão voltava para 12h.
-          gravar(val, Date.now(), !!g.lembrar);
+          // Ler/conferir não é atividade. Só inicializa o carimbo legado.
+          if (g.visto == null) gravar(val, visto, !!g.lembrar);
         } else if (g?.perfil) {
           window.localStorage.removeItem(SESSAO_KEY); // expirou
         }
-      } catch {
-        val = null;
       }
-    }
+    } catch { val = null; }
   }
   cache = val;
   return val;
@@ -94,11 +91,14 @@ export function entrar(perfil: Perfil, colaboradorId: string, lembrar = false): 
 
 /** Marca atividade: adia a expiração. Chamado a cada navegação/interação. */
 export function renovarSessao(): void {
-  const s = cache ?? ler();
+  const antes = cache;
+  cache = undefined;
+  const s = ler(); // revalida antes de renovar: um clique tardio não reabre.
   // PRESERVA o "manter conectado". Sem repassar `lembrar`, o default `false`
   // apagava a marcação no primeiro clique depois do login — 30 dias viravam 12h,
   // à revelia de quem marcou a caixa.
   if (s) gravar(s, Date.now(), lembrarGravado());
+  else if (antes) { emit(); avisarSaida(); }
 }
 
 /** Marcou "manter conectado neste aparelho"? Lê o flag persistido. */
@@ -113,12 +113,17 @@ export function lembrarGravado(): boolean {
 export function sair(): void {
   cache = null;
   if (temWindow) {
-    window.localStorage.removeItem(SESSAO_KEY);
+    try { window.localStorage.removeItem(SESSAO_KEY); } catch { /* segue deslogado em memória */ }
     // O crachá do servidor (JWT) também precisa sumir — senão o computador
     // continuava falando com a nuvem como o usuário anterior depois do "Sair".
     try { window.localStorage.removeItem(TOKEN_KEY); } catch { /* ignora */ }
   }
   emit();
+  avisarSaida();
+}
+
+function avisarSaida() {
+  if (temWindow) window.dispatchEvent(new CustomEvent("impresilk:sessao-encerrada"));
 }
 
 export function obterSessao(): Sessao | null {
@@ -139,8 +144,11 @@ if (temWindow) {
   const conferir = () => {
     const antes = cache;
     cache = undefined;
-    if (antes && !ler()) emit(); // estava logado e expirou
+    if (antes && !ler()) { emit(); avisarSaida(); } // estava logado e expirou
   };
+  window.addEventListener("storage", (e) => {
+    if (e.key === SESSAO_KEY || e.key === null) { cache = undefined; emit(); if (!ler()) avisarSaida(); }
+  });
   window.addEventListener("focus", conferir);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferir(); });
   setInterval(conferir, 5 * 60 * 1000);

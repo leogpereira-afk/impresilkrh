@@ -13,6 +13,8 @@ import type { Config } from "@/data/types";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
 import { obterSessao } from "@/lib/session";
+import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
+import { prepararCopiaAnterior } from "./copiaAnterior";
 
 // Coleções que o app pode baixar ANTES de alguém entrar. Como o Supabase exige
 // sessão para responder, na prática este pull restrito não roda deslogado
@@ -24,7 +26,6 @@ const NS = "impresilk.sync";
 const K_FILA = `${NS}.fila`;
 const K_CFG = `${NS}.cfg`;
 const MAX_TENTATIVAS = 25; // descarta a ação após N falhas permanentes
-const LOTE_PUSH = 100; // registros por chamada no envio em massa
 
 // Cabeçalho de autorização: o crachá (JWT) da sessão do Supabase Auth.
 function cabecalhoAuth(): Record<string, string> {
@@ -33,7 +34,7 @@ function cabecalhoAuth(): Record<string, string> {
 }
 
 type Tipo = "upsert" | "delete";
-interface Acao { tipo: Tipo; colecao: string; id: string; falhas?: number; conflito?: boolean; servidor?: Envelope | null }
+interface Acao { mutationId?: string; baseVersao?: number; tipo: Tipo; colecao: string; id: string; falhas?: number; conflito?: boolean; servidor?: Envelope | null }
 interface Envelope { colecao: string; registro: Reg }
 type Reg = { id: string; atualizadoEm?: string } & Record<string, unknown>;
 export type StatusSync = "off" | "ok" | "pending" | "offline" | "syncing" | "conflito" | "erro";
@@ -44,7 +45,7 @@ interface CfgSync { desligado: boolean }
 function lerCfg(): CfgSync {
   const base: CfgSync = { desligado: false };
   if (!temWindow) return base;
-  try { return { ...base, ...JSON.parse(localStorage.getItem(K_CFG) || "{}") }; } catch { return base; }
+  try { return { ...base, ...JSON.parse(lerLocal(K_CFG) || "{}") }; } catch { return base; }
 }
 // Escrita resiliente: se a cota do navegador estourar, NÃO deixa a exceção subir
 // (antes ela estourava dentro do salvar() do formulário, o toast de sucesso não
@@ -52,7 +53,7 @@ function lerCfg(): CfgSync {
 // mesmo evento que o store usa.
 function guardar(chave: string, valor: string): boolean {
   if (!temWindow) return true;
-  try { localStorage.setItem(chave, valor); return true; } catch {
+  try { localStorage.setItem(chaveLocal(chave), valor); return true; } catch {
     try { window.dispatchEvent(new CustomEvent("impresilk:armazenamento-cheio", { detail: { key: chave } })); } catch { /* ignora */ }
     return false;
   }
@@ -73,6 +74,13 @@ export function desligarSync(): void { gravarCfg({ desligado: true }); recalcSta
 
 // ------------------------------- status -------------------------------------
 let status: StatusSync = syncHabilitado() ? "pending" : "off";
+const erros = new Map<string, { leitura?: StatusSync; envio?: StatusSync }>();
+function marcarErro(tipo: "leitura" | "envio", erro?: unknown) {
+  const contexto = contextoDoUsuario();
+  const atual = erros.get(contexto) ?? {};
+  atual[tipo] = erro == null ? undefined : eRede(erro) ? "offline" : "erro";
+  erros.set(contexto, atual);
+}
 const ouvintes = new Set<() => void>();
 export function statusSync(): StatusSync { return status; }
 export function assinarSync(cb: () => void): () => void { ouvintes.add(cb); return () => ouvintes.delete(cb); }
@@ -84,12 +92,15 @@ function recalcStatus() {
   // Alteração que não subiu depois de todas as tentativas: precisa aparecer.
   if (falhasSync().length) return setStatus("erro");
   if (temWindow && !navigator.onLine) return setStatus("offline");
+  const falha = erros.get(contextoDoUsuario());
+  if (falha?.leitura || falha?.envio) return setStatus(falha.leitura ?? falha.envio!);
   setStatus(fila.length || lerMassa().length ? "pending" : "ok");
 }
 
 // -------------------------------- fila --------------------------------------
-function lerFila(): Acao[] { if (!temWindow) return []; try { return JSON.parse(localStorage.getItem(K_FILA) || "[]"); } catch { return []; } }
-function gravarFila(f: Acao[]) { guardar(K_FILA, JSON.stringify(f)); }
+function lerFila(): Acao[] { if (!temWindow) return []; try { return JSON.parse(lerLocal(K_FILA) || "[]"); } catch { return []; } }
+function gravarFila(f: Acao[]) { if (!guardar(K_FILA, JSON.stringify(f))) throw new Error("Não foi possível guardar a fila de alterações. Libere espaço neste aparelho."); }
+const novaMutacao = () => crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, "0")).join("");
 const mesma = (a: Acao, b: { colecao: string; id: string }) => a.colecao === b.colecao && a.id === b.id;
 export function pendentesSync(): number { return lerFila().filter((a) => !a.conflito).length + lerMassa().length; }
 export function conflitosSync(): Acao[] { return lerFila().filter((a) => a.conflito); }
@@ -100,8 +111,10 @@ export function conflitosSync(): Acao[] { return lerFila().filter((a) => a.confl
 // contas ficou meses sem subir). Agora a coleção que falhou entra nesta fila e é
 // retentada a cada ciclo até subir — e o status mostra a pendência.
 const K_MASSA = `${NS}.massa`;
-function lerMassa(): string[] { if (!temWindow) return []; try { return JSON.parse(localStorage.getItem(K_MASSA) || "[]"); } catch { return []; } }
-function gravarMassa(nomes: string[]) { guardar(K_MASSA, JSON.stringify([...new Set(nomes)])); }
+const K_RESTAURACOES = `${NS}.restauracoes`;
+function restauracoesPendentes(): string[] { try { return JSON.parse(lerLocal(K_RESTAURACOES) || "[]"); } catch { return []; } }
+function lerMassa(): string[] { if (!temWindow) return []; try { return JSON.parse(lerLocal(K_MASSA) || "[]"); } catch { return []; } }
+function gravarMassa(nomes: string[]) { if (!guardar(K_MASSA, JSON.stringify([...new Set(nomes)]))) throw new Error("Não foi possível guardar a importação pendente."); }
 
 // ---- caixa de falhas (o que não subiu depois de MAX_TENTATIVAS) ----
 // Antes essas ações eram descartadas em silêncio. Agora ficam aqui, visíveis na
@@ -110,11 +123,11 @@ export interface FalhaSync { tipo: Tipo; colecao: string; id: string; erro: stri
 const K_FALHAS = `${NS}.falhas`;
 export function falhasSync(): FalhaSync[] {
   if (!temWindow) return [];
-  try { return JSON.parse(localStorage.getItem(K_FALHAS) || "[]"); } catch { return []; }
+  try { return JSON.parse(lerLocal(K_FALHAS) || "[]"); } catch { return []; }
 }
 function registrarFalha(f: FalhaSync) {
   const atuais = falhasSync().filter((x) => !(x.colecao === f.colecao && x.id === f.id && x.tipo === f.tipo));
-  guardar(K_FALHAS, JSON.stringify([f, ...atuais].slice(0, 200)));
+  if (!guardar(K_FALHAS, JSON.stringify([f, ...atuais]))) throw new Error("Não foi possível preservar a alteração que falhou.");
   ouvintes.forEach((cb) => cb());
 }
 /** Recoloca as ações que falharam de volta na fila (botão "tentar de novo"). */
@@ -122,7 +135,7 @@ export function retentarFalhas(): number {
   const fs = falhasSync();
   if (!fs.length) return 0;
   const fila = lerFila();
-  for (const f of fs) if (!fila.some((a) => mesma(a, { colecao: f.colecao, id: f.id }) && a.tipo === f.tipo)) fila.push({ tipo: f.tipo, colecao: f.colecao, id: f.id });
+  for (const f of fs) if (!fila.some((a) => mesma(a, { colecao: f.colecao, id: f.id }) && a.tipo === f.tipo)) fila.push({ mutationId: novaMutacao(), tipo: f.tipo, colecao: f.colecao, id: f.id });
   gravarFila(fila);
   guardar(K_FALHAS, "[]");
   recalcStatus();
@@ -134,14 +147,14 @@ function marcarMassaPendente(nome: string) { gravarMassa([...lerMassa(), nome]);
 
 // Deduplicação: upsert do mesmo id substitui o anterior; delete descarta upserts
 // pendentes do mesmo id e não duplica deletes.
-function enfileirar(colecao: string, tipo: Tipo, id: string) {
+function enfileirar(colecao: string, tipo: Tipo, id: string, baseVersao?: number) {
   let fila = lerFila();
   if (tipo === "delete") {
     fila = fila.filter((a) => !(mesma(a, { colecao, id }) && a.tipo === "upsert"));
-    if (!fila.some((a) => mesma(a, { colecao, id }) && a.tipo === "delete")) fila.push({ tipo: "delete", colecao, id });
+    if (!fila.some((a) => mesma(a, { colecao, id }) && a.tipo === "delete")) fila.push({ mutationId: novaMutacao(), baseVersao, tipo: "delete", colecao, id });
   } else {
     fila = fila.filter((a) => !(mesma(a, { colecao, id }) && a.tipo === "upsert" && !a.conflito));
-    fila.push({ tipo: "upsert", colecao, id });
+    fila.push({ mutationId: novaMutacao(), baseVersao, tipo: "upsert", colecao, id });
   }
   gravarFila(fila);
   recalcStatus();
@@ -150,16 +163,24 @@ function enfileirar(colecao: string, tipo: Tipo, id: string) {
 
 // ------------------------------- HTTP ---------------------------------------
 class ErroHttp extends Error { constructor(public status: number, msg: string) { super(msg); } }
+class SessaoAlterada extends Error {}
 async function chamar(action: string, payload: Record<string, unknown> = {}): Promise<any> {
-  const res = await fetch(FN_SYNC, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...cabecalhoAuth() },
-    body: JSON.stringify({ action, ...payload }),
-  });
-  if (!res.ok) throw new ErroHttp(res.status, await res.text().catch(() => res.statusText));
-  return res.json();
+  const contexto = contextoDoUsuario();
+  const controle = new AbortController();
+  const timer = setTimeout(() => controle.abort(), 30_000);
+  try {
+    const res = await fetch(FN_SYNC, {
+      method: "POST", signal: controle.signal,
+      headers: { "content-type": "application/json", ...cabecalhoAuth() },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await res.json();
+    if (contexto !== contextoDoUsuario()) throw new SessaoAlterada("A sessão mudou.");
+    if (!res.ok || data?.ok === false || data?.erro || data?.error) throw new ErroHttp(res.ok ? 422 : res.status, data?.erro || data?.error || "O servidor recusou a operação.");
+    return data;
+  } finally { clearTimeout(timer); }
 }
-const eRede = (e: unknown) => !(e instanceof ErroHttp); // fetch falhou (offline/DNS) → erro de rede
+const eRede = (e: unknown) => e instanceof TypeError || (e instanceof Error && e.name === "AbortError");
 
 // --------------------------- envio (push) -----------------------------------
 let _syncing = false;
@@ -167,6 +188,7 @@ export async function trySync(): Promise<void> {
   if (!syncHabilitado() || _syncing) return;
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   _syncing = true;
+  marcarErro("envio");
   setStatus("syncing");
   try {
     for (const acao of lerFila().filter((a) => !a.conflito)) {
@@ -174,35 +196,40 @@ export async function trySync(): Promise<void> {
         if (acao.tipo === "upsert") {
           const registro = (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
           if (!registro) { gravarFila(lerFila().filter((a) => !mesma(a, acao))); continue; } // sumiu local
-          const enviadoTs = registro.atualizadoEm; // versão que estamos mandando
-          const resp = await chamar("upsert", { colecao: acao.colecao, registro });
+          const resp = await chamar("upsert", { colecao: acao.colecao, registro, baseVersao: acao.baseVersao, mutationId: acao.mutationId });
           if (resp?.conflito) {
-            gravarFila(lerFila().map((a) => (mesma(a, acao) && a.tipo === "upsert" ? { ...a, conflito: true, servidor: resp.servidor } : a)));
+            gravarFila(lerFila().map((a) => (mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a)));
             continue;
           }
-          // Sucesso → tira da fila SÓ se não houve edição durante o envio (atualizadoEm
-          // ainda bate). Se o usuário salvou de novo "em voo", a versão nova permanece
-          // na fila e sobe no próximo ciclo — nenhuma edição se perde.
-          const atual = (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
-          if (!atual || atual.atualizadoEm === enviadoTs) {
-            gravarFila(lerFila().filter((a) => !mesma(a, acao)));
+          // A confirmação pertence ao envio A. Uma edição B, mesmo no mesmo
+          // milissegundo, tem outra identificação e continua aguardando envio.
+          if (Number.isSafeInteger(resp.versao)) {
+            aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...r, _rhRev: resp.versao } : r)));
           }
+          gravarFila(lerFila().filter(a => !(mesma(a, acao) && a.mutationId === acao.mutationId)).map(a => mesma(a, acao) && Number.isSafeInteger(resp.versao) ? { ...a, baseVersao: resp.versao } : a));
+
         } else {
-          await chamar("delete", { colecao: acao.colecao, id: acao.id });
-          gravarFila(lerFila().filter((a) => !mesma(a, acao))); // delete é idempotente → remove
+          const resp = await chamar("delete", { colecao: acao.colecao, id: acao.id, baseVersao: acao.baseVersao, mutationId: acao.mutationId });
+          if (resp?.conflito) {
+            gravarFila(lerFila().map(a => mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a));
+            continue;
+          }
+          gravarFila(lerFila().filter((a) => !(mesma(a, acao) && a.mutationId === acao.mutationId))); // delete é idempotente → remove
         }
       } catch (e) {
+        if (e instanceof SessaoAlterada) return;
+        marcarErro("envio", e);
         if (eRede(e)) { setStatus("offline"); return; } // para o ciclo; retenta no próximo gatilho
         // Falha PERMANENTE (token errado, 403 de escopo, 500 do Blobs): conta a
         // tentativa. Ao bater o limite, NÃO descarta em silêncio (era assim antes,
         // e a alteração do usuário sumia sem ninguém saber): move para a caixa de
         // falhas, que fica visível e pode ser retentada à mão.
         const msg = e instanceof ErroHttp ? `HTTP ${e.status} — ${(e.message || "").slice(0, 120)}` : "Falha desconhecida";
-        const fila = lerFila().map((a) => (mesma(a, acao) && a.tipo === acao.tipo ? { ...a, falhas: (a.falhas ?? 0) + 1 } : a));
-        const estourou = fila.find((a) => mesma(a, acao) && a.tipo === acao.tipo && (a.falhas ?? 0) >= MAX_TENTATIVAS);
+        const fila = lerFila().map((a) => (mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, falhas: (a.falhas ?? 0) + 1 } : a));
+        const estourou = fila.find((a) => mesma(a, acao) && a.mutationId === acao.mutationId && (a.falhas ?? 0) >= MAX_TENTATIVAS);
         if (estourou) {
           registrarFalha({ tipo: estourou.tipo, colecao: estourou.colecao, id: estourou.id, erro: msg, em: new Date().toISOString() });
-          gravarFila(fila.filter((a) => !(mesma(a, acao) && a.tipo === acao.tipo)));
+          gravarFila(fila.filter((a) => !(mesma(a, acao) && a.mutationId === acao.mutationId)));
         } else {
           gravarFila(fila);
         }
@@ -232,19 +259,21 @@ interface RevGravada { rev: number | null; porColecao: Record<string, number> }
 function lerRev(): RevGravada {
   if (!temWindow) return { rev: null, porColecao: {} };
   try {
-    const r = JSON.parse(localStorage.getItem(K_REV) || "{}");
+    const r = JSON.parse(lerLocal(K_REV) || "{}");
     return { rev: typeof r.rev === "number" ? r.rev : null, porColecao: r.porColecao ?? {} };
   } catch { return { rev: null, porColecao: {} }; }
 }
 function gravarRev(r: RevGravada) { guardar(K_REV, JSON.stringify(r)); }
 /** Esquece o que já foi baixado — o próximo pull traz tudo de novo. */
-function zerarRev() { if (temWindow) { try { localStorage.removeItem(K_REV); } catch { /* ignora */ } } }
+function zerarRev() { if (temWindow) { try { removerLocal(K_REV); } catch { /* ignora */ } } }
 
+let puxando = false;
 export async function pull(): Promise<void> {
-  if (!syncHabilitado()) return;
+  if (!syncHabilitado() || puxando) return;
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
   const epocaInicio = epocaDados;
+  puxando = true;
   // SEM NINGUÉM LOGADO o app não baixa a base: antes bastava abrir o endereço
   // para o navegador puxar folha, CPFs e prontuários inteiros para o disco, sem
   // digitar nada. Agora, deslogado, ele traz só `usuarios` — o mínimo para
@@ -252,6 +281,10 @@ export async function pull(): Promise<void> {
   const restrito = !obterSessao();
   const conhecida = lerRev();
   try {
+    // Libera o espaço legado somente depois de guardar e conferir a cópia.
+    // Sem isso, manter o retrato antigo e o novo podia estourar a cota do navegador.
+    await prepararCopiaAnterior();
+    if (epocaInicio !== epocaDados) return;
     let revAtual: number | null = null;
     let revPorColecao: Record<string, number> | null = null;
     // Quais coleções pedir. `null` = todas (primeiro pull, ou servidor antigo
@@ -262,8 +295,8 @@ export async function pull(): Promise<void> {
         const r = (await chamar("rev")) as { rev?: number | null; porColecao?: Record<string, number> | null };
         revAtual = r?.rev ?? null;
         revPorColecao = r?.porColecao ?? null;
-      } catch { revAtual = null; }
-      if (revAtual !== null && conhecida.rev !== null && revAtual === conhecida.rev) { recalcStatus(); return; } // nada mudou
+      } catch (e) { if (e instanceof SessaoAlterada) throw e; revAtual = null; }
+      if (revAtual !== null && conhecida.rev !== null && revAtual === conhecida.rev) { marcarErro("leitura"); recalcStatus(); return; }
       // Baixa SÓ as coleções cujo contador mudou. Antes qualquer alteração —
       // até um log de acesso — obrigava a rebaixar a base inteira.
       if (revPorColecao && conhecida.rev !== null) {
@@ -271,6 +304,7 @@ export async function pull(): Promise<void> {
         if (pedir.length === 0) {
           // Nada de dados mudou (só o contador geral): apenas anota e sai.
           gravarRev({ rev: revAtual, porColecao: { ...conhecida.porColecao, ...revPorColecao } });
+          marcarErro("leitura");
           recalcStatus();
           return;
         }
@@ -283,9 +317,14 @@ export async function pull(): Promise<void> {
     let after: string | null = null;
     let offset = 0;
     let usaKeyset = true;
-    for (let pag = 0; pag < 500; pag++) {
+    const paginasVistas = new Set<string>();
+    for (;;) {
+      const cursor = usaKeyset ? String(after) : String(offset);
+      if (paginasVistas.has(cursor)) throw new Error("A paginação repetiu uma página. Os dados anteriores foram preservados.");
+      paginasVistas.add(cursor);
       const resp = await chamar("list", { ...(usaKeyset ? { after } : { offset }), ...(pedir ? { colecoes: pedir } : {}) });
-      for (const env of (resp.registros ?? []) as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
+      if (!Array.isArray(resp.registros)) throw new Error("Resposta incompleta. Os dados anteriores foram preservados.");
+      for (const env of resp.registros as Envelope[]) if (env?.registro?.id) remoto.set(`${env.colecao}::${env.registro.id}`, env);
       if ("nextAfter" in resp) {
         if (resp.nextAfter == null) break; // keyset terminou
         after = String(resp.nextAfter);
@@ -302,32 +341,20 @@ export async function pull(): Promise<void> {
     for (const { colecao, registro } of remoto.values()) { const arr = porColecao.get(colecao) ?? []; arr.push(registro); porColecao.set(colecao, arr); }
 
     aplicarSemSync(() => {
-      for (const nome of NOMES_COLECOES) {
-        const remotos = porColecao.get(nome);
-        if (!remotos || remotos.length === 0) continue; // coleção vazia no servidor → preserva o local (segurança)
-        const locais = obter(nome) as unknown as Reg[];
-        const remMap = new Map(remotos.map((r) => [r.id, r]));
-        const merged: Reg[] = [];
-        for (const loc of locais) {
-          const rem = remMap.get(loc.id);
-          if (rem) {
-            const remNovo = !!rem.atualizadoEm && (!loc.atualizadoEm || rem.atualizadoEm > loc.atualizadoEm);
-            if (remNovo) {
-              // Servidor mais novo vence. Se for LÁPIDE (exclusão remota), o registro
-              // some local — é o que impede o dado de "ressuscitar" no próximo pull.
-              if (!rem._apagado) merged.push(rem);
-            } else {
-              merged.push(loc); // local mais novo vence (até uma edição posterior à exclusão)
-            }
-            remMap.delete(loc.id);
-          } else {
-            merged.push(loc); // sem par na nuvem → PRESERVA o local (pull nunca apaga às cegas)
-            // (registro ausente ≠ apagado: ausência pode ser nuvem incompleta. Só uma
-            //  lápide explícita remove — ver acima.)
-          }
+      const fila = [...lerFila(), ...falhasSync()];
+      const importacoes = new Set(lerMassa());
+      for (const nome of pedir ?? NOMES_COLECOES) {
+        if (importacoes.has(nome)) continue;
+        const remotos = porColecao.get(nome) ?? [];
+        const atuais = new Map((obterDinamico(nome) as Reg[]).map(r => [r.id, r]));
+        const porId = new Map(remotos.filter(r => !r._apagado).map(r => [r.id, r]));
+        // O retrato completo substitui o cache, incluindo campos removidos por
+        // permissão. Apenas alterações explicitamente pendentes ficam por cima.
+        for (const acao of fila.filter(a => a.colecao === nome)) {
+          if (acao.tipo === "delete") porId.delete(acao.id);
+          else if (atuais.has(acao.id)) porId.set(acao.id, atuais.get(acao.id)!);
         }
-        for (const rem of remMap.values()) if (!rem._apagado) merged.push(rem); // novos do servidor (ignora lápides)
-        definirColecaoDinamica(nome, merged as RegistroGenerico[]);
+        definirColecaoDinamica(nome, [...porId.values()] as RegistroGenerico[]);
       }
     });
     // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
@@ -338,28 +365,34 @@ export async function pull(): Promise<void> {
       for (const n of pedir ?? NOMES_COLECOES) if (revPorColecao?.[n] != null) marcos[n] = revPorColecao[n];
       gravarRev({ rev: revAtual, porColecao: marcos });
     }
+    marcarErro("leitura");
     recalcStatus();
   } catch (e) {
     // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga
     // a exceção — apenas reflete no status. Erro de rede → offline; HTTP → erro.
-    setStatus(eRede(e) ? "offline" : "erro");
-  }
+    if (!(e instanceof SessaoAlterada)) { marcarErro("leitura", e); recalcStatus(); }
+  } finally { puxando = false; }
 }
 
 // ---- prévia do "tornar este computador oficial" ----
 // Sobrescrever a nuvem com o conteúdo daqui é a ação mais destrutiva do app: se
 // este computador estiver com a base pela metade, o que falta some da nuvem para
 // todo mundo. Antes só havia um aviso de texto. Aqui a gente compara de verdade.
+let revisaoConferida: number | null = null;
 export interface LinhaOficial { colecao: string; aqui: number; naNuvem: number; some: number }
 export async function previaEnviarTudo(): Promise<{ linhas: LinhaOficial[]; someTotal: number }> {
   if (!syncHabilitado()) throw new Error("Configure a sincronização primeiro.");
-  const resp = (await chamar("resumo")) as { contagem?: Record<string, number> };
+  const antes = await chamar("rev");
+  const resp = (await chamar("resumo")) as { contagem?: Record<string, number>; ids?: Record<string, string[]> };
+  const depois = await chamar("rev");
+  if (antes.rev !== depois.rev) throw new Error("A base mudou durante a conferência. Compare novamente.");
+  revisaoConferida = depois.rev ?? 0;
   const contagem = resp?.contagem ?? {};
   const linhas: LinhaOficial[] = [];
   for (const nome of NOMES_COLECOES) {
     const aqui = (obter(nome) as unknown as Reg[]).filter((r) => r?.id).length;
     const naNuvem = contagem[nome] ?? 0;
-    if (aqui || naNuvem) linhas.push({ colecao: nome, aqui, naNuvem, some: Math.max(0, naNuvem - aqui) });
+    if (aqui || naNuvem) linhas.push({ colecao: nome, aqui, naNuvem, some: (resp.ids?.[nome] ?? []).filter(id => !(obter(nome) as unknown as Reg[]).some(r => r.id === id)).length });
   }
   return { linhas: linhas.sort((a, b) => b.some - a.some), someTotal: linhas.reduce((s, l) => s + l.some, 0) };
 }
@@ -380,58 +413,51 @@ export async function limparLapides(dias = 180, simular = false): Promise<number
 // mais aqui) NÃO sobrevivem. É o que impede dados velhos de voltarem ao sincronizar.
 // Use só no computador oficial, com os dados mais completos.
 export async function enviarTudo(): Promise<void> {
-  if (!syncHabilitado()) throw new Error("Configure a sincronização primeiro.");
-  epocaDados++; // invalida pulls em voo (não deixa o que vamos regravar se misturar)
-  setStatus("syncing");
+  if (!syncHabilitado() || revisaoConferida === null) throw new Error("Compare com a nuvem antes de restaurar.");
+  const dados = Object.fromEntries(NOMES_COLECOES.map(nome => [nome, obter(nome)]));
+  const filaInicial = new Set(lerFila().map(a => a.mutationId));
+  epocaDados++; setStatus("syncing");
   try {
-    const agora = new Date().toISOString();
-    const porColecao = new Map<string, Envelope[]>();
-    aplicarSemSync(() => {
-      for (const nome of NOMES_COLECOES) {
-        const carimbados = (obter(nome) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
-        definirColecaoDinamica(nome, carimbados as RegistroGenerico[]); // grava o carimbo local também
-        porColecao.set(nome, carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r })));
-      }
-    });
-    for (const nome of NOMES_COLECOES) {
-      await chamar("limparColecao", { colecao: nome }); // zera a coleção na nuvem
-      const lote = porColecao.get(nome) ?? [];
-      for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
-    }
-    await chamar("setCfg", { config: obterConfig() });
-    gravarFila([]); // tudo já está no servidor
-  } finally {
-    recalcStatus();
-  }
+    await chamar("aplicarRetrato", { dados, rev: revisaoConferida, substituir: true, config: obterConfig() });
+    revisaoConferida = null;
+    gravarFila(lerFila().filter(a => !filaInicial.has(a.mutationId)));
+    gravarMassa([]); guardar(K_MASSA_REV, "{}");
+    zerarRev(); await pull();
+  } finally { recalcStatus(); }
 }
 
-// Envia (bulkUpsert) TODOS os registros de UMA coleção para a nuvem. Usado após
-// importações em massa (que gravam com definirColecao e por isso NÃO passam pelo
-// gancho de mutação) — assim o dado sobe na hora, sem depender de "Enviar tudo".
-// Carimba atualizadoEm onde faltar e nunca quebra o fluxo da tela. Se falhar
-// (sem rede, servidor fora), a coleção entra na fila de massa e é retentada a
-// cada ciclo — nada de falha silenciosa. Retorna true quando subiu.
+// Importação atômica, com revisão preservada entre tentativas e cópia no servidor.
+const K_MASSA_REV = "impresilk.sync.massa-revisao";
+let enviandoMassa = false;
+function basesMassa(): Record<string, number> { try { return JSON.parse(lerLocal(K_MASSA_REV) || "{}"); } catch { return {}; } }
 export async function enviarColecao(nome: string): Promise<boolean> {
-  if (!syncHabilitado()) return false;
-  if (temWindow && !navigator.onLine) { marcarMassaPendente(nome); recalcStatus(); return false; }
+  marcarMassaPendente(nome);
+  if (!syncHabilitado() || !navigator.onLine || enviandoMassa) { recalcStatus(); return false; }
+  enviandoMassa = true;
   setStatus("syncing");
   try {
-    const agora = new Date().toISOString();
-    let lote: Envelope[] = [];
-    aplicarSemSync(() => {
-      const carimbados = (obterDinamico(nome) as unknown as Reg[]).map((r) => (r.atualizadoEm ? r : { ...r, atualizadoEm: agora }));
-      definirColecaoDinamica(nome, carimbados as RegistroGenerico[]);
-      lote = carimbados.filter((r) => r.id).map((r) => ({ colecao: nome, registro: r }));
-    });
-    for (let i = 0; i < lote.length; i += LOTE_PUSH) await chamar("bulkUpsert", { registros: lote.slice(i, i + LOTE_PUSH) });
-    gravarMassa(lerMassa().filter((n) => n !== nome)); // subiu: sai da fila de retentativa
+    const bases = basesMassa();
+    const rev = bases[nome] ?? lerRev().rev;
+    if (rev == null) throw new Error("Atualize e confira a base antes de importar.");
+    if (!guardar(K_MASSA_REV, JSON.stringify({ ...bases, [nome]: rev }))) throw new Error("Não foi possível preservar a importação pendente.");
+    const dados = { [nome]: obterDinamico(nome) };
+    const antes = JSON.stringify(dados[nome]);
+    const filaInicial = new Set(lerFila().filter(a => a.colecao === nome).map(a => a.mutationId));
+    const r = await chamar("aplicarRetrato", { dados, rev, substituir: restauracoesPendentes().includes(nome) });
+    const seguintes = basesMassa(); delete seguintes[nome];
+    for (const n of lerMassa()) if (n !== nome && (seguintes[n] ?? rev) === rev) seguintes[n] = r.rev;
+    guardar(K_MASSA_REV, JSON.stringify(seguintes));
+    gravarFila(lerFila().filter(a => !filaInicial.has(a.mutationId)));
+    if (JSON.stringify(obterDinamico(nome)) === antes) {
+      gravarMassa(lerMassa().filter(n => n !== nome));
+      guardar(K_RESTAURACOES, JSON.stringify(restauracoesPendentes().filter(n => n !== nome)));
+    }
+    zerarRev();
     return true;
-  } catch {
-    marcarMassaPendente(nome); // fica na fila e retenta no próximo ciclo (status mostra pendência)
+  } catch (e) {
+    if (!(e instanceof SessaoAlterada)) marcarErro("envio", e);
     return false;
-  } finally {
-    recalcStatus();
-  }
+  } finally { enviandoMassa = false; recalcStatus(); }
 }
 
 // Enfileira EXCLUSÕES (lápides) de registros específicos. Serve para as
@@ -465,29 +491,36 @@ export async function buscarArquivoNuvem(id: string): Promise<string | null> {
 // sem tocar no resto (cadastro etc.). Também limpa a fila pendente dessas coleções
 // para não re-subir nada. Sem isso, dados antigos na nuvem voltavam ao importar.
 export async function apagarColecoes(nomes: string[]): Promise<{ nome: string; apagadosNuvem: number; erroNuvem: boolean }[]> {
-  const resultado: { nome: string; apagadosNuvem: number; erroNuvem: boolean }[] = [];
-  epocaDados++; // invalida qualquer pull em voo (não deixa o apagado voltar)
-  zerarRev(); // o retrato que o app tinha ficou obsoleto: próximo pull vem completo
+  if (!syncHabilitado() || !navigator.onLine) throw new Error("Conecte o RH à nuvem antes de limpar os lançamentos.");
+  const escolhidas = [...new Set(nomes)];
+  if (!escolhidas.length || escolhidas.some(nome => !(NOMES_COLECOES as readonly string[]).includes(nome))) throw new Error("Selecione coleções válidas para arquivar.");
+  epocaDados++;
   setStatus("syncing");
   try {
-    for (const nome of nomes) {
-      // 1) zera local (sem disparar push)
-      aplicarSemSync(() => definirColecaoDinamica(nome, [] as RegistroGenerico[]));
-      // 2) descarta pendências locais dessa coleção
-      gravarFila(lerFila().filter((a) => a.colecao !== nome));
-      // 3) zera na nuvem (apaga todos os blobs da coleção de uma vez)
-      let apagados = 0;
-      let erroNuvem = false;
-      if (syncConfigurado()) {
-        try { const r = await chamar("limparColecao", { colecao: nome }); apagados = Number(r?.apagados ?? 0); }
-        catch { erroNuvem = true; } // nuvem não respondeu: local zerado, mas avisamos o usuário
-      }
-      resultado.push({ nome, apagadosNuvem: apagados, erroNuvem });
+    let contagem: Record<string, number>;
+    try {
+      const revisao = await chamar("rev");
+      const resumo = await chamar("resumo");
+      if (!resumo.contagem || typeof resumo.contagem !== "object" || escolhidas.some(nome => !Number.isSafeInteger(resumo.contagem[nome] ?? 0) || (resumo.contagem[nome] ?? 0) < 0)) throw new Error("Não foi possível conferir os lançamentos.");
+      contagem = resumo.contagem;
+      // Uma única transação: folha e plano não podem ficar pela metade.
+      await chamar("aplicarRetrato", { dados: Object.fromEntries(escolhidas.map(nome => [nome, []])), rev: revisao.rev ?? 0, substituir: true });
+    } catch (e) {
+      if (e instanceof SessaoAlterada) throw e;
+      marcarErro("envio", e);
+      return escolhidas.map(nome => ({ nome, apagadosNuvem: 0, erroNuvem: true }));
     }
-  } finally {
-    recalcStatus();
-  }
-  return resultado;
+    zerarRev();
+    try {
+      for (const nome of escolhidas) aplicarSemSync(() => definirColecaoDinamica(nome, [] as RegistroGenerico[]));
+      gravarFila(lerFila().filter(a => !escolhidas.includes(a.colecao)));
+      gravarMassa(lerMassa().filter(nome => !escolhidas.includes(nome)));
+    } catch {
+      throw new Error("A nuvem confirmou o arquivamento, mas este aparelho não terminou de atualizar. Não importe ainda; libere espaço e sincronize novamente.");
+    }
+    marcarErro("envio");
+    return escolhidas.map(nome => ({ nome, apagadosNuvem: contagem[nome] ?? 0, erroNuvem: false }));
+  } finally { recalcStatus(); }
 }
 
 // --------------------------- conflitos --------------------------------------
@@ -509,10 +542,19 @@ export function aceitarServidor(colecao: string, id: string) {
   recalcStatus();
 }
 export function sobrescreverServidor(colecao: string, id: string) {
-  aplicarSemSync(() => {
-    definirColecaoDinamica(colecao, (obterDinamico(colecao) as unknown as Reg[]).map((r) => (r.id === id ? { ...r, atualizadoEm: new Date().toISOString() } : r)) as RegistroGenerico[]);
-  });
-  gravarFila(lerFila().map((a) => (mesma(a, { colecao, id }) ? { tipo: "upsert" as Tipo, colecao, id } : a)));
+  const fila = lerFila();
+  const conflito = fila.find(a => mesma(a, { colecao, id }) && a.conflito);
+  if (!conflito) return;
+  const ultima = fila.filter(a => mesma(a, { colecao, id })).slice(-1)[0]!;
+  if (conflito.servidor?.registro._apagado && ultima.tipo !== "delete") throw new Error("Este registro foi arquivado na nuvem. Confira uma restauração antes de recuperá-lo.");
+  const baseVersao = conflito.servidor?.registro._rhRev ?? 0;
+  if (!Number.isSafeInteger(baseVersao) || Number(baseVersao) < 0) throw new Error("Atualize o conflito antes de escolher a versão local.");
+  // Resolver o conflito é uma nova decisão sobre a versão que acabou de chegar.
+  // Mantém inclusive uma exclusão pendente; nunca transforma delete em upsert.
+  gravarFila([...fila.filter(a => !mesma(a, { colecao, id })), {
+    tipo: ultima.tipo, colecao, id, mutationId: novaMutacao(), baseVersao: Number(baseVersao),
+  }]);
+  recalcStatus();
   void trySync();
 }
 
@@ -525,7 +567,14 @@ export async function testarConexao(): Promise<boolean> {
     return res.ok;
   } catch { return false; }
 }
-export async function sincronizarAgora(): Promise<void> { await trySync(); await pull(); }
+export async function sincronizarAgora(): Promise<void> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  const contexto = contextoDoUsuario();
+  await trySync();
+  if (contexto !== contextoDoUsuario()) throw new SessaoAlterada("A sessão mudou.");
+  await pull();
+  if (contexto !== contextoDoUsuario() || statusSync() !== "ok") throw new Error("A sincronização ainda não foi concluída. Confira as pendências e tente novamente.");
+}
 
 // --------------------- config global (nome/cores da empresa) -----------------
 // Antes a config só subia no "Enviar tudo" e NUNCA descia — cada computador
@@ -535,7 +584,8 @@ let cfgTimer: ReturnType<typeof setTimeout> | null = null;
 export function enviarConfigNuvem(): void {
   if (!syncHabilitado()) return;
   if (cfgTimer) clearTimeout(cfgTimer);
-  cfgTimer = setTimeout(() => { void chamar("setCfg", { config: obterConfig() }).catch(() => { /* retenta no próximo salvar */ }); }, 1500);
+  const contexto = contextoDoUsuario();
+  cfgTimer = setTimeout(() => { if (contexto !== contextoDoUsuario()) return; void chamar("setCfg", { config: obterConfig() }).catch(() => { /* retenta no próximo salvar */ }); }, 1500);
 }
 async function puxarConfig(): Promise<void> {
   if (!syncHabilitado()) return;
@@ -586,15 +636,23 @@ export async function diagnosticar(): Promise<PassoDiag[]> {
 //    olha a tela, ela já está atualizada, sem ficar consultando o servidor à toa.
 //  • Um poll leve roda só ENQUANTO a aba está visível (economiza chamadas à
 //    Edge Function; nada de requisições com a aba em segundo plano).
-registrarMutacao((colecao, tipo, id) => { if (syncHabilitado()) enfileirar(colecao, tipo, id); });
+registrarMutacao((colecao, tipo, id, versao) => { if (obterSessao()) enfileirar(colecao, tipo, id, versao); });
 // Restaurar um backup (importarDados) grava direto no store, sem passar pelo gancho
 // de mutação — então empurramos cada coleção importada para a nuvem aqui.
-registrarPosImport((colecoes) => { if (syncHabilitado()) for (const nome of colecoes) void enviarColecao(nome); });
+registrarPosImport((colecoes) => {
+  if (!obterSessao()) return;
+  if (!guardar(K_RESTAURACOES, JSON.stringify([...new Set([...restauracoesPendentes(), ...colecoes])]))) throw new Error("Não foi possível guardar a restauração pendente.");
+  const bases = basesMassa(), rev = lerRev().rev;
+  if (rev != null) for (const nome of colecoes) if (bases[nome] == null) bases[nome] = rev;
+  if (!guardar(K_MASSA_REV, JSON.stringify(bases))) throw new Error("Não foi possível guardar a conferência da restauração.");
+  for (const nome of colecoes) marcarMassaPendente(nome);
+  void (async () => { for (const nome of colecoes) await enviarColecao(nome); })();
+});
 if (temWindow) {
   const ativo = () => syncHabilitado() && navigator.onLine;
   const ciclo = () => {
     if (!ativo()) return;
-    for (const nome of lerMassa()) void enviarColecao(nome); // retenta importações que falharam
+    void (async () => { for (const nome of lerMassa()) await enviarColecao(nome); })();
     void trySync();
     void pull();
   };
@@ -604,7 +662,8 @@ if (temWindow) {
   window.addEventListener("offline", () => recalcStatus());
   // Logou → baixa a base completa. Zera a revisão memorizada, senão o pull
   // restrito de antes do login faria o app achar que já está em dia.
-  window.addEventListener("impresilk:autenticado", () => { zerarRev(); recalcStatus(); ciclo(); });
+  window.addEventListener("impresilk:autenticado", () => { epocaDados++; zerarRev(); recalcStatus(); ciclo(); void puxarConfig(); });
+  window.addEventListener("impresilk:sessao-encerrada", () => { epocaDados++; if (cfgTimer) clearTimeout(cfgTimer); recalcStatus(); });
   window.addEventListener("focus", () => { if (ativo()) void pull(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ciclo(); });
   // Poll leve só com a aba visível (≈ a cada 20s) — sensação de tempo real sem gastar créditos à toa.

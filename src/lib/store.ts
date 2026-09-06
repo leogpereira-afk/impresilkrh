@@ -13,6 +13,10 @@ import {
   defaultsColecoes,
 } from "@/data";
 import type { Config } from "@/data/types";
+import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
+import { obterSessao } from "./session";
+import { lerCopiaAnterior } from "./copiaAnterior";
+import { exportarBlobsAnteriores } from "./blobstore";
 
 const NS = "impresilk.rh.v1";
 const keyCol = (nome: string) => `${NS}:col:${nome}`;
@@ -24,6 +28,12 @@ const temWindow = typeof window !== "undefined";
 const cache = new Map<string, unknown[]>();
 let configCache: Config | null = null;
 const listeners = new Map<string, Set<() => void>>();
+let contextoCache: string | undefined;
+function conferirContexto() {
+  const atual = contextoDoUsuario();
+  if (atual !== contextoCache) { cache.clear(); configCache = null; contextoCache = atual; return true; }
+  return false;
+}
 
 // Defaults memoizados (uma cópia). As mutações são sempre imutáveis (novos arrays),
 // então é seguro entregar a referência sem clonar a cada leitura.
@@ -51,13 +61,15 @@ function emitTudo() {
 
 // Leitura pura (sem efeitos): usada pelo getSnapshot do useSyncExternalStore.
 function ler<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
+  conferirContexto();
   if (cache.has(nome)) return cache.get(nome) as ColecaoMap[K][];
   let val: unknown[] | null = null;
   if (temWindow) {
-    const raw = window.localStorage.getItem(keyCol(nome));
+    const raw = lerLocal(keyCol(nome));
     if (raw) {
       try {
-        val = JSON.parse(raw);
+        const dados = JSON.parse(raw);
+        val = Array.isArray(dados) ? dados : null;
       } catch {
         val = null;
       }
@@ -75,7 +87,7 @@ function ler<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
 function escrever(key: string, valor: string): boolean {
   if (!temWindow) return true;
   try {
-    window.localStorage.setItem(key, valor);
+    window.localStorage.setItem(chaveLocal(key), valor);
     return true;
   } catch {
     try {
@@ -88,9 +100,18 @@ function escrever(key: string, valor: string): boolean {
 }
 
 function gravar<K extends NomeColecao>(nome: K, val: ColecaoMap[K][]) {
+  conferirContexto();
+  if (!escrever(keyCol(nome), JSON.stringify(val))) throw new Error("Não foi possível guardar a alteração neste aparelho. Libere espaço antes de tentar novamente.");
   cache.set(nome, val);
-  escrever(keyCol(nome), JSON.stringify(val));
   emit(nome);
+}
+
+function gravarEdicao<K extends NomeColecao>(nome: K, val: ColecaoMap[K][], tipo: "upsert" | "delete", id: string) {
+  const anterior = ler(nome);
+  gravar(nome, val);
+  const registroAnterior = anterior.find(r => (r as { id: string }).id === id) as { _rhRev?: number } | undefined;
+  try { notificar(nome, tipo, id, registroAnterior ? registroAnterior._rhRev : 0); }
+  catch (e) { gravar(nome, anterior); throw e; }
 }
 
 function uid(prefixo = "id"): string {
@@ -105,7 +126,7 @@ const agora = () => new Date().toISOString();
 // funciona 100% local, como antes. `aplicarSemSync` roda um bloco sem disparar
 // o gancho — usado pelo próprio sync ao aplicar dados vindos do servidor, para
 // não criar um eco (servidor → local → fila → servidor).
-type MutacaoCb = (colecao: NomeColecao, tipo: "upsert" | "delete", id: string) => void;
+type MutacaoCb = (colecao: NomeColecao, tipo: "upsert" | "delete", id: string, versao?: number) => void;
 let mutacaoCb: MutacaoCb | null = null;
 let suprimirSync = false;
 export function registrarMutacao(fn: MutacaoCb): void {
@@ -130,8 +151,8 @@ export function aplicarSemSync<T>(fn: () => T): T {
     suprimirSync = antes;
   }
 }
-function notificar(nome: NomeColecao, tipo: "upsert" | "delete", id: string) {
-  if (!suprimirSync && mutacaoCb) mutacaoCb(nome, tipo, id);
+function notificar(nome: NomeColecao, tipo: "upsert" | "delete", id: string, versao?: number) {
+  if (!suprimirSync && mutacaoCb) mutacaoCb(nome, tipo, id, versao);
 }
 
 // ---- API imperativa por coleção ----
@@ -181,8 +202,7 @@ export function criarEm<K extends NomeColecao>(
   item: Partial<ColecaoMap[K]>,
 ): ColecaoMap[K] {
   const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
-  gravar(nome, [novo, ...ler(nome)]);
-  notificar(nome, "upsert", (novo as { id: string }).id);
+  gravarEdicao(nome, [novo, ...ler(nome)], "upsert", (novo as { id: string }).id);
   avisarAuditor({ colecao: nome, acao: "criou", id: (novo as { id: string }).id, depois: novo as unknown as Record<string, unknown> });
   return novo;
 }
@@ -200,13 +220,13 @@ export function criarOuAtualizarEm<K extends NomeColecao>(
   const atuais = ler(nome);
   const anterior = atuais.find((it) => (it as { id: string }).id === id);
   const jaExiste = !!anterior;
-  gravar(
+  gravarEdicao(
     nome,
     jaExiste
       ? atuais.map((it) => ((it as { id: string }).id === id ? { ...it, ...novo } : it))
       : [novo, ...atuais],
+    "upsert", id,
   );
-  notificar(nome, "upsert", id);
   avisarAuditor({
     colecao: nome,
     acao: jaExiste ? "alterou" : "criou",
@@ -225,11 +245,11 @@ export function atualizarEm<K extends NomeColecao>(
   const carimbo = agora();
   const atuais = ler(nome);
   const anterior = atuais.find((it) => (it as { id: string }).id === id);
-  gravar(
+  gravarEdicao(
     nome,
     atuais.map((it) => ((it as { id: string }).id === id ? { ...it, ...patch, atualizadoEm: carimbo } : it)),
+    "upsert", id,
   );
-  notificar(nome, "upsert", id);
   if (anterior) {
     avisarAuditor({
       colecao: nome,
@@ -243,8 +263,7 @@ export function atualizarEm<K extends NomeColecao>(
 
 export function removerEm<K extends NomeColecao>(nome: K, id: string): void {
   const anterior = ler(nome).find((it) => (it as { id: string }).id === id);
-  gravar(nome, ler(nome).filter((it) => (it as { id: string }).id !== id));
-  notificar(nome, "delete", id);
+  gravarEdicao(nome, ler(nome).filter((it) => (it as { id: string }).id !== id), "delete", id);
   if (anterior) avisarAuditor({ colecao: nome, acao: "removeu", id, antes: anterior as unknown as Record<string, unknown> });
 }
 
@@ -305,10 +324,11 @@ export function useColecao<K extends NomeColecao>(nome: K) {
 
 // ---- Config (singleton) ----
 export function obterConfig(): Config {
+  conferirContexto();
   if (configCache) return configCache;
   let val: Config = { ...CONFIG_DEFAULT };
   if (temWindow) {
-    const raw = window.localStorage.getItem(CONFIG_KEY);
+    const raw = lerLocal(CONFIG_KEY);
     if (raw) {
       try {
         val = { ...CONFIG_DEFAULT, ...JSON.parse(raw) };
@@ -323,8 +343,8 @@ export function obterConfig(): Config {
 
 export function salvarConfig(patch: Partial<Config>): void {
   const novo = { ...obterConfig(), ...patch };
+  if (!escrever(CONFIG_KEY, JSON.stringify(novo))) throw new Error("A configuração não foi salva. Libere espaço neste aparelho.");
   configCache = novo;
-  escrever(CONFIG_KEY, JSON.stringify(novo));
   emit("__config__");
 }
 
@@ -359,7 +379,7 @@ export function exportarDados(): string {
 // Escolher o arquivo errado (backup velho, de outro sistema, ou pela metade)
 // apagava a base inteira — e o resultado ainda subia para a nuvem. Agora dá
 // para ver o que vai entrar, o que vai sair, e o que parece errado.
-export interface LinhaBackup { colecao: NomeColecao; agora: number; noArquivo: number; diferenca: number }
+export interface LinhaBackup { colecao: NomeColecao; agora: number; noArquivo: number; diferenca: number; removidos: number; adicionados: number; alterados: number }
 export interface AnaliseBackup {
   linhas: LinhaBackup[];
   exportadoEm: string | null;
@@ -382,9 +402,9 @@ export function analisarBackup(json: string): AnaliseBackup {
   }
 
   const alertas: string[] = [];
-  if (parsed.app && parsed.app !== "impresilk-rh") {
-    alertas.push(`Este backup é do sistema "${parsed.app}", não do RH. Restaurar vai misturar dados de sistemas diferentes.`);
-  }
+  if (parsed.app && parsed.app !== "impresilk-rh") throw new Error("Este arquivo pertence a outro sistema. Use um backup do RH.");
+  if (Array.isArray(parsed.dados)) throw new Error("Estrutura de dados inválida.");
+  if (parsed.versao != null && String(parsed.versao) !== String(VERSAO_DADOS)) alertas.push("A versão do arquivo é diferente da versão atual. Confira os campos antes de restaurar.");
   if (parsed.exportadoEm) {
     const dias = Math.round((Date.now() - new Date(parsed.exportadoEm).getTime()) / 86_400_000);
     if (dias > 30) alertas.push(`O backup tem ${dias} dias. Tudo que foi feito depois dessa data será perdido.`);
@@ -398,18 +418,27 @@ export function analisarBackup(json: string): AnaliseBackup {
     const v = parsed.dados[nome];
     const agora = (ler(nome) as unknown[]).length;
     if (!Array.isArray(v)) {
+      if (v !== undefined) throw new Error(`A coleção ${nome} não é uma lista válida.`);
       if (agora > 0) ausentes++;
       continue; // coleção que o arquivo não traz fica intacta (importarDados a ignora)
     }
     const noArquivo = v.length;
-    if (agora || noArquivo) linhas.push({ colecao: nome, agora, noArquivo, diferenca: noArquivo - agora });
+    const registros = v as { id?: unknown }[];
+    if (registros.some(r => !r || typeof r !== "object" || Array.isArray(r) || typeof r.id !== "string" || !r.id)) throw new Error(`Há registros inválidos em ${nome}.`);
+    if (new Set(registros.map(r => r.id)).size !== registros.length) throw new Error(`Há identificações duplicadas em ${nome}.`);
+    const atuais = new Map((ler(nome) as unknown as { id: string }[]).map(r => [r.id, r]));
+    const novos = new Map((v as { id: string }[]).map(r => [r.id, r]));
+    const removidos = [...atuais.keys()].filter(id => !novos.has(id)).length;
+    const adicionados = [...novos.keys()].filter(id => !atuais.has(id)).length;
+    const alterados = [...novos].filter(([id, r]) => atuais.has(id) && JSON.stringify(atuais.get(id)) !== JSON.stringify(r)).length;
+    if (agora || noArquivo) linhas.push({ colecao: nome, agora, noArquivo, diferenca: noArquivo - agora, removidos, adicionados, alterados });
   }
   if (ausentes > 0) {
     alertas.push(`${ausentes} coleção(ões) que existem aqui não vêm no arquivo — elas ficam como estão, sem serem tocadas.`);
   }
 
-  const perdaTotal = linhas.reduce((s, l) => s + Math.max(0, -l.diferenca), 0);
-  const ganhoTotal = linhas.reduce((s, l) => s + Math.max(0, l.diferenca), 0);
+  const perdaTotal = linhas.reduce((s, l) => s + l.removidos, 0);
+  const ganhoTotal = linhas.reduce((s, l) => s + l.adicionados, 0);
   const zerando = linhas.filter((l) => l.agora > 0 && l.noArquivo === 0);
   if (zerando.length) {
     alertas.push(`${zerando.length} coleção(ões) ficariam VAZIAS: ${zerando.slice(0, 4).map((l) => l.colecao).join(", ")}${zerando.length > 4 ? "…" : ""}.`);
@@ -419,36 +448,71 @@ export function analisarBackup(json: string): AnaliseBackup {
 }
 
 export function importarDados(json: string): void {
-  const parsed = JSON.parse(json) as { dados?: Record<string, unknown[]>; config?: Partial<Config> };
-  if (!parsed || typeof parsed !== "object" || !parsed.dados) {
-    throw new Error("Arquivo inválido: estrutura de dados não reconhecida.");
-  }
-  const importadas: NomeColecao[] = [];
-  for (const nome of NOMES_COLECOES) {
-    const v = parsed.dados[nome];
-    if (Array.isArray(v)) {
-      cache.set(nome, v);
-      escrever(keyCol(nome), JSON.stringify(v));
-      importadas.push(nome);
-    }
-  }
-  if (parsed.config) {
-    configCache = { ...CONFIG_DEFAULT, ...parsed.config };
-    escrever(CONFIG_KEY, JSON.stringify(configCache));
+  conferirContexto(); analisarBackup(json);
+  const parsed = JSON.parse(json) as { dados: Record<string, unknown[]>; config?: Partial<Config> };
+  if (parsed.config != null && (typeof parsed.config !== "object" || Array.isArray(parsed.config))) throw new Error("Configuração inválida no arquivo.");
+  const importadas = NOMES_COLECOES.filter(nome => Array.isArray(parsed.dados[nome]));
+  const escritas = new Map(importadas.map(nome => [keyCol(nome), JSON.stringify(parsed.dados[nome])]));
+  const configAntes = configCache;
+  const cacheAntes = new Map(cache);
+  if (parsed.config) escritas.set(CONFIG_KEY, JSON.stringify({ ...obterConfig(), ...parsed.config }));
+  const chavesRollback = [...escritas.keys(), "impresilk.sync.massa", "impresilk.sync.massa-revisao", "impresilk.sync.restauracoes"];
+  const originais = new Map(chavesRollback.map(k => [k, lerLocal(k)]));
+  try {
+    for (const [k, v] of escritas) if (!escrever(k, v)) throw new Error("A importação não foi salva por falta de espaço. O estado anterior foi preservado.");
+    for (const nome of importadas) cache.set(nome, parsed.dados[nome]);
+    if (parsed.config) configCache = { ...obterConfig(), ...parsed.config };
+    if (posImportCb) posImportCb(importadas);
+  } catch (e) {
+    // Primeiro devolve o espaço ocupado pela tentativa; depois repõe o original.
+    for (const k of chavesRollback) removerLocal(k);
+    for (const [k, v] of originais) if (v != null && !escrever(k, v)) throw new Error("Falha ao recuperar o armazenamento. Preserve o arquivo de backup e recarregue o RH.");
+    cache.clear(); for (const [k, v] of cacheAntes) cache.set(k, v);
+    configCache = configAntes;
+    throw e;
   }
   emitTudo();
-  // Sobe o backup importado para a nuvem (best-effort; se o sync estiver desligado
-  // ou offline, fica local e sobe depois). Sem isso o restore não se propagava.
-  if (posImportCb) posImportCb(importadas);
 }
 
 export function restaurarPadrao(): void {
+  conferirContexto();
   const def = defaultsColecoes();
   for (const nome of NOMES_COLECOES) {
     cache.set(nome, def[nome]);
-    if (temWindow) window.localStorage.removeItem(keyCol(nome));
+    if (temWindow) removerLocal(keyCol(nome));
   }
   configCache = { ...CONFIG_DEFAULT };
-  if (temWindow) window.localStorage.removeItem(CONFIG_KEY);
+  if (temWindow) removerLocal(CONFIG_KEY);
   emitTudo();
+}
+
+/** Cópia anterior sem autoria comprovada: preservada para conferência, nunca reenvia sozinha. */
+export async function exportarCopiaAnterior(): Promise<string | null> {
+  if (!temWindow || obterSessao()?.perfil !== "ADMIN_RH") return null;
+  const dados: Record<string, unknown[]> = {};
+  try {
+    const contexto = contextoDoUsuario();
+    const copia = await lerCopiaAnterior();
+    if (contexto !== contextoDoUsuario()) return null;
+    for (const nome of NOMES_COLECOES) {
+      const raw = copia[keyCol(nome)];
+      if (!raw) continue;
+      const valor = JSON.parse(raw);
+      if (Array.isArray(valor)) dados[nome] = valor;
+    }
+    const arquivos = await exportarBlobsAnteriores();
+    if (contexto !== contextoDoUsuario()) return null;
+    if (!Object.keys(dados).length && !Object.keys(arquivos).length) return null;
+    const pendencias = JSON.parse(copia["impresilk.sync.fila"] || "[]");
+    const config = copia[CONFIG_KEY] ? JSON.parse(copia[CONFIG_KEY]) : undefined;
+    const falhas = JSON.parse(copia["impresilk.sync.falhas"] || "[]");
+    return JSON.stringify({ app: "impresilk-rh", versao: VERSAO_DADOS, origem: "copia-anterior-sem-autoria", exportadoEm: new Date().toISOString(), dados, config, arquivos, pendencias, falhas }, null, 2);
+  } catch { throw new Error("Não foi possível ler a cópia anterior deste aparelho. Os dados foram preservados."); }
+}
+
+if (temWindow) {
+  const trocar = () => { if (conferirContexto()) emitTudo(); };
+  window.addEventListener("impresilk:autenticado", trocar);
+  window.addEventListener("impresilk:sessao-encerrada", trocar);
+  window.addEventListener("storage", () => { cache.clear(); configCache = null; contextoCache = contextoDoUsuario(); emitTudo(); });
 }

@@ -39,19 +39,19 @@ export function StatCard({
       {...(onClick ? { type: "button" as const, onClick, "aria-pressed": !!ativo } : {})}
       title={title}
       className={cn(
-        "card p-5",
+        "card min-w-0 p-5",
         onClick && "w-full cursor-pointer text-left transition hover:border-brand/40 hover:shadow-md active:scale-[0.99]",
         ativo && "border-brand ring-1 ring-brand/40",
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="min-w-0 break-words text-xs font-medium uppercase tracking-wide text-slate-500">
           {label}
         </span>
         {icon && (
           <span
             className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-lg",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
               cores[accent ?? "brand"],
             )}
           >
@@ -59,7 +59,7 @@ export function StatCard({
           </span>
         )}
       </div>
-      <div className="mt-3 flex items-end gap-2">
+      <div className="mt-3 flex flex-wrap items-end gap-2">
         <span className="text-2xl font-semibold tracking-tight text-brand-ink">
           {value}
         </span>
