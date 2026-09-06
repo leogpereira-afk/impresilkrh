@@ -22,9 +22,11 @@ import {
   RefreshCw,
   Clock, History, AlertTriangle, TrendingDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
-import { Card, CardHeader, CardBody, SecaoColapsavel, useAbertoPersistido } from "@/components/ui/card";
+import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { HistoricoMensal } from "@/components/custos/historico-mensal";
+import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +35,6 @@ import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { Select, Campo, Input } from "@/components/ui/form";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import { BarrasVerticais } from "@/components/charts/charts";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -95,6 +96,8 @@ const TOM_CLASSES: Record<Tom, string> = {
 let ultimaFalhaMubi: { competencia: string; em: number } | null = null;
 const ESPERA_APOS_FALHA_MS = 30 * 60 * 1000;
 
+const ABAS = ["custos", "global", "sync", "viagens"];
+
 export default function Custos() {
   const sessao = useSessao();
   const d = useDominio();
@@ -129,6 +132,9 @@ export default function Custos() {
     return doPlano[doPlano.length - 1] ?? ultimaComp;
   }, [planoContas, ultimaComp]);
   const [comp, setComp] = useState<string>(compPadrao);
+  // Aba ativa controlada por fora: os chips de "está atualizado?" precisam
+  // mandar abrir Sincronização ou Custo Global antes de rolar até o alvo.
+  const [aba, setAba] = useAbaAtiva("custos:aba", ABAS, "custos");
 
   const ativosOrdenados = useMemo(
     () => [...d.ativos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
@@ -685,18 +691,21 @@ export default function Custos() {
     }),
     [compAtiva, pagsDoMes.length, manuaisNoMes, contasNoPlano, conferencia, config.ultimaBuscaMubi, config.ultimaConciliacaoMubi],
   );
-  // O bloco de carga (plano do contador + folha do ERP) começa FECHADO e a
-  // escolha fica guardada: quem carrega dado abre uma vez; quem só lê nunca
-  // precisa ver os dois cards empurrando os números para baixo.
-  const [atualizacaoAberta, setAtualizacaoAberta] = useAbertoPersistido("custos:atualizacao", false);
+  // O pior sinal do mês vira o chip ao lado do seletor de competência.
+  const sinalResumo = useMemo(() => {
+    const peso: Record<Tom, number> = { ruim: 0, atencao: 1, ok: 2, neutro: 3 };
+    return [...sinais].sort((a, b) => peso[a.tom] - peso[b.tom])[0] ?? null;
+  }, [sinais]);
   const atualizacaoRef = useRef<HTMLDivElement>(null);
   const irParaSinal = (id: Sinal["id"]) => {
+    // Troca de aba primeiro e rola depois do render — rolar antes leva a um
+    // alvo que ainda não existe na tela.
     if (id === "pendencias") {
-      document.getElementById("folha-geral")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setAba("global");
+      window.setTimeout(() => document.getElementById("folha-geral")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
       return;
     }
-    setAtualizacaoAberta(true);
-    // Abre primeiro e rola depois do render — rolar antes leva a um bloco fechado.
+    setAba("sync");
     window.setTimeout(() => atualizacaoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   };
   // No modo "Só Salário" excluímos o tipo "Adiantamento" (a soma não duplica).
@@ -738,8 +747,6 @@ export default function Custos() {
     }
     return [...m.keys()].sort().map((c) => ({ competencia: c, nome: compLabel(c), valor: m.get(c) ?? 0 }));
   }, [pagamentos, colabId]);
-  const acumuladoColab = useMemo(() => historicoColab.reduce((s, x) => s + x.valor, 0), [historicoColab]);
-  const mediaColab = historicoColab.length ? acumuladoColab / historicoColab.length : 0;
 
   // ---------- Seção 2: custos coletivos (rateio) ----------
   const totais = useMemo(
@@ -753,10 +760,6 @@ export default function Custos() {
   const serie = useMemo(
     () => serieCustos(planoContas, mapaClasse, nColab),
     [planoContas, mapaClasse, nColab],
-  );
-  const dadosEvolucao = useMemo(
-    () => serie.map((s) => ({ nome: s.nome, valor: Math.round(s.medioIndividual) })),
-    [serie],
   );
 
   // ---------- Editor de classificação ----------
@@ -923,56 +926,412 @@ export default function Custos() {
         description="Quanto custa cada colaborador e a equipe — folha real, rateio e encargos, mês a mês."
       />
 
+      {/* ---------- Competência: vale para as três abas ----------
+          O seletor saiu de dentro da aba de colaboradores (06/09/2026): a mesma
+          competência serve o individual, o global e a sincronização, e um
+          seletor por aba obrigava a trocar o mês três vezes. Ao lado, o pior
+          sinal do mês responde "está atualizado?" sem sair da aba — os quatro
+          chips completos moram em Sincronização. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Select
+          value={compAtiva}
+          onChange={(e) => setComp(e.target.value)}
+          className="h-10 w-auto py-0"
+          disabled={semPlano}
+          aria-label="Competência"
+        >
+          {semPlano && <option value="">Sem competências</option>}
+          {competencias.map((c) => (
+            <option key={c} value={c}>
+              {compLabelLongo(c)}
+            </option>
+          ))}
+        </Select>
+        {compAtiva && sinalResumo && (
+          <button
+            type="button"
+            onClick={() => irParaSinal(sinalResumo.id)}
+            title={sinalResumo.detalhe}
+            className={"inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition " + TOM_CLASSES[sinalResumo.tom]}
+          >
+            {sinalResumo.tom === "ok" ? <ShieldCheck className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+            <span>{sinalResumo.rotulo}: {sinalResumo.valor}</span>
+          </button>
+        )}
+      </div>
+
       <Tabs
-        inicial="custos"
+        ativa={aba}
+        aoMudar={setAba}
         abas={[
           {
             id: "custos",
             label: "Custos de Colaboradores",
             icon: <Coins className="h-4 w-4" />,
-            conteudo: (
-              <>
-                <div className="mb-6 flex flex-wrap items-center gap-2">
-                  <Select
-                    value={compAtiva}
-                    onChange={(e) => setComp(e.target.value)}
-                    className="h-10 w-auto py-0"
-                    disabled={semPlano}
-                  >
-                    {semPlano && <option value="">Sem competências</option>}
-                    {competencias.map((c) => (
-                      <option key={c} value={c}>
-                        {compLabelLongo(c)}
-                      </option>
-                    ))}
-                  </Select>
-                  <button className="btn-outline" onClick={() => setEditorAberto(true)} disabled={semPlano}>
-                    <Settings2 className="h-4 w-4" /> Classificar contas
+            conteudo: semPlano ? (
+              <EmptyState
+                title="Nenhuma competência com dados"
+                description="Traga a folha do Mubisys ou o plano de contas do contador na aba Sincronização."
+                icon={<Wallet className="h-10 w-10" />}
+                acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Ir para Sincronização</button>}
+              />
+            ) : (
+              <div className="space-y-8">
+          {/* ===================== custo individual por colaborador =====================
+              A aba é só do colaborador (pedido de 06/09/2026): a ficha do mês e
+              o histórico dele. O que é de todos — folha geral, rateio, evolução
+              — mudou para a aba Custo Global. */}
+          <section>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <UserCircle2 className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Custo individual por colaborador</h2>
+              <div className="ml-auto">
+                <SegToggle
+                  opcoes={[{ v: false, label: `Quadro atual (${ativosOrdenados.length})` }, { v: true, label: `Com inativos (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
+                  valor={mostrarInativos}
+                  onChange={(v) => {
+                    setMostrarInativos(v);
+                    // Escondeu os inativos com um inativo selecionado? Volta
+                    // para o primeiro do quadro — senão a tela mostra alguém
+                    // que o seletor diz não existir.
+                    if (!v && colabId && !ativosOrdenados.some((c) => c.id === colabId)) {
+                      setColabId(ativosOrdenados[0]?.id ?? "");
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <Card idPersistencia="custos:individual">
+              <CardHeader
+                // A tela DIZ quando a pessoa está fora do quadro (Inativo,
+                // Direção…) em vez de fingir que é ativa — pedido de 01/08.
+                title={
+                  colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id)
+                    ? `Colaborador · ${d.nomeStatus(colabSel.statusId)}`
+                    : "Colaborador ativo"
+                }
+                subtitle={`Folha real de ${compLabelLongo(compAtiva)}`}
+                icon={<Users className="h-5 w-5" />}
+                action={
+                  <div className="flex items-center gap-1.5">
+                    {/* A foto sai do cadastro (fotoDataUrl) — dá rosto ao número
+                        e denuncia na hora se o mês aberto é da pessoa errada. */}
+                    <Avatar nome={colabSel?.nome ?? "?"} foto={d.fotoColab(colabId)} size="sm" className="mr-1" />
+                    <button
+                      type="button"
+                      onClick={() => irColab(-1)}
+                      disabled={navegaveis.length < 2}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Colaborador anterior"
+                      title="Colaborador anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <Select
+                      value={colabId}
+                      onChange={(e) => setColabId(e.target.value)}
+                      className="h-9 w-auto py-0 text-sm"
+                    >
+                      {navegaveis.length === 0 && <option value="">Sem colaboradores</option>}
+                      <optgroup label="Quadro atual">
+                        {ativosOrdenados.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {/* Quem saiu (ou está fora do quadro) mas tem folha: só
+                          aparece com o seletor "Com inativos" ligado — mas se a
+                          pessoa selecionada É inativa, a opção dela fica para o
+                          Select não apontar para o vazio. */}
+                      {mostrarInativos && foraDoQuadroComLanc.length > 0 && (
+                        <optgroup label="Fora do quadro (com lançamentos)">
+                          {foraDoQuadroComLanc.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome} · {d.nomeStatus(c.statusId)}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {!mostrarInativos && colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id) && (
+                        <option value={colabSel.id}>{colabSel.nome} · {d.nomeStatus(colabSel.statusId)}</option>
+                      )}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => irColab(1)}
+                      disabled={navegaveis.length < 2}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Próximo colaborador"
+                      title="Próximo colaborador"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                }
+              />
+              <CardBody>
+                {/* Controles */}
+                <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <SegToggle
+                    opcoes={[
+                      { v: true, label: "Salário + Adiantamento" },
+                      { v: false, label: "Só Salário" },
+                    ]}
+                    valor={comAdiantamento}
+                    onChange={setComAdiantamento}
+                  />
+                  <SegToggle
+                    opcoes={[
+                      { v: true, label: "Custo estimado (c/ provisões)" },
+                      { v: false, label: "Custo pago" },
+                    ]}
+                    valor={comEncargos}
+                    onChange={setComEncargos}
+                  />
+                  <button type="button" onClick={abrirNovoLanc} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
+                    <Plus className="h-4 w-4" /> Lançamento
                   </button>
                 </div>
 
-                {/* ---------- Está atualizado? ----------
-                    Quatro chips com tom e uma linha de porquê. Clicar leva ao
-                    lugar onde se resolve (abre o bloco de carga ou rola até as
-                    pendências). O texto completo fica no title. */}
-                {compAtiva && (
-                  <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Estado da competência">
-                    {sinais.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => irParaSinal(s.id)}
-                        title={s.detalhe}
-                        className={"rounded-xl border px-3 py-2 text-left transition " + TOM_CLASSES[s.tom]}
-                      >
-                        <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{s.rotulo}</p>
-                        <p className="mt-0.5 text-sm font-semibold tabular-nums">{s.valor}</p>
-                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug opacity-80">{s.detalhe}</p>
-                      </button>
-                    ))}
+                {pagsDoColab.length === 0 ? (
+                  <EmptyState
+                    title="Sem pagamentos nesta competência"
+                    description="Não há folha lançada para este colaborador no mês selecionado."
+                    icon={<Coins className="h-8 w-8" />}
+                  />
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {/* Tabela por tipo */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="border-b border-slate-100 bg-slate-50/50">
+                          <tr>
+                            <th className="th">Tipo de pagamento</th>
+                            <th className="th text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {linhasColab.map((l) => {
+                            const ehEncargo = TIPOS_ENCARGO.includes(l.tipo);
+                            const ignorado = (!comAdiantamento && l.tipo === "Adiantamento") || ehEncargo;
+                            return (
+                              <tr key={l.tipo} className={ignorado ? "opacity-40" : undefined}>
+                                <td className="td">
+                                  <span className="flex items-center gap-2">
+                                    <span
+                                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                      style={{ backgroundColor: corDoTipo(l.tipo) }}
+                                    />
+                                    {l.tipo}
+                                    {ehEncargo
+                                      ? <span className="text-xs text-slate-400">(encargo — entra no custo real)</span>
+                                      : ignorado && <span className="text-xs text-slate-400">(não somado)</span>}
+                                  </span>
+                                </td>
+                                <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="bg-slate-50/60">
+                            <td className="td font-semibold text-brand-ink">Custo pago</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(custoPago)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      {!comAdiantamento && (
+                        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                          Política 60% saldo + 40% adiantamento = 1 salário (a soma não duplica).
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Cálculo de custo real */}
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Os dois cards escolhem qual número o total do colaborador exibe (mesmo estado do toggle). */}
+                        <StatCard
+                          label="Custo pago"
+                          value={formatBRL(custoPago)}
+                          accent="blue"
+                          icon={<Coins className="h-4 w-4" />}
+                          hint={comAdiantamento ? "Salário + adiantamento" : "Só salário"}
+                          title="Usar o custo pago (sem encargos) no total do colaborador"
+                          ativo={!comEncargos}
+                          onClick={() => setComEncargos(false)}
+                        />
+                        {/* Era "Custo real". O nome era mais forte que a conta: a
+                            fórmula soma FGTS, 13º e férias ESTIMADOS sobre salário +
+                            adiantamento, e só isso — hora extra, comissão e diária
+                            ficam fora da provisão por decisão de 07/2026. Não é o
+                            custo patronal completo, e o rótulo agora diz o que é. */}
+                        <StatCard
+                          label="Custo estimado c/ provisões"
+                          value={formatBRL(custoReal)}
+                          accent="brand"
+                          icon={<Wallet className="h-4 w-4" />}
+                          hint="Pago + FGTS 8%, 13º e férias sobre salário + adiantamento"
+                          title="Estimativa: soma ao pago as provisões de FGTS, 13º e férias calculadas sobre salário + adiantamento. Hora extra, comissão, diária e demais verbas entram no pago, não na provisão. Não é o custo patronal completo."
+                          ativo={comEncargos}
+                          onClick={() => setComEncargos(true)}
+                        />
+                      </div>
+                      {/* O que a pessoa recebeu, por inteiro — e onde cada parte
+                          entra. Sem isto, ver "encargos sobre o bruto (R$ 20.418)"
+                          ao lado de um custo pago de R$ 25.788 não explicava os
+                          R$ 5.370 do meio, que são justamente faxina e empreita. */}
+                      <div className="rounded-xl border border-slate-200/70 bg-white p-4">
+                        <div className="flex items-baseline justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total recebido no mês</p>
+                          <p className="text-lg font-semibold text-green-700 tabular-nums">{formatBRL(recebido.totalRecebido)}</p>
+                        </div>
+                        <dl className="mt-2 space-y-1.5 text-sm">
+                          <div className="flex justify-between text-slate-600">
+                            <dt>Base de encargo <span className="text-xs text-slate-400">(salário + adiantamento)</span></dt>
+                            <dd className="tabular-nums">{formatBRL(recebido.base)}</dd>
+                          </div>
+                          {recebido.linhasFora.map((l) => (
+                            <div key={l.tipo} className="flex justify-between text-slate-500">
+                              <dt className="flex items-center gap-2 pl-3">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
+                                {l.tipo}
+                              </dt>
+                              <dd className="tabular-nums">{formatBRL(l.valor)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        {recebido.fora > 0 && (
+                          <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-relaxed text-slate-400">
+                            Os {formatBRL(recebido.fora)} acima da base entram no que a pessoa recebeu, mas <strong className="font-semibold text-slate-500">não geram FGTS, 13º nem férias</strong> — a provisão ao lado continua igual à que a empresa deve de fato.
+                          </p>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Encargos estimados sobre o bruto ({formatBRL(bruto)})
+                        </p>
+                        <dl className="space-y-1.5 text-sm">
+                          <LinhaEncargo label="FGTS (8%)" valor={fgts} />
+                          <LinhaEncargo label="Provisão 13º (1/12)" valor={prov13} />
+                          <LinhaEncargo label="Provisão Férias (1/12 × 1,3333)" valor={provFerias} />
+                          {fgtsLancado > 0 && <LinhaEncargo label="FGTS lançado (rescisão)" valor={fgtsLancado} />}
+                          <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-700">
+                            <dt>Total de encargos</dt>
+                            <dd>{formatBRL(encargos)}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </div>
                   </div>
                 )}
 
+                {/* Lançamentos individuais (editar / excluir registro a registro) */}
+                {pagsDoColab.length > 0 && (
+                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200/70">
+                    <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Lançamentos individuais</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {pagsDoColab.map((p) => (
+                          <tr key={p.id} className="transition hover:bg-slate-50/60">
+                            <td className="px-3 py-2">
+                              <span className="flex items-center gap-2">
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(p.tipo) }} />
+                                <span className="text-slate-700">{p.tipo}</span>
+                                {p.descricao && p.descricao !== "Lançamento manual" && (
+                                  <span className="text-xs text-slate-400">· {p.descricao}</span>
+                                )}
+                                {/* Lançado à mão (dinheiro/acerto): a varredura do
+                                    ERP nunca oferece este registro para remoção. */}
+                                {ehManual(p) && (
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200" title="Lançado à mão pelo RH — não passa pelo ERP e a varredura não o remove">
+                                    manual
+                                  </span>
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(p.valor)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicaoLanc(p)} aria-label={`Editar lançamento ${p.tipo}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setPagExcluir(p.id)} aria-label={`Excluir lançamento ${p.tipo}`}>
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Destaque: custo total mensal do colaborador */}
+                <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-brand px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-white/70">
+                      Custo total mensal do colaborador
+                    </p>
+                    <p className="mt-0.5 text-sm text-white/80">
+                      {/* A aba inteira fala de uma pessoa e não tinha um único
+                          caminho para a ficha dela. */}
+                      {colabSel ? <Link to={`/colaboradores/${colabSel.id}`} className="font-medium underline decoration-white/40 underline-offset-2 hover:decoration-white">{colabSel.nome}</Link> : "—"} · {comEncargos ? "custo real (com encargos)" : "custo pago"}
+                    </p>
+                  </div>
+                  <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
+                </div>
+              </CardBody>
+            </Card>
+          </section>
+          {/* ===================== histórico do colaborador — mês a mês ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Histórico de {colabSel?.nome ?? "colaborador"} mês a mês</h2>
+            </div>
+            <Card idPersistencia="custos:historico-colab">
+              <CardHeader
+                title="Quanto recebeu por mês"
+                subtitle="Total efetivamente pago em cada competência, a variação contra o mês anterior e o acumulado. Clique num mês para abri-lo."
+                icon={<TrendingUp className="h-5 w-5" />}
+              />
+              <CardBody>
+                <HistoricoMensal
+                  pontos={historicoColab}
+                  selecionada={compAtiva}
+                  onSelecionar={setComp}
+                  rotuloValor="Recebido"
+                  vazio={<EmptyState title="Sem pagamentos para este colaborador" icon={<Coins className="h-8 w-8" />} />}
+                />
+              </CardBody>
+            </Card>
+          </section>
+              </div>
+            ),
+          },
+          {
+            id: "global",
+            label: "Custo Global",
+            icon: <Layers className="h-4 w-4" />,
+            conteudo: semPlano ? (
+              <EmptyState
+                title="Nenhuma competência com dados"
+                description="Traga a folha do Mubisys ou o plano de contas do contador na aba Sincronização."
+                icon={<Layers className="h-10 w-10" />}
+                acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Ir para Sincronização</button>}
+              />
+            ) : (
+              <div className="space-y-8">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-slate-500">Toda a equipe em {compLabelLongo(compAtiva)}: o que foi pago, o rateio dos custos coletivos e a leitura contábil.</p>
+                  <button type="button" className="btn-outline" onClick={() => setEditorAberto(true)}>
+                    <Settings2 className="h-4 w-4" /> Classificar contas
+                  </button>
+                </div>
                 {/* ---------- Placar executivo do mês ----------
                     Pago, provisões, o estimado e a variação — com QUEM explica a
                     variação. "+33,5%" sozinho assusta; "diárias e horas extras
@@ -1030,20 +1389,434 @@ export default function Custos() {
                   );
                 })()}
 
+          {/* ===================== SEÇÃO 1 — folha geral do mês (todos) ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <Users className="h-5 w-5 text-brand" />
+              <h2 id="folha-geral" className="scroll-mt-4 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
+            </div>
+
+            <Card idPersistencia="custos:resumo-mes">
+              <CardHeader
+                title="Resumo do mês"
+                subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
+                icon={<CalendarDays className="h-5 w-5" />}
+                action={
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => irMes(-1)}
+                      disabled={idxComp <= 0}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Mês anterior"
+                      title="Mês anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
+                      {competencias.map((c) => (
+                        <option key={c} value={c}>{compLabelLongo(c)}</option>
+                      ))}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => irMes(1)}
+                      disabled={idxComp < 0 || idxComp >= competencias.length - 1}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Próximo mês"
+                      title="Próximo mês"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                }
+              />
+              <CardBody>
+                {/* Conferência do mês. O buraco que existia aqui: julho/2026
+                    aparecia com 27 adiantamentos e nenhum salário, e a tela não
+                    dizia se aquilo era espera ou perda. */}
+                {conferencia.estado !== "completa" && (
+                  <div
+                    className={
+                      "mb-4 rounded-xl border p-3 " +
+                      (conferencia.estado === "incompleta"
+                        ? "border-amber-200 bg-amber-50/60"
+                        : "border-sky-200 bg-sky-50/60")
+                    }
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {conferencia.estado === "incompleta" ? (
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      ) : (
+                        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className={"text-sm font-semibold " + (conferencia.estado === "incompleta" ? "text-amber-900" : "text-sky-900")}>
+                          {conferencia.titulo}
+                        </p>
+                        <p className={"mt-0.5 text-xs " + (conferencia.estado === "incompleta" ? "text-amber-800" : "text-sky-800")}>
+                          {conferencia.detalhe}
+                        </p>
+                        {/* Nome, não contagem: "3 pessoas" não diz a quem ir
+                            perguntar. Até 8, cada nome abre a ficha; acima
+                            disso vira um clique só, senão o aviso vira parede
+                            de nomes justo no mês em que falta a folha toda. */}
+                        {conferencia.semSalario.length > 0 && (
+                          <p className="mt-1.5 flex flex-wrap gap-1">
+                            {conferencia.semSalario.length <= 8 ? (
+                              conferencia.semSalario.map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const c = d.colabById.get(s.id);
+                                    if (c) drill.abrir("Sem salário nesta competência", [c], compLabelLongo(compAtiva));
+                                  }}
+                                  className={
+                                    "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
+                                    (conferencia.estado === "incompleta"
+                                      ? "border-amber-300 bg-white/70 text-amber-900"
+                                      : "border-sky-300 bg-white/70 text-sky-900")
+                                  }
+                                  title="Ver a ficha"
+                                >
+                                  {s.nome}
+                                </button>
+                              ))
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  drill.abrir(
+                                    "Sem salário nesta competência",
+                                    conferencia.semSalario
+                                      .map((s) => d.colabById.get(s.id))
+                                      .filter((c): c is Colaborador => !!c),
+                                    compLabelLongo(compAtiva),
+                                  )
+                                }
+                                className={
+                                  "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
+                                  (conferencia.estado === "incompleta"
+                                    ? "border-amber-300 bg-white/70 text-amber-900"
+                                    : "border-sky-300 bg-white/70 text-sky-900")
+                                }
+                              >
+                                Ver as {conferencia.semSalario.length} pessoas
+                              </button>
+                            )}
+                          </p>
+                        )}
+                        {conferencia.estado === "incompleta" && (
+                          <button
+                            type="button"
+                            className="btn-outline mt-2 h-8 px-2.5 text-xs"
+                            onClick={() => void buscarHistorico()}
+                            disabled={buscandoMubi}
+                            title="Varre o histórico do Mubisys e mostra a prévia antes de gravar"
+                          >
+                            <History className="h-3.5 w-3.5" /> Puxar histórico do ERP
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Folha lançada antes de o contador mandar a planilha do mês:
+                    o rateio e os encargos ficam em zero e isso tem de estar
+                    escrito — zero sem explicação passa por número real. */}
+                {semPlanoNaComp && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p className="text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
+                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam zerados até você enviar a planilha do contador deste mês.
+                    </p>
+                  </div>
+                )}
+
+                {pagsDoMes.length === 0 ? (
+                  <EmptyState
+                    title="Sem pagamentos neste mês"
+                    description="Não há folha lançada nesta competência."
+                    icon={<Coins className="h-8 w-8" />}
+                  />
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {/* Tabela por tipo (mês inteiro) */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="border-b border-slate-100 bg-slate-50/50">
+                          <tr>
+                            <th className="th">Tipo de pagamento</th>
+                            <th className="th text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {linhasMes.map((l) => (
+                            /* Ver "Comissão R$ 42.310" e não saber quem recebeu
+                               era o buraco da conferência do mês — os dois cards
+                               vizinhos já abrem a lista. */
+                            <tr key={l.tipo} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirDrillTipo(l.tipo)} title={`Ver quem recebeu ${l.tipo}`}>
+                              <td className="td">
+                                <span className="flex items-center gap-2">
+                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
+                                  {l.tipo}
+                                </span>
+                              </td>
+                              <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-50/60">
+                            <td className="td font-semibold text-brand-ink">Total pago no mês</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totalMes)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Destaques do mês */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
+                      <StatCard
+                        label="Colaboradores pagos"
+                        value={pessoasNoMes}
+                        accent="blue"
+                        icon={<Users className="h-4 w-4" />}
+                        hint="Com lançamento no mês"
+                        title="Ver quem recebeu neste mês"
+                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard
+                        label="Média por colaborador"
+                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
+                        accent="gold"
+                        icon={<Coins className="h-4 w-4" />}
+                        hint="Total ÷ pagos"
+                        title="Ver quem entra no divisor da média"
+                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          </section>
+
+          {/* ===================== SEÇÃO 2 ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <Layers className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Custos coletivos (rateio para todos)</h2>
+            </div>
+
+            {totalColetivo === 0 ? (
+              /* Zero aqui tem duas causas e só uma se resolve classificando
+                 contas. Sem o plano do contador, mandar a pessoa "classificar"
+                 é mandar procurar o que não existe — e o zero parecia resultado. */
+              semPlanoNaComp ? (
+                <EmptyState
+                  title={`Sem plano de contas em ${compLabelLongo(compAtiva)}`}
+                  description="Rateio e Custo Global ficam indisponíveis — não zerados — até a planilha do contador deste mês ser enviada na aba Sincronização."
+                  icon={<FileSpreadsheet className="h-8 w-8" />}
+                  acao={
+                    <button type="button" className="btn-outline" onClick={() => irParaSinal("plano")}>
+                      <Upload className="h-4 w-4" /> Enviar o plano de contas
+                    </button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title="Sem custos classificados nesta competência"
+                  description="Use “Classificar contas” para marcar contas como individual ou rateio."
+                  icon={<Layers className="h-8 w-8" />}
+                />
+              )
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <StatCard
+                    label="Custo médio / colaborador"
+                    value={formatBRL(nColab > 0 ? totais.individual / nColab : 0)}
+                    hint={`Individual ÷ ${nColab} ativos`}
+                    accent="brand"
+                    icon={<Users className="h-4 w-4" />}
+                    title="Ver os ativos que entram no divisor"
+                    onClick={() => drill.abrir("Colaboradores ativos", ativosOrdenados, `Individual ${formatBRL(totais.individual)} ÷ ${nColab} ativo(s)`)}
+                  />
+                  <StatCard
+                    label="Total custos de colaboradores"
+                    value={formatBRL(totalColetivo)}
+                    hint="Individual + rateio"
+                    accent="gold"
+                    icon={<Wallet className="h-4 w-4" />}
+                  />
+                  {/* Clicar troca a tabela de contas de rateio para a visão por pessoa (clicar de novo volta). */}
+                  <StatCard
+                    label="Rateio por colaborador"
+                    value={formatBRL(totais.rateioPorColab)}
+                    hint={`Rateio ÷ ${nColab} ativos`}
+                    accent="green"
+                    icon={<Coins className="h-4 w-4" />}
+                    title="Mostrar as contas de rateio por colaborador"
+                    ativo={rateioPorPessoa}
+                    onClick={() => setRateioPorPessoa((v) => !v)}
+                  />
+                </div>
+
+                <Card>
+                  <CardHeader title="Individual × Rateio" subtitle={compLabelLongo(compAtiva)} icon={<Coins className="h-5 w-5" />} />
+                  <CardBody>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 text-slate-600">
+                        <span className="h-2.5 w-2.5 rounded-full bg-brand" /> Individual {formatBRL(totais.individual)}
+                      </span>
+                      <span className="flex items-center gap-2 text-slate-600">
+                        Rateio {formatBRL(totais.rateio)} <span className="h-2.5 w-2.5 rounded-full bg-gold" />
+                      </span>
+                    </div>
+                    <Progress value={totalColetivo > 0 ? (totais.individual / totalColetivo) * 100 : 0} />
+                    <p className="mt-2 text-xs text-slate-400">
+                      {totalColetivo > 0
+                        ? `${Math.round((totais.individual / totalColetivo) * 100)}% individual · ${Math.round((totais.rateio / totalColetivo) * 100)}% rateio`
+                        : "Sem custos no período."}
+                    </p>
+                  </CardBody>
+                </Card>
+
+                <Card>
+                  <CardHeader
+                    title="Contas de rateio"
+                    subtitle="Custos coletivos divididos entre todos os colaboradores ativos."
+                    icon={<Layers className="h-5 w-5" />}
+                    action={
+                      <SegToggle
+                        opcoes={[
+                          { v: false, label: "Total" },
+                          { v: true, label: "Por colaborador" },
+                        ]}
+                        valor={rateioPorPessoa}
+                        onChange={setRateioPorPessoa}
+                      />
+                    }
+                  />
+                  <CardBody className="p-0">
+                    {totais.contasRateio.length === 0 ? (
+                      <div className="p-5">
+                        <EmptyState title="Nenhuma conta de rateio" description="Classifique contas como “Rateio para todos” no editor." />
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="border-b border-slate-100 bg-slate-50/50">
+                          <tr>
+                            <th className="th">Conta</th>
+                            <th className="th text-right">{rateioPorPessoa ? "Por colaborador" : "Valor"}</th>
+                            <th className="th text-right">% do total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {totais.contasRateio.map((c: ContaPlano) => (
+                            <tr key={c.codigo} className="transition hover:bg-slate-50/60">
+                              <td className="td">
+                                <span className="font-medium text-slate-800">{c.nome}</span>
+                                <span className="ml-2 text-xs text-slate-400">{c.codigo}</span>
+                              </td>
+                              <td className="td text-right font-medium text-slate-800">{formatBRL(c.valor / divisor)}</td>
+                              <td className="td text-right text-slate-500">
+                                {totalColetivo > 0 ? `${((c.valor / totalColetivo) * 100).toFixed(1)}%` : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-50/60">
+                            <td className="td font-semibold text-brand-ink">Total de rateio</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totais.rateio / divisor)}</td>
+                            <td className="td text-right text-slate-500">
+                              {totalColetivo > 0 ? `${((totais.rateio / totalColetivo) * 100).toFixed(1)}%` : "—"}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      </div>
+                    )}
+                  </CardBody>
+                </Card>
+              </div>
+            )}
+          </section>
+
+          {/* ===================== evolução mês a mês ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Evolução mês a mês</h2>
+            </div>
+            <Card idPersistencia="custos:evolucao">
+              <CardHeader
+                title="Custo da folha por mês"
+                subtitle="Individual + rateio do plano de contas em cada competência, com o custo médio por colaborador ativo. Clique num mês para abri-lo."
+                icon={<TrendingUp className="h-5 w-5" />}
+              />
+              <CardBody>
+                <HistoricoMensal
+                  pontos={serie.map((x) => ({ competencia: x.competencia, valor: x.individual + x.rateio }))}
+                  selecionada={compAtiva}
+                  onSelecionar={setComp}
+                  rotuloValor="Custo do mês"
+                  rotuloTotal="Custo do período"
+                  altura={280}
+                  colunas={[
+                    { rotulo: "Individual", valorDe: (c) => serie.find((x) => x.competencia === c)?.individual ?? null },
+                    { rotulo: "Rateio", valorDe: (c) => serie.find((x) => x.competencia === c)?.rateio ?? null },
+                    { rotulo: "Médio / colab.", valorDe: (c) => serie.find((x) => x.competencia === c)?.medioIndividual ?? null, destaque: true },
+                  ]}
+                  vazio={<EmptyState title="Sem histórico" description="Importe mais competências do plano de contas para ver a evolução." />}
+                />
+              </CardBody>
+            </Card>
+          </section>
+                <CustoGlobalFuncionarios comp={compAtiva} competencias={competencias} onComp={setComp} irParaSync={() => irParaSinal("plano")} />
+              </div>
+            ),
+          },
+          {
+            id: "sync",
+            label: "Sincronização",
+            icon: <RefreshCw className="h-4 w-4" />,
+            conteudo: (
+              <div className="space-y-6">
+                <p className="text-sm text-slate-500">
+                  Plano de contas do contador e folha do Mubisys — de onde vêm os números desta tela — e a conferência da classificação.
+                </p>
+                {/* ---------- Está atualizado? ----------
+                    Quatro chips com tom e uma linha de porquê. Clicar leva ao
+                    lugar onde se resolve (rola até o quadro de carga, ou vai à
+                    folha geral no Custo Global). O texto completo fica no title. */}
+                {compAtiva && (
+                  <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Estado da competência">
+                    {sinais.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => irParaSinal(s.id)}
+                        title={s.detalhe}
+                        className={"rounded-xl border px-3 py-2 text-left transition " + TOM_CLASSES[s.tom]}
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{s.rotulo}</p>
+                        <p className="mt-0.5 text-sm font-semibold tabular-nums">{s.valor}</p>
+                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug opacity-80">{s.detalhe}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
       {/* ---------- Atualização de dados ----------
-          Os dois cards de carga viviam no topo e empurravam os números para
-          baixo. Agora moram num bloco recolhível, fechado por padrão, com a
-          escolha guardada. Os chips lá em cima abrem este bloco quando o
-          problema se resolve aqui. */}
+          Os dois quadros de carga (plano do contador + folha do ERP) moram na
+          aba Sincronização (pedido de 06/09/2026): as outras abas ficam só com
+          o que é do colaborador e só com o que é global. */}
       <div ref={atualizacaoRef} className="mb-6 scroll-mt-4">
-      <SecaoColapsavel
-        title="Atualização de dados"
-        subtitle="Plano de contas do contador e folha do Mubisys — de onde vêm os números desta tela."
-        icon={<Upload className="h-5 w-5" />}
-        aberto={atualizacaoAberta}
-        onAlternar={() => setAtualizacaoAberta((o) => !o)}
-        bodyClassName="p-4"
-      >
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
@@ -1181,8 +1954,32 @@ export default function Custos() {
           </CardBody>
         </Card>
       </div>
-      </SecaoColapsavel>
       </div>
+
+                {/* A conferência que faltou em jul/2026: cada lançamento do ERP
+                    contra o nome da conta do contador. Corrige em lote pelo
+                    caminho normal (atualizar + sync), com rastro no histórico. */}
+                <ConferenciaTipos
+                  pagamentos={pagamentos as Pagamento[]}
+                  nomeDe={(id) => d.colaboradores.find((c: Colaborador) => c.id === id)?.nome ?? id}
+                  onCorrigir={(divs) => {
+                    emLote(`Reclassificou ${divs.length} lançamento(s) pelo nome da conta do ERP`, () => {
+                      for (const x of divs) pagamentosColecao.atualizar(x.id, { tipo: x.para });
+                    });
+                    toast(`${divs.length} lançamento(s) reclassificado(s).`);
+                  }}
+                />
+              </div>
+            ),
+          },
+          {
+            id: "viagens",
+            label: "Viagens e Diárias",
+            icon: <Plane className="h-4 w-4" />,
+            conteudo: <ViagensPainel />,
+          },
+        ]}
+      />
 
       {folhaPrev && (() => {
         const { diff, naoCasados } = folhaPrev;
@@ -1559,790 +2356,6 @@ export default function Custos() {
         );
       })()}
 
-      {semPlano ? (
-        <EmptyState
-          title="Nenhum plano de contas importado"
-          description="Envie a planilha de despesas mensal acima para começar a calcular os custos."
-          icon={<Wallet className="h-10 w-10" />}
-        />
-      ) : (
-        <div className="space-y-8">
-          {/* ===================== SEÇÃO 2 — custo individual por colaborador =====================
-              Vem PRIMEIRO (pedido de 02/08): é onde se confere pessoa a pessoa;
-              a folha geral virou o resumo logo abaixo. */}
-          <section>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <UserCircle2 className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Custo individual por colaborador</h2>
-              <div className="ml-auto">
-                <SegToggle
-                  opcoes={[{ v: false, label: `Quadro atual (${ativosOrdenados.length})` }, { v: true, label: `Com inativos (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
-                  valor={mostrarInativos}
-                  onChange={(v) => {
-                    setMostrarInativos(v);
-                    // Escondeu os inativos com um inativo selecionado? Volta
-                    // para o primeiro do quadro — senão a tela mostra alguém
-                    // que o seletor diz não existir.
-                    if (!v && colabId && !ativosOrdenados.some((c) => c.id === colabId)) {
-                      setColabId(ativosOrdenados[0]?.id ?? "");
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-            <Card idPersistencia="custos:individual">
-              <CardHeader
-                // A tela DIZ quando a pessoa está fora do quadro (Inativo,
-                // Direção…) em vez de fingir que é ativa — pedido de 01/08.
-                title={
-                  colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id)
-                    ? `Colaborador · ${d.nomeStatus(colabSel.statusId)}`
-                    : "Colaborador ativo"
-                }
-                subtitle={`Folha real de ${compLabelLongo(compAtiva)}`}
-                icon={<Users className="h-5 w-5" />}
-                action={
-                  <div className="flex items-center gap-1.5">
-                    {/* A foto sai do cadastro (fotoDataUrl) — dá rosto ao número
-                        e denuncia na hora se o mês aberto é da pessoa errada. */}
-                    <Avatar nome={colabSel?.nome ?? "?"} foto={d.fotoColab(colabId)} size="sm" className="mr-1" />
-                    <button
-                      type="button"
-                      onClick={() => irColab(-1)}
-                      disabled={navegaveis.length < 2}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Colaborador anterior"
-                      title="Colaborador anterior"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <Select
-                      value={colabId}
-                      onChange={(e) => setColabId(e.target.value)}
-                      className="h-9 w-auto py-0 text-sm"
-                    >
-                      {navegaveis.length === 0 && <option value="">Sem colaboradores</option>}
-                      <optgroup label="Quadro atual">
-                        {ativosOrdenados.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.nome}
-                          </option>
-                        ))}
-                      </optgroup>
-                      {/* Quem saiu (ou está fora do quadro) mas tem folha: só
-                          aparece com o seletor "Com inativos" ligado — mas se a
-                          pessoa selecionada É inativa, a opção dela fica para o
-                          Select não apontar para o vazio. */}
-                      {mostrarInativos && foraDoQuadroComLanc.length > 0 && (
-                        <optgroup label="Fora do quadro (com lançamentos)">
-                          {foraDoQuadroComLanc.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.nome} · {d.nomeStatus(c.statusId)}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {!mostrarInativos && colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id) && (
-                        <option value={colabSel.id}>{colabSel.nome} · {d.nomeStatus(colabSel.statusId)}</option>
-                      )}
-                    </Select>
-                    <button
-                      type="button"
-                      onClick={() => irColab(1)}
-                      disabled={navegaveis.length < 2}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Próximo colaborador"
-                      title="Próximo colaborador"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                }
-              />
-              <CardBody>
-                {/* Controles */}
-                <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                  <SegToggle
-                    opcoes={[
-                      { v: true, label: "Salário + Adiantamento" },
-                      { v: false, label: "Só Salário" },
-                    ]}
-                    valor={comAdiantamento}
-                    onChange={setComAdiantamento}
-                  />
-                  <SegToggle
-                    opcoes={[
-                      { v: true, label: "Custo estimado (c/ provisões)" },
-                      { v: false, label: "Custo pago" },
-                    ]}
-                    valor={comEncargos}
-                    onChange={setComEncargos}
-                  />
-                  <button type="button" onClick={abrirNovoLanc} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
-                    <Plus className="h-4 w-4" /> Lançamento
-                  </button>
-                </div>
-
-                {pagsDoColab.length === 0 ? (
-                  <EmptyState
-                    title="Sem pagamentos nesta competência"
-                    description="Não há folha lançada para este colaborador no mês selecionado."
-                    icon={<Coins className="h-8 w-8" />}
-                  />
-                ) : (
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    {/* Tabela por tipo */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="border-b border-slate-100 bg-slate-50/50">
-                          <tr>
-                            <th className="th">Tipo de pagamento</th>
-                            <th className="th text-right">Valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {linhasColab.map((l) => {
-                            const ehEncargo = TIPOS_ENCARGO.includes(l.tipo);
-                            const ignorado = (!comAdiantamento && l.tipo === "Adiantamento") || ehEncargo;
-                            return (
-                              <tr key={l.tipo} className={ignorado ? "opacity-40" : undefined}>
-                                <td className="td">
-                                  <span className="flex items-center gap-2">
-                                    <span
-                                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                      style={{ backgroundColor: corDoTipo(l.tipo) }}
-                                    />
-                                    {l.tipo}
-                                    {ehEncargo
-                                      ? <span className="text-xs text-slate-400">(encargo — entra no custo real)</span>
-                                      : ignorado && <span className="text-xs text-slate-400">(não somado)</span>}
-                                  </span>
-                                </td>
-                                <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
-                              </tr>
-                            );
-                          })}
-                          <tr className="bg-slate-50/60">
-                            <td className="td font-semibold text-brand-ink">Custo pago</td>
-                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(custoPago)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      {!comAdiantamento && (
-                        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                          Política 60% saldo + 40% adiantamento = 1 salário (a soma não duplica).
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Cálculo de custo real */}
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Os dois cards escolhem qual número o total do colaborador exibe (mesmo estado do toggle). */}
-                        <StatCard
-                          label="Custo pago"
-                          value={formatBRL(custoPago)}
-                          accent="blue"
-                          icon={<Coins className="h-4 w-4" />}
-                          hint={comAdiantamento ? "Salário + adiantamento" : "Só salário"}
-                          title="Usar o custo pago (sem encargos) no total do colaborador"
-                          ativo={!comEncargos}
-                          onClick={() => setComEncargos(false)}
-                        />
-                        {/* Era "Custo real". O nome era mais forte que a conta: a
-                            fórmula soma FGTS, 13º e férias ESTIMADOS sobre salário +
-                            adiantamento, e só isso — hora extra, comissão e diária
-                            ficam fora da provisão por decisão de 07/2026. Não é o
-                            custo patronal completo, e o rótulo agora diz o que é. */}
-                        <StatCard
-                          label="Custo estimado c/ provisões"
-                          value={formatBRL(custoReal)}
-                          accent="brand"
-                          icon={<Wallet className="h-4 w-4" />}
-                          hint="Pago + FGTS 8%, 13º e férias sobre salário + adiantamento"
-                          title="Estimativa: soma ao pago as provisões de FGTS, 13º e férias calculadas sobre salário + adiantamento. Hora extra, comissão, diária e demais verbas entram no pago, não na provisão. Não é o custo patronal completo."
-                          ativo={comEncargos}
-                          onClick={() => setComEncargos(true)}
-                        />
-                      </div>
-                      {/* O que a pessoa recebeu, por inteiro — e onde cada parte
-                          entra. Sem isto, ver "encargos sobre o bruto (R$ 20.418)"
-                          ao lado de um custo pago de R$ 25.788 não explicava os
-                          R$ 5.370 do meio, que são justamente faxina e empreita. */}
-                      <div className="rounded-xl border border-slate-200/70 bg-white p-4">
-                        <div className="flex items-baseline justify-between">
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total recebido no mês</p>
-                          <p className="text-lg font-semibold text-green-700 tabular-nums">{formatBRL(recebido.totalRecebido)}</p>
-                        </div>
-                        <dl className="mt-2 space-y-1.5 text-sm">
-                          <div className="flex justify-between text-slate-600">
-                            <dt>Base de encargo <span className="text-xs text-slate-400">(salário + adiantamento)</span></dt>
-                            <dd className="tabular-nums">{formatBRL(recebido.base)}</dd>
-                          </div>
-                          {recebido.linhasFora.map((l) => (
-                            <div key={l.tipo} className="flex justify-between text-slate-500">
-                              <dt className="flex items-center gap-2 pl-3">
-                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
-                                {l.tipo}
-                              </dt>
-                              <dd className="tabular-nums">{formatBRL(l.valor)}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                        {recebido.fora > 0 && (
-                          <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-relaxed text-slate-400">
-                            Os {formatBRL(recebido.fora)} acima da base entram no que a pessoa recebeu, mas <strong className="font-semibold text-slate-500">não geram FGTS, 13º nem férias</strong> — a provisão ao lado continua igual à que a empresa deve de fato.
-                          </p>
-                        )}
-                      </div>
-                      <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
-                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Encargos estimados sobre o bruto ({formatBRL(bruto)})
-                        </p>
-                        <dl className="space-y-1.5 text-sm">
-                          <LinhaEncargo label="FGTS (8%)" valor={fgts} />
-                          <LinhaEncargo label="Provisão 13º (1/12)" valor={prov13} />
-                          <LinhaEncargo label="Provisão Férias (1/12 × 1,3333)" valor={provFerias} />
-                          {fgtsLancado > 0 && <LinhaEncargo label="FGTS lançado (rescisão)" valor={fgtsLancado} />}
-                          <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-700">
-                            <dt>Total de encargos</dt>
-                            <dd>{formatBRL(encargos)}</dd>
-                          </div>
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Lançamentos individuais (editar / excluir registro a registro) */}
-                {pagsDoColab.length > 0 && (
-                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200/70">
-                    <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-2">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Lançamentos individuais</p>
-                    </div>
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {pagsDoColab.map((p) => (
-                          <tr key={p.id} className="transition hover:bg-slate-50/60">
-                            <td className="px-3 py-2">
-                              <span className="flex items-center gap-2">
-                                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(p.tipo) }} />
-                                <span className="text-slate-700">{p.tipo}</span>
-                                {p.descricao && p.descricao !== "Lançamento manual" && (
-                                  <span className="text-xs text-slate-400">· {p.descricao}</span>
-                                )}
-                                {/* Lançado à mão (dinheiro/acerto): a varredura do
-                                    ERP nunca oferece este registro para remoção. */}
-                                {ehManual(p) && (
-                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200" title="Lançado à mão pelo RH — não passa pelo ERP e a varredura não o remove">
-                                    manual
-                                  </span>
-                                )}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(p.valor)}</td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicaoLanc(p)} aria-label={`Editar lançamento ${p.tipo}`}>
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setPagExcluir(p.id)} aria-label={`Excluir lançamento ${p.tipo}`}>
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Destaque: custo total mensal do colaborador */}
-                <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-brand px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-white/70">
-                      Custo total mensal do colaborador
-                    </p>
-                    <p className="mt-0.5 text-sm text-white/80">
-                      {/* A aba inteira fala de uma pessoa e não tinha um único
-                          caminho para a ficha dela. */}
-                      {colabSel ? <Link to={`/colaboradores/${colabSel.id}`} className="font-medium underline decoration-white/40 underline-offset-2 hover:decoration-white">{colabSel.nome}</Link> : "—"} · {comEncargos ? "custo real (com encargos)" : "custo pago"}
-                    </p>
-                  </div>
-                  <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
-                </div>
-              </CardBody>
-            </Card>
-          </section>
-          {/* ===================== SEÇÃO 1 — folha geral do mês (todos) ===================== */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <Users className="h-5 w-5 text-brand" />
-              <h2 id="folha-geral" className="scroll-mt-4 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
-            </div>
-
-            <Card idPersistencia="custos:resumo-mes">
-              <CardHeader
-                title="Resumo do mês"
-                subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
-                icon={<CalendarDays className="h-5 w-5" />}
-                action={
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => irMes(-1)}
-                      disabled={idxComp <= 0}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Mês anterior"
-                      title="Mês anterior"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
-                      {competencias.map((c) => (
-                        <option key={c} value={c}>{compLabelLongo(c)}</option>
-                      ))}
-                    </Select>
-                    <button
-                      type="button"
-                      onClick={() => irMes(1)}
-                      disabled={idxComp < 0 || idxComp >= competencias.length - 1}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Próximo mês"
-                      title="Próximo mês"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                }
-              />
-              <CardBody>
-                {/* Conferência do mês. O buraco que existia aqui: julho/2026
-                    aparecia com 27 adiantamentos e nenhum salário, e a tela não
-                    dizia se aquilo era espera ou perda. */}
-                {conferencia.estado !== "completa" && (
-                  <div
-                    className={
-                      "mb-4 rounded-xl border p-3 " +
-                      (conferencia.estado === "incompleta"
-                        ? "border-amber-200 bg-amber-50/60"
-                        : "border-sky-200 bg-sky-50/60")
-                    }
-                  >
-                    <div className="flex items-start gap-2.5">
-                      {conferencia.estado === "incompleta" ? (
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                      ) : (
-                        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className={"text-sm font-semibold " + (conferencia.estado === "incompleta" ? "text-amber-900" : "text-sky-900")}>
-                          {conferencia.titulo}
-                        </p>
-                        <p className={"mt-0.5 text-xs " + (conferencia.estado === "incompleta" ? "text-amber-800" : "text-sky-800")}>
-                          {conferencia.detalhe}
-                        </p>
-                        {/* Nome, não contagem: "3 pessoas" não diz a quem ir
-                            perguntar. Até 8, cada nome abre a ficha; acima
-                            disso vira um clique só, senão o aviso vira parede
-                            de nomes justo no mês em que falta a folha toda. */}
-                        {conferencia.semSalario.length > 0 && (
-                          <p className="mt-1.5 flex flex-wrap gap-1">
-                            {conferencia.semSalario.length <= 8 ? (
-                              conferencia.semSalario.map((s) => (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const c = d.colabById.get(s.id);
-                                    if (c) drill.abrir("Sem salário nesta competência", [c], compLabelLongo(compAtiva));
-                                  }}
-                                  className={
-                                    "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
-                                    (conferencia.estado === "incompleta"
-                                      ? "border-amber-300 bg-white/70 text-amber-900"
-                                      : "border-sky-300 bg-white/70 text-sky-900")
-                                  }
-                                  title="Ver a ficha"
-                                >
-                                  {s.nome}
-                                </button>
-                              ))
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  drill.abrir(
-                                    "Sem salário nesta competência",
-                                    conferencia.semSalario
-                                      .map((s) => d.colabById.get(s.id))
-                                      .filter((c): c is Colaborador => !!c),
-                                    compLabelLongo(compAtiva),
-                                  )
-                                }
-                                className={
-                                  "rounded-full border px-2 py-0.5 text-[11px] hover:brightness-95 " +
-                                  (conferencia.estado === "incompleta"
-                                    ? "border-amber-300 bg-white/70 text-amber-900"
-                                    : "border-sky-300 bg-white/70 text-sky-900")
-                                }
-                              >
-                                Ver as {conferencia.semSalario.length} pessoas
-                              </button>
-                            )}
-                          </p>
-                        )}
-                        {conferencia.estado === "incompleta" && (
-                          <button
-                            type="button"
-                            className="btn-outline mt-2 h-8 px-2.5 text-xs"
-                            onClick={() => void buscarHistorico()}
-                            disabled={buscandoMubi}
-                            title="Varre o histórico do Mubisys e mostra a prévia antes de gravar"
-                          >
-                            <History className="h-3.5 w-3.5" /> Puxar histórico do ERP
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Folha lançada antes de o contador mandar a planilha do mês:
-                    o rateio e os encargos ficam em zero e isso tem de estar
-                    escrito — zero sem explicação passa por número real. */}
-                {semPlanoNaComp && (
-                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p className="text-xs text-slate-600">
-                      <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
-                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam zerados até você enviar a planilha do contador deste mês.
-                    </p>
-                  </div>
-                )}
-
-                {pagsDoMes.length === 0 ? (
-                  <EmptyState
-                    title="Sem pagamentos neste mês"
-                    description="Não há folha lançada nesta competência."
-                    icon={<Coins className="h-8 w-8" />}
-                  />
-                ) : (
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    {/* Tabela por tipo (mês inteiro) */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="border-b border-slate-100 bg-slate-50/50">
-                          <tr>
-                            <th className="th">Tipo de pagamento</th>
-                            <th className="th text-right">Valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {linhasMes.map((l) => (
-                            /* Ver "Comissão R$ 42.310" e não saber quem recebeu
-                               era o buraco da conferência do mês — os dois cards
-                               vizinhos já abrem a lista. */
-                            <tr key={l.tipo} className="cursor-pointer hover:bg-slate-50/60" onClick={() => abrirDrillTipo(l.tipo)} title={`Ver quem recebeu ${l.tipo}`}>
-                              <td className="td">
-                                <span className="flex items-center gap-2">
-                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
-                                  {l.tipo}
-                                </span>
-                              </td>
-                              <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
-                            </tr>
-                          ))}
-                          <tr className="bg-slate-50/60">
-                            <td className="td font-semibold text-brand-ink">Total pago no mês</td>
-                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totalMes)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Destaques do mês */}
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
-                      <StatCard
-                        label="Colaboradores pagos"
-                        value={pessoasNoMes}
-                        accent="blue"
-                        icon={<Users className="h-4 w-4" />}
-                        hint="Com lançamento no mês"
-                        title="Ver quem recebeu neste mês"
-                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
-                      />
-                      <StatCard
-                        label="Média por colaborador"
-                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
-                        accent="gold"
-                        icon={<Coins className="h-4 w-4" />}
-                        hint="Total ÷ pagos"
-                        title="Ver quem entra no divisor da média"
-                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
-                      />
-                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
-                    </div>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </section>
-
-          {/* ===================== SEÇÃO 1b — histórico do colaborador ===================== */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Histórico de {colabSel?.nome ?? "colaborador"} mês a mês</h2>
-            </div>
-            <Card idPersistencia="custos:historico-colab">
-              <CardHeader
-                title="Quanto recebeu por mês"
-                subtitle="Total efetivamente pago em cada competência e o acumulado do período."
-                icon={<TrendingUp className="h-5 w-5" />}
-              />
-              <CardBody>
-                {historicoColab.length === 0 ? (
-                  <EmptyState title="Sem pagamentos para este colaborador" icon={<Coins className="h-8 w-8" />} />
-                ) : (
-                  <div className="grid gap-5 lg:grid-cols-3">
-                    <div className="lg:col-span-2">
-                      <BarrasVerticais
-                        data={historicoColab.map((h) => ({ nome: h.nome, valor: h.valor }))}
-                        moeda
-                        altura={260}
-                        /* Clicar no pico leva o seletor de competência até lá —
-                           antes era preciso achar o mês na lista lá em cima. */
-                        onItemClick={(nome) => {
-                          const h = historicoColab.find((x) => x.nome === nome);
-                          if (h) setComp(h.competencia);
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-3">
-                      <StatCard label="Acumulado no período" value={formatBRL(acumuladoColab)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={`${historicoColab.length} mes(es)`} />
-                      <StatCard label="Média por mês" value={formatBRL(mediaColab)} accent="blue" icon={<Coins className="h-4 w-4" />} />
-                      <div className="overflow-hidden rounded-xl border border-slate-200/70">
-                        <table className="w-full text-sm">
-                          <tbody className="divide-y divide-slate-100">
-                            {historicoColab.map((h) => (
-                              <tr key={h.competencia}>
-                                <td className="px-3 py-2 text-slate-600">{compLabelLongo(h.competencia)}</td>
-                                <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(h.valor)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot className="bg-slate-50/60">
-                            <tr>
-                              <td className="px-3 py-2 font-semibold text-brand-ink">Acumulado</td>
-                              <td className="px-3 py-2 text-right font-semibold text-brand-ink">{formatBRL(acumuladoColab)}</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </section>
-
-          {/* ===================== SEÇÃO 2 ===================== */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <Layers className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Custos coletivos (rateio para todos)</h2>
-            </div>
-
-            {totalColetivo === 0 ? (
-              /* Zero aqui tem duas causas e só uma se resolve classificando
-                 contas. Sem o plano do contador, mandar a pessoa "classificar"
-                 é mandar procurar o que não existe — e o zero parecia resultado. */
-              semPlanoNaComp ? (
-                <EmptyState
-                  title={`Sem plano de contas em ${compLabelLongo(compAtiva)}`}
-                  description="Rateio e Custo Global ficam indisponíveis — não zerados — até a planilha do contador deste mês ser enviada em “Atualização de dados”, no topo da tela."
-                  icon={<FileSpreadsheet className="h-8 w-8" />}
-                  acao={
-                    <button type="button" className="btn-outline" onClick={() => irParaSinal("plano")}>
-                      <Upload className="h-4 w-4" /> Enviar o plano de contas
-                    </button>
-                  }
-                />
-              ) : (
-                <EmptyState
-                  title="Sem custos classificados nesta competência"
-                  description="Use “Classificar contas” para marcar contas como individual ou rateio."
-                  icon={<Layers className="h-8 w-8" />}
-                />
-              )
-            ) : (
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <StatCard
-                    label="Custo médio / colaborador"
-                    value={formatBRL(nColab > 0 ? totais.individual / nColab : 0)}
-                    hint={`Individual ÷ ${nColab} ativos`}
-                    accent="brand"
-                    icon={<Users className="h-4 w-4" />}
-                    title="Ver os ativos que entram no divisor"
-                    onClick={() => drill.abrir("Colaboradores ativos", ativosOrdenados, `Individual ${formatBRL(totais.individual)} ÷ ${nColab} ativo(s)`)}
-                  />
-                  <StatCard
-                    label="Total custos de colaboradores"
-                    value={formatBRL(totalColetivo)}
-                    hint="Individual + rateio"
-                    accent="gold"
-                    icon={<Wallet className="h-4 w-4" />}
-                  />
-                  {/* Clicar troca a tabela de contas de rateio para a visão por pessoa (clicar de novo volta). */}
-                  <StatCard
-                    label="Rateio por colaborador"
-                    value={formatBRL(totais.rateioPorColab)}
-                    hint={`Rateio ÷ ${nColab} ativos`}
-                    accent="green"
-                    icon={<Coins className="h-4 w-4" />}
-                    title="Mostrar as contas de rateio por colaborador"
-                    ativo={rateioPorPessoa}
-                    onClick={() => setRateioPorPessoa((v) => !v)}
-                  />
-                </div>
-
-                <Card>
-                  <CardHeader title="Individual × Rateio" subtitle={compLabelLongo(compAtiva)} icon={<Coins className="h-5 w-5" />} />
-                  <CardBody>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-slate-600">
-                        <span className="h-2.5 w-2.5 rounded-full bg-brand" /> Individual {formatBRL(totais.individual)}
-                      </span>
-                      <span className="flex items-center gap-2 text-slate-600">
-                        Rateio {formatBRL(totais.rateio)} <span className="h-2.5 w-2.5 rounded-full bg-gold" />
-                      </span>
-                    </div>
-                    <Progress value={totalColetivo > 0 ? (totais.individual / totalColetivo) * 100 : 0} />
-                    <p className="mt-2 text-xs text-slate-400">
-                      {totalColetivo > 0
-                        ? `${Math.round((totais.individual / totalColetivo) * 100)}% individual · ${Math.round((totais.rateio / totalColetivo) * 100)}% rateio`
-                        : "Sem custos no período."}
-                    </p>
-                  </CardBody>
-                </Card>
-
-                <Card>
-                  <CardHeader
-                    title="Contas de rateio"
-                    subtitle="Custos coletivos divididos entre todos os colaboradores ativos."
-                    icon={<Layers className="h-5 w-5" />}
-                    action={
-                      <SegToggle
-                        opcoes={[
-                          { v: false, label: "Total" },
-                          { v: true, label: "Por colaborador" },
-                        ]}
-                        valor={rateioPorPessoa}
-                        onChange={setRateioPorPessoa}
-                      />
-                    }
-                  />
-                  <CardBody className="p-0">
-                    {totais.contasRateio.length === 0 ? (
-                      <div className="p-5">
-                        <EmptyState title="Nenhuma conta de rateio" description="Classifique contas como “Rateio para todos” no editor." />
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="border-b border-slate-100 bg-slate-50/50">
-                          <tr>
-                            <th className="th">Conta</th>
-                            <th className="th text-right">{rateioPorPessoa ? "Por colaborador" : "Valor"}</th>
-                            <th className="th text-right">% do total</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {totais.contasRateio.map((c: ContaPlano) => (
-                            <tr key={c.codigo} className="transition hover:bg-slate-50/60">
-                              <td className="td">
-                                <span className="font-medium text-slate-800">{c.nome}</span>
-                                <span className="ml-2 text-xs text-slate-400">{c.codigo}</span>
-                              </td>
-                              <td className="td text-right font-medium text-slate-800">{formatBRL(c.valor / divisor)}</td>
-                              <td className="td text-right text-slate-500">
-                                {totalColetivo > 0 ? `${((c.valor / totalColetivo) * 100).toFixed(1)}%` : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr className="bg-slate-50/60">
-                            <td className="td font-semibold text-brand-ink">Total de rateio</td>
-                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(totais.rateio / divisor)}</td>
-                            <td className="td text-right text-slate-500">
-                              {totalColetivo > 0 ? `${((totais.rateio / totalColetivo) * 100).toFixed(1)}%` : "—"}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
-              </div>
-            )}
-          </section>
-
-          {/* ===================== SEÇÃO 3 ===================== */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Evolução mês a mês</h2>
-            </div>
-
-            <Card>
-              <CardHeader
-                title="Custo médio por colaborador"
-                subtitle="Custo individual da folha dividido pelos colaboradores ativos, por competência."
-                icon={<TrendingUp className="h-5 w-5" />}
-              />
-              <CardBody>
-                {dadosEvolucao.length === 0 ? (
-                  <EmptyState title="Sem histórico" description="Importe mais competências para ver a evolução." />
-                ) : (
-                  <BarrasVerticais data={dadosEvolucao} moeda altura={300} />
-                )}
-
-                <div className="mt-6 overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="border-b border-slate-100 bg-slate-50/50">
-                      <tr>
-                        <th className="th">Mês</th>
-                        <th className="th text-right">Individual</th>
-                        <th className="th text-right">Rateio</th>
-                        <th className="th text-right">Custo médio / colab.</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {serie.map((s) => (
-                        <tr
-                          key={s.competencia}
-                          className={`transition hover:bg-slate-50/60 ${s.competencia === compAtiva ? "bg-brand-50/40" : ""}`}
-                        >
-                          <td className="td font-medium text-slate-800">{compLabelLongo(s.competencia)}</td>
-                          <td className="td text-right text-slate-600">{formatBRL(s.individual)}</td>
-                          <td className="td text-right text-slate-600">{formatBRL(s.rateio)}</td>
-                          <td className="td text-right font-semibold text-brand-ink">{formatBRL(s.medioIndividual)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardBody>
-            </Card>
-          </section>
-        </div>
-      )}
-
       {/* ===================== Editor de classificação ===================== */}
       <Modal
         aberto={editorAberto}
@@ -2528,24 +2541,6 @@ export default function Custos() {
         titulo="Excluir lançamento"
         mensagem="Este pagamento será removido da folha do colaborador. Esta ação não pode ser desfeita."
       />
-              </>
-            ),
-          },
-          {
-            id: "global",
-            label: "Custo Global (Funcionários)",
-            icon: <Layers className="h-4 w-4" />,
-            conteudo: <CustoGlobalFuncionarios />,
-          },
-          {
-            id: "viagens",
-            label: "Viagens e Diárias",
-            icon: <Plane className="h-4 w-4" />,
-            conteudo: <ViagensPainel />,
-          },
-        ]}
-      />
-
       <DrillModal {...drill.props} />
     </div>
   );
@@ -2557,17 +2552,29 @@ export default function Custos() {
 // Confraternização, etc.). É a MESMA base que o DRE usa, então o total bate.
 // Diferente da "Folha real" (que soma o pago por pessoa), aqui é a visão contábil
 // global, incluindo os custos coletivos (alimentação, confraternização, FGTS mensal).
-function CustoGlobalFuncionarios() {
+// O mês vem da página (seletor único para as três abas, 06/09/2026): o bloco
+// não escolhe mais a competência sozinho — mostra a que está aberta, e diz
+// quando ela não tem plano do contador em vez de pular calado para outro mês.
+function CustoGlobalFuncionarios({
+  comp,
+  competencias,
+  onComp,
+  irParaSync,
+}: {
+  comp: string;
+  competencias: string[];
+  onComp: (c: string) => void;
+  irParaSync: () => void;
+}) {
   const { items: plano } = useColecao("planoContas");
   const { items: pagamentos } = useColecao("pagamentos");
-  const competencias = useMemo(() => competenciasPlano(plano), [plano]);
-  const [comp, setComp] = useState<string>("");
   // Conta em foco pelos cards: filtra a tabela de contas de pessoal (null = todas).
-  const [contaFoco, setContaFoco] = useState<string | null>(null);
-  const compAtiva = comp && competencias.includes(comp) ? comp : (competencias[competencias.length - 1] ?? "");
+  const [focoBruto, setContaFoco] = useState<string | null>(null);
+  const compAtiva = comp;
   const idx = competencias.indexOf(compAtiva);
+  const temPlano = useMemo(() => plano.some((p) => p.competencia === compAtiva), [plano, compAtiva]);
   // Trocar de mês limpa o foco — a conta filtrada pode nem existir na outra competência.
-  const irMes = (d: number) => { const n = competencias[idx + d]; if (n) { setComp(n); setContaFoco(null); } };
+  const irMes = (d: number) => { const n = competencias[idx + d]; if (n) { onComp(n); setContaFoco(null); } };
 
   // Folha real por pessoa (soma dos pagamentos do mês) — para comparar lado a lado.
   const folhaReal = useMemo(
@@ -2590,12 +2597,32 @@ function CustoGlobalFuncionarios() {
     return { grupos, total: grupos.reduce((s, x) => s + x.valor, 0) };
   }, [plano, compAtiva]);
 
-  if (competencias.length === 0) {
+  // O mês agora muda por FORA deste bloco (seletor do topo, setas do resumo,
+  // clique no histórico), e um foco preso numa conta que o outro mês não tem
+  // deixava a tabela com zero linha e um total de R$ 0,00 "filtrado". O foco
+  // vale enquanto a conta existir no mês aberto; fora disso, some sozinho.
+  const contaFoco = focoBruto && grupos.some((g) => g.cod === focoBruto) ? focoBruto : null;
+
+  if (!compAtiva || !temPlano) {
+    // As setas ficam AQUI também: sem elas, cair num mês sem plano do contador
+    // era um beco — o bloco sumia inteiro e só o seletor lá no topo trazia de
+    // volta. Elas percorrem a mesma lista de meses do resto da tela.
     return (
       <EmptyState
-        title="Sem plano de contas importado"
-        description="Envie a planilha de plano de contas (na aba Custos de Colaboradores) para calcular o custo global."
+        title={compAtiva ? `Sem plano de contas em ${compLabelLongo(compAtiva)}` : "Sem plano de contas importado"}
+        description="O custo global contábil depende da planilha do contador deste mês. Envie-a em Sincronização — até lá este bloco fica indisponível, não zerado."
         icon={<Layers className="h-10 w-10" />}
+        acao={
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button type="button" className="btn-outline" onClick={irParaSync}><Upload className="h-4 w-4" /> Enviar o plano de contas</button>
+            <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        }
       />
     );
   }
@@ -2618,9 +2645,7 @@ function CustoGlobalFuncionarios() {
               <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <Select value={compAtiva} onChange={(e) => { setComp(e.target.value); setContaFoco(null); }} className="h-9 w-auto py-0 text-sm">
-                {competencias.map((c) => <option key={c} value={c}>{compLabelLongo(c)}</option>)}
-              </Select>
+              <span className="px-1 text-sm font-medium text-slate-700 tabular-nums">{compLabelLongo(compAtiva)}</span>
               <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -2633,7 +2658,7 @@ function CustoGlobalFuncionarios() {
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Folha real (por pessoa)</p>
               <p className="mt-1 text-2xl font-bold text-slate-800">{formatBRL(folhaReal)}</p>
-              <p className="mt-0.5 text-xs text-slate-500">O que foi pago a cada colaborador (aba "Custos de Colaboradores").</p>
+              <p className="mt-0.5 text-xs text-slate-500">O que foi pago a cada colaborador — a folha geral do mês, logo acima.</p>
             </div>
             <div className="rounded-2xl border border-brand/30 bg-brand/5 p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-brand">Custo global (contábil)</p>
@@ -2725,7 +2750,7 @@ function CustoGlobalFuncionarios() {
             </p>
           )}
           <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-            Esta é a visão <strong>contábil</strong> (plano de contas, grupo {PREFIXO_FUNCIONARIOS}*) — inclui os custos coletivos como alimentação, confraternização e o FGTS mensal. É a mesma base do DRE, então o total deve bater. A aba "Custos de Colaboradores" mostra a folha real <strong>por pessoa</strong>.
+            Esta é a visão <strong>contábil</strong> (plano de contas, grupo {PREFIXO_FUNCIONARIOS}*) — inclui os custos coletivos como alimentação, confraternização e o FGTS mensal. É a mesma base do DRE, então o total deve bater. A folha real <strong>por pessoa</strong> está na aba "Custos de Colaboradores"; a folha geral do mês, logo acima.
           </p>
         </CardBody>
       </Card>

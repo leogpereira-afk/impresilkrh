@@ -15,6 +15,7 @@
 import { supabase, FN_MUBI_PAGAMENTOS } from "@/lib/supabase";
 import { competenciaPagto } from "@/lib/custos";
 import type { Colaborador, Pagamento } from "@/data/types";
+import { tipoDoPlanoErp } from "./tipoDoPlano";
 
 export interface LinhaMubi {
   idMubi: string;
@@ -73,8 +74,21 @@ export async function buscarPagamentosMubi(competencia: string, page?: number): 
   });
   const corpo = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(corpo?.erro || `Falha ao consultar o Mubisys (${r.status}).`);
-  return corpo as RespostaMubi;
+  const resp = corpo as RespostaMubi;
+  return { ...resp, linhas: normalizarLinhas(resp.linhas ?? []) };
 }
+
+/**
+ * O TIPO é decidido aqui, no cliente, pelo NOME da conta do contador — ver
+ * lib/tipoDoPlano. A Edge Function ainda manda um `tipo`, mas ele só vale
+ * quando nem o nome nem o código da conta dizem nada. Toda linha do ERP passa
+ * por `buscarPagamentosMubi`, então este é o único lugar que precisa disso.
+ */
+export const normalizarLinhas = (linhas: LinhaMubi[]): LinhaMubi[] =>
+  // A reserva vale só quando o ERP NÃO mandou conta. Se mandou e nós não
+  // reconhecemos, o certo é "Outros" — visível: aceitar o palpite da função
+  // (que resolve 2.1.11.x pelo prefixo antigo) repetiria calado o erro de julho.
+  linhas.map((l) => ({ ...l, tipo: tipoDoPlanoErp(l.planoContas, l.planoContas ? "Outros" : (l.tipo || "Outros")) }));
 
 /**
  * Uma competência inteira, percorrendo TODAS as páginas até o fim.

@@ -52,51 +52,87 @@ async function ehGestao(req: Request): Promise<boolean> {
 
 // Plano de contas do Mubisys → tipo de pagamento do RH.
 //
-// CONFERIDO CONTRA O PLANO DE CONTAS REAL da Impresilk (arquivo do contador,
-// 31/07/2026). A versão anterior foi escrita por dedução e tinha três rótulos
-// TROCADOS — 2.1.21 como "Férias" (é Divulgação de vagas), 2.1.17 como
-// "Empreita" (é Treinamentos), 2.1.18 como "Limpeza" (é Minas Brasil, a
-// drogaria) — e deixava Férias, 13º, FGTS, INSS, Empreita e Limpeza caindo
-// todos em "Outros".
+// O NOME DA CONTA MANDA; O CÓDIGO SÓ DESEMPATA. Cópia fiel de
+// src/lib/tipoDoPlano.ts (que tem os testes) — o cliente refaz esta conta ao
+// receber as linhas, então o que sai daqui é uma DICA para versões antigas do
+// app; a decisão final é do cliente. Mudou lá, muda aqui igual.
 //
-// A ordem importa: a comparação é por PREFIXO e para no primeiro que casar,
-// então o código mais específico (2.1.11.2) vem antes do genérico (2.1.11).
-const DE_PARA: [string, string][] = [
-  ["2.1.1-", "Salário"],
-  ["2.1.2-", "Adiantamento"],
-  ["2.1.3-", "Férias"],
-  ["2.1.4-", "13º Salário"],
-  ["2.1.5-", "Vale Transporte"],
-  ["2.1.6-", "Rescisão"],
-  ["2.1.7-", "Estágio/Bolsa"],
-  ["2.1.8-", "Uniforme"],
-  ["2.1.9-", "FGTS"],                 // e 2.1.9.1/.2/.3 (regular, empréstimo, rescisão)
-  ["2.1.10-", "INSS"],
-  ["2.1.11.1-", "Diária"],
-  ["2.1.11.2-", "Freelancer (Empreita)"],
-  ["2.1.11.3-", "Limpeza/Faxina"],
-  ["2.1.11.4-", "Horas Extras"],
-  ["2.1.11-", "Horas Extras"],
-  ["2.1.12.1-", "Comissão"],          // Comercial
-  ["2.1.12.2-", "Bônus"],
-  ["2.1.12-", "Comissão"],            // Comissão Interna
-  ["2.1.13-", "Incentivo de Produtividade"],
-  ["2.1.14-", "Alimentação"],
-  ["2.1.15-", "Confraternização"],    // e as subcontas (festa junina, aniversário…)
-  ["2.1.16.1-", "Limpeza/Faxina"],
-  ["2.1.16-", "Prestação de Serviços"],
-  ["2.1.17-", "Treinamentos"],
-  ["2.1.18-", "Farmácia"],            // "Minas Brasil" = drogaria conveniada
-  ["2.1.19-", "Incentivo de Viagens"],
-  ["2.1.20-", "Plano de Saúde"],      // e 2.1.20.1 Pró Vida
+// Por que (06/09/2026): o contador RENUMEROU as subcontas 2.1.11.x em julho.
+// Até junho 2.1.11.1 era Diária; de julho em diante é Comissão interna (.2
+// Bônus, .3 Diária, .4 Empreita, .6 Hora Extra, .7 Incentivo de Viagens). A
+// tabela só por código continuou lendo o significado antigo e 70 lançamentos
+// de jul/ago saíram no tipo errado — comissão de vendedora como "Diária",
+// diária como "Limpeza/Faxina", empreita como "Horas Extras". O ERP manda o
+// nome na mesma string ("2.1.11.1-Comissão interna"): ler o nome é ler o
+// contador, seja qual for o número.
+//
+// A versão anterior (31/07) já tinha sido escrita por dedução e tinha três
+// rótulos trocados; a lição é a mesma: código não é significado.
+const normalizar = (s: string) =>
+  s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+// A ORDEM É A REGRA (cópia de src/lib/tipoDoPlano.ts, que tem os testes):
+// FGTS/INSS na frente (guia é encargo, "FGTS Rescisório" é FGTS); "Rescisão" e
+// "13º" antes de "Férias"/"Salário"; "Férias" antes de "Adiantamento"
+// ("Adiantamento de Férias" é férias); "Salário" por último. O `\bamil\b` tem
+// fronteira de palavra porque "amil" casa dentro de "família".
+const POR_NOME: [RegExp, string][] = [
+  [/fgts/, "FGTS"],
+  [/inss/, "INSS"],
+  [/rescis/, "Rescisão"],
+  [/(^|\D)13(\D|$)|decimo ?terceiro/, "13º Salário"],
+  [/ferias/, "Férias"],
+  [/adiantamento/, "Adiantamento"],
+  [/comiss|comercial/, "Comissão"],
+  [/bonus/, "Bônus"],
+  [/diaria/, "Diária"],
+  [/empreita|freela/, "Freelancer (Empreita)"],
+  [/faxina|limpeza/, "Limpeza/Faxina"],
+  [/horas? ?extras?|plantao/, "Horas Extras"],
+  [/produtividade/, "Incentivo de Produtividade"],
+  [/viage/, "Incentivo de Viagens"],
+  [/vale ?transporte|\bvt\b/, "Vale Transporte"],
+  [/estagio|bolsa/, "Estágio/Bolsa"],
+  [/uniforme/, "Uniforme"],
+  [/alimenta/, "Alimentação"],
+  [/confraterniza|aniversario|festa/, "Confraternização"],
+  [/prestacao/, "Prestação de Serviços"],
+  [/treinamento/, "Treinamentos"],
+  [/farmacia|minas brasil|drogaria/, "Farmácia"],
+  [/plano de saude|\bsaude\b|pro ?vida|unimed|\bamil\b|odonto/, "Plano de Saúde"],
+  [/salario/, "Salário"],
+];
+
+// Desempate por código: só contas de GRUPO, subconta herda do pai. As 2.1.11.x
+// ficam de fora de propósito — já foram renumeradas uma vez.
+const POR_CODIGO = new Map<string, string>([
+  ["2.1.1", "Salário"],
+  ["2.1.2", "Adiantamento"],
+  ["2.1.3", "Férias"],
+  ["2.1.4", "13º Salário"],
+  ["2.1.5", "Vale Transporte"],
+  ["2.1.6", "Rescisão"],
+  ["2.1.7", "Estágio/Bolsa"],
+  ["2.1.8", "Uniforme"],
+  ["2.1.9", "FGTS"],                 // e 2.1.9.1/.2/.3 (regular, empréstimo, rescisão)
+  ["2.1.10", "INSS"],
+  ["2.1.12", "Comissão"],            // Comissão Interna
+  ["2.1.13", "Incentivo de Produtividade"],
+  ["2.1.14", "Alimentação"],
+  ["2.1.15", "Confraternização"],    // e as subcontas (festa junina, aniversário…)
+  ["2.1.16", "Prestação de Serviços"],
+  ["2.1.17", "Treinamentos"],
+  ["2.1.18", "Farmácia"],            // "Minas Brasil" = drogaria conveniada
+  ["2.1.19", "Incentivo de Viagens"],
+  ["2.1.20", "Plano de Saúde"],      // e 2.1.20.1 Pró Vida
   // 2.1.21 (Divulgação de vagas) e 2.1.22 (Advocatícios) são despesas de RH,
   // não pagamento a colaborador — ficam em "Outros" de propósito.
   //
   // FORA DO GRUPO 2.1, mas é gente recebendo (ver FOLHA_FORA_DO_21 abaixo):
-  ["2.3.2.1-", "Limpeza/Faxina"],     // Limpeza Escritório
-  ["2.3.2.2-", "Limpeza/Faxina"],     // Limpeza Produção
-  ["2.11.1-", "Freelancer (Empreita)"],
-];
+  ["2.3.2.1", "Limpeza/Faxina"],     // Limpeza Escritório
+  ["2.3.2.2", "Limpeza/Faxina"],     // Limpeza Produção
+  ["2.11.1", "Freelancer (Empreita)"],
+]);
 
 /**
  * Contas fora do grupo 2.1 que mesmo assim pagam PESSOA.
@@ -121,24 +157,23 @@ const DE_PARA: [string, string][] = [
  */
 const FOLHA_FORA_DO_21 = ["2.3.2.1", "2.3.2.2", "2.11.1"];
 
-/**
- * Traduz o plano de contas do ERP no tipo de pagamento do RH.
- *
- * SUBCONTA HERDA DO PAI: "2.1.9.1-Regular" é FGTS porque 2.1.9 é FGTS; a
- * comparação sobe a hierarquia até achar (2.1.9.1 → 2.1.9 → 2.1 → 2). Sem isso
- * toda subconta caía em "Outros" — eram 13 delas, incluindo as três de FGTS e
- * o Pró Vida do plano de saúde.
- */
 const codigoDoPlano = (plano: string) => String(plano || "").trim().split("-")[0].trim();
 
+/**
+ * Traduz a conta do ERP no tipo de pagamento do RH: nome, depois código
+ * (subindo a hierarquia: 2.1.9.1 → 2.1.9 → 2.1 → 2), senão "Outros".
+ */
 function tipoDoPlano(plano: string): string {
+  const nome = normalizar(String(plano || "").trim().split("-").slice(1).join("-").trim());
+  if (nome) {
+    for (const [re, tipo] of POR_NOME) if (re.test(nome)) return tipo;
+  }
   const codigo = codigoDoPlano(plano);
   if (!codigo) return "Outros";
   const partes = codigo.split(".");
   for (let n = partes.length; n >= 1; n--) {
-    const alvo = partes.slice(0, n).join(".") + "-";
-    const achou = DE_PARA.find(([prefixo]) => prefixo === alvo);
-    if (achou) return achou[1];
+    const t = POR_CODIGO.get(partes.slice(0, n).join("."));
+    if (t) return t;
   }
   return "Outros";
 }

@@ -5,7 +5,8 @@ import { MESES_PT } from "@/lib/format";
 
 // Ordem de exibição e cor por tipo de pagamento (do mais estrutural ao eventual).
 // Espelha o plano de contas 2.1.x da Impresilk (conferido com o arquivo do
-// contador em 31/07/2026) — ver DE_PARA em supabase/functions/mubi-pagamentos.
+// contador em 31/07/2026) — ver POR_NOME em src/lib/tipoDoPlano.ts (a Edge
+// Function mubi-pagamentos carrega uma cópia da mesma tabela).
 export const TIPOS_PAGAMENTO: { tipo: string; cor: string }[] = [
   { tipo: "Salário", cor: "#16334f" },
   { tipo: "Adiantamento", cor: "#2563eb" },
