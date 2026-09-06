@@ -288,6 +288,28 @@ Deno.serve(async (req) => {
     }
 
     const folha = itens.filter((i) => ehFolha(String(i.plano_contas)));
+
+    // O QUE FICOU DE FORA, dito em voz alta.
+    //
+    // `ehFolha` é uma lista fechada de CÓDIGOS, e código muda: a faxina já viveu
+    // em 2.3.2.1 e some da folha desde julho/2026 sem que nada na tela avisasse
+    // — foi assim que a faxina e a empreita ficaram meses fora em 2026 (ver
+    // FOLHA_FORA_DO_21). Um zero silencioso parece "não teve"; então toda conta
+    // recusada cujo NOME é de pagamento a pessoa volta agregada (conta, quantos,
+    // total), sem nome de ninguém, para o RH decidir se ela entra na lista.
+    const NOME_DE_PESSOA = /faxina|limpeza|empreita|freela|diaria|comiss|bonus|hora ?extra|adiantamento|salario|ferias|rescis|vale ?transporte|decimo|estagio|uniforme|produtividade/;
+    const fora = new Map<string, { plano: string; quantos: number; total: number }>();
+    for (const i of itens) {
+      const plano = String(i.plano_contas ?? "");
+      if (!plano || ehFolha(plano)) continue;
+      const nome = normalizar(plano.split("-").slice(1).join("-"));
+      if (!nome || !NOME_DE_PESSOA.test(nome)) continue;
+      const x = fora.get(plano) ?? { plano, quantos: 0, total: 0 };
+      x.quantos += 1;
+      x.total = Math.round((x.total + (num(i.valor_pagamento) || num(i.valor_titulo))) * 100) / 100;
+      fora.set(plano, x);
+    }
+    const contasForaDaFolha = [...fora.values()].sort((a, b) => b.total - a.total);
     const linhas = folha.map((i) => {
       const nome = limpaNome(String(i.origem ?? ""));
       return {
@@ -315,6 +337,7 @@ Deno.serve(async (req) => {
       paginas: totalPaginas,
       // Quem pede página a página nunca é truncado: o cliente vai até o fim.
       truncado: umaPagina ? false : totalPaginas > 4,
+      contasForaDaFolha,
       pagina: umaPagina ? paginaPedida : 1,
       temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
       linhas,

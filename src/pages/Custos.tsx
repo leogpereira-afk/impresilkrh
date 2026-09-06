@@ -47,7 +47,7 @@ import {
 } from "@/lib/pontoFolha";
 import { minParaHora } from "@/lib/pontoImport";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
-import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
+import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type ContaForaDaFolha, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -233,7 +233,7 @@ export default function Custos() {
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
-    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean };
+    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[] };
   } | null>(null);
   const [removerAusentes, setRemoverAusentes] = useState(false);
   // Busca no ERP Mubisys
@@ -348,7 +348,7 @@ export default function Custos() {
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
-      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado },
+      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
@@ -2009,6 +2009,26 @@ export default function Custos() {
             </>}
           >
             <div className="space-y-3">
+              {/* Conta de pessoa que o filtro recusou. O filtro é por CÓDIGO e o
+                  contador muda código: sem este aviso, a faxina simplesmente
+                  para de aparecer e o mês fecha menor sem ninguém notar. */}
+              {(folhaPrev.mubi?.foraDaFolha?.length ?? 0) > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-xs font-semibold text-amber-900">Contas de pessoal que ficaram de fora</p>
+                  <p className="mt-1 text-[11px] text-amber-800/90">
+                    O ERP tem títulos nestas contas, o nome delas é de pagamento a pessoa, mas elas não estão na lista de contas de folha —
+                    então não entram na ficha de ninguém. Se alguma for de colaborador, me avise para incluí-la.
+                  </p>
+                  <ul className="mt-2 space-y-0.5">
+                    {folhaPrev.mubi!.foraDaFolha!.map((c) => (
+                      <li key={c.plano} className="flex items-baseline justify-between gap-3 text-[11px] text-amber-900">
+                        <span className="font-mono">{c.plano}</span>
+                        <span className="tabular-nums">{c.quantos} título(s) · {formatBRL(c.total)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {buscaIncompleta && (
                 <div className="rounded-xl border border-red-300 bg-red-50 p-3">
                   <p className="text-xs font-semibold text-red-800">A busca no ERP veio incompleta</p>

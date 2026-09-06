@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { codigoDoPlano, nomeDoPlano, planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
-import { normalizarLinhas, type LinhaMubi } from "./mubiPagamentos";
+import { juntarForaDaFolha, normalizarLinhas, type LinhaMubi } from "./mubiPagamentos";
 
 // Toda combinação (conta do ERP → tipo) que existe HOJE na base, tirada do banco
 // em 06/09/2026 com `split_part(descricao, ' · ', 2)`. Se o contador criar uma
@@ -125,6 +125,21 @@ describe("planoDaDescricao — a conta gravada na descrição", () => {
     expect(planoDaDescricao("Lançamento manual")).toBe("");
     expect(planoDaDescricao("Pagamento · sem conta")).toBe("");
     expect(planoDaDescricao(null)).toBe("");
+  });
+});
+
+describe("juntarForaDaFolha — o que o filtro recusou, somado de várias páginas", () => {
+  it("junta a mesma conta de páginas/meses diferentes", () => {
+    expect(juntarForaDaFolha([
+      [{ plano: "2.4.7-Limpeza", quantos: 1, total: 300 }],
+      [{ plano: "2.4.7-Limpeza", quantos: 2, total: 600.5 }, { plano: "2.9.1-Empreita", quantos: 1, total: 100 }],
+    ])).toEqual([
+      { plano: "2.4.7-Limpeza", quantos: 3, total: 900.5 },
+      { plano: "2.9.1-Empreita", quantos: 1, total: 100 },
+    ]);
+  });
+  it("página de função antiga (sem o campo) não quebra", () => {
+    expect(juntarForaDaFolha([undefined, undefined])).toEqual([]);
   });
 });
 

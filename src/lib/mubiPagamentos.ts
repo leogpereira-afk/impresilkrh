@@ -44,6 +44,34 @@ export interface RespostaMubi {
   /** Ainda há página depois desta? */
   temMais?: boolean;
   linhas: LinhaMubi[];
+  /**
+   * Contas que o filtro de folha RECUSOU mas cujo nome é de pagamento a pessoa
+   * (faxina, empreita, comissão…). O filtro é por código, e código muda: sem
+   * isto, a conta que o contador move para fora da lista some da folha em
+   * silêncio. Agregado por conta — nenhum nome de pessoa. Ausente em versões
+   * antigas da função no ar.
+   */
+  contasForaDaFolha?: ContaForaDaFolha[];
+}
+
+export interface ContaForaDaFolha {
+  plano: string;
+  quantos: number;
+  total: number;
+}
+
+/** Junta as listas de "ficou de fora" de várias páginas/meses numa só. */
+export function juntarForaDaFolha(listas: (ContaForaDaFolha[] | undefined)[]): ContaForaDaFolha[] {
+  const m = new Map<string, ContaForaDaFolha>();
+  for (const l of listas) {
+    for (const c of l ?? []) {
+      const x = m.get(c.plano) ?? { plano: c.plano, quantos: 0, total: 0 };
+      x.quantos += c.quantos;
+      x.total = Math.round((x.total + c.total) * 100) / 100;
+      m.set(c.plano, x);
+    }
+  }
+  return [...m.values()].sort((a, b) => b.total - a.total);
 }
 
 export const norm = (s: string) =>
@@ -106,9 +134,10 @@ export async function buscarCompetenciaCompleta(
   competencia: string,
   aoProgredir?: (pagina: number, totalPaginas: number) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean }> {
+): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[] }> {
   const TETO_PAGINAS = 40;
   const linhas: LinhaMubi[] = [];
+  const fora: (ContaForaDaFolha[] | undefined)[] = [];
   let pagina = 1;
   let totalPaginas = 1;
   let incompleta = false;
@@ -117,6 +146,7 @@ export async function buscarCompetenciaCompleta(
     if (cancelado?.()) { incompleta = true; break; }
     const r = await buscarPagamentosMubi(competencia, pagina);
     linhas.push(...r.linhas);
+    fora.push(r.contasForaDaFolha);
     totalPaginas = r.paginas || 1;
     aoProgredir?.(pagina, totalPaginas);
     // `temMais` só existe na função nova. Numa função antiga (sem redeploy) ele
@@ -125,7 +155,7 @@ export async function buscarCompetenciaCompleta(
     pagina++;
     if (pagina > TETO_PAGINAS) { incompleta = true; break; }
   }
-  return { linhas, paginas: totalPaginas, incompleta };
+  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora) };
 }
 
 /**
@@ -150,8 +180,9 @@ export async function buscarHistoricoMubi(
   competencias: string[],
   aoProgredir?: (feitos: number, total: number, competencia: string) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[] }> {
+): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[] }> {
   const linhas: LinhaMubi[] = [];
+  const fora: (ContaForaDaFolha[] | undefined)[] = [];
   const falhas: { competencia: string; erro: string }[] = [];
   const competenciasLidas: string[] = [];
   let truncado = false;
@@ -171,6 +202,7 @@ export async function buscarHistoricoMubi(
       // limite ou vem 500 num mês qualquer, e perder os outros 11 por causa
       // dele seria pior. As falhas voltam listadas para o RH tentar de novo.
       linhas.push(...r.linhas);
+      fora.push(r.contasForaDaFolha);
       competenciasLidas.push(comp);
       if (r.incompleta) truncado = true;
     } catch (e) {
@@ -190,7 +222,7 @@ export async function buscarHistoricoMubi(
     return true;
   });
 
-  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas };
+  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora) };
 }
 
 /** Lista de competências (AAAA-MM) de `meses` atrás até a atual, da mais nova para a mais antiga. */
