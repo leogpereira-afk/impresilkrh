@@ -1,128 +1,33 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { LogIn, Eye, EyeOff, User, Loader2 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
-import type { Perfil } from "@/data/types";
-import { useDominio, noQuadro } from "@/lib/dominio";
-import { useColecao } from "@/lib/store";
-import { MASTER_COLAB_ID } from "@/lib/rbac";
-import { SENHA_DEMO, entrar, useSessao } from "@/lib/session";
-import { MODO_JWT, loginServidor, ErroAuth } from "@/lib/auth";
-import { conferirHash, ehHash } from "@/lib/senha";
-
-const normalizar = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-
-// Acesso fixo de administrador (INDEPENDENTE do cadastro de colaboradores).
-// Garante que o dono nunca fique travado — funciona mesmo se a base mudar/zerar
-// ou se o login por servidor (JWT) não conhecer o usuário. Aceita "leonardo" ou
-// o nome completo.
-//
-// A PORTA DOS FUNDOS FOI FECHADA (10/08/2026). Havia aqui um nome e uma senha
-// fixos que entravam como ADMIN_RH sem passar pelo servidor -- escritos em
-// texto, num repositório PÚBLICO. Qualquer pessoa que abrisse este arquivo no
-// GitHub e sentasse num computador onde o RH já tinha sido usado abria a ficha
-// de todo mundo: salário, CPF, endereço. Não é hipótese: o repo responde 200 no
-// raw.githubusercontent.
-//
-// Ela existia como saída de emergência, para o caso de o servidor recusar. Hoje
-// a direção tem conta de verdade no Supabase Auth e entra com a própria senha
-// (confirmado em 10/08), então a saída não é mais necessária -- e uma saída de
-// emergência cuja chave está publicada não é saída de emergência, é porta.
+import { useSessao } from "@/lib/session";
+import { MODO_JWT, loginServidor } from "@/lib/auth";
 
 export default function Login() {
   const navigate = useNavigate();
   const sessao = useSessao();
-  const { colaboradores } = useDominio();
-  const { items: usuarios } = useColecao("usuarios");
   const [nome, setNome] = useState("");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [entrando, setEntrando] = useState(false);
-  /* Nasce DESLIGADO de propósito: numa gráfica há máquina compartilhada, e o
-     padrão tem de ser o mais seguro. Quem marca está dizendo "este aparelho é
-     meu". Nada de senha é guardado — só a sessão dura mais (ver lib/session). */
   const [lembrar, setLembrar] = useState(false);
-
-  // Quem pode entrar: colaboradores ativos (inclui diretoria). O perfil de acesso
-  // vem do próprio cadastro de cada pessoa.
-  const pessoas = useMemo(() => colaboradores.filter(noQuadro), [colaboradores]);
-
   if (sessao) return <Navigate to="/painel" replace />;
-
-  // Resolve nome+senha pela base local (login antigo). Usado quando NÃO há login
-  // por servidor, ou como degradação segura quando o servidor está fora do ar.
-  const resolverLocal = async (): Promise<{ perfil: Perfil; colaboradorId: string } | { erro: string }> => {
-    const n = normalizar(nome);
-    const exatos = pessoas.filter((c) => normalizar(c.nome) === n);
-    let alvo = exatos.length === 1 ? exatos[0] : undefined;
-    if (exatos.length > 1) {
-      alvo = exatos.find((c) => usuarios.some((u) => u.ativo && u.colaboradorId === c.id));
-      if (!alvo) return { erro: "Há mais de um colaborador com esse nome. Use o nome completo." };
-    } else if (exatos.length === 0 && n.length >= 3) {
-      const prefixo = pessoas.filter((c) => normalizar(c.nome).startsWith(n));
-      if (prefixo.length === 1) alvo = prefixo[0];
-      else if (prefixo.length > 1) {
-        const comUsuario = prefixo.filter((c) => usuarios.some((u) => u.ativo && u.colaboradorId === c.id));
-        if (comUsuario.length === 1) alvo = comUsuario[0];
-        else return { erro: "Nome incompleto encontrou mais de uma pessoa. Digite o nome completo." };
-      }
-    }
-    if (!alvo) return { erro: "Nome não encontrado. Digite seu nome completo como está cadastrado." };
-    const usuario = usuarios.find((u) => u.ativo && u.colaboradorId === alvo!.id);
-    // A senha guardada é um HASH (formato novo). Registros antigos ainda podem ter
-    // a senha em texto — aceitos até a migração converter (ver lib/migracoes.ts).
-    const senhaUsuario = usuario?.senha?.trim();
-
-    /* A SENHA GERAL SÓ VALE PARA QUEM AINDA NÃO TEM A PRÓPRIA.
-       Ela está escrita neste bundle, que é público — antes valia para QUALQUER
-       pessoa do quadro, então saber o nome de alguém bastava para entrar como
-       ela. Agora quem já definiu senha não é mais contornável por ela.
-       Ela continua existindo para as pessoas sem senha nenhuma (4 das 7 em
-       10/08/2026): removê-la de vez trancaria essas do lado de fora. O fim dela
-       é dar senha a essas quatro — pela tela de Acessos do painel. */
-    const temPropria = ehHash(usuario?.senhaHash) || !!senhaUsuario;
-    const ok =
-      (!temPropria && !!SENHA_DEMO && senha === SENHA_DEMO) ||
-      (ehHash(usuario?.senhaHash) && (await conferirHash(senha, usuario!.senhaHash!))) ||
-      (!!senhaUsuario && senha === senhaUsuario);
-    if (!ok) return { erro: "Senha incorreta." };
-    const perfil = alvo.id === MASTER_COLAB_ID ? "ADMIN_RH" : (usuario?.perfil ?? alvo.perfil ?? "COLABORADOR");
-    return { perfil, colaboradorId: alvo.id };
-  };
-  const entrarLocal = async (): Promise<boolean> => {
-    const r = await resolverLocal();
-    if ("erro" in r) { setErro(r.erro); return false; }
-    entrar(r.perfil, r.colaboradorId, lembrar);
-    navigate("/painel");
-    return true;
-  };
 
   const submeter = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (entrando) return;
     setErro("");
-    // Login real PRIMEIRO (servidor confere a senha e emite o crachá). O acesso
-    // fixo ficou para trás de propósito: se ele viesse antes, o diretor entraria
-    // sempre pela porta velha — sem crachá — e a migração nunca aconteceria. Ele
-    // continua valendo como PORTA DE EMERGÊNCIA quando o servidor recusa ou some.
     setEntrando(true);
     try {
-      if (MODO_JWT) {
-        try {
-          await loginServidor(nome, senha, lembrar);
-          navigate("/painel");
-          return;
-        } catch (err) {
-          // Senha errada de quem TEM conta no servidor: mostra e para aqui.
-          // Quem ainda não tem conta lá (ou servidor fora) cai no login local —
-          // é o que permite ligar o login real sem travar ninguém.
-          if (err instanceof ErroAuth && err.tipo === "credencial") { setErro(err.message || "Senha incorreta."); return; }
-        }
-      }
-      if (!(await entrarLocal()) && MODO_JWT) setErro((e) => e || "Sem conexão para entrar agora. Tente novamente com internet.");
-    } finally {
-      setEntrando(false);
-    }
+      if (!MODO_JWT) throw new Error("O acesso ao servidor não está configurado. Fale com a administração.");
+      await loginServidor(nome.trim(), senha, lembrar);
+      navigate("/painel");
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível entrar. Tente novamente.");
+    } finally { setEntrando(false); }
   };
 
   return (
@@ -164,7 +69,8 @@ export default function Login() {
                   onChange={(e) => { setNome(e.target.value); setErro(""); }}
                   placeholder="ex.: leonardo"
                   autoFocus
-                  autoComplete="off"
+                  autoComplete="username"
+                  required
                 />
               </div>
             </label>
@@ -178,8 +84,10 @@ export default function Login() {
                   value={senha}
                   onChange={(e) => { setSenha(e.target.value); setErro(""); }}
                   placeholder="Sua senha"
+                  autoComplete="current-password"
+                  required
                 />
-                <button type="button" onClick={() => setVerSenha((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
+                <button type="button" aria-label={verSenha ? "Ocultar senha" : "Mostrar senha"} onClick={() => setVerSenha((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
                   {verSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>

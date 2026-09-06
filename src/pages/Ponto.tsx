@@ -1434,7 +1434,7 @@ function ModalPontoManual({
         </Campo>
         {!colaboradorId && (
           <Campo label="Nome" hint="Use quando a pessoa ainda não está no cadastro">
-            <Input value={nomeLivre} onChange={(e) => setNomeLivre(e.target.value)} placeholder="Ex.: Guilherme Pereira Dias" />
+            <Input value={nomeLivre} onChange={(e) => setNomeLivre(e.target.value)} placeholder="Nome completo do colaborador" />
           </Campo>
         )}
 

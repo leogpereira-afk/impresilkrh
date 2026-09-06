@@ -29,19 +29,19 @@ const def: { codigo: string; nome: string; classe: ClassificacaoConta["classe"] 
   { codigo: "2.1.9", nome: "FGTS", classe: "encargo" },
   { codigo: "2.1.9.1", nome: "FGTS Regular", classe: "encargo" },
   { codigo: "2.1.9.2", nome: "FGTS Empréstimo Trabalhador", classe: "encargo" },
-  // --- Confidencial (só gestor master) — Card A: Arrendamento/Pedro ---
+  // --- Confidencial (só gestor master) — Card A: Arrendamento ---
   { codigo: "2.14.1.1", nome: "Arrendamento · Plano de Saúde", classe: "confidencial" },
-  { codigo: "2.14.1.2", nome: "Arrendamento · Pedro Ramos Pereira", classe: "confidencial" },
-  // --- Confidencial — Card B: Retiradas Leonardo ---
-  { codigo: "2.14.2.2", nome: "Retiradas Leonardo", classe: "confidencial" },
-  { codigo: "2.14.2.3.1", nome: "Retiradas Leonardo · Combustível", classe: "confidencial" },
-  { codigo: "2.14.2.4", nome: "Retiradas Leonardo · Plano de Saúde", classe: "confidencial" },
+  { codigo: "2.14.1.2", nome: "Arrendamento · Contrato", classe: "confidencial" },
+  // --- Confidencial — Card B: Retiradas da direção ---
+  { codigo: "2.14.2.2", nome: "Retiradas da direção", classe: "confidencial" },
+  { codigo: "2.14.2.3.1", nome: "Retiradas da direção · Combustível", classe: "confidencial" },
+  { codigo: "2.14.2.4", nome: "Retiradas da direção · Plano de Saúde", classe: "confidencial" },
 ];
 
 export const CLASSIFICACAO_CONTAS: ClassificacaoConta[] = def.map((c) => ({ id: `cls_${c.codigo}`, ...c }));
 
 // Agrupamento dos cards confidenciais por prefixo de código.
 export const CARDS_CONFIDENCIAIS: { id: string; titulo: string; prefixos: string[] }[] = [
-  { id: "arrendamento", titulo: "Arrendamento (Pedro)", prefixos: ["2.14.1."] },
-  { id: "leonardo", titulo: "Retiradas Leonardo", prefixos: ["2.14.2."] },
+  { id: "arrendamento", titulo: "Arrendamento", prefixos: ["2.14.1."] },
+  { id: "leonardo", titulo: "Retiradas da direção", prefixos: ["2.14.2."] },
 ];

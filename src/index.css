@@ -72,6 +72,7 @@ textarea {
 
 @layer components {
   .card {
+    min-width: 0;
     @apply rounded-2xl border border-slate-200/60 bg-white shadow-card transition-shadow duration-300;
   }
   .card-hover {
@@ -286,3 +287,13 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 /* ---- Conectores do organograma ---- */
 .dark .org-tree li::before,
 .dark .org-tree li::after { background: rgba(255, 255, 255, 0.14); }
+
+/* Títulos azuis; subtítulos e itens mantêm os tons neutros. */
+:root { --rh-title: #2453a5; }
+.dark { --rh-title: #9abaff; }
+main h1, main h2, main h3, .rh-sidebar .nav-section { color: var(--rh-title); }
+.rh-sidebar { background-color: var(--surface); }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

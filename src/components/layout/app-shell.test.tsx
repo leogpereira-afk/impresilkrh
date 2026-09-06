@@ -23,10 +23,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { AppShell } from "./app-shell";
 import { ToastProvider } from "@/components/ui/toast";
+import { entrar, sair } from "@/lib/session";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-const SESSAO_KEY = "impresilk.rh.v1:sessao";
 
 /** Marca gravada no nó do DOM: some junto com ele se houver remontagem. */
 type NoMarcado = HTMLElement & { __marca?: string };
@@ -36,11 +35,9 @@ describe("AppShell — a barra lateral sobrevive ao redesenho", () => {
   let root: Root;
 
   beforeEach(() => {
-    window.localStorage.setItem(
-      SESSAO_KEY,
-      // Perfil de RH: é o que enxerga o menu inteiro, onde o problema aparecia.
-      JSON.stringify({ perfil: "ADMIN_RH", colaboradorId: "1", visto: Date.now() }),
-    );
+    // Usa o mesmo evento da entrada real: a sessão e os caches por usuário
+    // já foram importados antes deste teste montar a tela.
+    entrar("ADMIN_RH", "1");
     container = document.createElement("div");
     document.body.appendChild(container);
     act(() => {
@@ -58,6 +55,7 @@ describe("AppShell — a barra lateral sobrevive ao redesenho", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    sair();
     window.localStorage.clear();
   });
 

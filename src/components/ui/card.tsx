@@ -56,7 +56,7 @@ export function Card({
   const ctx = colapsavel ? { aberto, alternar: () => setAberto((o) => !o) } : null;
   return (
     <ColapsoCtx.Provider value={ctx}>
-      <div className={cn("card", className)}>{children}</div>
+      <div className={cn("card min-w-0", className)}>{children}</div>
     </ColapsoCtx.Provider>
   );
 }
@@ -77,8 +77,8 @@ export function CardHeader({
   const ctx = useContext(ColapsoCtx);
   const interior = (
     <>
-      {icon && <div className="mt-0.5 text-brand">{icon}</div>}
-      <div>
+      {icon && <div className="mt-0.5 shrink-0 text-brand">{icon}</div>}
+      <div className="min-w-0 break-words">
         <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
         {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
       </div>
@@ -87,19 +87,19 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-3 px-5 py-4",
+        "flex flex-wrap items-start justify-between gap-3 px-5 py-4",
         (!ctx || ctx.aberto) && "border-b border-slate-100",
         className,
       )}
     >
       {ctx ? (
-        <button type="button" onClick={ctx.alternar} aria-expanded={ctx.aberto} className="flex flex-1 items-start gap-3 text-left">
+        <button type="button" onClick={ctx.alternar} aria-expanded={ctx.aberto} className="flex min-w-0 flex-[1_1_12rem] items-start gap-3 text-left">
           {interior}
         </button>
       ) : (
-        <div className="flex items-start gap-3">{interior}</div>
+        <div className="flex min-w-0 flex-[1_1_12rem] items-start gap-3">{interior}</div>
       )}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
         {action}
         {ctx && (
           <button
@@ -162,15 +162,15 @@ export function SecaoColapsavel({
   const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((o) => !o));
   return (
     <Card className={className} colapsavel={false}>
-      <div className={cn("flex items-start justify-between gap-3 px-5 py-4", aberto && "border-b border-slate-100")}>
-        <button type="button" onClick={alternar} aria-expanded={aberto} className="flex flex-1 items-start gap-3 text-left">
+      <div className={cn("flex flex-wrap items-start justify-between gap-3 px-5 py-4", aberto && "border-b border-slate-100")}>
+        <button type="button" onClick={alternar} aria-expanded={aberto} className="flex min-w-0 flex-[1_1_12rem] items-start gap-3 text-left">
           {icon && <div className="mt-0.5 text-brand">{icon}</div>}
-          <div>
+          <div className="min-w-0 break-words">
             <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
             {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
           </div>
         </button>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
           {action}
           <button
             type="button"

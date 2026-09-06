@@ -32,6 +32,11 @@ export class ErroAuth extends Error {
 // SÍNCRONA do token atual. Mantida em dia pelo listener + getSession inicial.
 let sessaoAtual: Session | null = null;
 if (temWindow && supabase) {
+  window.addEventListener("impresilk:sessao-encerrada", () => {
+    const tinhaSessao = !!sessaoAtual;
+    sessaoAtual = null; // interrompe chamadas imediatamente, inclusive offline.
+    if (tinhaSessao) void supabase!.auth.signOut({ scope: "local" });
+  });
   supabase.auth.onAuthStateChange((_ev, s) => { sessaoAtual = s; });
   supabase.auth.getSession().then(async ({ data }) => {
     sessaoAtual = data.session ?? null;
@@ -62,6 +67,8 @@ if (temWindow && supabase) {
          fixo, que dava 30 dias a quem não pediu. */
       if (local.perfil !== real.perfil || local.colaboradorId !== real.colaboradorId) {
         entrar(real.perfil, real.colaboradorId, lembrarGravado());
+      } else {
+        window.dispatchEvent(new CustomEvent("impresilk:autenticado"));
       }
     } catch { /* offline: fica com o que tem, e o sync recusa o que não puder */ }
   });
@@ -69,13 +76,14 @@ if (temWindow && supabase) {
 
 // Token guardado, se ainda válido (o supabase-js já cuida do refresh sozinho).
 export function tokenAtual(): string | null {
-  return sessaoAtual?.access_token ?? null;
+  return sessaoAtual?.access_token && obterSessao() ? sessaoAtual.access_token : null;
 }
 
 async function perfilDoUsuario(userId: string): Promise<Sessao | null> {
   if (!supabase) return null;
-  const { data } = await supabase.from("perfis").select("perfil, colaborador_id").eq("user_id", userId).maybeSingle();
-  if (!data) return null;
+  const { data, error } = await supabase.from("perfis").select("perfil, colaborador_id, ativo").eq("user_id", userId).maybeSingle();
+  if (error) throw new ErroAuth("indisponivel", "Não foi possível conferir seu acesso. Tente novamente.");
+  if (!data || data.ativo === false || !["ADMIN_RH", "GESTOR", "COLABORADOR"].includes(data.perfil) || !data.colaborador_id) return null;
   return { perfil: data.perfil as Perfil, colaboradorId: data.colaborador_id };
 }
 
