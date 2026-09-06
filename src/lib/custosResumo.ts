@@ -64,17 +64,27 @@ function somaPorTipo(pags: Pag[], comp: string, ignorar: readonly string[]): Map
   const m = new Map<string, number>();
   for (const p of pags) {
     if (p.competencia !== comp || ignorar.includes(p.tipo)) continue;
-    m.set(p.tipo, (m.get(p.tipo) ?? 0) + (p.valor || 0));
+    // Number(): valor que chega como texto ("100") concatenaria em vez de somar
+    // e "100200" viraria o total do mês. NaN vira 0.
+    m.set(p.tipo, (m.get(p.tipo) ?? 0) + (Number(p.valor) || 0));
   }
   return m;
 }
 
 /**
- * Competência imediatamente anterior COM folha. Não é "mês − 1": setembro sem
- * lançamento ainda não é comparação para agosto — é ausência.
+ * Competência imediatamente anterior COM FOLHA PAGA A PESSOAS. Não é "mês − 1"
+ * (setembro sem lançamento não é comparação para agosto — é ausência), e não
+ * basta "ter algum registro": um mês que só tem FGTS/INSS lançados tem pago
+ * R$ 0, e comparar com ele faz a tela anunciar que TUDO no mês atual é aumento
+ * novo. Mês assim é pulado, como se não existisse.
  */
-export function competenciaAnteriorComFolha(comp: string, pags: Pag[]): string | null {
-  const antes = [...new Set(pags.map((p) => p.competencia))].filter((c) => c && c < comp).sort();
+export function competenciaAnteriorComFolha(comp: string, pags: Pag[], tiposEncargo: readonly string[] = []): string | null {
+  const pago = new Map<string, number>();
+  for (const p of pags) {
+    if (!p.competencia || p.competencia >= comp || tiposEncargo.includes(p.tipo)) continue;
+    pago.set(p.competencia, (pago.get(p.competencia) ?? 0) + (Number(p.valor) || 0));
+  }
+  const antes = [...pago].filter(([, v]) => v !== 0).map(([c]) => c).sort();
   return antes.length ? antes[antes.length - 1] : null;
 }
 
@@ -84,7 +94,7 @@ export function variacaoMensal(
   tiposEncargo: readonly string[],
   quantosMaiores = 2,
 ): VariacaoMensal {
-  const compAnterior = competenciaAnteriorComFolha(comp, pags);
+  const compAnterior = competenciaAnteriorComFolha(comp, pags, tiposEncargo);
   const base = TIPOS_BASE_ENCARGOS as readonly string[];
   const atual = somaPorTipo(pags, comp, tiposEncargo);
   const anterior = compAnterior ? somaPorTipo(pags, compAnterior, tiposEncargo) : new Map<string, number>();
@@ -111,12 +121,16 @@ export function variacaoMensal(
 
   // Só os motores que puxam NO SENTIDO do delta contam para "explicam N%": se o
   // total subiu, uma queda de férias não explica a subida — ela a atenua.
+  // Sem motor no sentido do delta não existe "explicam N%" — devolver 0 fazia a
+  // tela escrever " explicam 0%" com lista vazia, que é pior que não dizer nada.
   let parcela: number | null = null;
-  if (delta !== 0 && compAnterior) {
+  if (delta !== 0 && compAnterior && quantosMaiores > 0) {
     const sinal = Math.sign(delta);
     const noSentido = motores.filter((m) => Math.sign(m.delta) === sinal).slice(0, quantosMaiores);
-    const soma = noSentido.reduce((s, m) => s + m.delta, 0);
-    parcela = Math.min(1, Math.abs(soma) / Math.abs(delta));
+    if (noSentido.length > 0) {
+      const soma = noSentido.reduce((s, m) => s + m.delta, 0);
+      parcela = Math.min(1, Math.abs(soma) / Math.abs(delta));
+    }
   }
 
   return {
@@ -174,6 +188,19 @@ const dataHora = (iso: string) => {
   return `${dd}/${mm} ${hh}:${mi}`;
 };
 
+// Data ilegível não pode virar buraco na frase ("A busca de  não achou…").
+const quando = (iso: string) => {
+  const t = dataHora(iso);
+  return t ? ` na busca de ${t}` : " na última busca";
+};
+
+// "2026-06" → "06/26". Lista vazia devolve string vazia em vez de deixar a
+// frase "cobriu , não este mês" na tela.
+const quaisMeses = (comps: string[]) => {
+  const bons = (comps ?? []).filter((c) => /^\d{4}-\d{2}$/.test(c)).map((c) => `${c.slice(5)}/${c.slice(2, 4)}`);
+  return bons.length ? ` — cobriu ${bons.join(", ")}, não este mês` : " — de outra competência";
+};
+
 export function sinaisDaCompetencia(e: EntradaSinais): Sinal[] {
   const { comp, gravados, manuais, contasNoPlano, conferencia, ultimaBusca, ultimaConciliacao } = e;
 
@@ -181,31 +208,45 @@ export function sinaisDaCompetencia(e: EntradaSinais): Sinal[] {
   const buscaCobreEsteMes = !!ultimaBusca && ultimaBusca.competencia === comp;
   let folha: Sinal;
   if (gravados === 0) {
-    folha = {
-      id: "folha", rotulo: "Folha do ERP", valor: "sem folha", tom: "ruim",
-      detalhe: buscaCobreEsteMes
-        ? `A busca de ${dataHora(ultimaBusca!.em)} não achou lançamento de pessoal neste mês.`
-        : "Nenhum lançamento gravado nesta competência. Use \"Buscar do Mubisys\".",
-    };
+    // Buscar NÃO é aplicar. A busca automática ao abrir a tela grava
+    // `ultimaBuscaMubi` e só mostra um aviso — nada entra na base até o RH
+    // conferir a prévia. Dizer "não achou lançamento" aí era afirmar o
+    // contrário do que aconteceu, no caminho mais comum da tela.
+    const achou = buscaCobreEsteMes ? (ultimaBusca!.quantidade ?? 0) : 0;
+    folha = achou > 0
+      ? {
+          id: "folha", rotulo: "Folha do ERP", valor: "falta aplicar", tom: "atencao",
+          detalhe: `A busca${quando(ultimaBusca!.em)} achou ${achou} lançamento(s), mas nada foi gravado ainda — abra a prévia e confira para aplicar.`,
+        }
+      : {
+          id: "folha", rotulo: "Folha do ERP", valor: "sem folha", tom: "ruim",
+          detalhe: buscaCobreEsteMes
+            ? `A busca${quando(ultimaBusca!.em)} não achou lançamento de pessoal neste mês.`
+            : "Nenhum lançamento gravado nesta competência. Use “Buscar do Mubisys”.",
+        };
   } else if (buscaCobreEsteMes) {
     const b = ultimaBusca!;
     // O que explica "consultou 140, gravou 141": os gravados que NÃO vieram
     // desta busca — lançados à mão ou mantidos de uma busca anterior.
-    const foraDaBusca = Math.max(0, gravados - b.quantidade);
-    const partes = [`${b.quantidade} vinculado(s) na busca de ${dataHora(b.em)}`];
+    const diferenca = gravados - b.quantidade;
+    const partes = [`${b.quantidade} vinculado(s)${quando(b.em)}`];
     if (b.naoCasados) partes.push(`${b.naoCasados} sem par no cadastro`);
-    if (foraDaBusca > 0) partes.push(`${foraDaBusca} gravado(s) fora desta busca${manuais ? ` (${manuais} manual)` : ""}`);
+    if (diferenca > 0) partes.push(`${diferenca} gravado(s) fora desta busca${manuais ? ` (${manuais} ${manuais === 1 ? "manual" : "manuais"})` : ""}`);
+    // O outro lado da diferença: a busca achou MAIS do que está gravado. Ou
+    // parte não foi aplicada, ou alguém apagou depois. Math.max(0, …) engolia
+    // isso em silêncio e o chip dizia "ok".
+    if (diferenca < 0) partes.push(`${-diferenca} da busca ainda não estão gravados`);
     if (b.truncado) partes.push("busca veio cortada");
     folha = {
       id: "folha", rotulo: "Folha do ERP", valor: `${gravados} gravados`,
-      tom: b.truncado || (b.naoCasados ?? 0) > 0 ? "atencao" : "ok",
+      tom: b.truncado || (b.naoCasados ?? 0) > 0 || diferenca < 0 ? "atencao" : "ok",
       detalhe: partes.join(" · "),
     };
   } else {
     folha = {
       id: "folha", rotulo: "Folha do ERP", valor: `${gravados} gravados`, tom: "neutro",
       detalhe: ultimaBusca
-        ? `Última busca foi de outro mês (${dataHora(ultimaBusca.em)}). Este mês vem do que já estava gravado.`
+        ? `Última busca foi de outro mês${dataHora(ultimaBusca.em) ? ` (${dataHora(ultimaBusca.em)})` : ""}. Este mês vem do que já estava gravado.`
         : "Nunca houve busca no Mubisys — o que está aqui veio de planilha.",
     };
   }
@@ -245,9 +286,9 @@ export function sinaisDaCompetencia(e: EntradaSinais): Sinal[] {
     if (c.mantidos) partes.push(`${c.mantidos} mantidos fora da busca`);
     if (c.removidos) partes.push(`${c.removidos} removidos`);
     conciliacao = {
-      id: "conciliacao", rotulo: "Última conciliação", valor: dataHora(c.em),
+      id: "conciliacao", rotulo: "Última conciliação", valor: dataHora(c.em) || "aplicada",
       tom: cobre ? "ok" : "neutro",
-      detalhe: `${partes.join(" · ")}${cobre ? "" : ` — cobriu ${c.competencias.map((x) => x.slice(5) + "/" + x.slice(2, 4)).join(", ")}, não este mês`}`,
+      detalhe: `${partes.join(" · ")}${cobre ? "" : quaisMeses(c.competencias)}`,
     };
   }
 

@@ -32,11 +32,49 @@ describe("variação mensal — o caso ruim primeiro", () => {
     expect(variacaoMensal(pags, "2026-10", ENC).compAnterior).toBe("2026-08");
   });
 
-  it("anterior com total zero → pct nulo, nunca Infinity", () => {
+  /* Revisão adversarial de 06/09/2026 — os casos abaixo passavam errado. */
+
+  it("mês que só tem FGTS/INSS não conta como 'anterior com folha'", () => {
+    // Julho só teve encargo lançado: pago R$ 0. Comparar agosto com ele fazia a
+    // tela anunciar que TODO o mês era aumento novo.
+    const pags = [p("2026-06", "Salário", 5000), p("2026-07", "FGTS", 400), p("2026-08", "Salário", 5200)];
+    expect(competenciaAnteriorComFolha("2026-08", pags, ENC)).toBe("2026-06");
+    const v = variacaoMensal(pags, "2026-08", ENC);
+    expect(v.compAnterior).toBe("2026-06");
+    expect(v.delta).toBe(200); // e não 5.200
+  });
+
+  it("mês anterior que soma exatamente zero também é pulado", () => {
+    const pags = [p("2026-06", "Salário", 900), p("2026-07", "Salário", 100), p("2026-07", "Outros", -100), p("2026-08", "Salário", 1000)];
+    expect(competenciaAnteriorComFolha("2026-08", pags, ENC)).toBe("2026-06");
+  });
+
+  it("valor que chega como texto SOMA, não concatena", () => {
+    const pags = [{ competencia: "2026-08", tipo: "Salário", valor: "100" as unknown as number },
+                  { competencia: "2026-08", tipo: "Salário", valor: "200" as unknown as number }];
+    expect(variacaoMensal(pags, "2026-08", ENC).pago).toBe(300); // era 100200
+  });
+
+  it("valor ilegível vira 0, não NaN que contamina o total", () => {
+    const pags = [p("2026-08", "Salário", 100), { competencia: "2026-08", tipo: "Outros", valor: "abc" as unknown as number }];
+    expect(variacaoMensal(pags, "2026-08", ENC).pago).toBe(100);
+  });
+
+  it("sem motor no sentido do delta, parcela é NULA — não 0%", () => {
+    // quantosMaiores=0: não há o que listar, então não se afirma percentual.
+    expect(variacaoMensal([p("2026-07", "Salário", 100), p("2026-08", "Salário", 200)], "2026-08", ENC, 0).parcelaDosMaiores).toBeNull();
+  });
+
+  it("mês anterior de total zero não vira comparação — e nunca sai Infinity", () => {
+    /* Este teste mudou em 06/09/2026. Antes o mês de total zero era aceito como
+       "anterior" e a defesa era só o pct nulo. Agora ele é pulado na origem: um
+       mês que pagou R$ 0 faz a tela anunciar que 100% do mês atual é aumento
+       novo, o que não ajuda ninguém. A defesa do pct continua de pé por baixo. */
     const pags = [p("2026-07", "Salário", 0), p("2026-08", "Salário", 500)];
     const v = variacaoMensal(pags, "2026-08", ENC);
-    expect(v.temAnterior).toBe(true);
+    expect(v.temAnterior).toBe(false);
     expect(v.pct).toBeNull();
+    expect(Number.isFinite(v.delta)).toBe(true);
     expect(v.delta).toBe(500);
   });
 
@@ -138,10 +176,46 @@ describe("semáforo — zero não é resultado", () => {
     expect(sinaisDaCompetencia({ ...base, ultimaBusca: { ...base.ultimaBusca, naoCasados: 3 } }).find((x) => x.id === "folha")!.tom).toBe("atencao");
   });
 
-  it("sem lançamento nenhum é RUIM, e diz se a busca já olhou este mês", () => {
+  it("BUSCAR NÃO É APLICAR: busca achou 140 e nada gravado → 'falta aplicar', não 'não achou'", () => {
+    // Este é o caminho normal: a busca automática ao abrir a tela grava
+    // ultimaBuscaMubi e só avisa. Dizer "a busca não achou lançamento" era
+    // afirmar o contrário do que aconteceu.
     const s = sinaisDaCompetencia({ ...base, gravados: 0, manuais: 0 }).find((x) => x.id === "folha")!;
+    expect(s.tom).toBe("atencao");
+    expect(s.valor).toBe("falta aplicar");
+    expect(s.detalhe).toContain("achou 140 lançamento(s)");
+    expect(s.detalhe).not.toMatch(/não achou/);
+  });
+
+  it("busca que de fato não achou nada é RUIM e diz isso", () => {
+    const s = sinaisDaCompetencia({ ...base, gravados: 0, manuais: 0, ultimaBusca: { ...base.ultimaBusca, quantidade: 0 } }).find((x) => x.id === "folha")!;
     expect(s.tom).toBe("ruim");
     expect(s.detalhe).toMatch(/não achou/);
+  });
+
+  it("busca achou MAIS do que está gravado: avisa em vez de engolir no Math.max", () => {
+    const s = sinaisDaCompetencia({ ...base, gravados: 100 }).find((x) => x.id === "folha")!;
+    expect(s.tom).toBe("atencao");
+    expect(s.detalhe).toContain("40 da busca ainda não estão gravados");
+  });
+
+  it("plural de 'manual'", () => {
+    expect(sinaisDaCompetencia({ ...base, gravados: 143, manuais: 3 }).find((x) => x.id === "folha")!.detalhe).toContain("(3 manuais)");
+    expect(sinaisDaCompetencia(base).find((x) => x.id === "folha")!.detalhe).toContain("(1 manual)");
+  });
+
+  it("data ilegível não deixa buraco na frase", () => {
+    const s = sinaisDaCompetencia({ ...base, ultimaBusca: { ...base.ultimaBusca, em: "sei lá" } }).find((x) => x.id === "folha")!;
+    expect(s.detalhe).toContain("na última busca");
+    expect(s.detalhe).not.toMatch(/de {2}|\(\)/);
+  });
+
+  it("conciliação com data ilegível ou lista de meses vazia não imprime frase truncada", () => {
+    const c = { em: "xx", competencias: [], iguais: 1, corrigidos: 0, novos: 0, mantidos: 0, removidos: 0 };
+    const s = sinaisDaCompetencia({ ...base, ultimaConciliacao: c }).find((x) => x.id === "conciliacao")!;
+    expect(s.valor).toBe("aplicada");
+    expect(s.detalhe).toContain("de outra competência");
+    expect(s.detalhe).not.toContain("cobriu ,");
   });
 
   it("busca de OUTRO mês não vale como 'atualizado' para este", () => {
@@ -169,7 +243,7 @@ describe("semáforo — zero não é resultado", () => {
 
   it("conciliação: nunca aplicada é neutro; aplicada neste mês é ok e mostra o placar", () => {
     expect(sinaisDaCompetencia(base).find((x) => x.id === "conciliacao")!.tom).toBe("neutro");
-    const c = { em: "2026-09-06T10:05:00", competencias: ["2026-07", "2026-08"], iguais: 1, corrigidos: 139, novos: 0, mantidos: 1, removidos: 0, valorNovos: 0, valorCorrigidos: 0 };
+    const c = { em: "2026-09-06T10:05:00", competencias: ["2026-07", "2026-08"], iguais: 1, corrigidos: 139, novos: 0, mantidos: 1, removidos: 0 };
     const s = sinaisDaCompetencia({ ...base, ultimaConciliacao: c }).find((x) => x.id === "conciliacao")!;
     expect(s.tom).toBe("ok");
     expect(s.valor).toBe("06/09 10:05");
@@ -177,7 +251,7 @@ describe("semáforo — zero não é resultado", () => {
   });
 
   it("conciliação que cobriu outros meses fica neutra e diz quais", () => {
-    const c = { em: "2026-09-06T10:05:00", competencias: ["2026-06"], iguais: 1, corrigidos: 0, novos: 0, mantidos: 0, removidos: 2, valorNovos: 0, valorCorrigidos: 0 };
+    const c = { em: "2026-09-06T10:05:00", competencias: ["2026-06"], iguais: 1, corrigidos: 0, novos: 0, mantidos: 0, removidos: 2 };
     const s = sinaisDaCompetencia({ ...base, ultimaConciliacao: c }).find((x) => x.id === "conciliacao")!;
     expect(s.tom).toBe("neutro");
     expect(s.detalhe).toContain("2 removidos");

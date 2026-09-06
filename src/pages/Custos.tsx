@@ -565,7 +565,12 @@ export default function Custos() {
       for (const x of diff.iguais) comps.add(x.novo.competencia);
       for (const x of diff.alterados) comps.add(x.novo.competencia);
       for (const x of diff.novos) comps.add(x.competencia);
-      const soma = (xs: { valor: number }[]) => Math.round(xs.reduce((s, x) => s + (x.valor || 0), 0) * 100) / 100;
+      // SÓ CONTAGEM, NUNCA VALOR. A config global sobe inteira para a nuvem e
+      // `getCfg` na Edge Function não confere papel nenhum — só `setCfg` exige
+      // RH. Guardar aqui a soma em reais da folha aplicada entregava o total
+      // pago do mês a qualquer pessoa logada, inclusive COLABORADOR, por uma
+      // porta que a tela de Custos tranca. Quantas linhas mudaram não é
+      // dinheiro; quanto elas somam é.
       salvarCfg({ ultimaConciliacaoMubi: {
         em: new Date().toISOString(),
         competencias: [...comps].filter(Boolean).sort(),
@@ -574,8 +579,6 @@ export default function Custos() {
         novos: diff.novos.length,
         mantidos: podeRemover ? 0 : diff.ausentes.length,
         removidos: podeRemover ? diff.ausentes.length : 0,
-        valorNovos: soma(diff.novos),
-        valorCorrigidos: soma(diff.alterados.map((x) => x.novo)),
       } });
     }
 

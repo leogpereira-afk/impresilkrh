@@ -582,8 +582,9 @@ export interface Config {
     /** Ausentes da busca que ficaram gravados (remoção desligada ou busca cortada). */
     mantidos: number;
     removidos: number;
-    valorNovos: number;
-    valorCorrigidos: number;
+    /* NÃO acrescentar valor em R$ aqui. A config inteira sobe para a nuvem e o
+       `getCfg` da Edge Function não confere papel — qualquer pessoa logada lê.
+       Contagem de linhas pode; soma de dinheiro, não. */
   } | null;
   // Padrões do gerador de anúncio de vaga. O que se repete em toda divulgação
   // (local, jornada, benefícios, como se candidatar) fica guardado para não ser
