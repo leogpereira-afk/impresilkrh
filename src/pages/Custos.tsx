@@ -20,11 +20,12 @@ import {
   ChevronRight,
   CalendarDays,
   RefreshCw,
-  Clock, History, AlertTriangle } from "lucide-react";
+  Clock, History, AlertTriangle, TrendingDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
-import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { Card, CardHeader, CardBody, SecaoColapsavel, useAbertoPersistido } from "@/components/ui/card";
+import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, EmptyState, Progress } from "@/components/ui/misc";
@@ -77,6 +78,15 @@ import type {
 
 // Classes disponíveis no editor (confidencial fica fora — societárias só do master).
 const CLASSES_EDITAVEIS: ClasseCusto[] = ["individual", "rateio", "encargo", "ignorar"];
+
+// Cor de cada tom do semáforo do topo. Semântica (ok / atenção / ruim), não a
+// cor da marca — o chip precisa ler "tem problema" antes de a pessoa ler o texto.
+const TOM_CLASSES: Record<Tom, string> = {
+  ok: "border-green-200 bg-green-50 text-green-900 hover:border-green-300",
+  atencao: "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300",
+  ruim: "border-red-200 bg-red-50 text-red-900 hover:border-red-300",
+  neutro: "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300",
+};
 
 // Última busca automática no ERP que FALHOU. Fica fora do componente de
 // propósito: Custos é rota lazy, então um useRef morre ao navegar e, com o ERP
@@ -392,7 +402,12 @@ export default function Custos() {
       ultimaFalhaMubi = null;
       const vinculos = config.vinculosMubi ?? {};
       const { registros, naoCasados } = paraRegistros(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {});
-      salvarCfg({ ultimaBuscaMubi: { competencia, em: r.buscadoEm, quantidade: registros.length } });
+      salvarCfg({ ultimaBuscaMubi: {
+        competencia, em: r.buscadoEm, quantidade: registros.length,
+        // O que sobrou fora dos vinculados. É isto que explica "consultou 140,
+        // tem 141 gravados" na própria tela, sem ninguém precisar deduzir.
+        consultados: r.linhas.length, naoCasados: naoCasados.length, truncado: !!r.truncado,
+      } });
       if (registros.length === 0 && naoCasados.length === 0) {
         if (abrirPrevia) setErroMubi(`O Mubisys não tem lançamentos de pessoal em ${compLabel(competencia)}.`);
         return;
@@ -536,6 +551,28 @@ export default function Custos() {
     }
     const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (podeRemover ? diff.ausentes.length : 0);
 
+    // O placar desta aplicação fica GRAVADO. Antes vivia só no toast, que some
+    // em segundos — e "o que a última sincronização mudou?" ficava sem resposta
+    // um minuto depois. Com valor em R$ ao lado da contagem.
+    {
+      const comps = new Set<string>();
+      for (const x of diff.iguais) comps.add(x.novo.competencia);
+      for (const x of diff.alterados) comps.add(x.novo.competencia);
+      for (const x of diff.novos) comps.add(x.competencia);
+      const soma = (xs: { valor: number }[]) => Math.round(xs.reduce((s, x) => s + (x.valor || 0), 0) * 100) / 100;
+      salvarCfg({ ultimaConciliacaoMubi: {
+        em: new Date().toISOString(),
+        competencias: [...comps].filter(Boolean).sort(),
+        iguais: diff.iguais.length,
+        corrigidos: diff.alterados.length,
+        novos: diff.novos.length,
+        mantidos: podeRemover ? 0 : diff.ausentes.length,
+        removidos: podeRemover ? diff.ausentes.length : 0,
+        valorNovos: soma(diff.novos),
+        valorCorrigidos: soma(diff.alterados.map((x) => x.novo)),
+      } });
+    }
+
     // CPF aprendido do ERP, só onde o cadastro está vazio. É o que faz o mês
     // seguinte casar pela chave forte em vez de depender de como o ERP escreveu
     // o nome — a causa de Limpeza/Faxina e Freelancer nunca casarem.
@@ -613,6 +650,55 @@ export default function Custos() {
     () => pagsDoMes.length > 0 && !planoContas.some((p: ContaPlano) => p.competencia === compAtiva),
     [pagsDoMes, planoContas, compAtiva],
   );
+
+  // ---------- Topo da tela: "está atualizado?" e "o que mudou?" ----------
+  // A auditoria de 06/09/2026 mediu 4.591 px de altura e a resposta a "isto
+  // está atualizado?" a seis telas dos números. Aqui ficam os dois juntos.
+  //
+  // "Pago" é o que foi pago ÀS PESSOAS: FGTS/INSS lançados são custo da empresa
+  // e ficam fora — a mesma régua do `custoPago` de cada colaborador logo acima,
+  // senão o topo e o detalhe discordariam sem ninguém saber por quê.
+  const pagoMes = useMemo(
+    () => pagsDoMes.filter((p) => !TIPOS_ENCARGO.includes(p.tipo)).reduce((s, p) => s + p.valor, 0),
+    [pagsDoMes],
+  );
+  const fgtsLancadoMes = useMemo(() => pagsDoMes.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + p.valor, 0), [pagsDoMes]);
+  const provisoesMes = useMemo(() => calcularEncargos(pagsDoMes, fgtsLancadoMes), [pagsDoMes, fgtsLancadoMes]);
+  const variacao = useMemo(() => variacaoMensal(pagamentos as Pagamento[], compAtiva, TIPOS_ENCARGO), [pagamentos, compAtiva]);
+  // Comparar com um mês que ainda está pela metade (adiantamento sem salário)
+  // dá variação falsa: o aviso vai junto do número, nos dois lados.
+  const anteriorIncompleto = useMemo(
+    () => (variacao.compAnterior ? conferirCompetencia(variacao.compAnterior, pagamentos as Pagamento[], d.colaboradores).estado !== "completa" : false),
+    [variacao.compAnterior, pagamentos, d.colaboradores],
+  );
+  const manuaisNoMes = useMemo(() => pagsDoMes.filter((p) => ehManual(p)).length, [pagsDoMes]);
+  const contasNoPlano = useMemo(() => planoContas.filter((p: ContaPlano) => p.competencia === compAtiva).length, [planoContas, compAtiva]);
+  const sinais = useMemo(
+    () => sinaisDaCompetencia({
+      comp: compAtiva,
+      gravados: pagsDoMes.length,
+      manuais: manuaisNoMes,
+      contasNoPlano,
+      conferencia,
+      ultimaBusca: config.ultimaBuscaMubi ?? null,
+      ultimaConciliacao: config.ultimaConciliacaoMubi ?? null,
+    }),
+    [compAtiva, pagsDoMes.length, manuaisNoMes, contasNoPlano, conferencia, config.ultimaBuscaMubi, config.ultimaConciliacaoMubi],
+  );
+  // O bloco de carga (plano do contador + folha do ERP) começa FECHADO e a
+  // escolha fica guardada: quem carrega dado abre uma vez; quem só lê nunca
+  // precisa ver os dois cards empurrando os números para baixo.
+  const [atualizacaoAberta, setAtualizacaoAberta] = useAbertoPersistido("custos:atualizacao", false);
+  const atualizacaoRef = useRef<HTMLDivElement>(null);
+  const irParaSinal = (id: Sinal["id"]) => {
+    if (id === "pendencias") {
+      document.getElementById("folha-geral")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    setAtualizacaoAberta(true);
+    // Abre primeiro e rola depois do render — rolar antes leva a um bloco fechado.
+    window.setTimeout(() => atualizacaoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  };
   // No modo "Só Salário" excluímos o tipo "Adiantamento" (a soma não duplica).
   const linhasConsideradas = useMemo(
     () => (comAdiantamento ? linhasColab : linhasColab.filter((l) => l.tipo !== "Adiantamento")),
@@ -865,8 +951,100 @@ export default function Custos() {
                   </button>
                 </div>
 
-      {/* ---------- Uploads ---------- */}
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+                {/* ---------- Está atualizado? ----------
+                    Quatro chips com tom e uma linha de porquê. Clicar leva ao
+                    lugar onde se resolve (abre o bloco de carga ou rola até as
+                    pendências). O texto completo fica no title. */}
+                {compAtiva && (
+                  <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Estado da competência">
+                    {sinais.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => irParaSinal(s.id)}
+                        title={s.detalhe}
+                        className={"rounded-xl border px-3 py-2 text-left transition " + TOM_CLASSES[s.tom]}
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{s.rotulo}</p>
+                        <p className="mt-0.5 text-sm font-semibold tabular-nums">{s.valor}</p>
+                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug opacity-80">{s.detalhe}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* ---------- Placar executivo do mês ----------
+                    Pago, provisões, o estimado e a variação — com QUEM explica a
+                    variação. "+33,5%" sozinho assusta; "diárias e horas extras
+                    explicam 91%" é uma decisão. */}
+                {pagsDoMes.length > 0 && (() => {
+                  const dlt = variacao.delta;
+                  const sobe = dlt > 0;
+                  const pct = variacao.pct != null ? `${sobe ? "+" : ""}${(variacao.pct * 100).toFixed(1).replace(".", ",")}%` : null;
+                  const motores = variacao.motores
+                    .filter((m) => Math.sign(m.delta) === Math.sign(dlt))
+                    .slice(0, variacao.quantosMaiores)
+                    .map((m) => `${m.tipo} ${m.delta > 0 ? "+" : "−"}${formatBRL(Math.abs(m.delta))}`)
+                    .join(", ");
+                  const parcela = variacao.parcelaDosMaiores != null ? ` explicam ${Math.round(variacao.parcelaDosMaiores * 100)}%` : "";
+                  const cautela = conferencia.estado !== "completa" || anteriorIncompleto ? " · mês incompleto, ler com cautela" : "";
+                  const hintVar = !variacao.temAnterior
+                    ? "Sem mês anterior com folha para comparar"
+                    : dlt === 0
+                      ? "Igual ao mês anterior"
+                      : `${pct ? pct + " · " : ""}${motores}${parcela}${cautela}`;
+                  const todosMotores = variacao.motores.map((m) => `${m.tipo}: ${m.delta > 0 ? "+" : "−"}${formatBRL(Math.abs(m.delta))}`).join("\n");
+                  return (
+                    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <StatCard
+                        label="Custo pago no mês"
+                        value={formatBRL(pagoMes)}
+                        accent="brand"
+                        icon={<Wallet className="h-4 w-4" />}
+                        hint={fgtsLancadoMes ? "Pago às pessoas — sem o FGTS lançado" : "Pago às pessoas"}
+                      />
+                      <StatCard
+                        label="Provisões estimadas"
+                        value={formatBRL(provisoesMes.total)}
+                        accent="blue"
+                        icon={<ShieldCheck className="h-4 w-4" />}
+                        hint={`FGTS 8% + 13º + férias sobre ${formatBRL(provisoesMes.bruto)} (salário + adiantamento)`}
+                        title="Estimativa. Hora extra, comissão, diária e demais verbas não entram nesta base — decisão de 07/2026."
+                      />
+                      <StatCard
+                        label="Custo estimado c/ provisões"
+                        value={formatBRL(pagoMes + provisoesMes.total)}
+                        accent="gold"
+                        icon={<Coins className="h-4 w-4" />}
+                        hint="Pago + provisões. Não é o custo patronal completo."
+                      />
+                      <StatCard
+                        label={variacao.compAnterior ? `Contra ${compLabel(variacao.compAnterior)}` : "Contra o mês anterior"}
+                        value={variacao.temAnterior ? `${sobe ? "+" : dlt < 0 ? "−" : ""}${formatBRL(Math.abs(dlt))}` : "—"}
+                        accent={sobe ? "gold" : "green"}
+                        icon={sobe ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                        hint={hintVar}
+                        title={todosMotores ? `Variação por tipo:\n${todosMotores}` : undefined}
+                      />
+                    </div>
+                  );
+                })()}
+
+      {/* ---------- Atualização de dados ----------
+          Os dois cards de carga viviam no topo e empurravam os números para
+          baixo. Agora moram num bloco recolhível, fechado por padrão, com a
+          escolha guardada. Os chips lá em cima abrem este bloco quando o
+          problema se resolve aqui. */}
+      <div ref={atualizacaoRef} className="mb-6 scroll-mt-4">
+      <SecaoColapsavel
+        title="Atualização de dados"
+        subtitle="Plano de contas do contador e folha do Mubisys — de onde vêm os números desta tela."
+        icon={<Upload className="h-5 w-5" />}
+        aberto={atualizacaoAberta}
+        onAlternar={() => setAtualizacaoAberta((o) => !o)}
+        bodyClassName="p-4"
+      >
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
             title="Plano de Contas (custos gerais)"
@@ -1002,6 +1180,8 @@ export default function Custos() {
 
           </CardBody>
         </Card>
+      </div>
+      </SecaoColapsavel>
       </div>
 
       {folhaPrev && (() => {
@@ -1411,7 +1591,7 @@ export default function Custos() {
               </div>
             </div>
 
-            <Card>
+            <Card idPersistencia="custos:individual">
               <CardHeader
                 // A tela DIZ quando a pessoa está fora do quadro (Inativo,
                 // Direção…) em vez de fingir que é ativa — pedido de 01/08.
@@ -1493,7 +1673,7 @@ export default function Custos() {
                   />
                   <SegToggle
                     opcoes={[
-                      { v: true, label: "Custo real (com encargos)" },
+                      { v: true, label: "Custo estimado (c/ provisões)" },
                       { v: false, label: "Custo pago" },
                     ]}
                     valor={comEncargos}
@@ -1570,13 +1750,18 @@ export default function Custos() {
                           ativo={!comEncargos}
                           onClick={() => setComEncargos(false)}
                         />
+                        {/* Era "Custo real". O nome era mais forte que a conta: a
+                            fórmula soma FGTS, 13º e férias ESTIMADOS sobre salário +
+                            adiantamento, e só isso — hora extra, comissão e diária
+                            ficam fora da provisão por decisão de 07/2026. Não é o
+                            custo patronal completo, e o rótulo agora diz o que é. */}
                         <StatCard
-                          label="Custo real"
+                          label="Custo estimado c/ provisões"
                           value={formatBRL(custoReal)}
                           accent="brand"
                           icon={<Wallet className="h-4 w-4" />}
-                          hint="Pago + encargos"
-                          title="Usar o custo real (com encargos) no total do colaborador"
+                          hint="Pago + FGTS 8%, 13º e férias sobre salário + adiantamento"
+                          title="Estimativa: soma ao pago as provisões de FGTS, 13º e férias calculadas sobre salário + adiantamento. Hora extra, comissão, diária e demais verbas entram no pago, não na provisão. Não é o custo patronal completo."
                           ativo={comEncargos}
                           onClick={() => setComEncargos(true)}
                         />
@@ -1695,10 +1880,10 @@ export default function Custos() {
           <section>
             <div className="mb-3 flex items-center gap-2">
               <Users className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Folha geral do mês</h2>
+              <h2 id="folha-geral" className="scroll-mt-4 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
             </div>
 
-            <Card>
+            <Card idPersistencia="custos:resumo-mes">
               <CardHeader
                 title="Resumo do mês"
                 subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
@@ -1913,7 +2098,7 @@ export default function Custos() {
               <TrendingUp className="h-5 w-5 text-brand" />
               <h2 className="text-base font-semibold text-brand-ink">Histórico de {colabSel?.nome ?? "colaborador"} mês a mês</h2>
             </div>
-            <Card>
+            <Card idPersistencia="custos:historico-colab">
               <CardHeader
                 title="Quanto recebeu por mês"
                 subtitle="Total efetivamente pago em cada competência e o acumulado do período."
@@ -1973,11 +2158,27 @@ export default function Custos() {
             </div>
 
             {totalColetivo === 0 ? (
-              <EmptyState
-                title="Sem custos classificados nesta competência"
-                description="Use “Classificar contas” para marcar contas como individual ou rateio."
-                icon={<Layers className="h-8 w-8" />}
-              />
+              /* Zero aqui tem duas causas e só uma se resolve classificando
+                 contas. Sem o plano do contador, mandar a pessoa "classificar"
+                 é mandar procurar o que não existe — e o zero parecia resultado. */
+              semPlanoNaComp ? (
+                <EmptyState
+                  title={`Sem plano de contas em ${compLabelLongo(compAtiva)}`}
+                  description="Rateio e Custo Global ficam indisponíveis — não zerados — até a planilha do contador deste mês ser enviada em “Atualização de dados”, no topo da tela."
+                  icon={<FileSpreadsheet className="h-8 w-8" />}
+                  acao={
+                    <button type="button" className="btn-outline" onClick={() => irParaSinal("plano")}>
+                      <Upload className="h-4 w-4" /> Enviar o plano de contas
+                    </button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title="Sem custos classificados nesta competência"
+                  description="Use “Classificar contas” para marcar contas como individual ou rateio."
+                  icon={<Layers className="h-8 w-8" />}
+                />
+              )
             ) : (
               <div className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">

@@ -554,7 +554,37 @@ export interface Config {
    * título a título e o apontamento fica guardado.
    */
   vinculosMubiTitulo?: Record<string, string>;
-  ultimaBuscaMubi?: { competencia: string; em: string; quantidade: number } | null;
+  ultimaBuscaMubi?: {
+    competencia: string;
+    em: string;
+    /** Lançamentos que casaram com alguém do cadastro. */
+    quantidade: number;
+    /**
+     * O que sobrou (06/09/2026): a tela dizia "140 vinculados" ao lado de 141
+     * gravados e ninguém sabia explicar o 1. Com o que a busca trouxe e o que
+     * ficou sem par, a diferença vira conta, não mistério.
+     */
+    consultados?: number;
+    naoCasados?: number;
+    truncado?: boolean;
+  } | null;
+  /**
+   * O placar da última vez que a folha do ERP foi APLICADA. Antes só existia
+   * no toast, que some — e a pergunta "o que essa sincronização mudou?" ficava
+   * sem resposta um minuto depois. Valores em R$ ao lado das contagens.
+   */
+  ultimaConciliacaoMubi?: {
+    em: string;
+    competencias: string[];
+    iguais: number;
+    corrigidos: number;
+    novos: number;
+    /** Ausentes da busca que ficaram gravados (remoção desligada ou busca cortada). */
+    mantidos: number;
+    removidos: number;
+    valorNovos: number;
+    valorCorrigidos: number;
+  } | null;
   // Padrões do gerador de anúncio de vaga. O que se repete em toda divulgação
   // (local, jornada, benefícios, como se candidatar) fica guardado para não ser
   // redigitado a cada vaga; o que muda vem do cadastro do cargo.

@@ -7,16 +7,52 @@ import { cn } from "@/lib/cn";
 // Cards sem CardHeader não têm como recolher → o corpo fica sempre visível.
 const ColapsoCtx = createContext<{ aberto: boolean; alternar: () => void } | null>(null);
 
+// Escolha de recolher GUARDADA por card (localStorage). Em tela de análise a
+// pessoa fecha o que não usa e isso tem de continuar fechado amanhã — recolher
+// que volta a abrir a cada visita é o mesmo que não recolher. Sem `chave` o
+// estado é só da sessão, como sempre foi.
+const chaveDe = (id: string) => `card:${id}`;
+function lerAberto(chave: string | undefined, inicial: boolean): boolean {
+  if (!chave) return inicial;
+  try {
+    const v = localStorage.getItem(chaveDe(chave));
+    return v == null ? inicial : v === "1";
+  } catch {
+    return inicial;
+  }
+}
+function gravarAberto(chave: string | undefined, aberto: boolean) {
+  if (!chave) return;
+  try { localStorage.setItem(chaveDe(chave), aberto ? "1" : "0"); } catch { /* ignora */ }
+}
+
+export function useAbertoPersistido(chave: string | undefined, inicial = true) {
+  const [aberto, setAberto] = useState(() => lerAberto(chave, inicial));
+  const definir = (v: boolean | ((o: boolean) => boolean)) => {
+    setAberto((o) => {
+      const n = typeof v === "function" ? v(o) : v;
+      gravarAberto(chave, n);
+      return n;
+    });
+  };
+  return [aberto, definir] as const;
+}
+
 export function Card({
   className,
   children,
   colapsavel = true,
+  idPersistencia,
+  abertoInicial = true,
 }: {
   className?: string;
   children: React.ReactNode;
   colapsavel?: boolean;
+  /** Com isto, recolher/expandir fica guardado entre visitas. */
+  idPersistencia?: string;
+  abertoInicial?: boolean;
 }) {
-  const [aberto, setAberto] = useState(true);
+  const [aberto, setAberto] = useAbertoPersistido(idPersistencia, abertoInicial);
   const ctx = colapsavel ? { aberto, alternar: () => setAberto((o) => !o) } : null;
   return (
     <ColapsoCtx.Provider value={ctx}>
@@ -94,6 +130,9 @@ export function CardBody({
 
 // Mantido por compatibilidade (ficha do colaborador). Como o Card já é recolhível,
 // aqui o Card interno desliga o recolhimento próprio para não duplicar.
+//
+// Pode ser CONTROLADO (`aberto` + `onAlternar`): é o que permite algo de fora —
+// um chip de "está atualizado?" — mandar abrir o bloco e rolar até ele.
 export function SecaoColapsavel({
   title,
   subtitle,
@@ -102,6 +141,8 @@ export function SecaoColapsavel({
   className,
   bodyClassName,
   defaultOpen = true,
+  aberto: abertoControlado,
+  onAlternar,
   children,
 }: {
   title: React.ReactNode;
@@ -111,10 +152,14 @@ export function SecaoColapsavel({
   className?: string;
   bodyClassName?: string;
   defaultOpen?: boolean;
+  aberto?: boolean;
+  onAlternar?: () => void;
   children: React.ReactNode;
 }) {
-  const [aberto, setAberto] = useState(defaultOpen);
-  const alternar = () => setAberto((o) => !o);
+  const [abertoLocal, setAbertoLocal] = useState(defaultOpen);
+  const controlado = abertoControlado !== undefined;
+  const aberto = controlado ? abertoControlado : abertoLocal;
+  const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((o) => !o));
   return (
     <Card className={className} colapsavel={false}>
       <div className={cn("flex items-start justify-between gap-3 px-5 py-4", aberto && "border-b border-slate-100")}>
