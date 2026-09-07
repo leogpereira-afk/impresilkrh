@@ -41,7 +41,8 @@ export type RegraAuditoria =
   | "valor"
   | "cadastro"
   | "sem-lancamento"
-  | "sem-salario";
+  | "sem-salario"
+  | "casado-pelo-nome";
 
 export type Gravidade = "erro" | "atencao" | "aviso";
 
@@ -127,6 +128,12 @@ export function auditarLancamentos(
     if (!c) {
       add({ regra: "orfao", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
         titulo: "Lançamento de alguém que não está no cadastro", detalhe: `colaboradorId "${p.colaboradorId}" não existe`, valor: num(p.valor) });
+    }
+    // Casou por texto (nome da origem ou nome na descrição), não pelo ID:
+    // é palpite, e palpite erra em silêncio. Vale só para o que já traz a marca.
+    if (p.casadoPor === "nome" || p.casadoPor === "descricao") {
+      add({ regra: "casado-pelo-nome", gravidade: "aviso", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
+        titulo: "Ligado à pessoa pelo nome, não pelo ID", detalhe: `${nomeDe(p.colaboradorId)} · ${p.tipo} · casou por ${p.casadoPor === "nome" ? "nome da origem" : "nome na descrição"}. Preencha o CPF (ou escreva "ID 000000") no título do ERP para casar pela chave.`, valor: num(p.valor) });
     }
     if (!(num(p.valor) > 0)) {
       add({ regra: "valor", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
@@ -234,6 +241,7 @@ export const ROTULO_REGRA: Record<RegraAuditoria, string> = {
   cadastro: "Cadastro contradiz os pagamentos",
   "sem-lancamento": "Mês no quadro sem lançamento",
   "sem-salario": "Mês sem salário",
+  "casado-pelo-nome": "Ligado pelo nome, não pelo ID",
 };
 
 // ---------------------------------------------------------------------------
@@ -343,6 +351,14 @@ export const COMO_CORRIGIR: Record<RegraAuditoria, ComoCorrigir> = {
     passos: [
       "No mês corrente isso é normal: o salário da competência vence no início do mês seguinte.",
       "Em mês antigo, falta folha: use “Puxar histórico” e confira se o título não está no ERP com outro nome ou outro CPF.",
+    ],
+  },
+  "casado-pelo-nome": {
+    causa: "O título do ERP veio sem CPF e sem ID; o sistema ligou à pessoa comparando o nome, que pode repetir ou estar escrito diferente.",
+    onde: "erp",
+    passos: [
+      "Confira na ficha se o lançamento é mesmo desta pessoa (o ID dela aparece ao lado do nome).",
+      "No ERP, preencha o CPF do favorecido ou escreva “ID 000000” na descrição do título: da próxima puxada em diante ele casa pela chave.",
     ],
   },
 };

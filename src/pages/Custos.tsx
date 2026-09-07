@@ -81,6 +81,7 @@ import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
 import { buscarPlanoCompleto, compararPlano, competenciaEhDoContador, mesclarPlano, montarPlanoDoErp, type ComparacaoPlano, type ContaMubi } from "@/lib/mubiPlano";
 import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
+import { idPessoa } from "@/lib/identidade";
 import type {
   ClassificacaoConta,
   ClasseCusto,
@@ -2712,8 +2713,15 @@ export default function Custos() {
                               <span className="block truncate text-xs font-medium text-slate-700">{n.nome}</span>
                               <span className="block text-[11px] text-slate-400">
                                 {n.linhas} lançamento(s) · {formatBRL(n.total)} · {[...n.tipos].join(", ")}
-                                {n.cpf ? ` · CPF ${n.cpf}` : ""}
+                                {n.cpf ? ` · CPF ${n.cpf}` : " · sem CPF no título"}
                               </span>
+                              {/* O ID que o ERP mandou (6 primeiros dígitos do CPF do título). Se está
+                                  aqui, nenhuma ficha tem esse ID: ou o CPF do ERP está errado, ou o do cadastro. */}
+                              {idPessoa(n.cpf) && (
+                                <span className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-800" title="ID que veio no título do ERP. Nenhuma ficha tem este ID: confira o CPF no ERP ou no cadastro.">
+                                  ID no ERP {idPessoa(n.cpf)} · nenhuma ficha com este ID
+                                </span>
+                              )}
                             </span>
                             {/* A pergunta: um candidato único e plausível vira botão
                                 de confirmar — inclusive (principalmente) inativo.

@@ -750,6 +750,13 @@ export interface Pagamento {
    */
   idMubi?: string | null;
   /**
+   * COMO este pagamento foi ligado à pessoa (só o que veio do ERP):
+   * "cpf" e "id" são a chave forte (o ID da pessoa = 6 dígitos do CPF);
+   * "titulo" e "vinculo" foram apontados pelo RH; "nome" e "descricao" são
+   * palpite por texto — a auditoria avisa para conferir.
+   */
+  casadoPor?: "cpf" | "id" | "titulo" | "vinculo" | "nome" | "descricao";
+  /**
    * Lançado à mão pelo RH (ex.: pagamento em dinheiro que não passa pelo ERP).
    * A conciliação NUNCA lista um manual como "fora do ERP" — não existir no
    * Mubisys é a natureza dele, não um erro a corrigir. Se um dia o título

@@ -297,6 +297,7 @@ export function patchDeAplicacao(novo: Pagamento): Partial<Pagamento> {
     idMubi: novo.idMubi ?? null,
     ...(novo.statusErp !== undefined ? { statusErp: novo.statusErp } : {}),
     ...(novo.pagoEm !== undefined ? { pagoEm: novo.pagoEm } : {}),
+    ...(novo.casadoPor !== undefined ? { casadoPor: novo.casadoPor } : {}),
   };
 }
 

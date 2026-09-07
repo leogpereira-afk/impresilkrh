@@ -565,3 +565,48 @@ describe("casamento de nomes (07/09/2026)", () => {
     expect(casarColaborador("PEDRO", pessoas, {})).toBeNull();
   });
 });
+
+// O ID da pessoa (6 primeiros dígitos do CPF) é a chave; nome só exibe.
+// Ordem do Leonardo (07/09/2026): puxar pelo ID, não pelo nome.
+describe("paraRegistros casa pelo ID antes do nome e diz como casou", () => {
+  const comId = [
+    { id: "c1", nome: "Adriano Pinheiro Lima", cpf: "111.444.777-35" } as Colaborador,
+    { id: "c4", nome: "Pedro Henrique Golçalves Pereira", cpf: "529.982.247-25" } as Colaborador,
+  ];
+
+  it("CPF no título é a chave mais forte: casa mesmo com o nome escrito diferente", () => {
+    const r = paraRegistros([linha("PEDRO HENRIQUE SANTOS OLIVEIRA", { cpfCnpj: "529.982.247-25" })], comId, {});
+    expect(r.registros[0].colaboradorId).toBe("c4");
+    expect(r.registros[0].casadoPor).toBe("cpf");
+  });
+
+  it("origem genérica + ID na descrição casa pelo ID (a origem sozinha não casaria)", () => {
+    const r = paraRegistros([linha("COLABORADORES", { descricao: "Limpeza ID 529982 julho" })], comId, {});
+    expect(r.registros[0].colaboradorId).toBe("c4");
+    expect(r.registros[0].casadoPor).toBe("id");
+    expect(r.naoCasados).toHaveLength(0);
+  });
+
+  it("ID na descrição vence o nome da origem (nome pode ser xará; ID não)", () => {
+    const r = paraRegistros([linha("ADRIANO PINHEIRO LIMA", { descricao: "Diária #529982" })], comId, {});
+    expect(r.registros[0].colaboradorId).toBe("c4");
+    expect(r.registros[0].casadoPor).toBe("id");
+  });
+
+  it("ID desconhecido não casa ninguém e o título fica em 'não encontrados'", () => {
+    const r = paraRegistros([linha("COLABORADORES", { descricao: "Limpeza ID 999999" })], comId, {});
+    expect(r.registros).toHaveLength(0);
+    expect(r.naoCasados).toHaveLength(1);
+  });
+
+  it("quem casou só pelo nome leva a marca 'nome'; pela descrição, 'descricao'; por vínculo, 'vinculo'", () => {
+    expect(paraRegistros([linha("ADRIANO PINHEIRO LIMA")], comId, {}).registros[0].casadoPor).toBe("nome");
+    expect(paraRegistros([linha("DIVERSOS", { descricao: "Salário Pedro Henrique Golçalves Pereira" })], comId, {}).registros[0].casadoPor).toBe("descricao");
+    expect(paraRegistros([linha("P H PEREIRA")], comId, { "P H PEREIRA": "c4" }).registros[0].casadoPor).toBe("vinculo");
+  });
+
+  it("competência escrita na descrição não vira ID", () => {
+    const r = paraRegistros([linha("COLABORADORES", { descricao: "Salário 08/2026 venc 2026-09-05" })], comId, {});
+    expect(r.registros).toHaveLength(0);
+  });
+});

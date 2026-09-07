@@ -17,6 +17,7 @@ import { competenciaPagto } from "@/lib/custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 import { tipoDoPlanoErp } from "./tipoDoPlano";
 import { tipoSocietario } from "./societario";
+import { acharPorIdNoTexto, mapaDeIds } from "./identidade";
 
 export interface LinhaMubi {
   idMubi: string;
@@ -287,6 +288,18 @@ export function casarColaborador(
   vinculos: Record<string, string>,
   cpfMubi?: string | null,
 ): Colaborador | null {
+  return casarColaboradorComo(nomeMubi, colaboradores, vinculos, cpfMubi)?.c ?? null;
+}
+
+export type ComoCasou = NonNullable<Pagamento["casadoPor"]>;
+
+/** Casa e DIZ como casou — a chave forte (CPF) é a única que não é palpite. */
+export function casarColaboradorComo(
+  nomeMubi: string,
+  colaboradores: Colaborador[],
+  vinculos: Record<string, string>,
+  cpfMubi?: string | null,
+): { c: Colaborador; como: ComoCasou } | null {
   // 1) CPF — a chave forte, e a que estava sobrando.
   //
   // O ERP manda o documento em cada título e nós casávamos só por NOME. Nos
@@ -299,7 +312,7 @@ export function casarColaborador(
   const doc = soDigitos(cpfMubi);
   if (doc.length === 11) {
     const porCpf = colaboradores.filter((c) => soDigitos(c.cpf) === doc);
-    if (porCpf.length === 1) return porCpf[0];
+    if (porCpf.length === 1) return { c: porCpf[0], como: "cpf" };
   }
 
   const alvo = norm(nomeMubi);
@@ -309,11 +322,11 @@ export function casarColaborador(
   const salvo = vinculos[alvo];
   if (salvo) {
     const c = colaboradores.find((x) => x.id === salvo);
-    if (c) return c;
+    if (c) return { c, como: "vinculo" };
   }
 
   const exato = colaboradores.find((c) => norm(c.nome) === alvo);
-  if (exato) return exato;
+  if (exato) return { c: exato, como: "nome" };
 
   // Compara pedaço a pedaço, na ordem: o nome do ERP precisa ser o começo do
   // nome do cadastro (ele vem cortado em 30 caracteres). Exige pelo menos dois
@@ -327,7 +340,7 @@ export function casarColaborador(
     return alvoToks.every((t, i) => pedacoCasa(t, toks[i]));
   });
   // Só aceita quando não há dúvida: dois candidatos = decisão do RH.
-  return candidatos.length === 1 ? candidatos[0] : null;
+  return candidatos.length === 1 ? { c: candidatos[0], como: "nome" } : null;
 }
 
 /**
@@ -356,9 +369,11 @@ export function montarPagamento(
   l: LinhaMubi,
   colaboradorId: string,
   colaborador?: Colaborador | null,
+  casadoPor?: Pagamento["casadoPor"],
 ): Pagamento {
   const societario = tipoSocietario(l.planoContas, colaborador ?? null);
   return {
+    ...(casadoPor ? { casadoPor } : {}),
     // O id é só a chave do registro; a IDENTIDADE do título é o campo idMubi
     // abaixo — é ele que faz a reimportação atualizar em vez de duplicar, e é
     // ele que os lançamentos vindos de planilha adotam no primeiro encontro.
@@ -432,15 +447,24 @@ export function paraRegistros(
   const coletivas: LinhaMubi[] = [];
   const cpfs = new Map<string, string>();
   const porId = new Map(colaboradores.map((c) => [c.id, c]));
+  const ids = mapaDeIds(colaboradores);
 
   for (const l of linhas) {
     if (!l.nome.trim()) { coletivas.push(l); continue; }
     const doc = String(l.cpfCnpj ?? "").replace(/\D/g, "");
 
-    const c =
-      casarColaborador(l.nome, colaboradores, vinculos, l.cpfCnpj) ??
-      (vinculosTitulo[l.idMubi] ? porId.get(vinculosTitulo[l.idMubi]) ?? null : null) ??
-      casarPelaDescricao(l.descricao, colaboradores);
+    // A ordem é a força da chave: CPF do título → ID escrito no título (origem
+    // ou descrição) → vínculo/nome da origem → vínculo por título → nome na
+    // descrição. Só as duas primeiras não são palpite (regra do Leonardo).
+    const porChave = casarColaboradorComo(l.nome, colaboradores, vinculos, l.cpfCnpj);
+    const porIdTexto = porChave?.como === "cpf" ? null : acharPorIdNoTexto(`${l.nome} ${l.descricao ?? ""}`, ids);
+    const casado =
+      (porChave?.como === "cpf" ? porChave : null) ??
+      (porIdTexto ? { c: porIdTexto, como: "id" as const } : null) ??
+      porChave ??
+      (vinculosTitulo[l.idMubi] && porId.get(vinculosTitulo[l.idMubi]) ? { c: porId.get(vinculosTitulo[l.idMubi])!, como: "titulo" as const } : null) ??
+      (() => { const d = casarPelaDescricao(l.descricao, colaboradores); return d ? { c: d, como: "descricao" as const } : null; })();
+    const c = casado?.c ?? null;
 
     if (!c) {
       // CNPJ é fornecedor (padaria da alimentação, plano de saúde da empresa):
@@ -465,7 +489,7 @@ export function paraRegistros(
     // Casou pelo NOME e o cadastro está sem CPF: aprende, para o mês que vem
     // casar pela chave forte e não depender de como o ERP escreveu o nome.
     if (doc.length === 11 && !String(c.cpf ?? "").replace(/\D/g, "")) cpfs.set(c.id, doc);
-    registros.push(montarPagamento(l, c.id, c));
+    registros.push(montarPagamento(l, c.id, c, casado!.como));
   }
   return {
     registros,

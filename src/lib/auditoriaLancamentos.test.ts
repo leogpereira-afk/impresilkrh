@@ -163,3 +163,16 @@ describe("como corrigir", () => {
     expect(passos.findIndex((p) => p.includes("admissão"))).toBeGreaterThan(0);
   });
 });
+
+describe("ligado pelo nome, não pelo ID", () => {
+  it("pagamento casado por nome/descrição vira aviso; por CPF/ID não", () => {
+    const porNome = pg({ id: "n1", casadoPor: "nome" });
+    const porDesc = pg({ id: "n2", casadoPor: "descricao", idMubi: "2" });
+    const porCpf = pg({ id: "n3", casadoPor: "cpf", idMubi: "3" });
+    const semMarca = pg({ id: "n4", idMubi: "4" });
+    const r = achado(auditarLancamentos([porNome, porDesc, porCpf, semMarca], [ana]), "casado-pelo-nome");
+    expect(r.map((a) => a.pagamentoIds[0]).sort()).toEqual(["n1", "n2"]);
+    expect(r.every((a) => a.gravidade === "aviso")).toBe(true);
+    expect(ROTULO_REGRA["casado-pelo-nome"]).toBeTruthy();
+  });
+});
