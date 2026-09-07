@@ -96,6 +96,16 @@ const tokens = (s: string) => norm(s).split(" ").filter((t) => t && !CONECTIVOS.
 // Vasconcelos" chega como "BARBARA PATRICIA FERREIRA VASC". Além disso, o
 // cadastro às vezes abrevia ("F." no lugar de "Ferreira"). Por isso dois
 // pedaços casam quando um é começo do outro — nos dois sentidos.
+/**
+ * Origem GENÉRICA do ERP: não é uma pessoa, é uma leva ("COLABORADORES", 44
+ * títulos de gente diferente). Vínculo por nome não vale para ela — em
+ * 07/09/2026 havia "COLABORADORES → pedro-ramos" gravado: cada título da leva
+ * iria para o sócio e sumiria da folha da equipe. A leva casa pela DESCRIÇÃO,
+ * título a título.
+ */
+export const ORIGEM_GENERICA = /^(COLABORADOR(ES)?|FUNCIONARIO(S)?|FOLHA( DE PAGAMENTO)?|PESSOAL|DIVERSOS|EMPRESA|SALARIOS?)$/;
+export const ehOrigemGenerica = (nomeMubi: string): boolean => ORIGEM_GENERICA.test(norm(nomeMubi));
+
 const pedacoCasa = (a: string, b: string) => a === b || a.startsWith(b) || b.startsWith(a);
 
 /** Busca os pagamentos de pessoal de um mês no Mubisys. */
@@ -294,6 +304,7 @@ export function casarColaborador(
 
   const alvo = norm(nomeMubi);
   if (!alvo) return null;
+  if (ehOrigemGenerica(alvo)) return null; // leva: casa pela descrição, nunca por vínculo
 
   const salvo = vinculos[alvo];
   if (salvo) {
@@ -486,6 +497,7 @@ export function paraRegistros(
  * Para esses o caminho é o seletor manual — que agora mostra os inativos.
  */
 export function sugerirVinculo(nomeMubi: string, colaboradores: Colaborador[]): Colaborador | null {
+  if (ehOrigemGenerica(nomeMubi)) return null;
   const alvoToks = tokens(nomeMubi);
   if (alvoToks.length < 2) return null;
   const candidatos = colaboradores.filter((c) => {

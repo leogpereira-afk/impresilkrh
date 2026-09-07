@@ -2,7 +2,7 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, casarPelaDescricao, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi, normalizarLinhas, tituloEmAberto, tituloCancelado} from "./mubiPagamentos";
+import { casarColaborador, casarPelaDescricao, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi, normalizarLinhas, tituloEmAberto, tituloCancelado, ehOrigemGenerica } from "./mubiPagamentos";
 import { conciliarPagamentos } from "./custos";
 import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
@@ -541,5 +541,27 @@ describe("estado do título no ERP", () => {
     expect(tituloEmAberto("PAGO")).toBe(false);
     expect(tituloEmAberto(undefined)).toBe(false);
     expect(tituloCancelado("Estornado")).toBe(true);
+  });
+});
+
+describe("casamento de nomes (07/09/2026)", () => {
+  const pessoas = [
+    { id: "pedro-henrique-golcalves-pereira-2", nome: "Pedro Henrique Golçalves Pereira" },
+    { id: "pedro-ramos", nome: "Pedro Ramos", ehDirecao: true },
+    { id: "vinicius-aguiar-rodrigues", nome: "Vinicius Aguiar Rodrigues" },
+  ] as unknown as Parameters<typeof casarColaborador>[1];
+  it("erro de digitação continua NÃO casando sozinho — é o vínculo que resolve (decisão mantida)", () => {
+    expect(casarColaborador("PEDRO HENRIQUE GONCALVES PEREI", pessoas, {})).toBeNull();
+    expect(casarColaborador("PEDRO HENRIQUE GONCALVES PEREI", pessoas, { "PEDRO HENRIQUE GONCALVES PEREI": "pedro-henrique-golcalves-pereira-2" })?.id).toBe("pedro-henrique-golcalves-pereira-2");
+  });
+  it("origem genérica nunca casa por vínculo nem por nome — nem com 'COLABORADORES → pedro-ramos' gravado", () => {
+    expect(casarColaborador("COLABORADORES", pessoas, { COLABORADORES: "pedro-ramos" })).toBeNull();
+    expect(casarColaborador("Funcionários", pessoas, { FUNCIONARIOS: "pedro-ramos" })).toBeNull();
+    expect(sugerirVinculo("COLABORADORES", pessoas)).toBeNull();
+    expect(ehOrigemGenerica("Colaboradores")).toBe(true);
+    expect(ehOrigemGenerica("Pedro Ramos")).toBe(false);
+  });
+  it("um pedaço só nunca casa", () => {
+    expect(casarColaborador("PEDRO", pessoas, {})).toBeNull();
   });
 });

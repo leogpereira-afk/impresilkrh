@@ -55,7 +55,7 @@ import {
   horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO, DIVISOR_MENSAL_PADRAO, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { minParaHora } from "@/lib/pontoImport";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
-import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type ContaForaDaFolha, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
+import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type ContaForaDaFolha, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado, ehOrigemGenerica } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -670,6 +670,12 @@ export default function Custos() {
   };
 
   const vincularMubi = (nomeMubi: string, colaboradorId: string) => {
+    // Origem genérica ("COLABORADORES") é uma leva de gente diferente: vincular
+    // a uma pessoa mandaria a leva inteira para ela. Já aconteceu com o sócio.
+    if (colaboradorId && ehOrigemGenerica(nomeMubi)) {
+      toast(`"${nomeMubi}" não é uma pessoa, é uma leva do ERP. Vincule título a título, em "Despesas de pessoal sem nome".`, "erro");
+      return;
+    }
     if (!folhaPrev?.mubi) return;
     const chave = normNome(nomeMubi);
     const vinculos = { ...(config.vinculosMubi ?? {}) };

@@ -208,9 +208,18 @@ function tipoDoPlano(plano: string): string {
 // "2.1." (o caractere depois de "2.1" é o segundo "1", não o ponto), então a
 // checagem antiga já estava certa em não deixar o 2.11 entrar de carona — o que
 // faltava era deixar entrar de propósito quem é gente.
+// Conta de pagamento a pessoa também pelo NOME: o contador renumerou o plano
+// em jul/2026 e a Limpeza saiu de 2.3.2.1 para um código que a lista não
+// conhece — a faxina de julho e agosto sumiu da folha calada (07/09/2026).
+const NOME_DE_FOLHA = /faxina|limpeza|empreita|freela|diaria|comiss|bonus|hora ?extra|adiantamento|salario|ferias|rescis|vale ?transporte|decimo|13|estagio|uniforme|produtividade|incentivo|plantao/;
 const ehFolha = (plano: string) => {
   const c = codigoDoPlano(plano);
-  return c.startsWith("2.1.") || FOLHA_FORA_DO_21.some((p) => c === p || c.startsWith(p + "."));
+  if (c.startsWith("2.1.") || FOLHA_FORA_DO_21.some((p) => c === p || c.startsWith(p + "."))) return true;
+  // Fora das listas: entra se o NOME diz que é pagamento a pessoa — mas nunca
+  // societário (2.14 e o que a equivalência mapear para lá é cortado na rota do plano).
+  if (c === "2.14" || c.startsWith("2.14.")) return false;
+  const nome = normalizar(String(plano || "").split("-").slice(1).join("-"));
+  return !!nome && NOME_DE_FOLHA.test(nome);
 };
 
 // "Colab: Fulano de Tal" → "Fulano de Tal"
