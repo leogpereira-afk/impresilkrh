@@ -32,6 +32,15 @@ const ROTULO_POR_PESSOA: Record<string, string> = {
   "leonardo-goncalves": TIPO_RETIRADA,   // 2.14.2 Retiradas Leonardo
 };
 
+/** O card confidencial do plano (CARDS_CONFIDENCIAIS) que corresponde a cada sócio. */
+export const CARD_POR_PESSOA: Record<string, string> = {
+  "pedro-ramos": "arrendamento",      // 2.14.1 Arrendamento
+  "leonardo-goncalves": "leonardo",   // 2.14.2 Retiradas
+};
+
+/** O rótulo do dinheiro de cada sócio, para títulos de tela. */
+export const rotuloDoSocio = (id: string): string => ROTULO_POR_PESSOA[id] ?? TIPO_ARRENDAMENTO;
+
 const semAcento = (s: string) =>
   s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 

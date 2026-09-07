@@ -20,7 +20,7 @@ import {
   ChevronRight,
   CalendarDays,
   RefreshCw,
-  Clock, History, AlertTriangle, TrendingDown } from "lucide-react";
+  Clock, History, AlertTriangle, TrendingDown, Landmark } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
@@ -28,6 +28,7 @@ import { Card, CardHeader, CardBody, useAbertoPersistido } from "@/components/ui
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
 import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
+import { Societarias } from "@/components/custos/societarias";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -102,7 +103,7 @@ const TOM_CLASSES: Record<Tom, string> = {
 let ultimaFalhaMubi: { competencia: string; em: number } | null = null;
 const ESPERA_APOS_FALHA_MS = 30 * 60 * 1000;
 
-const ABAS = ["custos", "global", "sync", "viagens"];
+const ABAS = ["custos", "global", "societarias", "sync", "viagens"];
 
 export default function Custos() {
   const sessao = useSessao();
@@ -775,16 +776,6 @@ export default function Custos() {
     [pagamentos, compAtiva, ehDeSocio],
   );
   const totalSocietarioMes = useMemo(() => pagsSocietariosDoMes.reduce((s, p) => s + (Number(p.valor) || 0), 0), [pagsSocietariosDoMes]);
-  const societariosPorPessoa = useMemo(() => {
-    const m = new Map<string, { id: string; nome: string; total: number; tipos: string[] }>();
-    for (const p of pagsSocietariosDoMes) {
-      const x = m.get(p.colaboradorId) ?? { id: p.colaboradorId, nome: d.colabById.get(p.colaboradorId)?.nome ?? p.colaboradorId, total: 0, tipos: [] };
-      x.total += Number(p.valor) || 0;
-      if (!x.tipos.includes(p.tipo)) x.tipos.push(p.tipo);
-      m.set(p.colaboradorId, x);
-    }
-    return [...m.values()].sort((a, b) => b.total - a.total);
-  }, [pagsSocietariosDoMes, d.colabById]);
   const cardsSocietarios = useMemo(() => confidencialDoMes(planoContas, compAtiva, CARDS_CONFIDENCIAIS), [planoContas, compAtiva]);
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
   const abrirDrillTipo = (tipo: string) => {
@@ -1582,7 +1573,7 @@ export default function Custos() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Direção · despesa societária</p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador.
+                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador.{ehMaster(sessao) ? " O detalhe está na aba Societárias." : ""}
                   </p>
                 </div>
                 <p className="text-xl font-semibold tabular-nums text-slate-700">{formatBRL(totalSocietarioMes)}</p>
@@ -1843,58 +1834,6 @@ export default function Custos() {
                   </div>
                 )}
 
-                {/* Societárias — só a direção vê. O que sai para sócio, pessoa a
-                    pessoa, ao lado do que o plano do contador diz em 2.14: os
-                    dois têm de bater. */}
-                {ehMaster(sessao) && (pagsSocietariosDoMes.length > 0 || cardsSocietarios.some((c) => c.total > 0)) && (
-                  <div className="mt-4 rounded-xl border border-slate-300 bg-slate-50 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Societárias · só a direção vê</p>
-                      <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500">fora da folha</span>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Pago aos sócios (Contas a Pagar)</p>
-                        {societariosPorPessoa.length === 0 ? (
-                          <p className="text-sm text-slate-400">Nada gravado neste mês.</p>
-                        ) : (
-                          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-                            {societariosPorPessoa.map((x) => (
-                              <li key={x.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                                <span className="text-slate-700">{x.nome} <span className="text-xs text-slate-400">· {x.tipos.join(", ")}</span></span>
-                                <span className="font-medium tabular-nums text-slate-800">{formatBRL(x.total)}</span>
-                              </li>
-                            ))}
-                            <li className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-sm font-semibold text-brand-ink">
-                              <span>Total</span><span className="tabular-nums">{formatBRL(totalSocietarioMes)}</span>
-                            </li>
-                          </ul>
-                        )}
-                      </div>
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Plano de contas do contador (2.14)</p>
-                        {cardsSocietarios.every((c) => c.total === 0) ? (
-                          <p className="text-sm text-slate-400">{semPlanoNaComp ? "Sem plano de contas neste mês." : "Nada em 2.14 neste mês."}</p>
-                        ) : (
-                          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-                            {cardsSocietarios.map((c) => (
-                              <li key={c.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                                <span className="text-slate-700">{c.titulo}</span>
-                                <span className="font-medium tabular-nums text-slate-800">{formatBRL(c.total)}</span>
-                              </li>
-                            ))}
-                            <li className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-sm font-semibold text-brand-ink">
-                              <span>Total</span><span className="tabular-nums">{formatBRL(cardsSocietarios.reduce((s, c) => s + c.total, 0))}</span>
-                            </li>
-                          </ul>
-                        )}
-                      </div>
-                    </div>
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      Os dois lados leem janelas diferentes (Contas a Pagar pela competência 16→15; plano do contador pelo mês civil) — diferença pequena é vencimento na virada. Diferença grande é título em conta errada.
-                    </p>
-                  </div>
-                )}
               </CardBody>
             </Card>
           </section>
@@ -2076,6 +2015,21 @@ export default function Custos() {
               </div>
             ),
           },
+          ...(ehMaster(sessao) ? [{
+            id: "societarias",
+            label: "Societárias",
+            icon: <Landmark className="h-4 w-4" />,
+            conteudo: (
+              <Societarias
+                socios={d.colaboradores.filter((c: Colaborador) => ehSocio(c))}
+                pagamentos={pagamentos as Pagamento[]}
+                cardsPlano={cardsSocietarios}
+                compAtiva={compAtiva}
+                onEscolherMes={setComp}
+                semPlanoNoMes={semPlanoNaComp}
+              />
+            ),
+          }] : []),
           {
             id: "sync",
             label: "Sincronização",
