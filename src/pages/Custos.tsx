@@ -72,7 +72,7 @@ import {
   conciliarPagamentos,
   ehDoMubi,
   ehManual,
-  ehContaConfidencial,
+  contaEhConfidencial,
   confidencialDoMes,
   type DiffPagamentos,
 } from "@/lib/custos";
@@ -311,6 +311,10 @@ export default function Custos() {
     incompleta: boolean;
     pessoais: ContaMubi[];
     societarias: ContaMubi[];
+    /** Renumeradas pelo contador e reconhecidas pelo nome; e as que ficaram sem par. */
+    renumeradas: number;
+    semPar: ContaMubi[];
+    referencia: string | null;
     naoReconhecidas: ContaMubi[];
     societariasOmitidasNoServidor: number;
     /** O mês já tem a planilha do contador: aqui só se confere, não se grava. */
@@ -391,7 +395,7 @@ export default function Custos() {
         toast(`O ERP não tem título nenhum vencendo em ${compLabelLongo(compUpload)}.`, "erro");
         return;
       }
-      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse);
+      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse, r.equivalencias);
       const doMes = planoContas.filter((p: ContaPlano) => p.competencia === compUpload);
       setPlanoPrev({
         competencia: compUpload,
@@ -401,6 +405,9 @@ export default function Custos() {
         incompleta: r.incompleta,
         pessoais: montado.pessoais,
         societarias: montado.societarias,
+        renumeradas: montado.renumeradas,
+        semPar: montado.semPar,
+        referencia: r.equivalencias?.referencia ?? null,
         naoReconhecidas: montado.naoReconhecidas,
         societariasOmitidasNoServidor: r.societariasOmitidas,
         somenteConferencia: competenciaEhDoContador(planoContas, compUpload),
@@ -422,7 +429,7 @@ export default function Custos() {
       setBuscandoPlano(`Trazendo ${compLabel(comp)} do Mubisys…`);
       const r = await buscarPlanoCompleto(comp);
       if (r.incompleta) return "incompleto";
-      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse);
+      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse, r.equivalencias);
       const base = planoColecao.items as ContaPlano[];
       if (competenciaEhDoContador(base, comp)) return "contador";
       salvarCfg({ ultimoPlanoMubi: { competencia: comp, em: new Date().toISOString(), contas: montado.contas.length } });
@@ -1066,13 +1073,13 @@ export default function Custos() {
   const folhasEditor = useMemo(
     () =>
       folhasDoMes(planoContas, compAtiva)
-        .filter((p: ContaPlano) => !ehContaConfidencial(p.codigo))
+        .filter((p: ContaPlano) => !contaEhConfidencial(p))
         .sort((a: ContaPlano, b: ContaPlano) => b.valor - a.valor),
     [planoContas, compAtiva],
   );
 
   const definirClasse = (conta: ContaPlano, classe: ClasseCusto) => {
-    if (ehContaConfidencial(conta.codigo)) return; // não reclassificar confidenciais
+    if (contaEhConfidencial(conta)) return; // não reclassificar confidenciais
     const existente = classificacaoCustos.find((c: ClassificacaoConta) => c.codigo === conta.codigo);
     if (existente) classifColecao.atualizar(existente.id, { classe, nome: conta.nome });
     else classifColecao.criar({ codigo: conta.codigo, nome: conta.nome, classe });
@@ -1599,7 +1606,6 @@ export default function Custos() {
             pessoaPeso={pesoDoColab}
             comEncargos={comEncargos}
             onAbrirMes={abrirDrillDoMes}
-            onIrParaMes={(c) => setComp(c)}
           />
 
           {/* ===================== histórico do colaborador — mês a mês ===================== */}
@@ -2415,6 +2421,17 @@ export default function Custos() {
                   pagamentos={pagamentos as Pagamento[]}
                   colaboradores={d.colaboradores}
                   onVerPessoa={(id) => { setColabId(id); setMostrarInativos(true); setAba("custos"); }}
+                  onDesligar={(propostas) => {
+                    // Uma escrita por pessoa, com linha própria no histórico:
+                    // status e data de saída são o que decide de quais meses
+                    // ela faz parte — não é coisa de passar num lote mudo.
+                    for (const p of propostas) {
+                      colaboradoresColecao.atualizar(p.colaboradorId, { statusId: "inativo", dataDesligamento: p.para.dataDesligamento });
+                      registrarAcaoManual(`Desligou pelo último pagamento (${compLabel(p.ultimoMes)})`, p.nome, "colaboradores");
+                    }
+                    void enviarColecao("colaboradores");
+                    toast(`${propostas.length} pessoa(s) marcada(s) como inativa(s) com a data do último mês em que receberam.`, "sucesso");
+                  }}
                   onCorrigir={(achados) => {
                     const tipos = achados.filter((a) => a.conserto?.campo === "tipo");
                     const comps = achados.filter((a) => a.conserto?.campo === "competencia");
@@ -2532,6 +2549,15 @@ export default function Custos() {
               />
               {planoPrev.societariasOmitidasNoServidor > 0 && (
                 <p className="text-[11px] text-slate-500">O servidor deixou de fora {planoPrev.societariasOmitidasNoServidor} título(s) de contas societárias (sem valor, de propósito).</p>
+              )}
+              {/* O contador renumerou o plano em jul/2026: a tela diz quantas contas
+                  foram reconhecidas pelo nome e classificadas pela numeração de
+                  referência — e quais ficaram sem par (classe pelo código literal). */}
+              {(planoPrev.renumeradas > 0 || planoPrev.semPar.length > 0) && (
+                <p className="rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-[11px] text-sky-900">
+                  {planoPrev.renumeradas > 0 && <>{planoPrev.renumeradas} conta(s) com código diferente do plano do contador{planoPrev.referencia ? ` (${compLabel(planoPrev.referencia)})` : ""}, reconhecidas pelo nome e classificadas pela numeração dele. </>}
+                  {planoPrev.semPar.length > 0 && <>{planoPrev.semPar.length} sem par no plano de referência — classificadas pelo código como está; confira em “Classificação”: {planoPrev.semPar.slice(0, 6).map((c) => `${c.codigo} ${c.nome}`).join(" · ")}{planoPrev.semPar.length > 6 ? " …" : ""}.</>}
+                </p>
               )}
               <ListaFora
                 titulo="conta(s) com código que não é do grupo 2"

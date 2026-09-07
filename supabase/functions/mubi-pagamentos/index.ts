@@ -16,6 +16,7 @@
 //  - é lento: 25-40s por requisição.
 // ============================================================================
 import { json, preflight } from "../_shared/cors.ts";
+import { ehConfidencialEquivalente, equivalenciasDeContas, serializar, type ContaRef } from "../_shared/renumeracao.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const MUBI_BASE = Deno.env.get("MUBI_BASE_URL") ?? "https://api.mubisys.com/api";
@@ -25,6 +26,31 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+/**
+ * O plano de contas de referência: o mês mais recente gravado pelo CONTADOR
+ * (origem ausente ou "planilha"), com código e nome de cada conta. Só isso —
+ * nenhum valor sai daqui. Paginado de 500 em 500 porque o PostgREST corta em
+ * 1000 linhas sem avisar.
+ */
+async function planoDeReferencia(): Promise<{ competencia: string | null; contas: ContaRef[] }> {
+  const porMes = new Map<string, ContaRef[]>();
+  for (let inicio = 0; ; inicio += 500) {
+    const { data, error } = await admin.from("registros").select("registro").eq("colecao", "planoContas").eq("apagado", false).order("id").range(inicio, inicio + 499);
+    if (error || !data) break;
+    for (const linha of data as { registro: Record<string, unknown> }[]) {
+      const r = linha.registro ?? {};
+      if (r.origem === "erp") continue;
+      const comp = String(r.competencia ?? "");
+      const codigo = String(r.codigo ?? "").trim();
+      if (!comp || !codigo) continue;
+      porMes.set(comp, [...(porMes.get(comp) ?? []), { codigo, nome: String(r.nome ?? "") }]);
+    }
+    if (data.length < 500) break;
+  }
+  const competencia = [...porMes.keys()].sort().pop() ?? null;
+  return { competencia, contas: competencia ? porMes.get(competencia)! : [] };
+}
 
 /* SÓ O ADMIN_RH. Isto aqui devolve a FOLHA INTEIRA do ERP — todo mundo, com
    valor — e aceitava GESTOR, que hoje são três pessoas (Jéssica, Pedro e
@@ -307,6 +333,12 @@ Deno.serve(async (req) => {
     }
 
     if (escopo === "plano") {
+      // O plano de REFERÊNCIA: o mês mais recente que veio do contador (não do
+      // ERP). É contra ele que a numeração de hoje é reconhecida pelo nome —
+      // o contador renumerou o plano inteiro em jul/2026 e o corte do que é
+      // societário, por prefixo literal, deixou de alcançar (2.14.2.2 virou
+      // 2.11.2.2). Lê da mesma tabela do sync, paginado: max_rows=1000.
+      const referencia = await planoDeReferencia();
       // O plano de contas do mês: TODA despesa somada por conta, do jeito que a
       // planilha do contador mostra. Sem nome de ninguém — conta, quantos
       // títulos e o total.
@@ -327,9 +359,15 @@ Deno.serve(async (req) => {
         x.valor = Math.round((x.valor + (num(i.valor_pagamento) || num(i.valor_titulo))) * 100) / 100;
         contas.set(codigo, x);
       }
+      const eq = equivalenciasDeContas(referencia.contas, [...contas.values()], { prefixosConfidenciais: ["2.14"] });
+      eq.referencia = referencia.competencia;
+      for (const [codigo, c] of [...contas]) {
+        if (ehConfidencialEquivalente(c, ["2.14"], eq)) { societarias.contas.add(codigo); societarias.titulos += c.quantos; contas.delete(codigo); }
+      }
       return json({
         competencia,
         escopo: "plano",
+        equivalencias: serializar(eq),
         buscadoEm: new Date().toISOString(),
         totalTitulosNoMes: itens.length,
         paginas: totalPaginas,

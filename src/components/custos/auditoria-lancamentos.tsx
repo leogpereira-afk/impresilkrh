@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Info, UserSearch, Wand2 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
-import { Select } from "@/components/ui/form";
 import { formatBRL } from "@/lib/format";
 import { compLabel } from "@/lib/custos";
 import { auditarLancamentos, ROTULO_REGRA, type AchadoAuditoria, type Gravidade, type RegraAuditoria } from "@/lib/auditoriaLancamentos";
+import { desligamentosPeloUltimoPagamento, type PropostaDesligamento } from "@/lib/desligarPeloUltimoPagamento";
+import { Input, Select } from "@/components/ui/form";
 import type { Colaborador, Pagamento } from "@/data/types";
 
 const MOSTRAR = 25;
@@ -35,13 +36,21 @@ export function AuditoriaLancamentos({
   colaboradores,
   onCorrigir,
   onVerPessoa,
+  onDesligar,
 }: {
   pagamentos: Pagamento[];
   colaboradores: Colaborador[];
   /** Aplica os consertos determinísticos (tipo, competência) em lote. */
   onCorrigir: (achados: AchadoAuditoria[]) => void;
   onVerPessoa?: (colaboradorId: string) => void;
+  /** Grava status inativo + data de desligamento pelo último pagamento (regra de 07/09/2026). */
+  onDesligar?: (propostas: PropostaDesligamento[]) => void;
 }) {
+  // "Quem não recebe desde <mês> ou antes está desligado no último mês em que
+  // recebeu" — o limite é escolha de quem manda; a regra vem com junho/2026.
+  const [ate, setAte] = useState("2026-06");
+  const [confirmarDesligar, setConfirmarDesligar] = useState(false);
+  const propostas = useMemo(() => desligamentosPeloUltimoPagamento(colaboradores, pagamentos, ate), [colaboradores, pagamentos, ate]);
   const anos = useMemo(
     () => [...new Set(pagamentos.map((p) => String(p.competencia ?? "").slice(0, 4)).filter(Boolean))].sort().reverse(),
     [pagamentos],
@@ -154,6 +163,48 @@ export function AuditoriaLancamentos({
             </div>
           );
         })}
+
+        {onDesligar && (
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-brand-ink">Desligar pelo último pagamento</p>
+              <span className="text-xs text-slate-500">quem não recebe desde</span>
+              <Input type="month" value={ate} onChange={(e) => setAte(e.target.value)} className="h-8 w-40 py-0 text-sm" aria-label="Mês limite" />
+              <span className="text-xs text-slate-500">ou antes → inativo, com a data no fim do último mês em que recebeu</span>
+              <button type="button" className="btn-primary ml-auto" disabled={propostas.length === 0} onClick={() => setConfirmarDesligar(true)}>
+                Desligar {propostas.length} pessoa(s)
+              </button>
+            </div>
+            {propostas.length > 0 ? (
+              <ul className="mt-2 max-h-52 overflow-y-auto text-xs text-slate-700">
+                {propostas.map((p) => (
+                  <li key={p.colaboradorId} className="flex flex-wrap items-baseline gap-x-2 border-t border-slate-50 py-1">
+                    <span className="font-medium text-brand-ink">{p.nome}</span>
+                    <span>último lançamento {compLabel(p.ultimoMes)}</span>
+                    <span className="text-slate-500">
+                      {p.de.statusId ?? "—"}{p.de.dataDesligamento ? ` · saída ${p.de.dataDesligamento}` : " · sem data"} → inativo · saída {p.para.dataDesligamento}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">Ninguém a desligar até {compLabel(ate)}: quem parou de receber até aí já está inativo com a data certa.</p>
+            )}
+            <p className="mt-2 text-[11px] text-slate-500">Direção e quem não tem lançamento nenhum ficam de fora. Quem recebeu depois do limite é decisão sua, na ficha.</p>
+          </div>
+        )}
+
+        {confirmarDesligar && onDesligar && (
+          <ConfirmDialog
+            aberto
+            titulo={`Desligar ${propostas.length} pessoa(s) pelo último pagamento?`}
+            mensagem={`Status vira inativo e a data de desligamento passa a ser o fim do último mês com lançamento (até ${compLabel(ate)}). Cada pessoa ganha uma linha no histórico; dá para ajustar uma a uma na ficha depois.`}
+            textoConfirmar={`Desligar ${propostas.length}`}
+            perigo
+            onConfirmar={() => { setConfirmarDesligar(false); onDesligar(propostas); }}
+            onFechar={() => setConfirmarDesligar(false)}
+          />
+        )}
 
         {confirmar && (
           <ConfirmDialog

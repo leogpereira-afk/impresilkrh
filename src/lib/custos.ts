@@ -19,6 +19,23 @@ export const ehContaConfidencial = (codigo: string): boolean =>
 export const classeDe = (codigo: string, m: Map<string, ClasseCusto>): ClasseCusto =>
   ehContaConfidencial(codigo) ? "confidencial" : (m.get(codigo) ?? "ignorar");
 
+/** Conta com o código de HOJE e, se o contador renumerou, o de referência. */
+export type ContaComEquivalencia = { codigo: string; equivaleA?: string };
+
+/** Confidencial em qualquer das duas numerações. */
+export const contaEhConfidencial = (p: ContaComEquivalencia): boolean =>
+  ehContaConfidencial(p.codigo) || (!!p.equivaleA && ehContaConfidencial(p.equivaleA));
+
+/**
+ * A classe de uma conta gravada. As classes são guardadas pelo código do plano
+ * do CONTADOR; uma conta que chegou do ERP com código renumerado carrega em
+ * `equivaleA` o código de referência, e é por ele que se classifica. Sem isso,
+ * "2.1.14 Contribuição Sindical" (numeração nova) caía em Alimentação (o que
+ * 2.1.14 era na numeração velha) — 07/09/2026.
+ */
+export const classeDaConta = (p: ContaComEquivalencia, m: Map<string, ClasseCusto>): ClasseCusto =>
+  contaEhConfidencial(p) ? "confidencial" : (m.get(p.equivaleA ?? p.codigo) ?? (p.equivaleA ? m.get(p.codigo) : undefined) ?? "ignorar");
+
 export function competenciasPlano(plano: ContaPlano[]): string[] {
   return [...new Set(plano.map((p) => p.competencia))].sort();
 }
@@ -102,11 +119,11 @@ export interface TotaisMes {
 
 export function totaisDoMes(plano: ContaPlano[], m: Map<string, ClasseCusto>, comp: string, nColab: number): TotaisMes {
   const folhas = folhasDoMes(plano, comp);
-  const contasIndividual = folhas.filter((p) => classeDe(p.codigo, m) === "individual").sort((a, b) => b.valor - a.valor);
-  const contasRateio = folhas.filter((p) => classeDe(p.codigo, m) === "rateio").sort((a, b) => b.valor - a.valor);
+  const contasIndividual = folhas.filter((p) => classeDaConta(p, m) === "individual").sort((a, b) => b.valor - a.valor);
+  const contasRateio = folhas.filter((p) => classeDaConta(p, m) === "rateio").sort((a, b) => b.valor - a.valor);
   const individual = contasIndividual.reduce((s, p) => s + p.valor, 0);
   const rateio = contasRateio.reduce((s, p) => s + p.valor, 0);
-  const encargo = folhas.filter((p) => classeDe(p.codigo, m) === "encargo").reduce((s, p) => s + p.valor, 0);
+  const encargo = folhas.filter((p) => classeDaConta(p, m) === "encargo").reduce((s, p) => s + p.valor, 0);
   return { individual, rateio, rateioPorColab: nColab > 0 ? rateio / nColab : 0, encargo, contasIndividual, contasRateio };
 }
 
@@ -137,9 +154,11 @@ export function confidencialDoMes(
   // ("2.14.2"): só startsWith deixava de fora o dinheiro lançado DIRETO no pai —
   // R$ 35.000 de abril/2026 em 2.14.2 sumiam do card da própria diretoria.
   const casa = (codigo: string, pre: string) => codigo === pre.replace(/\.$/, "") || codigo.startsWith(pre);
+  // Conta renumerada pelo contador entra pelo código de referência (equivaleA).
+  const casaConta = (p: ContaPlano, pre: string) => casa(p.codigo, pre) || (!!p.equivaleA && casa(p.equivaleA, pre));
   return cards.map((card) => {
     const itens = folhas
-      .filter((p) => card.prefixos.some((pre) => casa(p.codigo, pre)))
+      .filter((p) => card.prefixos.some((pre) => casaConta(p, pre)))
       .sort((a, b) => b.valor - a.valor);
     return { ...card, itens, total: itens.reduce((s, p) => s + p.valor, 0) };
   });

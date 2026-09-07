@@ -20,7 +20,8 @@
 import { supabase, FN_MUBI_PAGAMENTOS } from "@/lib/supabase";
 import { idConta } from "@/data/planoContas";
 import type { ClasseCusto, ContaPlano } from "@/data/types";
-import { ehContaConfidencial } from "@/lib/custos";
+import { contaEhConfidencial } from "@/lib/custos";
+import { codigoDeReferencia, desserializar, ehConfidencialEquivalente, type Equivalencias, type EquivalenciasSerializadas } from "@/lib/renumeracao";
 import { tipoDoPlanoErp } from "@/lib/tipoDoPlano";
 
 export interface ContaMubi {
@@ -41,6 +42,12 @@ export interface RespostaPlanoMubi {
   contas: ContaMubi[];
   /** Contas 2.14 que o servidor cortou (só contagem; nunca vem valor). */
   societariasOmitidas?: { contas: number; titulos: number };
+  /**
+   * A equivalência entre a numeração que o ERP manda e a do plano de
+   * referência do contador (lib/renumeracao), calculada no servidor — que é
+   * quem tem o plano inteiro e quem corta o confidencial na porta de dados.
+   */
+  equivalencias?: EquivalenciasSerializadas;
 }
 
 /** Uma página do plano de contas do mês. */
@@ -88,11 +95,12 @@ export async function buscarPlanoCompleto(
   competencia: string,
   aoProgredir?: (pagina: number, totalPaginas: number) => void,
   cancelado?: () => boolean,
-): Promise<{ contas: ContaMubi[]; titulos: number; paginas: number; incompleta: boolean; societariasOmitidas: number }> {
+): Promise<{ contas: ContaMubi[]; titulos: number; paginas: number; incompleta: boolean; societariasOmitidas: number; equivalencias: Equivalencias | null }> {
   const TETO_PAGINAS = 40;
   const paginas: ContaMubi[][] = [];
   let titulos = 0;
   let societariasOmitidas = 0;
+  let equivalencias: Equivalencias | null = null;
   let pagina = 1;
   let totalPaginas = 1;
   let incompleta = false;
@@ -103,13 +111,14 @@ export async function buscarPlanoCompleto(
     paginas.push(r.contas);
     titulos += r.totalTitulosNoMes || 0;
     societariasOmitidas += r.societariasOmitidas?.titulos ?? 0;
+    if (!equivalencias && r.equivalencias) equivalencias = desserializar(r.equivalencias);
     totalPaginas = r.paginas || 1;
     aoProgredir?.(pagina, totalPaginas);
     if (!r.temMais) break;
     pagina++;
     if (pagina > TETO_PAGINAS) { incompleta = true; break; }
   }
-  return { contas: juntarContas(paginas), titulos, paginas: totalPaginas, incompleta, societariasOmitidas };
+  return { contas: juntarContas(paginas), titulos, paginas: totalPaginas, incompleta, societariasOmitidas, equivalencias };
 }
 
 /**
@@ -125,6 +134,8 @@ const TIPOS_PESSOAIS = new Set([
 ]);
 
 const CODIGO_VALIDO = /^2(\.\d+)*$/;
+/** 2.14 — Despesas Societárias. O servidor corta; isto é a rede do cliente. */
+const PREFIXOS_SOCIETARIOS = ["2.14"] as const;
 
 /** A conta, ou qualquer ancestral dela, está classificada como individual? */
 function ehIndividualPorClasse(codigo: string, classes: Map<string, ClasseCusto>): boolean {
@@ -155,6 +166,10 @@ export interface PlanoMontado {
   societarias: ContaMubi[];
   /** Código que não é do grupo 2 (ou não é código): fica visível, não some. */
   naoReconhecidas: ContaMubi[];
+  /** Renumeradas pelo contador e reconhecidas pelo nome dentro do grupo. */
+  renumeradas: number;
+  /** Entraram, mas sem par no plano de referência: classe pelo código literal — confira. */
+  semPar: ContaMubi[];
 }
 
 /**
@@ -169,17 +184,30 @@ export interface PlanoMontado {
  *
  * Nada some calado: o que ficou de fora volta em três listas para a prévia.
  */
-export function montarPlanoDoErp(contas: ContaMubi[], competencia: string, classes: Map<string, ClasseCusto>): PlanoMontado {
-  const out: PlanoMontado = { contas: [], pessoais: [], societarias: [], naoReconhecidas: [] };
+export function montarPlanoDoErp(
+  contas: ContaMubi[],
+  competencia: string,
+  classes: Map<string, ClasseCusto>,
+  eq: Equivalencias | null = null,
+): PlanoMontado {
+  const out: PlanoMontado = { contas: [], pessoais: [], societarias: [], naoReconhecidas: [], renumeradas: 0, semPar: [] };
   for (const c of contas) {
     if (!c.codigo || !Number.isFinite(c.valor)) continue;
     if (!CODIGO_VALIDO.test(c.codigo)) { out.naoReconhecidas.push(c); continue; }
-    if (ehContaConfidencial(c.codigo) || c.codigo === "2.14" || c.codigo.startsWith("2.14.")) { out.societarias.push(c); continue; }
-    if (ehContaPessoal(c.codigo, c.nome, classes)) { out.pessoais.push(c); continue; }
+    // Confidencial em QUALQUER numeração — e, sem par, pelo nome (na dúvida, esconde).
+    if (ehConfidencialEquivalente(c, PREFIXOS_SOCIETARIOS, eq) || contaEhConfidencial({ codigo: c.codigo })) { out.societarias.push(c); continue; }
+    // O código pelo qual se CLASSIFICA é o de referência: as classes são
+    // guardadas pela numeração do contador.
+    const ref = codigoDeReferencia(c.codigo, eq?.mapa);
+    if (ehContaPessoal(ref, c.nome, classes)) { out.pessoais.push(c); continue; }
+    const temPar = !eq || eq.mapa.has(c.codigo);
+    if (!temPar) out.semPar.push(c);
+    if (ref !== c.codigo) out.renumeradas++;
     out.contas.push({
       id: idConta(competencia, c.codigo),
       competencia,
       codigo: c.codigo,
+      ...(ref !== c.codigo ? { equivaleA: ref } : {}),
       nome: c.nome || c.codigo,
       valor: Math.round(c.valor * 100) / 100,
       folha: true,
@@ -206,7 +234,11 @@ export const competenciaEhDoContador = (plano: ContaPlano[], competencia: string
  */
 export function mesclarPlano(atual: ContaPlano[], novo: ContaPlano[], competencia: string): ContaPlano[] {
   const trazidos = new Map(novo.map((c) => [c.codigo, c]));
-  const mantidas = atual.filter((p) => p.competencia !== competencia || !trazidos.has(p.codigo));
+  // O que é do CONTADOR fica. O que veio do ERP numa puxada anterior e não
+  // veio nesta SAI: o ERP é a fonte dessas linhas, e a versão velha delas era
+  // justamente o que carregava a classificação errada (e o que a porta de
+  // dados ainda não cortava) antes da equivalência de 07/09/2026.
+  const mantidas = atual.filter((p) => p.competencia !== competencia || (!trazidos.has(p.codigo) && p.origem !== "erp"));
   return [...mantidas, ...novo];
 }
 
@@ -255,7 +287,8 @@ export function compararPlano(atual: ContaPlano[], novo: ContaPlano[], opcoes: {
   let confidenciaisOcultas = 0;
   const codigos = [...new Set([...antes.keys(), ...depois.keys()])]
     .filter((codigo) => {
-      if (opcoes.ocultarConfidenciais && ehContaConfidencial(codigo)) { confidenciaisOcultas++; return false; }
+      const conta = antes.get(codigo) ?? depois.get(codigo)!;
+      if (opcoes.ocultarConfidenciais && contaEhConfidencial(conta)) { confidenciaisOcultas++; return false; }
       return true;
     })
     .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
@@ -275,7 +308,7 @@ export function compararPlano(atual: ContaPlano[], novo: ContaPlano[], opcoes: {
       estado,
     };
   });
-  const visivel = (c: ContaPlano) => !(opcoes.ocultarConfidenciais && ehContaConfidencial(c.codigo));
+  const visivel = (c: ContaPlano) => !(opcoes.ocultarConfidenciais && contaEhConfidencial(c));
   const soma = (xs: ContaPlano[]) => Math.round(xs.filter((c) => c.folha && visivel(c)).reduce((s, c) => s + c.valor, 0) * 100) / 100;
   const somemLinhas = linhas.filter((l) => l.estado === "some");
   const ehPai = (codigo: string) => antes.get(codigo)?.folha === false;

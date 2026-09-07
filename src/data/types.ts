@@ -799,6 +799,13 @@ export interface ContaPlano {
    * indistinguível de um mês fechado — e ninguém sabe se pode confiar no rateio.
    */
   origem?: "erp" | "planilha";
+  /**
+   * O código desta conta NA NUMERAÇÃO DE REFERÊNCIA (o plano do contador),
+   * quando o contador renumerou e o ERP já manda o código novo. É por ele que
+   * a conta é classificada (rateio, encargo, confidencial…): código não é
+   * significado — ver lib/renumeracao. Ausente = não renumerou.
+   */
+  equivaleA?: string;
 }
 
 // Classe de custo de cada conta (editável na tela de Custos):

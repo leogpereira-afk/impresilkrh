@@ -2,7 +2,7 @@
 // (R$ 62.576,49) quando a mesma planilha subiu duas vezes. A regra de subir de
 // novo sem duplicar fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes } from "./custos";
+import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes, classeDaConta, contaEhConfidencial} from "./custos";
 import type { ContaPlano, Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> = {}): Pagamento =>
@@ -267,5 +267,23 @@ describe("folhasDoMes — o que foi lançado direto na conta-pai não some", () 
   it("mês do ERP (tudo folha) passa intacto", () => {
     const plano = [conta("2.1.11", 1000, true), conta("2.1.11.4", 400, true)];
     expect(soma(folhasDoMes(plano, "2026-06"))).toBe(1400);
+  });
+});
+
+describe("classeDaConta — a classe vem do código de referência quando o contador renumerou", () => {
+  const m = new Map<string, "individual" | "rateio" | "encargo" | "confidencial" | "ignorar">([["2.1.14", "rateio"], ["2.2.2", "rateio"], ["2.1.9.1", "encargo"]]);
+  it("conta renumerada classifica pelo equivaleA, não pelo código de hoje", () => {
+    // 2.1.14 hoje é Contribuição Sindical (era 2.2.2); pelo código literal cairia em "Alimentação".
+    expect(classeDaConta({ codigo: "2.1.14", equivaleA: "2.2.2" }, m)).toBe("rateio");
+    expect(classeDaConta({ codigo: "2.9.9", equivaleA: "2.1.9.1" }, m)).toBe("encargo");
+  });
+  it("sem equivaleA, vale o código", () => {
+    expect(classeDaConta({ codigo: "2.1.9.1" }, m)).toBe("encargo");
+    expect(classeDaConta({ codigo: "2.77" }, m)).toBe("ignorar");
+  });
+  it("confidencial em qualquer das duas numerações", () => {
+    expect(classeDaConta({ codigo: "2.11.2.2", equivaleA: "2.14.2.2" }, m)).toBe("confidencial");
+    expect(contaEhConfidencial({ codigo: "2.14.1.2" })).toBe(true);
+    expect(contaEhConfidencial({ codigo: "2.11.2.2" })).toBe(false);
   });
 });
