@@ -227,10 +227,18 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
           fechamento={fechDe(aberto.id)}
           cargoNome={d.nomeCargo(aberto) ?? aberto.cargoLivre ?? ""}
           onFechar={() => setAberto(null)}
-          onCriar={(rec) => criar(rec)}
+          onCriar={(rec) => {
+            if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano).", "erro"); return; }
+            if (sessao?.perfil === "GESTOR" && rec.colaboradorId === sessao.colaboradorId) { toast("A sua própria verba é lançada pelo RH.", "erro"); return; }
+            criar(rec);
+          }}
           onAtualizar={(id, patch) => atualizar(id, patch)}
           onRemover={(id) => remover(id)}
           onAprovar={(aprovar) => {
+            if (!/^\d{4}-\d{2}$/.test(competencia)) { toast("Escolha a competência (mês/ano).", "erro"); return; }
+            // Gestor não aprova a própria verba: a equipe começa por ele mesmo
+            // no organograma, mas a aprovação da verba dele é do RH.
+            if (sessao?.perfil === "GESTOR" && aberto.id === sessao.colaboradorId) { toast("A sua própria folha variável é aprovada pelo RH.", "erro"); return; }
             const id = `${competencia}::${aberto.id}`;
             const agora = new Date().toISOString();
             const base = { id, colaboradorId: aberto.id, competencia, aprovado: aprovar, aprovadoPor: sessao?.colaboradorId, aprovadoEm: aprovar ? agora : null, atualizadoEm: agora };

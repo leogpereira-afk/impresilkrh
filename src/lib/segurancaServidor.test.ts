@@ -115,3 +115,12 @@ describe("vazamentos fechados em 07/09/2026", () => {
     expect(por.bia.riscoSaida).toBe("baixo");
   });
 });
+
+describe("gestor não lança nem aprova verba para si (auditoria de 07/09/2026)", () => {
+  it("lançamento e fechamento com o próprio colaboradorId são recusados; da equipe, aceitos", async () => {
+    const s = servidorRh({ perfil: "GESTOR", pessoa: "maria", rows: [linha("colaboradores", "maria"), linha("colaboradores", "bia", { gestorId: "maria" })] });
+    expect((await s.call({ action: "upsert", colecao: "lancamentos", registro: { id: "l1", colaboradorId: "maria", valor: 3000 }, baseVersao: 0, mutationId: "m1" })).status).toBe(403);
+    expect((await s.call({ action: "upsert", colecao: "fechamentos", registro: { id: "2026-09::maria", colaboradorId: "maria", aprovado: true }, baseVersao: 0, mutationId: "m2" })).status).toBe(403);
+    expect((await s.call({ action: "upsert", colecao: "lancamentos", registro: { id: "l2", colaboradorId: "bia", valor: 300 }, baseVersao: 0, mutationId: "m3" })).status).toBe(200);
+  });
+});

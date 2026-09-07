@@ -390,6 +390,7 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
     () => cargo ? { ...cargo } : { nome: "", areaId: areas[0]?.id ?? "", faixas: [0, 0, 0, 0, 0] },
   );
   const set = (p: Partial<Cargo>) => setForm((f) => ({ ...f, ...p }));
+  const [salarioTexto, setSalarioTexto] = useState(cargo?.salarioPraticado != null ? String(cargo.salarioPraticado).replace(".", ",") : "");
 
   const salvar = () => {
     if (!String(form.nome ?? "").trim()) return toast("O cargo precisa de um nome.", "erro");
@@ -448,8 +449,12 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
         <Campo label="Salário praticado hoje" hint="O que a empresa realmente paga neste cargo — é este o número da proposta">
           <Input
             inputMode="decimal"
-            value={form.salarioPraticado != null ? String(form.salarioPraticado) : ""}
+            // O TEXTO digitado fica num estado próprio: com o input reescrito a
+            // partir do número a cada tecla, a vírgula sumia e "1518,50" virava
+            // 151850 (auditoria de 07/09/2026).
+            value={salarioTexto}
             onChange={(e) => {
+              setSalarioTexto(e.target.value);
               // parseBRL: o parse ingênuo transformava "2.500,00" em NaN (salário
               // sumia) e "2.500" em 2,5. Ver lib/format.
               const novo = parseBRL(e.target.value);

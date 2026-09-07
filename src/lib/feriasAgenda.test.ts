@@ -198,3 +198,10 @@ describe("validarPeriodo — o par de datas da edição", () => {
     expect(erros(validarPeriodo(dia("2026-09-01"), null))).toHaveLength(1);
   });
 });
+
+describe("saldo negativo também é erro (auditoria de 07/09/2026)", () => {
+  it("25 gozados + 10 de abono + 5 novos não passam", () => {
+    const r = validarAgendamento({ inicio: new Date(2026, 9, 5), dias: 5, diasJaLancados: 25, abono: 10 } as Parameters<typeof validarAgendamento>[0]);
+    expect(r.some((a) => a.nivel === "erro" && /além dos 30/.test(a.texto))).toBe(true);
+  });
+});

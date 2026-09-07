@@ -29,7 +29,7 @@ export interface MotivoFora {
  * sem data para o RH corrigir.
  * Desligado NO mês ainda conta: ele trabalhou parte dele.
  */
-export function noQuadroEm(c: Colaborador, comp: string): boolean {
+export function noQuadroEm(c: Colaborador, comp: string, recebeuNoMes = false): boolean {
   if (!comp) return false;
   if (c.ehDirecao) return false;
   const adm = mes(c.dataAdmissao);
@@ -38,18 +38,27 @@ export function noQuadroEm(c: Colaborador, comp: string): boolean {
   if (des) return des >= comp;
   // Sem data de desligamento: quem está marcado inativo saiu em algum momento
   // que ninguém anotou. Para o mês corrente vale o status; para trás, só o
-  // lançamento prova que estava — quem chama junta as duas coisas.
-  return c.statusId !== "inativo";
+  // lançamento prova que estava — e aqui a prova entra: recebeu no mês,
+  // estava no quadro (auditoria de 07/09/2026: cinco inativos sem data
+  // sumiam do divisor de janeiro e a média por pessoa subia 17%).
+  return c.statusId !== "inativo" || recebeuNoMes;
 }
 
-/** O quadro do mês, em ordem alfabética. */
-export function quadroDoMes(colaboradores: Colaborador[], comp: string): Colaborador[] {
-  return colaboradores.filter((c) => noQuadroEm(c, comp)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+type PagDoMes = { colaboradorId: string; competencia: string };
+const quemRecebeu = (pagamentos: PagDoMes[] | undefined, comp: string): Set<string> =>
+  new Set((pagamentos ?? []).filter((p) => p.competencia === comp).map((p) => p.colaboradorId));
+
+/** O quadro do mês, em ordem alfabética. `pagamentos` prova quem estava sem ter data. */
+export function quadroDoMes(colaboradores: Colaborador[], comp: string, pagamentos?: PagDoMes[]): Colaborador[] {
+  const recebeu = quemRecebeu(pagamentos, comp);
+  return colaboradores.filter((c) => noQuadroEm(c, comp, recebeu.has(c.id))).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
 /** Quantas pessoas o mês tinha — o divisor honesto do custo médio e do rateio. */
-export const quantosNoQuadro = (colaboradores: Colaborador[], comp: string): number =>
-  colaboradores.reduce((n, c) => n + (noQuadroEm(c, comp) ? 1 : 0), 0);
+export const quantosNoQuadro = (colaboradores: Colaborador[], comp: string, pagamentos?: PagDoMes[]): number => {
+  const recebeu = quemRecebeu(pagamentos, comp);
+  return colaboradores.reduce((n, c) => n + (noQuadroEm(c, comp, recebeu.has(c.id)) ? 1 : 0), 0);
+};
 
 export interface FaltaNoMes {
   colaborador: Colaborador;

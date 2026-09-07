@@ -52,8 +52,7 @@ import { podeGerir, ehMaster } from "@/lib/rbac";
 import { formatBRL, formatDate } from "@/lib/format";
 import {
   calcularHoraExtra, minutosDaDuracao, diferencaDoCalculo, valorDigitado,
-  horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO, DIVISOR_MENSAL_PADRAO,
-} from "@/lib/pontoFolha";
+  horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO, DIVISOR_MENSAL_PADRAO, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { minParaHora } from "@/lib/pontoImport";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
 import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type ContaForaDaFolha, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado } from "@/lib/mubiPagamentos";
@@ -169,7 +168,7 @@ export default function Custos() {
   // entrou depois só aparece do mês dele em diante, quem saiu some do mês
   // seguinte. No Custo Global nada disso muda — lá o dinheiro dele fez parte
   // daquela conta e continua somando.
-  const ativosOrdenados = useMemo(() => quadroDoMes(d.colaboradores, compAtiva), [d.colaboradores, compAtiva]);
+  const ativosOrdenados = useMemo(() => quadroDoMes(d.colaboradores, compAtiva, pagamentos as Pagamento[]), [d.colaboradores, compAtiva, pagamentos]);
   // Fora do quadro mas COM lançamento: inativo, desligado, afastado ou direção
   // que tem folha histórica. Antes eles eram invisíveis na seção individual —
   // o dinheiro estava lá, contava na folha geral, e não havia como "entrar" na
@@ -263,7 +262,7 @@ export default function Custos() {
     if (i >= 0 && i < competencias.length) setComp(competencias[i]);
   };
   // O divisor é o quadro DAQUELE mês, não o de hoje (pedido do Léo, 07/09/2026).
-  const nColab = useMemo(() => quantosNoQuadro(d.colaboradores, compAtiva), [d.colaboradores, compAtiva]);
+  const nColab = useMemo(() => quantosNoQuadro(d.colaboradores, compAtiva, pagamentos as Pagamento[]), [d.colaboradores, compAtiva, pagamentos]);
   const mapaClasse = useMemo(() => classeMap(classificacaoCustos), [classificacaoCustos]);
 
   // ---------- Uploads ----------
@@ -1063,8 +1062,8 @@ export default function Custos() {
 
   // ---------- Seção 3: evolução mês a mês ----------
   const serie = useMemo(
-    () => serieCustos(planoContas, mapaClasse, (c) => quantosNoQuadro(d.colaboradores, c)),
-    [planoContas, mapaClasse, d.colaboradores],
+    () => serieCustos(planoContas, mapaClasse, (c) => quantosNoQuadro(d.colaboradores, c, pagamentos as Pagamento[])),
+    [planoContas, mapaClasse, d.colaboradores, pagamentos],
   );
 
   // ---------- Editor de classificação ----------
@@ -1132,7 +1131,10 @@ export default function Custos() {
   // `null` = não entendi o que foi digitado (ver minutosDaDuracao). Diferente de
   // vazio, que é só "ainda não preencheu".
   const heMinutos = ehLancHE ? minutosDaDuracao(heDuracao) : null;
-  const heSalarioNum = valorDigitado(heSalario);
+  // "2.500.38" (milhar + centavo no teclado numérico) virava 250038 e o
+  // lançamento saía cem vezes maior. A mesma trava da folha variável.
+  const heSalarioAmbiguo = !!heSalario.trim() && dinheiroAmbiguo(heSalario);
+  const heSalarioNum = heSalarioAmbiguo ? 0 : valorDigitado(heSalario);
   // "+50%" quer dizer hora × 1,5. Percentual vazio ou impossível cai no padrão
   // em vez de zerar o valor calado.
   const hePctNum = valorDigitado(hePercentual);
@@ -1158,6 +1160,8 @@ export default function Custos() {
 
   // Lança/edita um pagamento manual para o colaborador no mês (preenche o que faltou na folha).
   const salvarLancamento = () => {
+    if (dinheiroAmbiguo(lancValor)) return toast("Valor ambíguo. Escreva assim: 2.500,38", "erro");
+    if (ehLancHE && heSalarioAmbiguo) return toast("Salário base ambíguo. Escreva assim: 2.500,38", "erro");
     const valor = valorDigitado(lancValor);
     if (!lancTipo) return toast("Escolha o tipo de pagamento.", "erro");
     /* Duração escrita de um jeito que não dá para entender NÃO pode virar

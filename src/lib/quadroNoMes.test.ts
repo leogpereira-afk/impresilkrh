@@ -92,3 +92,13 @@ describe("pagosForaDoQuadro", () => {
     expect(pagosForaDoQuadro(equipe, [{ colaboradorId: "s", competencia: "2026-07" }], "2026-07")).toEqual([]);
   });
 });
+
+describe("inativo sem data conta no mês em que recebeu (auditoria de 07/09/2026)", () => {
+  const semData = { id: "paulo", nome: "Paulo", statusId: "inativo", dataAdmissao: "2015-06-16" } as unknown as import("@/data/types").Colaborador;
+  it("sem pagamento, continua fora; com pagamento no mês, entra no divisor e no quadro", () => {
+    expect(quantosNoQuadro([semData], "2026-01")).toBe(0);
+    expect(quantosNoQuadro([semData], "2026-01", [{ colaboradorId: "paulo", competencia: "2026-01" }])).toBe(1);
+    expect(quadroDoMes([semData], "2026-01", [{ colaboradorId: "paulo", competencia: "2026-02" }])).toHaveLength(0);
+    expect(quadroDoMes([semData], "2026-01", [{ colaboradorId: "paulo", competencia: "2026-01" }]).map((c) => c.id)).toEqual(["paulo"]);
+  });
+});

@@ -280,6 +280,8 @@ Deno.serve(async (req) => {
     if (ehAdmin) return true;
     if (["pagamentos", "movimentacoes"].includes(colecao)) return false;
     if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId && pertenceEquipe(colecao, reg);
+    // Verba variável e aprovação de folha: gestor não lança nem aprova para si.
+    if ((colecao === "lancamentos" || colecao === "fechamentos") && reg?.colaboradorId === meuId) return false;
     const { nivel } = escopoDe(colecao);
     if (nivel === "rh" || nivel === "todos") return false;
     if (nivel === "gestao") {

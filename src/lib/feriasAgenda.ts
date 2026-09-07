@@ -159,10 +159,15 @@ export function validarAgendamento(d: DadosAgendamento): Achado[] {
   // Só fala de saldo quando há algo lançado ou vendido: sem isso, pedir 45 dias
   // gerava DUAS mensagens dizendo a mesma coisa ("dá 30" e "sobram 30").
   const restam = DIAS_FERIAS - jaLancados - abono;
-  if ((jaLancados > 0 || abono > 0) && dias > restam && restam >= 0) {
+  // Saldo NEGATIVO também é erro — antes o `restam >= 0` desligava a
+  // conferência justamente quando ela mais importava: 25 gozados + 10 de
+  // abono + 5 novos passavam (40 dias de um aquisitivo de 30).
+  if ((jaLancados > 0 || abono > 0) && dias > restam) {
     achados.push({
       nivel: "erro",
-      texto: abono > 0
+      texto: restam < 0
+        ? `Já foram lançados ${jaLancados} e vendidos ${abono} dia(s): ${-restam} além dos ${DIAS_FERIAS} do período aquisitivo.`
+        : abono > 0
         ? `Sobram ${restam} dia(s): ${jaLancados} já lançado(s) e ${abono} vendido(s) como abono.`
         : `Sobram ${restam} dia(s) neste período aquisitivo — ${jaLancados} já foi(ram) lançado(s).`,
     });
