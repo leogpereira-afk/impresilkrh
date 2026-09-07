@@ -125,3 +125,68 @@ describe("Auditoria dos lançamentos — o painel diz como corrigir", () => {
     expect(dentro.textContent).toContain("Corrigir");
   });
 });
+
+/* Os dois consertos que o dinheiro prova, na tela. */
+describe("Auditoria — corrigir o cadastro pelo que os pagamentos provam", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  // Demerval: consta desligado em 22/06 e recebeu salário da competência 08.
+  const demerval: Colaborador[] = [
+    { id: "d", nome: "Demerval Vieira", statusId: "ativo", dataAdmissao: "2026-01-20", dataDesligamento: "2026-06-22" } as Colaborador,
+  ];
+  const pags: Pagamento[] = [
+    { id: "a", colaboradorId: "d", competencia: "2026-08", tipo: "Salário", valor: 1073.75, dataPagamento: "2026-09-04", idMubi: "9" } as Pagamento,
+  ];
+
+  beforeEach(() => { container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); });
+
+  it("oferece o conserto e diz o que prova", () => {
+    act(() => { root.render(<AuditoriaLancamentos pagamentos={pags} colaboradores={demerval} onCorrigir={() => {}} onReativar={() => {}} />); });
+    const t = container.textContent ?? "";
+    expect(t).toContain("Tem data de saída, mas continua recebendo");
+    expect(t).toContain("Demerval Vieira");
+    expect(t).toContain("Salário");
+    expect(t).toContain("Corrigir 1 cadastro(s)");
+  });
+
+  it("sem a alça onReativar, o bloco não aparece — nada grava sozinho", () => {
+    act(() => { root.render(<AuditoriaLancamentos pagamentos={pags} colaboradores={demerval} onCorrigir={() => {}} />); });
+    expect(container.textContent).not.toContain("Tem data de saída, mas continua recebendo");
+  });
+
+  it("o destino do status é escolhido na lista, e é o que sai no clique", () => {
+    // O dado prova que a pessoa NÃO saiu; em que condição ela ficou (efetivo,
+    // freelancer…) é decisão de quem manda, não dedução.
+    let recebido: { colaboradorId: string; statusId: string }[] = [];
+    act(() => {
+      root.render(
+        <AuditoriaLancamentos
+          pagamentos={pags} colaboradores={demerval} onCorrigir={() => {}}
+          statusDisponiveis={[{ id: "ativo", nome: "Ativo" }, { id: "experiencia", nome: "Em experiência" }]}
+          onReativar={(ps) => { recebido = ps; }}
+        />,
+      );
+    });
+    const sel = container.querySelector("select[aria-label='Status de Demerval Vieira']") as HTMLSelectElement;
+    expect(sel, "faltou o seletor de status").toBeTruthy();
+    act(() => {
+      sel.value = "experiencia";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const abrir = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("Corrigir 1 cadastro"));
+    act(() => { abrir!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    const confirmar = [...document.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "Corrigir 1");
+    expect(confirmar, "faltou o botão de confirmar").toBeTruthy();
+    act(() => { confirmar!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(recebido).toEqual([{ colaboradorId: "d", nome: "Demerval Vieira", statusId: "experiencia" }]);
+  });
+
+  it("quem só recebeu rescisão depois de sair NÃO aparece", () => {
+    const rescisao: Pagamento[] = [
+      { id: "r", colaboradorId: "d", competencia: "2026-08", tipo: "Rescisão", valor: 900, dataPagamento: "2026-09-04", idMubi: "8" } as Pagamento,
+    ];
+    act(() => { root.render(<AuditoriaLancamentos pagamentos={rescisao} colaboradores={demerval} onCorrigir={() => {}} onReativar={() => {}} />); });
+    expect(container.textContent).not.toContain("Tem data de saída, mas continua recebendo");
+  });
+});

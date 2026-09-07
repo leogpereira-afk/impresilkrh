@@ -2440,6 +2440,25 @@ export default function Custos() {
                   pagamentos={pagamentos as Pagamento[]}
                   colaboradores={d.colaboradores}
                   onVerPessoa={(id) => { setColabId(id); setMostrarInativos(true); setAba("custos"); }}
+                  statusDisponiveis={d.status.filter((s2) => s2.contaComoAtivo).map((s2) => ({ id: s2.id, nome: s2.nome }))}
+                  onReativar={(propostas) => {
+                    // Uma escrita por pessoa, com linha no histórico: voltar ao
+                    // quadro muda headcount e custo do mês — não é lote mudo.
+                    for (const p of propostas) {
+                      colaboradoresColecao.atualizar(p.colaboradorId, { statusId: p.statusId, dataDesligamento: null });
+                      registrarAcaoManual("Corrigiu o cadastro: continua recebendo, tirou a data de saída", p.nome, "colaboradores");
+                    }
+                    void enviarColecao("colaboradores");
+                    toast(`${propostas.length} cadastro(s) corrigido(s): a data de saída saiu e a pessoa voltou ao quadro.`, "sucesso");
+                  }}
+                  onCorrigirAdmissao={(propostas) => {
+                    for (const p of propostas) {
+                      colaboradoresColecao.atualizar(p.colaboradorId, { dataAdmissao: p.para.dataAdmissao });
+                      registrarAcaoManual(`Recuou a admissão para ${p.para.dataAdmissao} (primeiro pagamento)`, p.nome, "colaboradores");
+                    }
+                    void enviarColecao("colaboradores");
+                    toast(`${propostas.length} admissão(ões) recuada(s) para o primeiro mês com pagamento.`, "sucesso");
+                  }}
                   onDesligar={(propostas) => {
                     // Uma escrita por pessoa, com linha própria no histórico:
                     // status e data de saída são o que decide de quais meses

@@ -6,6 +6,7 @@ import { formatBRL } from "@/lib/format";
 import { compLabel } from "@/lib/custos";
 import { auditarLancamentos, ROTULO_REGRA, COMO_CORRIGIR, ROTULO_ONDE, type AchadoAuditoria, type Gravidade, type RegraAuditoria } from "@/lib/auditoriaLancamentos";
 import { desligamentosPeloUltimoPagamento, type PropostaDesligamento } from "@/lib/desligarPeloUltimoPagamento";
+import { reativarQuemContinuaRecebendo, admissaoAnteriorAoPrimeiroPagamento, type PropostaReativar, type PropostaAdmissao } from "@/lib/consertoCadastro";
 import { Input, Select } from "@/components/ui/form";
 import type { Colaborador, Pagamento } from "@/data/types";
 
@@ -37,6 +38,9 @@ export function AuditoriaLancamentos({
   onCorrigir,
   onVerPessoa,
   onDesligar,
+  onReativar,
+  onCorrigirAdmissao,
+  statusDisponiveis = [],
 }: {
   pagamentos: Pagamento[];
   colaboradores: Colaborador[];
@@ -45,6 +49,12 @@ export function AuditoriaLancamentos({
   onVerPessoa?: (colaboradorId: string) => void;
   /** Grava status inativo + data de desligamento pelo último pagamento (regra de 07/09/2026). */
   onDesligar?: (propostas: PropostaDesligamento[]) => void;
+  /** Limpa a data de saída de quem continua recebendo salário, com o status escolhido. */
+  onReativar?: (propostas: { colaboradorId: string; nome: string; statusId: string }[]) => void;
+  /** Recua a data de admissão para o primeiro mês em que a pessoa recebeu. */
+  onCorrigirAdmissao?: (propostas: PropostaAdmissao[]) => void;
+  /** Status que contam no quadro — para escolher o destino de quem volta. */
+  statusDisponiveis?: { id: string; nome: string }[];
 }) {
   // "Quem não recebe desde <mês> ou antes está desligado no último mês em que
   // recebeu" — o limite é escolha de quem manda; a regra vem com junho/2026.
@@ -55,6 +65,14 @@ export function AuditoriaLancamentos({
     () => [...new Set(pagamentos.map((p) => String(p.competencia ?? "").slice(0, 4)).filter(Boolean))].sort().reverse(),
     [pagamentos],
   );
+  // As duas propostas que o dinheiro PROVA. Não gravam nada: a pessoa aplica.
+  const reativaveis = useMemo(() => reativarQuemContinuaRecebendo(colaboradores, pagamentos), [colaboradores, pagamentos]);
+  const admissoes = useMemo(() => admissaoAnteriorAoPrimeiroPagamento(colaboradores, pagamentos), [colaboradores, pagamentos]);
+  // Destino de quem volta, por pessoa: o dado prova que ela NÃO saiu, mas não
+  // diz em que condição ela ficou. Quem sabe isso é quem manda.
+  const [destino, setDestino] = useState<Record<string, string>>({});
+  const [confirmarReativar, setConfirmarReativar] = useState(false);
+  const [confirmarAdmissao, setConfirmarAdmissao] = useState(false);
   const [ano, setAno] = useState("");
   const [gravidade, setGravidade] = useState<Gravidade | "">("");
   const [confirmar, setConfirmar] = useState(false);
@@ -192,6 +210,76 @@ export function AuditoriaLancamentos({
           );
         })}
 
+        {/* CONTINUA RECEBENDO — o conserto que o dinheiro prova.
+            Salário e adiantamento de competência POSTERIOR à data de saída
+            provam que a pessoa não saiu: ninguém paga salário de agosto a quem
+            saiu em junho. Rescisão, férias, 13º e FGTS não contam — são o
+            acerto de quem saiu de verdade. */}
+        {onReativar && reativaveis.length > 0 && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-brand-ink">Tem data de saída, mas continua recebendo</p>
+              <span className="text-xs text-slate-600">o salário depois da data prova que não saiu — a data é que está errada</span>
+              <button type="button" className="btn-primary ml-auto" onClick={() => setConfirmarReativar(true)}>
+                Corrigir {reativaveis.length} cadastro(s)
+              </button>
+            </div>
+            <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
+              {reativaveis.map((r) => (
+                <li key={r.colaboradorId} className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-emerald-100/70 pt-1.5">
+                  <span className="font-medium text-brand-ink">{r.nome}</span>
+                  <span className="text-slate-500">
+                    saída {r.de.dataDesligamento?.slice(0, 10)} → recebeu {r.verbas.join(" e ")} em {compLabel(r.mesQueProva)}
+                  </span>
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <span className="text-slate-500">fica como</span>
+                    <Select
+                      value={destino[r.colaboradorId] ?? r.para.statusId}
+                      onChange={(e) => setDestino((m) => ({ ...m, [r.colaboradorId]: e.target.value }))}
+                      className="h-7 w-auto py-0 text-xs"
+                      aria-label={`Status de ${r.nome}`}
+                    >
+                      {(statusDisponiveis.length ? statusDisponiveis : [{ id: r.para.statusId, nome: r.para.statusId }]).map((s2) => (
+                        <option key={s2.id} value={s2.id}>{s2.nome}</option>
+                      ))}
+                    </Select>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-slate-500">A data de saída é apagada e a pessoa volta ao quadro. Cada uma ganha uma linha no histórico.</p>
+          </div>
+        )}
+
+        {/* ADMISSÃO ANTERIOR AO PRIMEIRO PAGAMENTO — a data proposta é o
+            primeiro dia do mês mais antigo em que a pessoa recebeu. É um PISO,
+            não a verdade: ela pode ter entrado no meio daquele mês. Por isso a
+            tela mostra o número e pede confirmação. */}
+        {onCorrigirAdmissao && admissoes.length > 0 && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-brand-ink">Recebeu antes da data de admissão</p>
+              <span className="text-xs text-slate-600">a admissão do cadastro é posterior ao primeiro pagamento</span>
+              <button type="button" className="btn-primary ml-auto" onClick={() => setConfirmarAdmissao(true)}>
+                Recuar {admissoes.length} admissão(ões)
+              </button>
+            </div>
+            <ul className="mt-2 space-y-1 text-xs text-slate-700">
+              {admissoes.map((a) => (
+                <li key={a.colaboradorId} className="flex flex-wrap items-baseline gap-x-2 border-t border-sky-100/70 pt-1">
+                  <span className="font-medium text-brand-ink">{a.nome}</span>
+                  <span className="text-slate-500">
+                    {a.faltando ? "sem admissão no cadastro" : `cadastro diz ${a.de.dataAdmissao?.slice(0, 10)}`}
+                    {" · recebeu em "}{compLabel(a.primeiraComp)} (vence {a.primeiroVenc})
+                  </span>
+                  <span className="ml-auto font-medium text-sky-800">→ {a.para.dataAdmissao}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-slate-500">A data proposta é o primeiro dia do mês mais antigo com pagamento — o mais cedo que ela pode ter entrado. Ajuste na ficha se souber o dia certo.</p>
+          </div>
+        )}
+
         {onDesligar && (
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -231,6 +319,33 @@ export function AuditoriaLancamentos({
             perigo
             onConfirmar={() => { setConfirmarDesligar(false); onDesligar(propostas); }}
             onFechar={() => setConfirmarDesligar(false)}
+          />
+        )}
+
+        {confirmarReativar && onReativar && (
+          <ConfirmDialog
+            aberto
+            titulo={`Corrigir ${reativaveis.length} cadastro(s) de quem continua recebendo?`}
+            mensagem="A data de saída é apagada e a pessoa volta ao quadro com o status escolhido ao lado do nome. Elas voltam a contar no headcount e no custo do mês — que é o certo, já que estão recebendo salário."
+            textoConfirmar={`Corrigir ${reativaveis.length}`}
+            perigo={false}
+            onConfirmar={() => {
+              setConfirmarReativar(false);
+              onReativar(reativaveis.map((r) => ({ colaboradorId: r.colaboradorId, nome: r.nome, statusId: destino[r.colaboradorId] ?? r.para.statusId })));
+            }}
+            onFechar={() => setConfirmarReativar(false)}
+          />
+        )}
+
+        {confirmarAdmissao && onCorrigirAdmissao && (
+          <ConfirmDialog
+            aberto
+            titulo={`Recuar ${admissoes.length} data(s) de admissão?`}
+            mensagem="A admissão passa a ser o primeiro dia do mês mais antigo em que a pessoa recebeu. É o mais cedo que ela pode ter entrado; se souber o dia exato, ajuste na ficha depois."
+            textoConfirmar={`Recuar ${admissoes.length}`}
+            perigo={false}
+            onConfirmar={() => { setConfirmarAdmissao(false); onCorrigirAdmissao(admissoes); }}
+            onFechar={() => setConfirmarAdmissao(false)}
           />
         )}
 
