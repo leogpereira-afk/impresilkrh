@@ -2,7 +2,7 @@
 // (R$ 62.576,49) quando a mesma planilha subiu duas vezes. A regra de subir de
 // novo sem duplicar fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes } from "./custos";
+import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes } from "./custos";
 import type { ContaPlano, Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> = {}): Pagamento =>
@@ -226,5 +226,46 @@ describe("confidencialDoMes — o card pega a conta-pai também", () => {
   it("2.14.20 não é 2.14.2", () => {
     const cards = confidencialDoMes([conta("2.14.20", 50)], "2026-04", [{ id: "l", titulo: "R", prefixos: ["2.14.2."] }]);
     expect(cards[0].total).toBe(0);
+  });
+});
+
+describe("folhasDoMes — o que foi lançado direto na conta-pai não some", () => {
+  const conta = (codigo: string, valor: number, folha: boolean): ContaPlano =>
+    ({ id: `pc_2026-06_${codigo}`, competencia: "2026-06", codigo, nome: codigo, valor, folha });
+  const soma = (xs: ContaPlano[]) => Math.round(xs.reduce((s, x) => s + x.valor, 0) * 100) / 100;
+
+  it("junho/2026: 2.1.12 Comissão Interna com as filhas zeradas entra com o próprio valor", () => {
+    const plano = [
+      conta("2.1.12", 6919.94, false), conta("2.1.12.1", 0, true), conta("2.1.12.2", 0, true),
+      conta("2.1.1", 37850.05, true),
+    ];
+    const f = folhasDoMes(plano, "2026-06");
+    expect(f.find((x) => x.codigo === "2.1.12")?.valor).toBe(6919.94);
+    expect(soma(f)).toBe(44769.99);
+  });
+
+  it("pai que é só a soma das filhas não gera linha (2.1.15 = 2.1.15.5)", () => {
+    const plano = [conta("2.1.15", 411.44, false), conta("2.1.15.5", 411.44, true), conta("2.1.15.4", 0, true)];
+    const f = folhasDoMes(plano, "2026-06");
+    expect(f.map((x) => x.codigo).sort()).toEqual(["2.1.15.4", "2.1.15.5"]);
+  });
+
+  it("só as filhas DIRETAS entram na conta do resíduo (neta não desconta duas vezes)", () => {
+    const plano = [conta("2.1", 1000, false), conta("2.1.9", 1000, false), conta("2.1.9.1", 1000, true)];
+    const f = folhasDoMes(plano, "2026-06");
+    expect(f.map((x) => x.codigo)).toEqual(["2.1.9.1"]);
+    expect(soma(f)).toBe(1000);
+  });
+
+  it("resíduo negativo é erro de planilha e fica de fora", () => {
+    const plano = [conta("2.1.11", 100, false), conta("2.1.11.4", 443.64, true)];
+    const f = folhasDoMes(plano, "2026-06");
+    expect(f.map((x) => x.codigo)).toEqual(["2.1.11.4"]);
+    expect(f.every((x) => x.valor >= 0)).toBe(true);
+  });
+
+  it("mês do ERP (tudo folha) passa intacto", () => {
+    const plano = [conta("2.1.11", 1000, true), conta("2.1.11.4", 400, true)];
+    expect(soma(folhasDoMes(plano, "2026-06"))).toBe(1400);
   });
 });

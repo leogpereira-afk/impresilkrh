@@ -71,7 +71,7 @@ import {
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
 import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
-import { buscarPlanoCompleto, compararPlano, montarPlanoDoErp, type ComparacaoPlano } from "@/lib/mubiPlano";
+import { buscarPlanoCompleto, compararPlano, competenciaEhDoContador, mesclarPlano, montarPlanoDoErp, type ComparacaoPlano, type ContaMubi } from "@/lib/mubiPlano";
 import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import type {
@@ -244,7 +244,6 @@ export default function Custos() {
   const mapaClasse = useMemo(() => classeMap(classificacaoCustos), [classificacaoCustos]);
 
   // ---------- Uploads ----------
-  const refPlano = useRef<HTMLInputElement>(null);
   const hojeIso = new Date().toISOString().slice(0, 7);
   // Fica no último mês COM plano (não no último com folha): o seletor de meses
   // cresceu e o envio de planilha sobrescreve a competência escolhida — mudar
@@ -275,6 +274,12 @@ export default function Custos() {
     comparacao: ComparacaoPlano;
     titulos: number;
     incompleta: boolean;
+    pessoais: ContaMubi[];
+    societarias: ContaMubi[];
+    naoReconhecidas: ContaMubi[];
+    societariasOmitidasNoServidor: number;
+    /** O mês já tem a planilha do contador: aqui só se confere, não se grava. */
+    somenteConferencia: boolean;
   } | null>(null);
   const [buscandoPlano, setBuscandoPlano] = useState("");
   // Sugestões de salário para o cadastro (vindas do ERP) e quem o RH marcou.
@@ -334,31 +339,6 @@ export default function Custos() {
     return docs.size >= 2;
   };
 
-  const importarPlano = async (file: File) => {
-    try {
-      const linhas = await lerPlanilha(file);
-      const novos = parsePlanoContas(linhas, compUpload);
-      if (novos.length === 0) {
-        toast("Nenhuma conta reconhecida na planilha.", "erro");
-        return;
-      }
-      const novosIds = new Set(novos.map((n: ContaPlano) => n.id));
-      const removidos = planoContas.filter((p: ContaPlano) => p.competencia === compUpload && !novosIds.has(p.id)).map((p: ContaPlano) => p.id);
-      planoColecao.definir([
-        ...planoContas.filter((p: ContaPlano) => p.competencia !== compUpload),
-        ...novos,
-      ]);
-      apagarRegistrosNuvem("planoContas", removidos); // lápide nas contas substituídas
-      void enviarColecao("planoContas"); // sobe pra nuvem na hora
-      setComp(compUpload);
-      // `definir` troca a coleção inteira e não passa pelo auditor — registra na mão.
-      registrarAcaoManual(`Enviou o plano de contas de ${compLabelLongo(compUpload)}`, `${novos.length} conta(s)`, "planoContas");
-      toast(`Plano de contas importado: ${novos.length} contas em ${compLabel(compUpload)}.`);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
-    }
-  };
-
   // O plano de contas do mês direto do ERP, para o mês que o contador ainda não
   // fechou. Cai na mesma regra da planilha: nada é gravado sem o RH conferir.
   const puxarPlanoDoErp = async () => {
@@ -371,13 +351,19 @@ export default function Custos() {
         toast(`O ERP não tem título nenhum vencendo em ${compLabelLongo(compUpload)}.`, "erro");
         return;
       }
-      const contas = montarPlanoDoErp(r.contas, compUpload);
+      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse);
+      const doMes = planoContas.filter((p: ContaPlano) => p.competencia === compUpload);
       setPlanoPrev({
         competencia: compUpload,
-        contas,
-        comparacao: compararPlano(planoContas.filter((p: ContaPlano) => p.competencia === compUpload), contas),
+        contas: montado.contas,
+        comparacao: compararPlano(doMes, montado.contas, { ocultarConfidenciais: !ehMaster(sessao) }),
         titulos: r.titulos,
         incompleta: r.incompleta,
+        pessoais: montado.pessoais,
+        societarias: montado.societarias,
+        naoReconhecidas: montado.naoReconhecidas,
+        societariasOmitidasNoServidor: r.societariasOmitidas,
+        somenteConferencia: competenciaEhDoContador(planoContas, compUpload),
       });
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao consultar o Mubisys.", "erro");
@@ -387,12 +373,11 @@ export default function Custos() {
   };
 
   const aplicarPlanoDoErp = () => {
-    if (!planoPrev) return;
+    if (!planoPrev || planoPrev.somenteConferencia) return;
     const { competencia, contas } = planoPrev;
-    const novosIds = new Set(contas.map((c) => c.id));
-    const removidos = planoContas.filter((p: ContaPlano) => p.competencia === competencia && !novosIds.has(p.id)).map((p: ContaPlano) => p.id);
-    planoColecao.definir([...planoContas.filter((p: ContaPlano) => p.competencia !== competencia), ...contas]);
-    apagarRegistrosNuvem("planoContas", removidos);
+    // MESCLA, não substitui: o que o ERP trouxe entra; o que já existia e ele
+    // não trouxe fica. Nada é apagado na nuvem.
+    planoColecao.definir(mesclarPlano(planoContas as ContaPlano[], contas, competencia));
     void enviarColecao("planoContas");
     setComp(competencia);
     registrarAcaoManual(`Montou o plano de contas de ${compLabelLongo(competencia)} pelo Mubisys`, `${contas.length} conta(s)`, "planoContas");
@@ -1661,7 +1646,7 @@ export default function Custos() {
                     <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p className="text-xs text-slate-600">
                       <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
-                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam indisponíveis — não zerados — até você enviar a planilha do contador deste mês.
+                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam indisponíveis — não zerados — até puxar o plano deste mês do Mubisys, na aba Sincronização.
                     </p>
                   </div>
                 )}
@@ -1842,11 +1827,11 @@ export default function Custos() {
               semPlanoNaComp ? (
                 <EmptyState
                   title={`Sem plano de contas em ${compLabelLongo(compAtiva)}`}
-                  description="Rateio e Custo Global ficam indisponíveis — não zerados — até a planilha do contador deste mês ser enviada na aba Sincronização."
+                  description="Rateio e Custo Global ficam indisponíveis — não zerados — até puxar o plano deste mês do Mubisys, na aba Sincronização."
                   icon={<FileSpreadsheet className="h-8 w-8" />}
                   acao={
                     <button type="button" className="btn-outline" onClick={() => irParaSinal("plano")}>
-                      <Upload className="h-4 w-4" /> Enviar o plano de contas
+                      <RefreshCw className="h-4 w-4" /> Puxar o plano do Mubisys
                     </button>
                   }
                 />
@@ -2043,8 +2028,8 @@ export default function Custos() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
-            title="Plano de Contas (custos gerais)"
-            subtitle="Planilha mensal de despesas (.xlsx ou .csv) — substitui a competência escolhida."
+            title="Plano de Contas (custos coletivos)"
+            subtitle="Somado do Contas a Pagar do Mubisys, conta a conta, no mês civil do vencimento. Só o que não é pagamento a pessoa: o individual já entra pela folha."
             icon={<FileSpreadsheet className="h-5 w-5" />}
           />
           <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -2057,25 +2042,12 @@ export default function Custos() {
                 ))}
               </Select>
             </Campo>
-            <input
-              ref={refPlano}
-              type="file"
-              accept=".xlsx,.csv"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) importarPlano(f);
-                e.target.value = "";
-              }}
-            />
-            <button className="btn-primary sm:mb-0" onClick={() => refPlano.current?.click()}>
-              <Upload className="h-4 w-4" /> Enviar plano
-            </button>
-            {/* O mesmo dado, sem esperar o contador fechar o mês: soma o Contas
-                a Pagar por conta. Julho e agosto de 2026 ficaram sem rateio e
-                sem Custo Global só porque a planilha não tinha chegado. */}
+            {/* A planilha do contador saiu de cena (pedido do Léo, 07/09/2026):
+                o plano vem só do Contas a Pagar. O que já foi importado por
+                planilha continua valendo como está — nesses meses o ERP só
+                confere. */}
             <button
-              className="btn-outline sm:mb-0"
+              className="btn-primary sm:mb-0"
               onClick={puxarPlanoDoErp}
               disabled={!!buscandoPlano}
               title="Monta o plano de contas somando os títulos do Contas a Pagar que vencem no mês — mostra a comparação antes de gravar"
@@ -2226,13 +2198,17 @@ export default function Custos() {
             aberto
             onFechar={() => setPlanoPrev(null)}
             titulo={`Plano de contas de ${compLabelLongo(planoPrev.competencia)} pelo Mubisys`}
-            descricao="Soma dos títulos do Contas a Pagar que vencem neste mês, agrupados por conta. Confira antes de gravar — importar SUBSTITUI a competência inteira."
+            descricao={planoPrev.somenteConferencia
+              ? "Este mês já tem a planilha fechada do contador. O ERP só confere: nada é gravado por aqui."
+              : "Soma dos títulos do Contas a Pagar que vencem no mês, por conta — só o coletivo e o encargo. Gravar MESCLA: entra o que veio, nada é apagado."}
             largura="max-w-3xl"
             rodape={<>
-              <button className="btn-outline" onClick={() => setPlanoPrev(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={aplicarPlanoDoErp}>
-                <FileSpreadsheet className="h-4 w-4" /> Gravar {planoPrev.contas.length} conta(s)
-              </button>
+              <button className="btn-outline" onClick={() => setPlanoPrev(null)}>{planoPrev.somenteConferencia ? "Fechar" : "Cancelar"}</button>
+              {!planoPrev.somenteConferencia && (
+                <button className="btn-primary" onClick={aplicarPlanoDoErp} disabled={planoPrev.contas.length === 0}>
+                  <FileSpreadsheet className="h-4 w-4" /> Gravar {planoPrev.contas.length} conta(s)
+                </button>
+              )}
             </>}
           >
             <div className="space-y-3">
@@ -2242,21 +2218,22 @@ export default function Custos() {
                   <p className="mt-1 text-[11px] text-red-700/90">Parte dos títulos do mês ficou de fora, então os valores abaixo estão incompletos. Tente de novo antes de gravar.</p>
                 </div>
               )}
-              {cp.somem > 0 && (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                  <p className="text-xs font-semibold text-amber-900">{cp.somem} conta(s) que existem hoje e o ERP não tem</p>
-                  <p className="mt-1 text-[11px] text-amber-800/90">
-                    Gravar apaga essas linhas. É o esperado quando o mês já tem a planilha do contador: ele lança provisão (FGTS, férias) que
-                    não passa pelo Contas a Pagar. <strong>Se este mês já veio do contador, cancele</strong> — a planilha fechada é a verdade contábil.
+              {planoPrev.somenteConferencia && (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+                  <p className="text-xs font-semibold text-sky-900">Mês fechado pelo contador — só conferência</p>
+                  <p className="mt-1 text-[11px] text-sky-800/90">
+                    A planilha dele tem provisão (FGTS, férias) e reclassificação que o Contas a Pagar não tem; ela é a verdade contábil deste mês.
+                    Use a tabela para ver onde os dois discordam.
                   </p>
                 </div>
               )}
+
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   { n: cp.iguais, r: "iguais", cor: "text-slate-600", borda: "border-slate-200 bg-slate-50/60" },
                   { n: cp.mudaram, r: "mudam", cor: "text-blue-700", borda: "border-blue-200 bg-blue-50/60" },
                   { n: cp.novas, r: "novas", cor: "text-green-700", borda: "border-green-200 bg-green-50/60" },
-                  { n: cp.somem, r: "somem", cor: "text-amber-700", borda: "border-amber-200 bg-amber-50/60" },
+                  { n: cp.somemComValor, r: "com R$ que o ERP não tem", cor: "text-amber-700", borda: "border-amber-200 bg-amber-50/60" },
                 ].map((x) => (
                   <div key={x.r} className={`rounded-xl border px-3 py-2 text-center ${x.borda}`}>
                     <p className={`text-xl font-bold tabular-nums ${x.cor}`}>{x.n}</p>
@@ -2264,8 +2241,44 @@ export default function Custos() {
                   </div>
                 ))}
               </div>
+
+              {/* O "somem" em três partes: só a terceira merece decisão. Antes
+                  era um número só ("377 somem") e 218 delas valiam R$ 0,00. */}
+              {cp.somem > 0 && (
+                <p className="text-xs text-slate-600">
+                  Existem hoje e o ERP não trouxe: <strong>{cp.somemComValor}</strong> com dinheiro ({formatBRL(cp.valorQueSome)}) ·{" "}
+                  {cp.somemPais} conta(s)-pai (soma das filhas, o ERP nunca tem) · {cp.somemZeradas} zerada(s).
+                  {planoPrev.somenteConferencia ? " Nada disso é apagado: este mês é do contador." : " Nada é apagado ao gravar."}
+                </p>
+              )}
+              {cp.confidenciaisOcultas > 0 && (
+                <p className="text-[11px] text-slate-500">{cp.confidenciaisOcultas} conta(s) societária(s) fora desta lista — só a direção vê.</p>
+              )}
+
+              <ListaFora
+                titulo="conta(s) de pagamento a pessoa ficaram de fora"
+                porque="Salário, comissão, hora extra, diária… já entram por pessoa pela folha. Trazer pelo plano seria o mesmo dinheiro em dois lugares."
+                itens={planoPrev.pessoais}
+                tom="border-slate-200 bg-slate-50 text-slate-700"
+              />
+              <ListaFora
+                titulo="conta(s) societária(s) ficaram de fora"
+                porque="2.14 nunca entra por este caminho. O servidor já corta; esta lista é a rede de segurança do lado de cá."
+                itens={planoPrev.societarias}
+                tom="border-slate-300 bg-slate-100 text-slate-700"
+              />
+              {planoPrev.societariasOmitidasNoServidor > 0 && (
+                <p className="text-[11px] text-slate-500">O servidor deixou de fora {planoPrev.societariasOmitidasNoServidor} título(s) de contas societárias (sem valor, de propósito).</p>
+              )}
+              <ListaFora
+                titulo="conta(s) com código que não é do grupo 2"
+                porque="Não é despesa (grupo 2) ou o texto da conta não começa com código. Ficam aqui para não sumir caladas."
+                itens={planoPrev.naoReconhecidas}
+                tom="border-amber-200 bg-amber-50 text-amber-900"
+              />
+
               <p className="text-xs text-slate-500">
-                {planoPrev.titulos} título(s) lidos do ERP · total {formatBRL(cp.totalDepois)}
+                {planoPrev.titulos} título(s) lidos do ERP · entra {formatBRL(cp.totalDepois)}
                 {jaTinha && <> · hoje gravado {formatBRL(cp.totalAntes)} ({fmtDif(Math.round((cp.totalDepois - cp.totalAntes) * 100) / 100)})</>}
               </p>
               <div className="max-h-80 overflow-y-auto rounded-xl border border-slate-200/70">
@@ -2279,13 +2292,13 @@ export default function Custos() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {cp.linhas.map((l) => (
+                    {cp.linhas.filter((l) => !(l.estado === "some" && Math.abs(l.antes ?? 0) < 0.005)).map((l) => (
                       <tr key={l.codigo} className={l.estado === "some" ? "bg-amber-50/40" : l.estado === "nova" ? "bg-green-50/30" : undefined}>
                         <td className="td">
                           <span className="font-mono text-xs text-slate-500">{l.codigo}</span> <span className="text-slate-700">{l.nome}</span>
                         </td>
                         <td className="td text-right tabular-nums text-slate-500">{l.antes == null ? <span className="text-slate-300">—</span> : formatBRL(l.antes)}</td>
-                        <td className="td text-right font-medium tabular-nums text-slate-800">{l.depois == null ? <span className="text-amber-600">sai</span> : formatBRL(l.depois)}</td>
+                        <td className="td text-right font-medium tabular-nums text-slate-800">{l.depois == null ? <span className="text-amber-600">não veio</span> : formatBRL(l.depois)}</td>
                         <td className="td text-right tabular-nums text-xs">
                           {l.dif == null ? <span className="text-slate-300">—</span> : l.dif === 0 ? <span className="text-slate-400">igual</span> : <span className={l.dif > 0 ? "text-blue-700" : "text-slate-600"}>{fmtDif(l.dif)}</span>}
                         </td>
@@ -2948,14 +2961,14 @@ function CustoGlobalFuncionarios({
     return (
       <EmptyState
         title={compAtiva ? `Sem plano de contas em ${compLabelLongo(compAtiva)}` : "Sem plano de contas importado"}
-        description="O custo global contábil depende da planilha do contador deste mês. Envie-a em Sincronização — até lá este bloco fica indisponível, não zerado."
+        description="O custo global depende do plano de contas deste mês. Puxe-o do Mubisys em Sincronização — até lá este bloco fica indisponível, não zerado."
         icon={<Layers className="h-10 w-10" />}
         acao={
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button type="button" className="btn-outline" onClick={irParaSync}><Upload className="h-4 w-4" /> Enviar o plano de contas</button>
+            <button type="button" className="btn-outline" onClick={irParaSync}><RefreshCw className="h-4 w-4" /> Puxar o plano do Mubisys</button>
             <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -3100,6 +3113,28 @@ function CustoGlobalFuncionarios({
 
 // Lista de competências para o seletor de upload: mês corrente + 23 meses anteriores,
 // garantindo que a competência atualmente escolhida esteja presente.
+/** Lista recolhível do que ficou de fora do plano do ERP — fora do componente, senão remonta a cada render. */
+function ListaFora({ titulo, porque, itens, tom }: { titulo: string; porque: string; itens: ContaMubi[]; tom: string }) {
+  if (itens.length === 0) return null;
+  const soma = itens.reduce((s, x) => s + x.valor, 0);
+  return (
+    <details className={`rounded-xl border p-3 ${tom}`}>
+      <summary className="cursor-pointer text-xs font-semibold">
+        {itens.length} {titulo} · {formatBRL(soma)}
+      </summary>
+      <p className="mt-1 text-[11px] opacity-80">{porque}</p>
+      <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto">
+        {itens.map((x) => (
+          <li key={x.codigo} className="flex items-baseline justify-between gap-3 text-[11px]">
+            <span><span className="font-mono">{x.codigo}</span> {x.nome}</span>
+            <span className="tabular-nums">{formatBRL(x.valor)}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function opcoesCompetencia(incluir: string): string[] {
   const set = new Set<string>();
   const agora = new Date();

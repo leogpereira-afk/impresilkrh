@@ -53,8 +53,41 @@ export function compLabelLongo(comp: string): string {
 }
 
 // Folhas (sem subcontas) de um mês — soma sem duplicar pai+filho.
+/**
+ * As contas que carregam dinheiro no mês: as folhas, MAIS o que foi lançado
+ * direto numa conta-pai.
+ *
+ * `folha` é deduzido de "não tem subconta na planilha". Só que o contador
+ * lança direto na conta-pai também: em junho/2026, 2.1.12 Comissão Interna
+ * vale R$ 6.919,94 com as filhas zeradas, 2.1.16 Prestação de Serviços
+ * R$ 2.740,00, 2.1.11 Horas Extras R$ 1.356,71. Como não eram folha, esses
+ * R$ 11.016,65 sumiam de todo total — e o "bate com o DRE" batia errado.
+ *
+ * A régua: o VALOR PRÓPRIO de uma conta-pai é o valor dela menos a soma das
+ * filhas diretas presentes. Sobrou, é dinheiro lançado nela mesma e entra
+ * como uma linha com o código dela. Conferido contra as seis competências da
+ * planilha: a soma dos próprios reproduz a raiz "2" ao centavo. Resíduo
+ * negativo (pai menor que as filhas) é erro de planilha e fica de fora.
+ *
+ * Mês vindo do ERP não tem conta-pai (todas as linhas são folha, porque cada
+ * título está numa conta só) — passa por aqui sem mudar nada.
+ */
 export function folhasDoMes(plano: ContaPlano[], comp: string): ContaPlano[] {
-  return plano.filter((p) => p.competencia === comp && p.folha);
+  const doMes = plano.filter((p) => p.competencia === comp);
+  const folhas = doMes.filter((p) => p.folha);
+  const pais = doMes.filter((p) => !p.folha);
+  if (pais.length === 0) return folhas;
+  const filhosDiretos = (codigo: string) => {
+    const pre = codigo + ".";
+    return doMes.filter((p) => p.codigo.startsWith(pre) && !p.codigo.slice(pre.length).includes("."));
+  };
+  const proprios: ContaPlano[] = [];
+  for (const pai of pais) {
+    const somaFilhas = filhosDiretos(pai.codigo).reduce((s, f) => s + (Number(f.valor) || 0), 0);
+    const residuo = Math.round(((Number(pai.valor) || 0) - somaFilhas) * 100) / 100;
+    if (residuo > 0.005) proprios.push({ ...pai, valor: residuo, folha: true });
+  }
+  return [...folhas, ...proprios];
 }
 
 export interface TotaisMes {

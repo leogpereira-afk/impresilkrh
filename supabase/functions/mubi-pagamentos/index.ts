@@ -311,11 +311,17 @@ Deno.serve(async (req) => {
       // planilha do contador mostra. Sem nome de ninguém — conta, quantos
       // títulos e o total.
       const contas = new Map<string, { codigo: string; nome: string; valor: number; quantos: number }>();
+      // 2.14 (Despesas Societárias: retirada de sócio, arrendamento) NUNCA sai
+      // daqui — nem agregado. A tela de Custos é de ADMIN_RH e só o master vê
+      // societária; cortar na porta de dados é o único lugar que segura isso.
+      // O que ficou de fora volta contado (contas e títulos), sem valor.
+      const societarias = { contas: new Set<string>(), titulos: 0 };
       for (const i of itens) {
         const plano = String(i.plano_contas ?? "").trim();
         if (!plano) continue;
         const codigo = codigoDoPlano(plano);
         if (!codigo) continue;
+        if (codigo === "2.14" || codigo.startsWith("2.14.")) { societarias.contas.add(codigo); societarias.titulos += 1; continue; }
         const x = contas.get(codigo) ?? { codigo, nome: plano.split("-").slice(1).join("-").trim() || codigo, quantos: 0, valor: 0 };
         x.quantos += 1;
         x.valor = Math.round((x.valor + (num(i.valor_pagamento) || num(i.valor_titulo))) * 100) / 100;
@@ -331,6 +337,7 @@ Deno.serve(async (req) => {
         pagina: umaPagina ? paginaPedida : 1,
         temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
         contas: [...contas.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })),
+        societariasOmitidas: { contas: societarias.contas.size, titulos: societarias.titulos },
       });
     }
 

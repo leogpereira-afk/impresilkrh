@@ -20,6 +20,7 @@ const def: { codigo: string; nome: string; classe: ClassificacaoConta["classe"] 
   { codigo: "2.1.20", nome: "Plano de Saúde", classe: "individual" },
   // --- Rateio para todos (÷ colaboradores ativos) ---
   { codigo: "2.1.14", nome: "Alimentação", classe: "rateio" },
+  { codigo: "2.1.15", nome: "Confraternização", classe: "rateio" }, // o que for lançado direto no pai
   { codigo: "2.1.15.4", nome: "Aniversário do mês", classe: "rateio" },
   { codigo: "2.1.15.5", nome: "Confraternização · Outros", classe: "rateio" },
   { codigo: "2.1.17", nome: "Treinamentos", classe: "rateio" },

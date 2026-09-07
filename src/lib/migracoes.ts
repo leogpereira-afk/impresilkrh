@@ -15,6 +15,7 @@ import { obter, definirColecaoDinamica, type RegistroGenerico } from "@/lib/stor
 import { idConta } from "@/data/planoContas";
 import { enviarColecao } from "@/lib/sync";
 import { criarHash, ehHash, podeHashear } from "@/lib/senha";
+import { CLASSIFICACAO_CONTAS } from "@/data/classificacaoContas";
 
 type RegSolto = { id?: string } & Record<string, unknown>;
 
@@ -41,7 +42,26 @@ export function rodarMigracoes(): void {
     void enviarColecao(nome); // sobe já (ou entra na fila de retentativa se estiver offline)
   }
   aplicarPacoteConteudoRH();
+  semearClassificacoesQueFaltam();
   void migrarSenhasParaHash();
+}
+
+// ---------------------------------------------------------------------------
+// Classificação nova no arquivo-semente não chega em quem já tem a coleção: a
+// coleção só carrega o padrão na PRIMEIRA vez. Em 07/09/2026 entrou 2.1.15
+// Confraternização como rateio (tinha dinheiro em todos os meses e nenhuma
+// classe) e ninguém veria. Aqui entra só o que FALTA, por código — nunca
+// sobrescreve o que o RH classificou à mão.
+// ---------------------------------------------------------------------------
+function semearClassificacoesQueFaltam(): void {
+  const atuais = obter("classificacaoCustos") as unknown as (RegSolto & { codigo?: string })[];
+  if (!Array.isArray(atuais) || atuais.length === 0) return; // primeira carga já traz tudo
+  const temCodigo = new Set(atuais.map((c) => String(c.codigo ?? "")));
+  const faltam = CLASSIFICACAO_CONTAS.filter((c) => !temCodigo.has(c.codigo));
+  if (faltam.length === 0) return;
+  const agora = new Date().toISOString();
+  definirColecaoDinamica("classificacaoCustos", [...atuais, ...faltam.map((c) => ({ ...c, atualizadoEm: agora }))] as RegistroGenerico[]);
+  void enviarColecao("classificacaoCustos");
 }
 
 // ---------------------------------------------------------------------------
