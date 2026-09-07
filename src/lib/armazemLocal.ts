@@ -111,13 +111,20 @@ function avisarCheio(chave: string) {
 // Grava no disco o que mudou desde a última descarga. Junta rajadas: o store
 // grava coleção por coleção, e sem isto uma importação viraria dezenas de
 // transações.
+/** A gravação em voo: resolve true quando o disco confirmou, false se falhou. */
+let emVoo: Promise<boolean> | null = null;
 function descarregar() {
   if (timer) return;
-  timer = setTimeout(async () => {
+  timer = setTimeout(() => {
     timer = null;
+    emVoo = gravarLote().catch(() => false);
+  }, 200);
+}
+async function gravarLote(): Promise<boolean> {
+  {
     const lote = pendentes;
     pendentes = new Map();
-    if (!lote.size) return;
+    if (!lote.size) return true;
     const db = await abrir();
     if (!db) {
       // Perdeu o disco no meio do caminho: devolve para o localStorage, que é
@@ -130,7 +137,7 @@ function descarregar() {
           avisarCheio(chave);
         }
       }
-      return;
+      return false;
     }
     try {
       await new Promise<void>((resolve, reject) => {
@@ -143,12 +150,14 @@ function descarregar() {
         tx.oncomplete = () => resolve();
         tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("falha ao gravar"));
       });
+      return true;
     } catch {
       // Disco cheio de verdade: a tela precisa saber, senão o trabalho some em
       // silêncio — que é exatamente o defeito que estamos consertando.
       for (const chave of lote.keys()) avisarCheio(chave);
+      return false;
     }
-  }, 200);
+  }
 }
 
 function agendar(chave: string, valor: string | null) {
@@ -216,8 +225,13 @@ export function prontoArmazem(): Promise<void> {
     // Só libera o localStorage DEPOIS que o disco confirmou a gravação —
     // apagar antes trocaria um problema de espaço por perda de dado.
     if (migrar.length) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      if (!timer && !pendentes.size) {
+      // Espera a GRAVAÇÃO, não o relógio: o timer de 200 ms zerava a fila
+      // antes de abrir o banco, o "não há pendência" aos 300 ms era verdade
+      // vazia, e o localStorage era apagado com o disco ainda por confirmar
+      // (auditoria de 07/09/2026).
+      if (timer) { clearTimeout(timer); timer = null; emVoo = gravarLote().catch(() => false); }
+      const ok = emVoo ? await emVoo : true;
+      if (ok) {
         for (const k of migrar) {
           try { localStorage.removeItem(k); } catch { /* ignora */ }
         }

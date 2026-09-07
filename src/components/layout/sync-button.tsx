@@ -140,7 +140,24 @@ export function SyncButton() {
   const importar = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
-      try { importarDados(String(reader.result)); toast("Dados carregados a partir do arquivo."); }
+      // Restaurar um arquivo substitui TUDO — neste navegador e, pelo sync, na
+      // nuvem. Sem prévia nem rede, um arquivo de 45 dias atrás apagava 45
+      // dias de trabalho de todo mundo (auditoria de 07/09/2026).
+      const texto = String(reader.result);
+      let aviso = "Isto substitui TODOS os dados deste navegador e da nuvem pelo conteúdo do arquivo.";
+      try {
+        const cab = JSON.parse(texto) as { exportadoEm?: string };
+        if (cab?.exportadoEm) aviso += ` O arquivo é de ${new Date(cab.exportadoEm).toLocaleString("pt-BR")}.`;
+      } catch { /* o importarDados vai reclamar do formato */ }
+      if (!window.confirm(`${aviso} Um backup do estado atual será baixado antes. Continuar?`)) return;
+      try {
+        const blob = new Blob([exportarDados()], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = `impresilk-rh-ANTES-de-restaurar-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+        URL.revokeObjectURL(url);
+      } catch { /* sem backup não é motivo para travar: o confirm já avisou */ }
+      try { importarDados(texto); toast("Dados carregados a partir do arquivo."); }
       catch (e) { toast(e instanceof Error ? e.message : "Falha ao ler o arquivo.", "erro"); }
     };
     reader.readAsText(file);

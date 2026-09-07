@@ -249,6 +249,8 @@ Deno.serve(async (req) => {
       const { roteiro: _roteiro, preparadoEm: _preparadoEm, ...semRoteiro } = r;
       return { ...env, registro: semRoteiro };
     }
+    // Candidatura INTERNA: a própria pessoa vê a sua (o resto continua sendo do RH).
+    if (env.colecao === "candidatos") return env.registro?.colaboradorId === meuId && env.registro?.origem === "Interno" ? env : null;
     const { nivel, campos } = escopoDe(env.colecao);
     if (nivel === "rh") return null;
     if (nivel === "gestao") {
@@ -282,6 +284,9 @@ Deno.serve(async (req) => {
     if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId && pertenceEquipe(colecao, reg);
     // Verba variável e aprovação de folha: gestor não lança nem aprova para si.
     if ((colecao === "lancamentos" || colecao === "fechamentos") && reg?.colaboradorId === meuId) return false;
+    // Mural de vagas: o colaborador grava a PRÓPRIA candidatura interna e só
+    // ela — antes a porta recusava com 403 e a tela dizia "enviada".
+    if (colecao === "candidatos") return reg?.colaboradorId === meuId && reg?.origem === "Interno";
     const { nivel } = escopoDe(colecao);
     if (nivel === "rh" || nivel === "todos") return false;
     if (nivel === "gestao") {

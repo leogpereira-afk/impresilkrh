@@ -121,9 +121,17 @@ export default function Vagas() {
   };
 
   const excluirVaga = (v: Vaga) => {
-    for (const c of candPorVaga.get(v.id) ?? []) { if (c.curriculoArquivo) void delBlob(`cv:${c.id}`); removerCand(c.id); }
+    // Quem foi guardado no banco de talentos FICA — desvinculado da vaga, com o
+    // currículo. Remover a vaga apagava justamente quem foi guardado para não
+    // sumir (auditoria de 07/09/2026).
+    let ficaram = 0;
+    for (const c of candPorVaga.get(v.id) ?? []) {
+      if (c.noBanco && c.etapa !== "Contratado") { atualizarCand(c.id, { vagaId: "" }); ficaram++; continue; }
+      if (c.curriculoArquivo) void delBlob(`cv:${c.id}`);
+      removerCand(c.id);
+    }
     removerVaga(v.id);
-    toast(`Vaga "${v.titulo}" removida.`);
+    toast(`Vaga "${v.titulo}" removida.${ficaram ? ` ${ficaram} candidato(s) continuam no banco de talentos.` : ""}`);
   };
   const excluirCand = (c: Candidato) => {
     if (c.curriculoArquivo) void delBlob(`cv:${c.id}`);
@@ -402,7 +410,7 @@ export default function Vagas() {
       )}
       {vagaExcluir && (
         <ConfirmDialog aberto onFechar={() => setVagaExcluir(null)} onConfirmar={() => excluirVaga(vagaExcluir)} titulo="Remover vaga" textoConfirmar="Remover"
-          mensagem={<>Remover a vaga <strong>{vagaExcluir.titulo}</strong> e todos os {candPorVaga.get(vagaExcluir.id)?.length ?? 0} candidato(s)?</>} />
+          mensagem={<>Remover a vaga <strong>{vagaExcluir.titulo}</strong> e {(candPorVaga.get(vagaExcluir.id) ?? []).filter((c) => !(c.noBanco && c.etapa !== "Contratado")).length} candidato(s)? {(candPorVaga.get(vagaExcluir.id) ?? []).filter((c) => c.noBanco && c.etapa !== "Contratado").length} ficam no banco de talentos.</>} />
       )}
       {candExcluir && (
         <ConfirmDialog aberto onFechar={() => setCandExcluir(null)} onConfirmar={() => excluirCand(candExcluir)} titulo="Remover candidato" textoConfirmar="Remover"

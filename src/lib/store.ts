@@ -218,7 +218,12 @@ export function criarEm<K extends NomeColecao>(
   item: Partial<ColecaoMap[K]>,
 ): ColecaoMap[K] {
   const novo = { id: uid(nome), ...item, atualizadoEm: agora() } as unknown as ColecaoMap[K];
-  gravarEdicao(nome, [novo, ...ler(nome)], "upsert", (novo as { id: string }).id);
+  // Id que já existe NÃO vira segundo registro: dois com o mesmo id sobem como
+  // um só (o primeiro da lista), o original some da nuvem e excluir um apaga
+  // os dois (auditoria de 07/09/2026 — cargo homônimo).
+  const idNovo = (novo as { id: string }).id;
+  if (ler(nome).some((r) => (r as { id: string }).id === idNovo)) throw new Error(`Já existe "${idNovo}". Edite o existente em vez de criar outro.`);
+  gravarEdicao(nome, [novo, ...ler(nome)], "upsert", idNovo);
   avisarAuditor({ colecao: nome, acao: "criou", id: (novo as { id: string }).id, depois: novo as unknown as Record<string, unknown> });
   return novo;
 }

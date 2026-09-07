@@ -1175,7 +1175,10 @@ function AbaMetas({
       titulo: edicao.titulo.trim(),
       tipo: edicao.tipo,
       colaboradorId: edicao.tipo === "Individual" ? edicao.colaboradorId || null : null,
-      areaId: edicao.tipo === "Individual" ? colab?.areaId ?? null : null,
+      // Meta de Área: a área é a que a meta já tem (o modal não a edita).
+      // Gravar null aqui tirava a meta da tela de todo gestor — o servidor só
+      // entrega meta sem pessoa quando ela tem areaId (auditoria de 07/09/2026).
+      areaId: edicao.tipo === "Individual" ? colab?.areaId ?? null : (metas.find((m) => m.id === edicao.id)?.areaId ?? null),
       indicador: edicao.indicador.trim() || undefined,
       valorAlvo: num(edicao.valorAlvo) ?? undefined,
       valorAtual: num(edicao.valorAtual) ?? 0,

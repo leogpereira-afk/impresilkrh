@@ -4,6 +4,7 @@ import { exportarDados, exportarCopiaAnterior, importarDados, analisarBackup, re
 import { useSessao } from "@/lib/session";
 import { useToast } from "@/components/ui/toast";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
+import { rebaixarTudo } from "@/lib/sync";
 
 // Backup / portabilidade: as edições ficam no navegador (localStorage).
 // O export/import .json é a forma de salvar, restaurar e transferir tudo.
@@ -188,10 +189,11 @@ export function DadosControls({ compacto = false }: { compacto?: boolean }) {
         onConfirmar={() => {
           baixar(exportarDados(), `impresilk-rh-ANTES-de-restaurar-padrao-${new Date().toISOString().slice(0, 10)}.json`);
           restaurarPadrao();
-          toast("Dados restaurados para o padrão. Um backup do estado anterior foi baixado.");
+          rebaixarTudo();
+          toast("Cópia local apagada; baixando a base da nuvem de novo. Um backup do estado anterior foi baixado.");
         }}
         titulo="Restaurar dados padrão?"
-        mensagem="Todas as edições feitas neste navegador serão descartadas e os dados originais da Impresilk serão recarregados. Um backup do estado atual será baixado antes, mas a ação em si não pode ser desfeita."
+        mensagem="Apaga a cópia local deste navegador — inclusive edições ainda não enviadas, que ficam só no backup baixado — e baixa a base da nuvem de novo. A ação em si não pode ser desfeita."
         textoConfirmar="Restaurar"
       />
     </>

@@ -11,7 +11,7 @@
 // e empurramos a coleção para a nuvem.
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecaoDinamica, type RegistroGenerico } from "@/lib/store";
+import { obter, definirColecaoDinamica, type RegistroGenerico, criarEm } from "@/lib/store";
 import { idConta } from "@/data/planoContas";
 import { enviarColecao } from "@/lib/sync";
 import { criarHash, ehHash, podeHashear } from "@/lib/senha";
@@ -59,9 +59,10 @@ function semearClassificacoesQueFaltam(): void {
   const temCodigo = new Set(atuais.map((c) => String(c.codigo ?? "")));
   const faltam = CLASSIFICACAO_CONTAS.filter((c) => !temCodigo.has(c.codigo));
   if (faltam.length === 0) return;
-  const agora = new Date().toISOString();
-  definirColecaoDinamica("classificacaoCustos", [...atuais, ...faltam.map((c) => ({ ...c, atualizadoEm: agora }))] as RegistroGenerico[]);
-  void enviarColecao("classificacaoCustos");
+  // Registro a registro, pela fila: subir a coleção INTEIRA daqui empurrava a
+  // cópia local (possivelmente velha) por cima da nuvem antes do primeiro pull
+  // (auditoria de 07/09/2026).
+  for (const c of faltam) criarEm("classificacaoCustos", c as never);
 }
 
 // ---------------------------------------------------------------------------

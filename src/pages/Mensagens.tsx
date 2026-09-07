@@ -612,6 +612,13 @@ interface FormAgendamento {
   quando: string;
 }
 const TODOS = "Todos";
+/** ISO (UTC) → "AAAA-MM-DDTHH:mm" no fuso do aparelho, que é o que datetime-local entende. */
+const isoParaDatetimeLocal = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 const AGENDAMENTO_VAZIO: FormAgendamento = {
   templateId: "",
   titulo: "",
@@ -642,7 +649,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
       mensagem: a.mensagem ?? "",
       grupoAlvo: a.grupoAlvo ?? TODOS,
       // datetime-local não aceita o "Z" do ISO nem os segundos.
-      quando: a.quando ? new Date(a.quando).toISOString().slice(0, 16) : "",
+      quando: a.quando ? isoParaDatetimeLocal(a.quando) : "",
     });
     setModal(true);
   };
@@ -686,7 +693,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
 
   const abrirNovo = () => {
     setEditando(null);
-    setForm({ ...AGENDAMENTO_VAZIO, quando: HOJE.toISOString().slice(0, 16) });
+    setForm({ ...AGENDAMENTO_VAZIO, quando: isoParaDatetimeLocal(new Date().toISOString()) });
     setModal(true);
   };
   const fechar = () => {
@@ -722,7 +729,9 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
       titulo,
       mensagem,
       grupoAlvo: form.grupoAlvo,
-      quando: new Date(form.quando).toISOString(),
+      // Não mexeu na hora? Fica a gravada. Converter de novo "adiantava" 3 h
+      // a cada salvamento (o campo mostrava a fatia UTC do ISO como hora local).
+      quando: editando && isoParaDatetimeLocal(editando.quando) === form.quando ? editando.quando : new Date(form.quando).toISOString(),
     };
     if (editando) {
       atualizar(editando.id, dados);

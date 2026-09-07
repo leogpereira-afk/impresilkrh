@@ -267,6 +267,12 @@ function lerRev(): RevGravada {
 function gravarRev(r: RevGravada) { guardar(K_REV, JSON.stringify(r)); }
 /** Esquece o que já foi baixado — o próximo pull traz tudo de novo. */
 function zerarRev() { if (temWindow) { try { removerLocal(K_REV); } catch { /* ignora */ } } }
+/**
+ * Depois de "Restaurar padrão": a base local foi trocada pelos defaults, mas a
+ * revisão memorizada dizia que estava em dia — o pull não repunha nada e a tela
+ * ficava vazia. Zera a revisão e baixa a base da nuvem de novo.
+ */
+export function rebaixarTudo(): void { epocaDados++; zerarRev(); if (temWindow) void pull(); }
 
 let puxando = false;
 export async function pull(): Promise<void> {

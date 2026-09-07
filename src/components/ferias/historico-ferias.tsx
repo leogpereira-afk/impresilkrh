@@ -10,6 +10,7 @@
 // com um botão que devolve o registro ao que era. Desfazer também é gravado no
 // log: o histórico nunca perde um passo.
 // ============================================================================
+import { valorLegivel } from "@/lib/auditoria";
 import { useMemo, useState } from "react";
 import { History, Undo2, ChevronDown, ChevronRight } from "lucide-react";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
@@ -99,8 +100,16 @@ export function HistoricoFerias({ nomeDe }: { nomeDe: (id: string) => string }) 
     const alvo = (ferias as Ferias[]).find((f) => f.id === log.registroId);
     if (!alvo) { toast("Este registro de férias não existe mais.", "erro"); setDesfazendo(null); return; }
     const numero = m.campo === "diasGozados" || m.campo === "saldoDias";
+    // O histórico guarda o valor LEGÍVEL: "—" é vazio, "•••" é mascarado e
+    // "…" é truncado — nenhum deles pode virar dado (auditoria de 07/09/2026).
+    if (m.de === "•••" || (typeof m.de === "string" && m.de.endsWith("…"))) { toast("O valor anterior não está inteiro no histórico; não dá para desfazer por aqui.", "erro"); setDesfazendo(null); return; }
+    // E só desfaz se o campo ainda está como esta linha deixou: uma mudança
+    // mais nova seria apagada sem aviso.
+    const atualLegivel = valorLegivel((alvo as unknown as Record<string, unknown>)[m.campo]);
+    if (atualLegivel !== (m.para ?? "—")) { toast(`${ROTULO[m.campo] ?? m.campo} já mudou depois desta linha (hoje: ${bonito(m.campo, atualLegivel)}). Desfaça primeiro a alteração mais recente.`, "erro"); setDesfazendo(null); return; }
+    const vazio = m.de == null || m.de === "" || m.de === "—";
     atualizar(alvo.id, {
-      [m.campo]: m.de == null || m.de === "" ? null : numero ? Number(m.de) : m.de,
+      [m.campo]: vazio ? null : numero ? Number(m.de) : m.de,
     } as Partial<Ferias>);
     toast(`${ROTULO[m.campo] ?? m.campo} devolvido para ${bonito(m.campo, m.de)}.`);
     setDesfazendo(null);

@@ -36,7 +36,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro, trabalhandoHoje } from "@/lib/dominio";
 import { ordemEstavel, aplicarOrdem } from "@/lib/ordemEstavel";
 import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
+import { colaboradoresVisiveis, podeGerir, ehRH } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import { fimDaExperiencia } from "@/lib/clt";
 import { HOJE } from "@/data/_gen";
@@ -352,7 +352,9 @@ export default function Integracao() {
               id: "teste",
               label: "Teste antes da contratação",
               icon: <UserCheck className="h-4 w-4" />,
-              conteudo: <PainelTeste podeEditar={gere} />,
+              // Registrar teste é do RH: a porta de dados recusa gestor (candidatos
+              // é nível "rh") e o registro ficava preso no navegador dele.
+              conteudo: <PainelTeste podeEditar={ehRH(sessao)} />,
             },
             {
               id: "desligamento",

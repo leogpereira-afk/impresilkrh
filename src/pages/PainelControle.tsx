@@ -234,7 +234,7 @@ function AreasManager() {
           onFechar={() => { setNovo(false); setEdit(null); }}
           onSalvar={(v) => {
             if (edit) atualizar(edit.id, { nome: v.nome, descricao: v.descricao });
-            else criar({ id: slug(v.nome || "area"), nome: v.nome, descricao: v.descricao, ordem: items.length });
+            else { try { criar({ id: slug(v.nome || "area"), nome: v.nome, descricao: v.descricao, ordem: items.length }); } catch (e) { toast(e instanceof Error ? e.message : "Já existe um registro com este nome.", "erro"); return; } }
             toast("Área salva."); setNovo(false); setEdit(null);
           }}
         />
@@ -323,7 +323,7 @@ function StatusManager() {
         <Modal aberto onFechar={() => { setNovo(false); setEdit(null); }} titulo={edit ? "Editar status" : "Novo status"} largura="max-w-md"
           rodape={<><button className="btn-outline" onClick={() => { setNovo(false); setEdit(null); }}>Cancelar</button>
             <button className="btn-primary" onClick={() => {
-              if (edit) atualizar(edit.id, form); else criar({ id: slug(form.nome || "status"), ...form } as StatusColaborador);
+              if (edit) atualizar(edit.id, form); else { try { criar({ id: slug(form.nome || "status"), ...form } as StatusColaborador); } catch (e) { toast(e instanceof Error ? e.message : "Já existe um registro com este nome.", "erro"); return; } }
               toast("Status salvo."); setNovo(false); setEdit(null);
             }}>Salvar</button></>}>
           <div className="space-y-3">
@@ -396,7 +396,7 @@ function CargosSecao() {
           rodape={<><button className="btn-outline" onClick={() => { setNovo(false); setEdit(null); }}>Cancelar</button>
             <button className="btn-primary" onClick={() => {
               if (!form.nome?.trim()) return toast("Informe o nome do cargo.", "erro");
-              if (edit) atualizar(edit.id, form); else criar({ id: slug(form.nome), ...form } as Cargo);
+              if (edit) atualizar(edit.id, form); else { try { criar({ id: slug(form.nome), ...form } as Cargo); } catch (e) { toast(e instanceof Error ? e.message : "Já existe um registro com este nome.", "erro"); return; } }
               toast("Cargo salvo."); setNovo(false); setEdit(null);
             }}>Salvar</button></>}>
           <div className="space-y-3">
@@ -928,7 +928,7 @@ function UsuariosSecao() {
                 }
               }
               if (edit) atualizar(edit.id, campos);
-              else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...campos });
+              else { try { criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...campos }); } catch (e) { toast(e instanceof Error ? e.message : "Já existe um registro com este nome.", "erro"); return; } }
               if (digitada) await provisionarNoServidor({ ...resto, senha: digitada }); // login real: ativa a senha no servidor
               toast("Usuário salvo."); setNovo(false); setEdit(null);
             })();

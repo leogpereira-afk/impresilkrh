@@ -124,3 +124,18 @@ describe("gestor não lança nem aprova verba para si (auditoria de 07/09/2026)"
     expect((await s.call({ action: "upsert", colecao: "lancamentos", registro: { id: "l2", colaboradorId: "bia", valor: 300 }, baseVersao: 0, mutationId: "m3" })).status).toBe(200);
   });
 });
+
+describe("mural de vagas: a própria candidatura interna (auditoria de 07/09/2026)", () => {
+  it("colaborador grava e lê a própria candidatura interna; não a de outro nem uma externa", async () => {
+    const s = servidorRh({ perfil: "COLABORADOR", pessoa: "carlos", rows: [
+      linha("candidatos", "c1", { colaboradorId: "carlos", origem: "Interno", vagaId: "v1" }),
+      linha("candidatos", "c2", { colaboradorId: "bia", origem: "Interno", vagaId: "v1" }),
+      linha("candidatos", "c3", { nome: "Externo", origem: "Externo", vagaId: "v1" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["candidatos"] });
+    expect(r.body.registros.map((x: any) => x.registro.id)).toEqual(["c1"]);
+    expect((await s.call({ action: "upsert", colecao: "candidatos", registro: { id: "c9", colaboradorId: "carlos", origem: "Interno", vagaId: "v2" }, baseVersao: 0, mutationId: "m1" })).status).toBe(200);
+    expect((await s.call({ action: "upsert", colecao: "candidatos", registro: { id: "c8", colaboradorId: "bia", origem: "Interno", vagaId: "v2" }, baseVersao: 0, mutationId: "m2" })).status).toBe(403);
+    expect((await s.call({ action: "upsert", colecao: "candidatos", registro: { id: "c7", colaboradorId: "carlos", origem: "Externo", vagaId: "v2" }, baseVersao: 0, mutationId: "m3" })).status).toBe(403);
+  });
+});
