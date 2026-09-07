@@ -118,6 +118,9 @@ const NAO_AUDITAR = new Set([
   "acessos", // trilha LGPD, tem vida própria
   // Pesquisa anônima: registrar quem respondeu desfaz o anonimato prometido.
   "respostasPesquisa",
+  // Retrato para desfazer a folha: é cópia de segurança, não ação humana —
+  // e carrega valor de pagamento, que o histórico mascara.
+  "recuperacoesFolha",
 ]);
 
 /** `undefined`, `null`, "" e lista vazia são a MESMA coisa para quem lê. */

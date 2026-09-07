@@ -93,6 +93,7 @@ async function sessaoDoPedido(req: Request): Promise<Perfil | null> {
 const ESCOPO: Record<string, { nivel: "rh" | "gestao" | "meu" | "todos"; campos?: string[] }> = {
   // --- dinheiro e vida da pessoa: so o RH
   planoContas: { nivel: "rh" },
+  recuperacoesFolha: { nivel: "rh" },   // retrato para desfazer a folha (tem valor)
   classificacaoCustos: { nivel: "rh" },
   alteracoes: { nivel: "rh" },          // historico com valor de campo
   usuarios: { nivel: "rh" },            // controle de acesso, com senhaHash

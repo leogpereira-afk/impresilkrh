@@ -29,6 +29,8 @@ import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
 import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
 import { Societarias } from "@/components/custos/societarias";
+import { PreviaFolha, type CoberturaBusca } from "@/components/custos/previa-folha";
+import { patchDeAplicacao, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type Alarme } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +84,7 @@ import type {
   Colaborador,
   ContaPlano,
   Pagamento,
+  RetratoFolha,
 } from "@/data/types";
 
 // Classes disponíveis no editor (confidencial fica fora — societárias só do master).
@@ -262,9 +265,18 @@ export default function Custos() {
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
-    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[] };
+    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; busca?: CoberturaBusca };
+    /** Competências que a busca cobriu — o que pode ser dado como ausente. */
+    janela: string[];
   } | null>(null);
-  const [removerAusentes, setRemoverAusentes] = useState(false);
+  // Remoção é POR LINHA marcada (07/09/2026) — nunca um checkbox que apaga
+  // tudo. E cada aviso grave pede "conferi" antes de o botão liberar.
+  const [ausentesMarcados, setAusentesMarcados] = useState<Set<string>>(new Set());
+  const [confirmados, setConfirmados] = useState<Set<Alarme["id"]>>(new Set());
+  const [confirmarAplicacao, setConfirmarAplicacao] = useState(false);
+  const [confirmarDesfazer, setConfirmarDesfazer] = useState(false);
+  // Retratos para desfazer: cada aplicação guarda antes/depois dos tocados.
+  const recuperacoesColecao = useColecao("recuperacoesFolha");
   // Busca no ERP Mubisys
   const [compMubi, setCompMubi] = useState<string>(() => config.ultimaBuscaMubi?.competencia || ultimaComp || hojeIso);
   const [buscandoMubi, setBuscandoMubi] = useState(false);
@@ -440,7 +452,7 @@ export default function Custos() {
   // Busca a folha do mês direto no Contas a Pagar do Mubisys e cai na MESMA
   // prévia de conciliação da planilha — nada é gravado sem o RH confirmar.
   // Monta a prévia de conciliação a partir do que veio do ERP.
-  const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>) => {
+  const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>, busca?: CoberturaBusca) => {
     const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {});
     // Compara contra as competências dos REGISTROS, não contra o mês pedido: uma
     // busca pode gerar lançamentos em mais de uma competência e o que ficasse de
@@ -457,11 +469,13 @@ export default function Custos() {
     const existentesDaComp = pagamentos.filter(
       (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
     );
-    setRemoverAusentes(false);
+    setAusentesMarcados(new Set());
+    setConfirmados(new Set());
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
-      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha },
+      janela: [...comps].filter(Boolean).sort(),
+      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
@@ -499,6 +513,8 @@ export default function Custos() {
       previaDoMubi(
         { competencia: comps[comps.length - 1], buscadoEm: r.buscadoEm, totalTitulosNoMes: r.linhas.length, paginas: 0, truncado: r.truncado, linhas: r.linhas },
         vinculos,
+        // A cobertura vai junto: mês que falhou aparecia só num toast e sumia.
+        { truncado: r.truncado, pedidas: comps, lidas: r.competenciasLidas, falhas: r.falhas.map((f) => f.competencia) },
       );
       const parcial = cancelarVarreduraRef.current ? " (varredura interrompida)" : "";
       const falhou = r.falhas.length ? ` ${r.falhas.length} mês(es) falharam: ${r.falhas.map((f) => f.competencia).join(", ")}.` : "";
@@ -603,9 +619,11 @@ export default function Custos() {
     // O vínculo novo pode fazer aparecer (ou sumir) uma sugestão de salário.
     setSalarios(sugerirSalarios(folhaPrev.mubi.linhas, d.colaboradores, vinculos));
     setSalariosMarcados(new Set());
+    setAusentesMarcados(new Set()); // o vínculo pode ter tirado alguém de "ausente"
     setFolhaPrev({
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
+      janela: [...comps].filter(Boolean).sort(),
       mubi: { ...folhaPrev.mubi, coletivas },
     });
   };
@@ -636,88 +654,107 @@ export default function Custos() {
   // mesma planilha de novo mostra o que é igual, o que mudou e o que é novo.
   // Aplica a prévia: mexe SÓ no que mudou (corrige valores, insere novos, atualiza
   // descrições) e, opcionalmente, remove os ausentes. Iguais sem mudança não são tocados.
+  // A inteligência da prévia (lib/previaFolha): quanto cada mês muda, o que
+  // muda em cada linha, o que pede confirmação e o que bloqueia.
+  const resumoPrev = useMemo(() => {
+    if (!folhaPrev) return null;
+    // Título que veio do ERP sem pessoa: existe, só não casou — nunca é "sumiu".
+    const semDono = new Set<string>();
+    for (const n of folhaPrev.naoCasados) for (const t of n.titulos ?? []) semDono.add(String(t.idMubi));
+    for (const l of folhaPrev.mubi?.coletivas ?? []) semDono.add(String(l.idMubi));
+    return resumoDaPrevia({
+      diff: folhaPrev.diff,
+      gravados: pagamentos as Pagamento[],
+      janela: new Set(folhaPrev.janela),
+      ausentesMarcados,
+      colaboradorPor: (id) => d.colabById.get(id),
+      tiposEncargo: TIPOS_ENCARGO,
+      busca: folhaPrev.mubi?.busca,
+      semDono,
+    });
+  }, [folhaPrev, pagamentos, ausentesMarcados, d.colabById]);
+
+  const ultimoRetrato = useMemo(
+    () => [...(recuperacoesColecao.items as RetratoFolha[])].filter((r) => !r.usado).sort((a, b) => b.em.localeCompare(a.em))[0] ?? null,
+    [recuperacoesColecao.items],
+  );
+  const planoDesfazer = useMemo(() => (ultimoRetrato ? planoDeDesfazer(ultimoRetrato, pagamentos as Pagamento[]) : null), [ultimoRetrato, pagamentos]);
+
+  const desfazerUltimaAplicacao = () => {
+    if (!ultimoRetrato || !planoDesfazer) return;
+    const { restaurar, apagar, pulados, semVolta } = planoDesfazer;
+    emLote(`Desfez a aplicação da folha do ERP de ${ultimoRetrato.competencias.map(compLabel).join(", ")}`, () => {
+      for (const p of restaurar) pagamentosColecao.atualizar(p.id, patchDeAplicacao(p));
+      for (const id of apagar) pagamentosColecao.remover(id);
+    });
+    recuperacoesColecao.atualizar(ultimoRetrato.id, { usado: true });
+    const partes = [
+      restaurar.length ? `${restaurar.length} restaurado(s)` : "",
+      apagar.length ? `${apagar.length} novo(s) apagado(s)` : "",
+      pulados.length ? `${pulados.length} pulado(s) (editados depois)` : "",
+      semVolta.length ? `${semVolta.length} removido(s) não voltam por aqui` : "",
+    ].filter(Boolean).join(" · ");
+    toast(`Aplicação desfeita: ${partes || "nada a desfazer"}.`, pulados.length || semVolta.length ? "info" : "sucesso");
+    setConfirmarDesfazer(false);
+  };
+
   const aplicarFolha = () => {
-    if (!folhaPrev) return;
-    // Tudo daqui para baixo é UMA ação para quem lê o histórico: aplicar a
-    // folha são centenas de escritas, e cada uma virando linha enterraria o
-    // trabalho humano do dia embaixo do log da máquina.
-    // Só a parte MECÂNICA entra no lote. A aplicação de salário é decisão
-    // humana e merece linha própria no histórico — engolida no resumo do lote,
-    // o campo mais sensível do sistema mudaria sem deixar rastro individual.
-    emLote(`Aplicou a folha do ERP (${compLabel(folhaPrev.diff.novos[0]?.competencia ?? compAtiva)}…)`, () => aplicarFolhaAgora());
+    if (!folhaPrev || !resumoPrev) return;
+    // O clique abre a confirmação com o resumo em reais; quem grava é o passo seguinte.
+    setConfirmarAplicacao(true);
   };
 
   const aplicarFolhaAgora = () => {
-    if (!folhaPrev) return;
+    if (!folhaPrev || !resumoPrev) return;
+    setConfirmarAplicacao(false);
     const { diff } = folhaPrev;
-    const nd = (s?: string) => (s ?? "").trim();
-    // Linhas iguais (mesmo valor) cuja DESCRIÇÃO mudou — atualiza só o texto.
-    let descAtualizadas = 0;
-    for (const { antigo, novo } of diff.iguais) {
-      const adotaId = !antigo.idMubi && !!novo.idMubi;
-      if (nd(antigo.descricao) !== nd(novo.descricao) || adotaId) {
-        pagamentosColecao.atualizar(antigo.id, {
-          descricao: novo.descricao || undefined,
-          ...(adotaId ? { idMubi: novo.idMubi } : {}),
-        });
-        if (nd(antigo.descricao) !== nd(novo.descricao)) descAtualizadas++;
+    const removidos = diff.ausentes.filter((a) => ausentesMarcados.has(a.id));
+    const comps = new Set<string>();
+    for (const x of diff.alterados) { comps.add(x.antigo.competencia); comps.add(x.novo.competencia); }
+    for (const x of diff.novos) comps.add(x.competencia);
+    for (const a of removidos) comps.add(a.competencia);
+    const lista = [...comps].filter(Boolean).sort();
+    const faixa = lista.length === 0 ? compLabel(compAtiva) : lista.length === 1 ? compLabel(lista[0]) : `${compLabel(lista[0])}–${compLabel(lista[lista.length - 1])}`;
+
+    // 1) O RETRATO ANTES DE QUALQUER ESCRITA. Cada registro tocado com antes e
+    //    depois, numa coleção própria (nível RH no sync). É o que permite
+    //    "Desfazer a última aplicação". Sem ele, o histórico guardava só
+    //    contagens e o valor anterior de um "corrigido" não ficava em lugar nenhum.
+    const retrato = retratoAntesDeAplicar(diff, ausentesMarcados, new Date().toISOString(), `Folha do ERP · ${faixa}`);
+    if (retrato.tocados.length > 0) recuperacoesColecao.criarOuAtualizar(retrato);
+
+    // 2) O lote mecânico — UMA linha no histórico, com a faixa e o que mudou.
+    const partes = resumoPrev.grupos.map((g) => `${g.itens.length} ${g.natureza}`).concat(
+      diff.novos.length ? [`${diff.novos.length} novos`] : [],
+      removidos.length ? [`${removidos.length} removidos`] : [],
+    );
+    emLote(`Aplicou a folha do ERP · ${faixa} · ${partes.join(" · ") || "nada"}`, () => {
+      const nd = (x?: string) => (x ?? "").trim();
+      for (const { antigo, novo } of diff.iguais) {
+        const adotaId = !antigo.idMubi && !!novo.idMubi;
+        if (nd(antigo.descricao) !== nd(novo.descricao) || adotaId) {
+          pagamentosColecao.atualizar(antigo.id, { descricao: novo.descricao || undefined, ...(adotaId ? { idMubi: novo.idMubi } : {}) });
+        }
       }
-    }
-    for (const { antigo, novo } of diff.alterados) {
-      // O registro INTEIRO. Gravar só valor/data deixava pessoa, competência e
-      // tipo congelados no que foi importado da primeira vez: o ERP repassava o
-      // título para outra pessoa (ou reclassificava o plano) e o dinheiro ficava
-      // somando na pessoa/mês errados — e o item voltava como "corrigido" em
-      // toda importação seguinte, porque nunca convergia.
-      pagamentosColecao.atualizar(antigo.id, {
-        colaboradorId: novo.colaboradorId,
-        competencia: novo.competencia,
-        tipo: novo.tipo,
-        valor: novo.valor,
-        dataPagamento: novo.dataPagamento,
-        descricao: novo.descricao,
-        idMubi: novo.idMubi ?? null,
-      });
-    }
-    // criarOuAtualizar: se o id já existir (reimportação, aba aberta em dois
-    // lugares), atualiza em vez de gravar uma segunda linha com a mesma chave.
-    for (const n of diff.novos) pagamentosColecao.criarOuAtualizar(n);
-    // Se a busca no ERP veio cortada, "ausente" não quer dizer "saiu da folha" —
-    // pode ser só o que não coube na busca. Nesse caso nunca apaga.
-    const podeRemover = removerAusentes && !folhaPrev.mubi?.truncado;
-    if (podeRemover) {
-      for (const a of diff.ausentes) pagamentosColecao.remover(a.id);
-    }
-    const mexeu = descAtualizadas + diff.alterados.length + diff.novos.length + (podeRemover ? diff.ausentes.length : 0);
+      // O registro inteiro, com a MESMA lista de campos do retrato (patchDeAplicacao):
+      // gravar só valor/data deixava pessoa, competência e tipo congelados.
+      for (const { antigo, novo } of diff.alterados) pagamentosColecao.atualizar(antigo.id, patchDeAplicacao(novo));
+      for (const n of diff.novos) pagamentosColecao.criarOuAtualizar(n);
+      for (const a of removidos) pagamentosColecao.remover(a.id);
+    });
 
-    // O placar desta aplicação fica GRAVADO. Antes vivia só no toast, que some
-    // em segundos — e "o que a última sincronização mudou?" ficava sem resposta
-    // um minuto depois. Com valor em R$ ao lado da contagem.
-    {
-      const comps = new Set<string>();
-      for (const x of diff.iguais) comps.add(x.novo.competencia);
-      for (const x of diff.alterados) comps.add(x.novo.competencia);
-      for (const x of diff.novos) comps.add(x.competencia);
-      // SÓ CONTAGEM, NUNCA VALOR. A config global sobe inteira para a nuvem e
-      // `getCfg` na Edge Function não confere papel nenhum — só `setCfg` exige
-      // RH. Guardar aqui a soma em reais da folha aplicada entregava o total
-      // pago do mês a qualquer pessoa logada, inclusive COLABORADOR, por uma
-      // porta que a tela de Custos tranca. Quantas linhas mudaram não é
-      // dinheiro; quanto elas somam é.
-      salvarCfg({ ultimaConciliacaoMubi: {
-        em: new Date().toISOString(),
-        competencias: [...comps].filter(Boolean).sort(),
-        iguais: diff.iguais.length,
-        corrigidos: diff.alterados.length,
-        novos: diff.novos.length,
-        mantidos: podeRemover ? 0 : diff.ausentes.length,
-        removidos: podeRemover ? diff.ausentes.length : 0,
-      } });
-    }
+    // 3) O placar (só contagens — a config sobe inteira e é lida por qualquer logado).
+    salvarCfg({ ultimaConciliacaoMubi: {
+      em: new Date().toISOString(),
+      competencias: lista,
+      iguais: diff.iguais.length,
+      corrigidos: diff.alterados.length,
+      novos: diff.novos.length,
+      mantidos: diff.ausentes.length - removidos.length,
+      removidos: removidos.length,
+    } });
 
-    // CPF aprendido do ERP, só onde o cadastro está vazio. É o que faz o mês
-    // seguinte casar pela chave forte em vez de depender de como o ERP escreveu
-    // o nome — a causa de Limpeza/Faxina e Freelancer nunca casarem.
+    // 4) CPF aprendido do ERP, só onde o cadastro está vazio (fora do lote: tem linha própria).
     const cpfs = folhaPrev.cpfsAprendidos ?? [];
     let cpfsPreenchidos = 0;
     if (cpfs.length) {
@@ -733,20 +770,20 @@ export default function Custos() {
         void enviarColecao("colaboradores");
       }
     }
-    const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es) — o próximo mês casa sozinho.` : "";
 
-    // Salários marcados — só o que está na lista da tela (marca órfã não conta).
+    // 5) Salários marcados — FORA do lote, um por pessoa: é decisão humana e o
+    //    campo mais sensível do sistema; engolido no resumo do lote, mudava sem
+    //    deixar rastro individual (o histórico mascara o valor, mas registra quem).
     const aplicaveis = salarios.filter((x) => salariosMarcados.has(x.colaborador.id));
-    for (const sug of aplicaveis) {
-      colaboradoresColecao.atualizar(sug.colaborador.id, { salario: sug.sugerido });
-    }
+    for (const sug of aplicaveis) colaboradoresColecao.atualizar(sug.colaborador.id, { salario: sug.sugerido });
+
+    const mexeu = resumoPrev.contaNoBotao + resumoPrev.silenciosos;
     const parteSalario = aplicaveis.length ? ` Salário preenchido em ${aplicaveis.length} colaborador(es).` : "";
-    // Um toast só, dizendo tudo: antes ele avisava "nada a alterar" no mesmo
-    // clique em que salários eram gravados.
+    const avisoCpf = cpfsPreenchidos ? ` CPF preenchido em ${cpfsPreenchidos} colaborador(es).` : "";
     toast(
       mexeu === 0
         ? `Folha já estava igual — nada a alterar.${parteSalario}${avisoCpf}`
-        : `Folha conciliada: ${diff.alterados.length} corrigido(s), ${diff.novos.length} novo(s)${descAtualizadas ? `, ${descAtualizadas} descrição(ões) atualizada(s)` : ""}${podeRemover && diff.ausentes.length ? `, ${diff.ausentes.length} removido(s)` : ""}.${parteSalario}${avisoCpf}`,
+        : `Folha aplicada (${faixa}): ${partes.join(", ")}.${parteSalario}${avisoCpf} Dá para desfazer em Sincronização.`,
       "sucesso",
     );
     fecharPrevia();
@@ -2234,6 +2271,25 @@ export default function Custos() {
                 {/* A conferência que faltou em jul/2026: cada lançamento do ERP
                     contra o nome da conta do contador. Corrige em lote pelo
                     caminho normal (atualizar + sync), com rastro no histórico. */}
+                {/* A volta: o retrato da última aplicação da folha. */}
+                {ultimoRetrato && planoDesfazer && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Última aplicação da folha</p>
+                      <p className="mt-0.5 text-sm text-slate-700">
+                        {ultimoRetrato.rotulo ?? "Folha do ERP"} · {new Date(ultimoRetrato.em).toLocaleString("pt-BR")} · {ultimoRetrato.tocados.length} registro(s) tocado(s)
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {planoDesfazer.restaurar.length + planoDesfazer.apagar.length > 0
+                          ? `Dá para voltar ${planoDesfazer.restaurar.length + planoDesfazer.apagar.length} deles${planoDesfazer.pulados.length ? `; ${planoDesfazer.pulados.length} foram editados depois e ficam` : ""}.`
+                          : "Tudo o que ela tocou já foi editado ou desfeito — nada a voltar."}
+                      </p>
+                    </div>
+                    <button type="button" className="btn-outline" onClick={() => setConfirmarDesfazer(true)} disabled={planoDesfazer.restaurar.length + planoDesfazer.apagar.length === 0}>
+                      <History className="h-4 w-4" /> Desfazer
+                    </button>
+                  </div>
+                )}
                 <ConferenciaTipos
                   pagamentos={pagamentos as Pagamento[]}
                   colaboradorPor={(id) => d.colaboradores.find((c: Colaborador) => c.id === id)}
@@ -2380,31 +2436,29 @@ export default function Custos() {
         );
       })()}
 
-      {folhaPrev && (() => {
-        const { diff, naoCasados } = folhaPrev;
-        const nd = (s?: string) => (s ?? "").trim();
-        const descAtualizar = diff.iguais.filter((p) => nd(p.antigo.descricao) !== nd(p.novo.descricao));
-        // Busca cortada = a lista do ERP não é a folha inteira. Quem faltou aparece
-        // como "fora desta planilha" mesmo estando certo, então remover é proibido aqui.
-        const buscaIncompleta = !!folhaPrev.mubi?.truncado;
-        const mexeu = descAtualizar.length + diff.alterados.length + diff.novos.length + (removerAusentes && !buscaIncompleta ? diff.ausentes.length : 0);
+      {folhaPrev && resumoPrev && (() => {
+        const { naoCasados } = folhaPrev;
+        // "Busca cortada" vale para o bloco de não encontrados, que fala de completude.
+        const buscaIncompleta = !!folhaPrev.mubi?.truncado || !!folhaPrev.mubi?.busca?.truncado || (folhaPrev.mubi?.busca?.falhas.length ?? 0) > 0;
+        void buscaIncompleta;
         return (
-          <Modal
-            aberto
-            onFechar={fecharPrevia}
-            titulo="Conferir importação da folha"
-            descricao="Comparação com o que já está no sistema. Só o que mudou será alterado — o que é igual fica intacto."
-            largura="max-w-2xl"
-            rodape={<>
-              <button className="btn-outline" onClick={fecharPrevia}>Cancelar</button>
-              <button className="btn-primary" onClick={aplicarFolha}>
-                <Coins className="h-4 w-4" /> {mexeu + salariosMarcados.size === 0
-                  ? "Nada a alterar"
-                  : `Aplicar ${mexeu} alteração(ões)${salariosMarcados.size ? ` + ${salariosMarcados.size} salário(s)` : ""}`}
-              </button>
-            </>}
-          >
-            <div className="space-y-3">
+          <PreviaFolha
+            resumo={resumoPrev}
+            iguais={folhaPrev.diff.iguais.length}
+            cobertura={folhaPrev.mubi?.busca}
+            nomeDe={(id) => d.nomeColab(id)}
+            ausentesMarcados={ausentesMarcados}
+            onMarcarAusente={(id, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
+            onMarcarBloco={(ids, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); for (const id of ids) { if (ok) n.add(id); else n.delete(id); } return n; })}
+            confirmados={confirmados}
+            onConfirmar={(id, ok) => setConfirmados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
+            salarios={folhaPrev.mubi ? salarios : []}
+            salariosMarcados={salariosMarcados}
+            onMarcarSalario={(id) => setSalariosMarcados((atual) => { const n = new Set(atual); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+            cpfs={folhaPrev.cpfsAprendidos ?? []}
+            onAplicar={aplicarFolha}
+            onCancelar={fecharPrevia}
+            extras={<>
               {/* Conta de pessoa que o filtro recusou. O filtro é por CÓDIGO e o
                   contador muda código: sem este aviso, a faxina simplesmente
                   para de aparecer e o mês fecha menor sem ninguém notar. */}
@@ -2425,185 +2479,6 @@ export default function Custos() {
                   </ul>
                 </div>
               )}
-              {buscaIncompleta && (
-                <div className="rounded-xl border border-red-300 bg-red-50 p-3">
-                  <p className="text-xs font-semibold text-red-800">A busca no ERP veio incompleta</p>
-                  <p className="mt-1 text-[11px] text-red-700/90">
-                    O mês tem mais títulos do que a busca consegue trazer de uma vez, então parte da folha ficou de fora desta
-                    comparação. Pode aplicar o que veio (é confiável), mas os lançamentos que faltaram aparecem abaixo como
-                    "fora desta planilha" mesmo estando corretos — por isso a remoção está bloqueada.
-                  </p>
-                </div>
-              )}
-              {/* Placar dos 4 grupos */}
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-center">
-                  <p className="text-xl font-bold tabular-nums text-slate-600">{diff.iguais.length}</p>
-                  <p className="text-[11px] uppercase tracking-wide text-slate-400">iguais</p>
-                </div>
-                <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-2 text-center">
-                  <p className="text-xl font-bold tabular-nums text-blue-700">{diff.alterados.length}</p>
-                  <p className="text-[11px] uppercase tracking-wide text-blue-500">corrigidos</p>
-                </div>
-                <div className="rounded-xl border border-green-200 bg-green-50/60 px-3 py-2 text-center">
-                  <p className="text-xl font-bold tabular-nums text-green-700">{diff.novos.length}</p>
-                  <p className="text-[11px] uppercase tracking-wide text-green-600">novos</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 text-center">
-                  <p className="text-xl font-bold tabular-nums text-amber-700">{diff.ausentes.length}</p>
-                  <p className="text-[11px] uppercase tracking-wide text-amber-600">fora da planilha</p>
-                </div>
-              </div>
-
-              {/* SALÁRIO: só para quem está SEM salário no cadastro.
-                  O que o ERP tem é o LÍQUIDO pago (já saíram INSS, IRRF, VT e o
-                  desconto de falta), então não serve como salário de contrato de
-                  quem já tem um — rebaixaria quase todo mundo, e esse campo é a
-                  base do cálculo de hora extra e de desconto de falta. Para quem
-                  não tem nada, um ponto de partida conferido pelo RH é melhor do
-                  que o sistema não conseguir calcular. Nada é aplicado sem marcar. */}
-              {folhaPrev.mubi && salarios.length > 0 && (
-                <div className="rounded-xl border border-gold-200">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gold-100 bg-gold-50/50 px-3 py-1.5">
-                    <p className="text-xs font-semibold text-gold-700">
-                      Sem salário no cadastro · {salarios.length} pessoa(s)
-                    </p>
-                  </div>
-                  <p className="px-3 py-1.5 text-[11px] text-slate-500">
-                    Valor <b>pago</b> na competência (Salário + Adiantamento) — é o líquido, já sem
-                    INSS, IRRF e vale-transporte. Use como <b>ponto de partida</b> e ajuste na ficha
-                    se o contrato for outro. Sem salário, o sistema não calcula hora extra nem
-                    desconto de falta dessas pessoas.
-                  </p>
-                  <div className="max-h-48 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {salarios.map((sug) => {
-                          const marcado = salariosMarcados.has(sug.colaborador.id);
-                          return (
-                            <tr key={sug.colaborador.id} className={marcado ? "bg-gold-50/40" : undefined}>
-                              <td className="td w-8">
-                                <input
-                                  type="checkbox"
-                                  checked={marcado}
-                                  disabled={!sug.completo}
-                                  onChange={() => setSalariosMarcados((atual) => {
-                                    const n = new Set(atual);
-                                    if (n.has(sug.colaborador.id)) n.delete(sug.colaborador.id); else n.add(sug.colaborador.id);
-                                    return n;
-                                  })}
-                                  aria-label={`Preencher o salário de ${sug.colaborador.nome}`}
-                                />
-                              </td>
-                              <td className="td font-medium text-slate-700">{sug.colaborador.nome}</td>
-                              <td className="td text-slate-400">
-                                {compLabel(sug.competencia)}
-                                {/* Mês com só uma das pernas (adiantamento OU saldo) daria
-                                    metade do salário: não deixa marcar. */}
-                                {!sug.completo && <span className="ml-1 text-red-600">· mês incompleto</span>}
-                              </td>
-                              <td className="td text-right tabular-nums font-semibold text-gold-700">
-                                {formatBRL(sug.sugerido)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {diff.alterados.length > 0 && (
-                <div className="rounded-xl border border-blue-200">
-                  <p className="border-b border-blue-100 bg-blue-50/50 px-3 py-1.5 text-xs font-semibold text-blue-800">Valores corrigidos</p>
-                  <div className="max-h-44 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {diff.alterados.map(({ antigo, novo }) => (
-                          <tr key={antigo.id}>
-                            <td className="td font-medium text-slate-700">{d.nomeColab(novo.colaboradorId)}</td>
-                            <td className="td text-slate-500">{compLabel(novo.competencia)} · {novo.tipo}</td>
-                            <td className="td text-right tabular-nums">
-                              <span className="text-slate-400 line-through">{formatBRL(antigo.valor)}</span>
-                              <span className="mx-1 text-slate-300">→</span>
-                              <span className="font-semibold text-blue-700">{formatBRL(novo.valor)}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {diff.novos.length > 0 && (
-                <div className="rounded-xl border border-green-200">
-                  <p className="border-b border-green-100 bg-green-50/50 px-3 py-1.5 text-xs font-semibold text-green-800">Novos lançamentos</p>
-                  <div className="max-h-44 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {diff.novos.map((n) => (
-                          <tr key={n.id}>
-                            <td className="td font-medium text-slate-700">{d.nomeColab(n.colaboradorId)}</td>
-                            <td className="td text-slate-500">{compLabel(n.competencia)} · {n.tipo}</td>
-                            <td className="td text-right tabular-nums font-semibold text-green-700">{formatBRL(n.valor)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {descAtualizar.length > 0 && (
-                <div className="rounded-xl border border-violet-200">
-                  <p className="border-b border-violet-100 bg-violet-50/50 px-3 py-1.5 text-xs font-semibold text-violet-800">Descrições a atualizar ({descAtualizar.length}) — mesmo valor, só o texto muda</p>
-                  <div className="max-h-44 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {descAtualizar.map(({ antigo, novo }) => (
-                          <tr key={antigo.id}>
-                            <td className="td font-medium text-slate-700">{d.nomeColab(novo.colaboradorId)}</td>
-                            <td className="td text-right">
-                              <span className="text-slate-400 line-through">{antigo.descricao || "—"}</span>
-                              <span className="mx-1 text-slate-300">→</span>
-                              <span className="font-medium text-violet-700">{novo.descricao || "—"}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {diff.ausentes.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3">
-                  <p className="mb-1 text-xs font-semibold text-amber-800">No sistema, mas fora desta planilha ({diff.ausentes.length})</p>
-                  <p className="mb-2 text-[11px] text-slate-500">Podem ser lançamentos manuais (comissão, incentivo) ou linhas que saíram da folha. <strong>Ficam mantidos por padrão.</strong></p>
-                  <div className="max-h-32 overflow-y-auto rounded-lg bg-white/70">
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {diff.ausentes.map((a) => (
-                          <tr key={a.id}>
-                            <td className="td text-slate-600">{d.nomeColab(a.colaboradorId)}</td>
-                            <td className="td text-slate-500">{compLabel(a.competencia)} · {a.tipo}</td>
-                            <td className="td text-right tabular-nums text-slate-500">{formatBRL(a.valor)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <label className={"mt-2 flex items-center gap-2 text-xs text-amber-800" + (buscaIncompleta ? " opacity-50" : "")}>
-                    <input type="checkbox" disabled={buscaIncompleta} checked={removerAusentes && !buscaIncompleta} onChange={(e) => setRemoverAusentes(e.target.checked)} />
-                    {buscaIncompleta
-                      ? "Remoção bloqueada: a busca no ERP veio incompleta"
-                      : `Remover também estes ${diff.ausentes.length} lançamento(s) (cuidado: apaga manuais)`}
-                  </label>
-                </div>
-              )}
-
               {/* Despesas de pessoal sem dono (bolo, Uber, reembolso): não são de
                   ninguém e por isso não viram custo individual. */}
               {folhaPrev.mubi && folhaPrev.mubi.coletivas.length > 0 && (
@@ -2770,10 +2645,44 @@ export default function Custos() {
                   )}
                 </div>
               )}
-            </div>
-          </Modal>
+            </>}
+          />
         );
       })()}
+
+      {/* Confirmação final: o resumo em reais mais uma vez, antes de gravar. */}
+      {folhaPrev && resumoPrev && (
+        <ConfirmDialog
+          aberto={confirmarAplicacao}
+          onFechar={() => setConfirmarAplicacao(false)}
+          onConfirmar={aplicarFolhaAgora}
+          titulo={`Aplicar ${resumoPrev.contaNoBotao} alteração(ões)?`}
+          mensagem={[
+            `Pago à equipe: ${formatBRL(resumoPrev.totalHoje)} → ${formatBRL(resumoPrev.totalDepois)}${resumoPrev.delta !== 0 ? ` (${resumoPrev.delta > 0 ? "+" : "−"}${formatBRL(Math.abs(resumoPrev.delta))})` : ""}.`,
+            resumoPrev.silenciosos ? `${resumoPrev.silenciosos} mudança(s) só de texto, conta ou id do ERP entram junto.` : "",
+            ausentesMarcados.size ? `${ausentesMarcados.size} lançamento(s) serão removidos.` : "",
+            salariosMarcados.size ? `${salariosMarcados.size} salário(s) do cadastro serão preenchidos.` : "",
+            "Um retrato do que muda fica guardado: dá para desfazer em Sincronização.",
+          ].filter(Boolean).join(" ")}
+        />
+      )}
+
+      {/* Desfazer a última aplicação da folha */}
+      {ultimoRetrato && planoDesfazer && (
+        <ConfirmDialog
+          aberto={confirmarDesfazer}
+          onFechar={() => setConfirmarDesfazer(false)}
+          onConfirmar={desfazerUltimaAplicacao}
+          titulo="Desfazer a última aplicação da folha?"
+          mensagem={[
+            `${ultimoRetrato.rotulo ?? "Folha do ERP"} · aplicada em ${new Date(ultimoRetrato.em).toLocaleString("pt-BR")}.`,
+            planoDesfazer.restaurar.length ? `${planoDesfazer.restaurar.length} registro(s) voltam ao que eram.` : "",
+            planoDesfazer.apagar.length ? `${planoDesfazer.apagar.length} novo(s) serão apagados.` : "",
+            planoDesfazer.pulados.length ? `${planoDesfazer.pulados.length} ficam como estão (editados depois ou já desfeitos).` : "",
+            planoDesfazer.semVolta.length ? `${planoDesfazer.semVolta.length} removido(s) na aplicação NÃO voltam por aqui — peça restauração.` : "",
+          ].filter(Boolean).join(" ")}
+        />
+      )}
 
       {/* ===================== Editor de classificação ===================== */}
       <Modal

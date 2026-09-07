@@ -123,6 +123,17 @@ describe("montarPagamento", () => {
   });
 });
 
+describe("montarPagamento guarda o estado do título", () => {
+  it("status e data real de pagamento vêm do ERP; sem eles, os campos nem existem", () => {
+    const com = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "1", status: "Pago", dataPagamento: "2026-08-22" }), "c1");
+    expect(com.statusErp).toBe("PAGO");
+    expect(com.pagoEm).toBe("2026-08-22");
+    const sem = montarPagamento(linha("Adriano Pinheiro Lima", { idMubi: "2", status: "", dataPagamento: null }), "c1");
+    expect("statusErp" in sem).toBe(false);
+    expect("pagoEm" in sem).toBe(false);
+  });
+});
+
 describe("montarPrevia", () => {
   it("separa vinculado, sem vínculo e despesa coletiva (sem nome)", () => {
     const linhas = [

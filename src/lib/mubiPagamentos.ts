@@ -331,6 +331,10 @@ export function montarPagamento(
     valor: l.valor,
     dataPagamento: l.dataVencimento,
     descricao: [l.descricao, l.planoContas].filter(Boolean).join(" · ") || undefined,
+    // O estado do título e a data real de pagamento (07/09/2026). Antes iam
+    // fora: a busca pede status TODOS, e título em aberto entrava como pago.
+    ...(l.status ? { statusErp: String(l.status).toUpperCase() } : {}),
+    ...(l.dataPagamento ? { pagoEm: l.dataPagamento } : {}),
   };
 }
 

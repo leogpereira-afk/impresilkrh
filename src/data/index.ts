@@ -9,6 +9,7 @@ import type {
   Treinamento, EtapaEvolucao, Usuario, Pagamento, ContaPlano, ClassificacaoConta, EventoCalendario,
   CertificacaoNR, Pesquisa, RespostaPesquisa, Vaga, Candidato, Ponto, Lancamento, FechamentoFolha,
   Freelancer,
+  RetratoFolha,
 } from "./types";
 
 import { AREAS } from "./areas";
@@ -70,6 +71,7 @@ export interface ColecaoMap {
   evolucao: EtapaEvolucao;
   usuarios: Usuario;
   pagamentos: Pagamento;
+  recuperacoesFolha: RetratoFolha;
   planoContas: ContaPlano;
   classificacaoCustos: ClassificacaoConta;
   eventos: EventoCalendario;
@@ -136,6 +138,7 @@ export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
     evolucao: [],
     usuarios: USUARIOS,
     pagamentos: [],
+    recuperacoesFolha: [],
     planoContas: [],
     classificacaoCustos: CLASSIFICACAO_CONTAS,
     eventos: EVENTOS_CALENDARIO,

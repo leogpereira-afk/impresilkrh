@@ -5,6 +5,7 @@
 import type { ContaPlano, ClassificacaoConta, ClasseCusto } from "@/data/types";
 import { idConta } from "@/data/planoContas";
 import { MESES_PT } from "@/lib/format";
+import { planoDaDescricao } from "@/lib/tipoDoPlano";
 
 export function classeMap(cls: ClassificacaoConta[]): Map<string, ClasseCusto> {
   return new Map(cls.map((c) => [c.codigo, c.classe]));
@@ -413,16 +414,59 @@ export function conciliarPagamentos(existentes: Pag[], novos: Pag[], janela?: Se
 }
 
 /** Mudou algo que precisa ser gravado? */
+export type CampoMudado = "valor" | "pessoa" | "mes" | "tipo" | "data" | "status" | "texto" | "conta" | "adocao";
+export interface Mudanca { campo: CampoMudado; de: string; para: string }
+
+/** Parte a descrição gravada em texto do título e conta do ERP ("… · 2.1.1-Salário"). */
+function partirDescricao(d?: string | null): [texto: string, conta: string] {
+  const s = String(d ?? "").trim();
+  const conta = planoDaDescricao(s);
+  const texto = conta ? s.slice(0, s.length - conta.length).replace(/\s*·\s*$/, "").trim() : s;
+  return [texto, conta];
+}
+const nomeDaConta = (conta: string) => conta.replace(/^[\d.]+\s*-\s*/, "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+/**
+ * O QUE mudou entre o gravado e o que o ERP mandou, campo a campo.
+ *
+ * É a régua única da conciliação: `mudouAlgo` é "mudancas().length > 0", e a
+ * prévia mostra cada item. Antes a tela dizia "corrigido" e imprimia só o
+ * valor — e 20 de 21 "corrigidos" de julho eram só o código da conta que o
+ * contador renumerou, impressos como "R$ X → R$ X". A descrição é comparada em
+ * duas partes: o TEXTO do título e a CONTA do plano; e a conta que só trocou
+ * de código (mesmo nome) é "conta", não "texto". `status` só conta quando os
+ * dois lados o têm — o campo nasceu em 07/09/2026 e o que já estava gravado
+ * não pode virar "alterado" por não tê-lo.
+ */
+export function mudancas(a: Pag, b: Pag): Mudanca[] {
+  const m: Mudanca[] = [];
+  if (Math.round((a.valor ?? 0) * 100) !== Math.round((b.valor ?? 0) * 100)) m.push({ campo: "valor", de: String(a.valor ?? 0), para: String(b.valor ?? 0) });
+  if (a.colaboradorId !== b.colaboradorId) m.push({ campo: "pessoa", de: a.colaboradorId, para: b.colaboradorId });
+  if (a.competencia !== b.competencia) m.push({ campo: "mes", de: a.competencia, para: b.competencia });
+  if (a.tipo !== b.tipo) m.push({ campo: "tipo", de: a.tipo, para: b.tipo });
+  if (dia10(a.dataPagamento) !== dia10(b.dataPagamento)) m.push({ campo: "data", de: dia10(a.dataPagamento), para: dia10(b.dataPagamento) });
+  const sa = (a as { statusErp?: string }).statusErp, sb = (b as { statusErp?: string }).statusErp;
+  if (sa && sb && sa !== sb) m.push({ campo: "status", de: sa, para: sb });
+  const [ta, ca] = partirDescricao(a.descricao), [tb, cb] = partirDescricao(b.descricao);
+  if (ta !== tb) m.push({ campo: "texto", de: ta, para: tb });
+  if (ca !== cb) m.push({ campo: "conta", de: ca, para: cb });
+  if (idMubiDe(a) !== idMubiDe(b)) m.push({ campo: "adocao", de: idMubiDe(a) ?? "—", para: idMubiDe(b) ?? "—" });
+  return m;
+}
+
+/** Do mais grave ao mais inofensivo — a ordem em que a prévia agrupa. */
+export const ORDEM_CAMPOS: CampoMudado[] = ["valor", "pessoa", "mes", "tipo", "data", "status", "texto", "conta", "adocao"];
+
+/** O campo mais grave da lista, ou "nada". */
+export const chefeDasMudancas = (muds: Mudanca[]): CampoMudado | "nada" =>
+  ORDEM_CAMPOS.find((c) => muds.some((x) => x.campo === c)) ?? "nada";
+
+/** Conta que só trocou de CÓDIGO (mesmo nome): renumeração do contador, não dinheiro. */
+export const ehRenumeracao = (m: Mudanca): boolean =>
+  m.campo === "conta" && !!m.de && !!m.para && nomeDaConta(m.de) === nomeDaConta(m.para);
+
 function mudouAlgo(a: Pag, b: Pag): boolean {
-  return (
-    Math.round((a.valor ?? 0) * 100) !== Math.round((b.valor ?? 0) * 100) ||
-    dia10(a.dataPagamento) !== dia10(b.dataPagamento) ||
-    a.competencia !== b.competencia ||
-    a.tipo !== b.tipo ||
-    a.colaboradorId !== b.colaboradorId ||
-    idMubiDe(a) !== idMubiDe(b) ||
-    (a.descricao ?? "").trim() !== (b.descricao ?? "").trim()
-  );
+  return mudancas(a, b).length > 0;
 }
 
 /** Linha sem o tipo — a planilha e o ERP classificam diferente. */

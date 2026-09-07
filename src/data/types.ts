@@ -757,6 +757,29 @@ export interface Pagamento {
    * normalmente e o registro ganha o idMubi.
    */
   manual?: boolean;
+  /**
+   * Estado do título no ERP na última leitura (PAGO, ABERTO, CANCELADO…) e a
+   * data em que foi pago de fato. Nasceram em 07/09/2026: até então a busca
+   * pedia status TODOS e gravava o vencimento como data de pagamento — título
+   * em aberto entrava como pago. Opcionais: o que já estava gravado não os tem,
+   * e não vira "alterado" por isso.
+   */
+  statusErp?: string;
+  pagoEm?: string | null;
+}
+
+/**
+ * Retrato de uma aplicação da folha do ERP: os registros TOCADOS, cada um com
+ * antes e depois, para poder desfazer. Vive numa coleção própria (nível RH no
+ * sync), não na config — a config sobe inteira e é lida por qualquer logado.
+ */
+export interface RetratoFolha {
+  id: string;
+  em: string;
+  competencias: string[];
+  tocados: { id: string; antes: Pagamento | null; depois: Pagamento | null }[];
+  usado?: boolean;
+  rotulo?: string;
 }
 
 // ===================== Custos de colaboradores (v4) =====================
