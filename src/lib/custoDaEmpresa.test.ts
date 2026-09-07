@@ -1,0 +1,104 @@
+/* Custo da empresa × custo da pessoa.
+ *
+ * Os casos vêm da tela que o Léo mandou em 07/09/2026 (a lista "vincular este
+ * título a...") e dos 9 FGTS individuais que estão no banco.
+ *
+ * Começa pelo caso ruim: mandar para o rateio um pagamento que é DE ALGUÉM.
+ * Isso é pior que o problema original — o dinheiro some do custo da pessoa e
+ * ninguém nunca mais procura por ele.
+ */
+import { describe, it, expect } from "vitest";
+import { ehCustoDaEmpresa, sobrasDoTexto, textoUtil } from "./custoDaEmpresa";
+
+describe("o caso ruim: pagamento de alguém NUNCA vira custo da empresa", () => {
+  it("adiantamento sem nome continua individual — falta vincular, não é rateio", () => {
+    // Linha real da tela: R$ 726,66. É de uma pessoa; só ninguém escreveu quem.
+    expect(ehCustoDaEmpresa("", "Adiantamento de dias trabalhados de novo colaborador")).toBe(false);
+  });
+
+  it("os três com nome na descrição continuam individuais", () => {
+    expect(ehCustoDaEmpresa("", "Rescisão de Kelly")).toBe(false);
+    expect(ehCustoDaEmpresa("", "Adiantamento para Michele referente à 07/2026")).toBe(false);
+    expect(ehCustoDaEmpresa("", "Pagamento de salário de Fabio Leonardo ainda sem cadastro")).toBe(false);
+  });
+
+  it("os 9 FGTS individuais do banco continuam individuais", () => {
+    for (const d of [
+      "FGTS RECISÃO OSMANE", "ftgts Camila", "FGTS OSMANE", "fgts Camila",
+      "emanuelle · 2.1.9.1-Regular",
+    ]) {
+      expect(ehCustoDaEmpresa("", d), d).toBe(false);
+    }
+  });
+
+  it("texto sem documento nenhum não é da empresa, por mais genérico que seja", () => {
+    expect(ehCustoDaEmpresa("", "Pagamento")).toBe(false);
+    expect(ehCustoDaEmpresa("", "referente à folha de julho")).toBe(false);
+    expect(ehCustoDaEmpresa("", "")).toBe(false);
+    expect(ehCustoDaEmpresa(null, null)).toBe(false);
+  });
+});
+
+describe("as duas linhas que o Léo apontou", () => {
+  it("a guia de FGTS da folha inteira é da empresa", () => {
+    expect(ehCustoDaEmpresa("", "FGTS")).toBe(true);
+    expect(ehCustoDaEmpresa("FGTS", "FGTS")).toBe(true);
+  });
+
+  it("DARF é da empresa", () => {
+    expect(ehCustoDaEmpresa("", "DARF")).toBe(true);
+  });
+
+  it("as outras guias da folha também", () => {
+    for (const d of ["GPS", "GRF", "GRRF", "INSS", "IRRF", "Guia de recolhimento", "eSocial", "DAE"]) {
+      expect(ehCustoDaEmpresa("", d), d).toBe(true);
+    }
+  });
+
+  it("guia com mês, número e acento no meio continua sendo guia", () => {
+    expect(ehCustoDaEmpresa("", "GUIA FGTS 07/2026")).toBe(true);
+    expect(ehCustoDaEmpresa("", "Contribuição previdenciária — competência julho")).toBe(true);
+    expect(ehCustoDaEmpresa("", "FGTS RESCISÃO")).toBe(true);
+  });
+
+  it("o sufixo do plano de contas não conta como sobra", () => {
+    // Se contasse, todo título teria "sobra" e nada seria coletivo.
+    expect(ehCustoDaEmpresa("", "FGTS · 2.1.9.1-Regular")).toBe(true);
+    expect(textoUtil("", "FGTS · 2.1.9.1-Regular").trim()).toBe("FGTS");
+  });
+});
+
+describe("o VALOR não entra na regra, de propósito", () => {
+  it("guia grande e encargo individual grande são separados pelo TEXTO", () => {
+    /* Tentador usar o valor: a guia foi R$ 5.515,62 e o encargo individual
+       costuma ser R$ 150. Mas o FGTS de rescisão do Osmane foi R$ 3.262,03 e é
+       de uma pessoa só — valor grande não prova coletivo. A função nem recebe
+       o valor, para ninguém ser tentado a usá-lo. */
+    expect(ehCustoDaEmpresa("", "FGTS")).toBe(true);
+    expect(ehCustoDaEmpresa("", "FGTS RECISÃO OSMANE")).toBe(false);
+    expect(ehCustoDaEmpresa.length).toBe(2); // nome e descrição — nada de valor
+  });
+});
+
+describe("as sobras, que são o que decide", () => {
+  it("mostra exatamente o que sobrou de nome", () => {
+    expect(sobrasDoTexto("", "FGTS RECISÃO OSMANE")).toEqual(["osmane"]);
+    expect(sobrasDoTexto("", "Rescisão de Kelly")).toEqual(["kelly"]);
+    expect(sobrasDoTexto("", "FGTS")).toEqual([]);
+  });
+
+  it("número, mês e letra solta não são nome de gente", () => {
+    expect(sobrasDoTexto("", "FGTS 07/2026 julho")).toEqual([]);
+    expect(sobrasDoTexto("", "FGTS a b c")).toEqual([]);
+  });
+
+  it("acento e caixa não mudam o resultado", () => {
+    expect(sobrasDoTexto("", "CONTRIBUIÇÃO PREVIDENCIÁRIA")).toEqual([]);
+    expect(ehCustoDaEmpresa("", "contribuição previdenciária")).toBe(true);
+  });
+
+  it("a origem também é lida, não só a descrição", () => {
+    expect(ehCustoDaEmpresa("FGTS", "")).toBe(true);
+    expect(ehCustoDaEmpresa("OSMANE", "FGTS")).toBe(false);
+  });
+});

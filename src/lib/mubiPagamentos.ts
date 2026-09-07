@@ -13,6 +13,7 @@
 // guardado e resolve o mesmo nome nos meses seguintes.
 // ============================================================================
 import { supabase, FN_MUBI_PAGAMENTOS } from "@/lib/supabase";
+import { ehCustoDaEmpresa } from "./custoDaEmpresa";
 import { competenciaPagto } from "@/lib/custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 import { tipoDoPlanoErp } from "./tipoDoPlano";
@@ -471,8 +472,14 @@ export function paraRegistros(
       // não é de ninguém — vai para as coletivas e segue no rateio, em vez de
       // ficar na lista pedindo um vínculo que seria errado.
       if (doc.length === 14) { coletivas.push(l); continue; }
-      // Guia de FGTS/INSS: origem é o próprio imposto, não uma pessoa.
-      if (/^(FGTS|INSS)$/i.test(l.nome.trim()) && doc.length !== 11) { coletivas.push(l); continue; }
+      // Documento de recolhimento (guia de FGTS, DARF, GPS): é imposto da
+      // empresa, não pagamento de ninguém. A régua antiga era `/^(FGTS|INSS)$/`
+      // sobre a ORIGEM — só pegava quando o ERP escrevia exatamente isso ali, e
+      // deixava passar a guia de R$ 5.515,62 com descrição "FGTS" e o DARF, que
+      // caíam na lista pedindo "vincular este título a…". Não há a quem
+      // vincular: jogar a guia do mês inteiro numa pessoa estouraria o custo
+      // dela. Ver lib/custoDaEmpresa — a regra lê o texto, nunca o valor.
+      if (doc.length !== 11 && ehCustoDaEmpresa(l.nome, l.descricao)) { coletivas.push(l); continue; }
       // Guarda o VALOR e os TÍTULOS junto do nome: uma lista só de nomes é
       // fácil de ignorar, e sem as linhas não dá para conferir até o fim nem
       // vincular título a título quando a origem é genérica.
