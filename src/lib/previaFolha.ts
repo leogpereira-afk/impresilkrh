@@ -26,7 +26,26 @@ export const NATUREZAS_SILENCIOSAS = new Set<Natureza>(["texto", "conta", "renum
 
 export interface ItemAlterado { antigo: Pagamento; novo: Pagamento; muds: Mudanca[]; natureza: Natureza }
 export interface GrupoAlterado { natureza: Natureza; itens: ItemAlterado[]; deltaValor: number }
-export interface LinhaMes { competencia: string; hoje: number; depois: number; delta: number; pct: number | null; fechada: boolean; mexe: number }
+export interface LinhaMes {
+  competencia: string;
+  hoje: number;
+  depois: number;
+  delta: number;
+  pct: number | null;
+  fechada: boolean;
+  mexe: number;
+  /**
+   * Quanto de dinheiro o mês MEXE, em módulo — somando cada alteração, cada
+   * novo e cada removido separadamente.
+   *
+   * Por que existe (revisão de 07/09/2026): o alarme de mês fechado olhava só
+   * o `delta`. Trocar R$ 3.000 de uma pessoa para outra, ou corrigir +500 numa
+   * linha e −500 noutra, dá delta zero — e um mês já fechado mudava de conteúdo
+   * sem nenhuma caixa de "conferi". O saldo é o efeito no caixa; o bruto é o
+   * tamanho da mexida.
+   */
+  bruto: number;
+}
 export type NivelAlarme = "bloqueia" | "confirma" | "avisa";
 export interface Alarme {
   id: "busca-parcial" | "ausente-sem-dono" | "mes-fechado" | "mes-varia" | "muda-pessoa" | "muda-mes" | "muda-tipo" | "fora-do-quadro" | "remocao" | "sem-id-removido";
@@ -37,6 +56,18 @@ export interface Alarme {
   valor: number;
   ids: string[];
 }
+/**
+ * A identidade de um alarme PARA EFEITO DE CONFIRMAÇÃO.
+ *
+ * Não é o id: o id é o tipo do alarme ("remocao"), e ele continua o mesmo
+ * quando o RH marca mais linhas para remover. Confirmar "remover 1" e depois
+ * marcar 74 deixava o "Conferi" marcado e o botão liberado (revisão de
+ * 07/09/2026). A chave inclui quantos, quanto e QUAIS — qualquer mexida
+ * desmarca a caixa sozinha.
+ */
+export const chaveDoAlarme = (a: Alarme): string =>
+  `${a.id}|${a.nivel}|${a.quantos}|${a.valor.toFixed(2)}|${[...a.ids].sort().join(",")}`;
+
 export interface AusentesSeparados {
   /** Vieram do ERP e não voltaram nesta busca — podem ter sumido ou mudado de mês. */
   comIdErp: Pagamento[];
@@ -44,6 +75,15 @@ export interface AusentesSeparados {
   semId: Pagamento[];
   /** O título EXISTE no ERP nesta busca, só não casou com ninguém — vincule, não remova. */
   semDono: Pagamento[];
+  /**
+   * O título EXISTE no ERP, mas a CONTA dele saiu da lista de folha.
+   *
+   * O filtro de folha é por código, e o contador renumera: a faxina já saiu da
+   * lista assim. Sem este balde o lançamento aparecia como "não voltou", com
+   * caixa de remover e "marcar todos" ao lado — apagar aqui destrói registro de
+   * dinheiro que o ERP tem (revisão de 07/09/2026).
+   */
+  foraDaFolha: Pagamento[];
 }
 export interface ResumoDaPrevia {
   porMes: LinhaMes[];
@@ -76,6 +116,8 @@ export interface EntradaResumo {
   busca?: { truncado: boolean; pedidas: string[]; lidas: string[]; falhas: string[] };
   /** idMubi dos títulos que vieram do ERP sem pessoa (não encontrados / coletivas). */
   semDono?: Set<string>;
+  /** idMubi dos títulos que o ERP tem mas a conta ficou fora da lista de folha. */
+  foraDaFolha?: Set<string>;
   limites?: { pctFechada: number; pctAberta: number };
 }
 
@@ -114,10 +156,12 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
 
   // ---- ausentes em três motivos ----
   const semDonoIds = e.semDono ?? new Set<string>();
-  const ausentes: AusentesSeparados = { comIdErp: [], semId: [], semDono: [] };
+  const foraDaFolhaIds = e.foraDaFolha ?? new Set<string>();
+  const ausentes: AusentesSeparados = { comIdErp: [], semId: [], semDono: [], foraDaFolha: [] };
   for (const a of e.diff.ausentes) {
     const id = idMubiDe(a);
     if (id && semDonoIds.has(id)) ausentes.semDono.push(a);
+    else if (id && foraDaFolhaIds.has(id)) ausentes.foraDaFolha.push(a);
     else if (id) ausentes.comIdErp.push(a);
     else ausentes.semId.push(a);
   }
@@ -132,18 +176,27 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
     const hojeMes = arred(e.gravados.filter((p) => p.competencia === competencia).reduce((s, p) => s + valorFolha(p), 0));
     let depoisMes = hojeMes;
     let mexe = 0;
+    let bruto = 0;
     for (const i of itens) {
-      if (i.antigo.competencia === competencia) { depoisMes -= valorFolha(i.antigo); mexe++; }
-      if (i.novo.competencia === competencia) depoisMes += valorFolha(i.novo);
+      // Sai do mês (o antigo estava aqui) e/ou entra no mês (o novo vem para
+      // cá): cada perna conta no bruto, e a linha "mexe" no mês de DESTINO
+      // também — senão a troca de competência aparecia como "—" no mês que
+      // recebe o dinheiro.
+      if (i.antigo.competencia === competencia) { depoisMes -= valorFolha(i.antigo); mexe++; bruto += valorFolha(i.antigo); }
+      if (i.novo.competencia === competencia) {
+        depoisMes += valorFolha(i.novo);
+        bruto += valorFolha(i.novo);
+        if (i.antigo.competencia !== competencia) mexe++;
+      }
     }
-    for (const n of e.diff.novos) if (n.competencia === competencia) { depoisMes += valorFolha(n); mexe++; }
-    for (const a of removidos) if (a.competencia === competencia) { depoisMes -= valorFolha(a); mexe++; }
+    for (const n of e.diff.novos) if (n.competencia === competencia) { depoisMes += valorFolha(n); mexe++; bruto += valorFolha(n); }
+    for (const a of removidos) if (a.competencia === competencia) { depoisMes -= valorFolha(a); mexe++; bruto += valorFolha(a); }
     depoisMes = arred(depoisMes);
     const delta = arred(depoisMes - hojeMes);
     const fim = fimDaCompetencia(competencia);
     const hojeDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).getTime();
     const fechada = !!fim && hojeDia > fim.getTime();
-    return { competencia, hoje: hojeMes, depois: depoisMes, delta, pct: hojeMes > 0 ? delta / hojeMes : null, fechada, mexe };
+    return { competencia, hoje: hojeMes, depois: depoisMes, delta, pct: hojeMes > 0 ? delta / hojeMes : null, fechada, mexe, bruto: arred(bruto) };
   });
   const totalHoje = arred(porMes.reduce((s, m) => s + m.hoje, 0));
   const totalDepois = arred(porMes.reduce((s, m) => s + m.depois, 0));
@@ -161,21 +214,23 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
       quantos: faltou.length + (e.busca!.truncado ? 1 : 0), valor: 0, ids: [],
     });
   }
-  const semDonoMarcados = removidos.filter((a) => ausentes.semDono.includes(a));
+  const semDonoMarcados = removidos.filter((a) => ausentes.semDono.includes(a) || ausentes.foraDaFolha.includes(a));
   if (semDonoMarcados.length) {
-    alarmes.push({ id: "ausente-sem-dono", nivel: "bloqueia", titulo: "Marcado para remover, mas o título existe no ERP", detalhe: "Ele só não casou com ninguém nesta busca. Vincule a pessoa em vez de apagar.", quantos: semDonoMarcados.length, valor: soma(semDonoMarcados), ids: semDonoMarcados.map((a) => a.id) });
+    alarmes.push({ id: "ausente-sem-dono", nivel: "bloqueia", titulo: "Marcado para remover, mas o título existe no ERP", detalhe: "Ou não casou com ninguém nesta busca, ou a conta dele saiu da lista de folha. Vincule ou ajuste a conta — não apague.", quantos: semDonoMarcados.length, valor: soma(semDonoMarcados), ids: semDonoMarcados.map((a) => a.id) });
   }
   const semIdMarcados = removidos.filter((a) => !idMubiDe(a) && !ehManual(a));
   if (semIdMarcados.length) {
     alarmes.push({ id: "sem-id-removido", nivel: "confirma", titulo: "Remoção de lançamento que não veio do ERP", detalhe: "Veio de planilha ou foi lançado à mão sem a marca. Não existir no Mubisys é a natureza dele — confira antes.", quantos: semIdMarcados.length, valor: soma(semIdMarcados), ids: semIdMarcados.map((a) => a.id) });
   }
-  const fechadasQueMudam = porMes.filter((m) => m.fechada && Math.abs(m.delta) > 0.005);
+  // Mês fechado que MEXE (bruto), e não só o que muda de saldo: troca de pessoa
+  // dentro do mesmo mês tem delta zero e continua sendo alteração de mês fechado.
+  const fechadasQueMudam = porMes.filter((m) => m.fechada && m.bruto > 0.005);
   if (fechadasQueMudam.length) {
-    const forte = fechadasQueMudam.filter((m) => m.pct == null || Math.abs(m.pct) > limites.pctFechada);
+    const forte = fechadasQueMudam.filter((m) => m.pct == null || Math.abs(m.pct) > limites.pctFechada || (m.hoje > 0 && m.bruto / m.hoje > limites.pctFechada));
     alarmes.push({
       id: "mes-fechado", nivel: forte.length ? "confirma" : "avisa",
       titulo: `${fechadasQueMudam.length} mês(es) fechado(s) mudam de valor`,
-      detalhe: fechadasQueMudam.map((m) => `${m.competencia}: ${m.delta > 0 ? "+" : "−"}${Math.abs(m.delta).toFixed(2)}${m.pct != null ? ` (${(m.pct * 100).toFixed(1)}%)` : ""}`).join(" · "),
+      detalhe: fechadasQueMudam.map((m) => `${m.competencia}: ${m.delta > 0 ? "+" : "−"}${Math.abs(m.delta).toFixed(2)} de saldo, ${m.bruto.toFixed(2)} de mexida`).join(" · "),
       quantos: fechadasQueMudam.length, valor: arred(fechadasQueMudam.reduce((s, m) => s + m.delta, 0)), ids: fechadasQueMudam.map((m) => m.competencia),
     });
   }
@@ -245,16 +300,78 @@ export function patchDeAplicacao(novo: Pagamento): Partial<Pagamento> {
   };
 }
 
-export function retratoAntesDeAplicar(diff: DiffPagamentos, ausentesMarcados: Set<string>, agoraIso: string, rotulo?: string): RetratoFolha {
+/**
+ * O que o "Desfazer" grava para voltar ao `antes`.
+ *
+ * Diferente do patch de aplicação num ponto que importa: statusErp e pagoEm
+ * vão SEMPRE, com null quando o registro anterior não os tinha. Sem isso o
+ * desfazer devolvia o valor velho mas deixava o estado e a data de pagamento
+ * que a aplicação escreveu — um "antes" que nunca existiu.
+ */
+export function patchDeDesfazer(antes: Pagamento): Partial<Pagamento> {
+  return {
+    colaboradorId: antes.colaboradorId,
+    competencia: antes.competencia,
+    tipo: antes.tipo,
+    valor: antes.valor,
+    dataPagamento: antes.dataPagamento,
+    descricao: antes.descricao,
+    idMubi: antes.idMubi ?? null,
+    statusErp: antes.statusErp ?? null,
+    pagoEm: antes.pagoEm ?? null,
+  } as Partial<Pagamento>;
+}
+
+/**
+ * O retrato do que a aplicação vai tocar.
+ *
+ * `atuais` é o que está gravado NA HORA DE APLICAR, e não o que a busca viu.
+ * A prévia congela o diff no momento da busca; entre ela e o clique passam
+ * minutos, e o sync puxa a cada 20 segundos. Se o retrato guardasse o `antigo`
+ * congelado, "Desfazer" devolveria um valor anterior à edição que chegou no
+ * meio — apagando o trabalho de quem editou, sem aviso (revisão de 07/09/2026).
+ */
+export function retratoAntesDeAplicar(
+  diff: DiffPagamentos,
+  ausentesMarcados: Set<string>,
+  agoraIso: string,
+  rotulo?: string,
+  atuais: Pagamento[] = [],
+): RetratoFolha {
+  const vivo = new Map(atuais.map((p) => [p.id, p]));
   const tocados: Tocado[] = [];
   const comps = new Set<string>();
   for (const { antigo, novo } of diff.alterados) {
-    tocados.push({ id: antigo.id, antes: antigo, depois: { ...antigo, ...patchDeAplicacao(novo) } });
+    const antes = vivo.get(antigo.id) ?? antigo;
+    tocados.push({ id: antigo.id, antes, depois: { ...antes, ...patchDeAplicacao(novo) } });
     comps.add(antigo.competencia); comps.add(novo.competencia);
   }
   for (const n of diff.novos) { tocados.push({ id: n.id, antes: null, depois: n }); comps.add(n.competencia); }
-  for (const a of diff.ausentes) if (ausentesMarcados.has(a.id)) { tocados.push({ id: a.id, antes: a, depois: null }); comps.add(a.competencia); }
+  for (const a of diff.ausentes) if (ausentesMarcados.has(a.id)) { tocados.push({ id: a.id, antes: vivo.get(a.id) ?? a, depois: null }); comps.add(a.competencia); }
   return { id: `desfazer_${agoraIso}`, em: agoraIso, competencias: [...comps].filter(Boolean).sort(), tocados, rotulo };
+}
+
+/**
+ * O que mudou embaixo da prévia enquanto ela estava aberta.
+ *
+ * Devolve os registros que a aplicação ia tocar e que JÁ NÃO SÃO o que a busca
+ * viu — porque outro aparelho editou (o pull roda a cada 20 s) ou porque
+ * sumiram. Aplicar em cima disso grava por cima de uma edição que ninguém viu
+ * na tela e ainda a esconde do "Desfazer": o retrato acharia que o "antes" era
+ * o valor velho. Quem chama aborta e manda refazer a busca.
+ */
+export function mudouSobAPrevia(diff: DiffPagamentos, ausentesMarcados: Set<string>, atuais: Pagamento[]): { id: string; motivo: "editado" | "sumiu" }[] {
+  const vivo = new Map(atuais.map((p) => [p.id, p]));
+  const fora: { id: string; motivo: "editado" | "sumiu" }[] = [];
+  const conferir = (p: Pagamento) => {
+    const atual = vivo.get(p.id);
+    if (!atual) { fora.push({ id: p.id, motivo: "sumiu" }); return; }
+    if (!mesmoConteudo(atual, p)) fora.push({ id: p.id, motivo: "editado" });
+  };
+  for (const { antigo } of diff.alterados) conferir(antigo);
+  for (const { antigo } of diff.iguais) conferir(antigo);
+  for (const a of diff.ausentes) if (ausentesMarcados.has(a.id)) conferir(a);
+  return fora;
 }
 
 export interface PlanoDeDesfazer {

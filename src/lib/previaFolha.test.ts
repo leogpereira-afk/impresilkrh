@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classificarAlterados, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo } from "./previaFolha";
+import { chaveDoAlarme, classificarAlterados, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo } from "./previaFolha";
 import { chefeDasMudancas, mudancas, type DiffPagamentos } from "./custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 
@@ -200,5 +200,88 @@ describe("retrato e desfazer", () => {
     const p = planoDeDesfazer(r, [antigo]);
     expect(p.restaurar).toEqual([]);
     expect(p.pulados.map((x) => x.motivo)).toEqual(["já desfeito", "já desfeito"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Os buracos que a revisão adversarial de 07/09/2026 achou — cada um com o
+// caso concreto que passava antes.
+// ---------------------------------------------------------------------------
+describe("freios que não podem afrouxar", () => {
+  it("mês fechado que troca dinheiro de pessoa (saldo zero) continua pedindo conferência", () => {
+    // Junho está fechado. R$ 1.000 saem da Ana e entram na Bia: delta = 0.
+    const a = pg({ id: "mubi-90", colaboradorId: "ana", competencia: "2026-06" });
+    const b = pg({ id: "mubi-90", colaboradorId: "bia", competencia: "2026-06" });
+    const r = resumoDaPrevia(entrada({ alterados: [{ antigo: a, novo: b }] }, [a]));
+    const mes = r.porMes.find((m) => m.competencia === "2026-06")!;
+    expect(mes.delta).toBe(0);
+    expect(mes.bruto).toBe(2000);
+    expect(r.alarmes.some((x) => x.id === "mes-fechado")).toBe(true);
+    expect(r.precisaConfirmar.some((x) => x.id === "mes-fechado")).toBe(true);
+  });
+
+  it("a linha do mês de DESTINO conta a mexida quando o lançamento troca de mês", () => {
+    const a = pg({ id: "mubi-91", competencia: "2026-06", dataPagamento: "2026-07-15" });
+    const b = pg({ id: "mubi-91", competencia: "2026-07", dataPagamento: "2026-07-16" });
+    const r = resumoDaPrevia(entrada({ alterados: [{ antigo: a, novo: b }] }, [a]));
+    expect(r.porMes.find((m) => m.competencia === "2026-07")!.mexe).toBe(1);
+  });
+
+  it("a chave do alarme muda quando a marcação muda — o 'Conferi' de 1 não vale para 2", () => {
+    const a1 = pg({ id: "mubi-92" });
+    const a2 = pg({ id: "mubi-93" });
+    const so1 = resumoDaPrevia(entrada({ ausentes: [a1, a2] }, [a1, a2], { ausentesMarcados: new Set(["mubi-92"]) }));
+    const os2 = resumoDaPrevia(entrada({ ausentes: [a1, a2] }, [a1, a2], { ausentesMarcados: new Set(["mubi-92", "mubi-93"]) }));
+    const rem = (r: typeof so1) => r.precisaConfirmar.find((x) => x.id === "remocao")!;
+    expect(rem(so1).quantos).toBe(1);
+    expect(rem(os2).quantos).toBe(2);
+    expect(chaveDoAlarme(rem(so1))).not.toBe(chaveDoAlarme(rem(os2)));
+  });
+
+  it("título cuja CONTA saiu da lista de folha vai para o balde próprio e remover fica bloqueado", () => {
+    const a = pg({ id: "mubi-94", idMubi: "94" });
+    const r = resumoDaPrevia(entrada({ ausentes: [a] }, [a], {
+      ausentesMarcados: new Set(["mubi-94"]),
+      foraDaFolha: new Set(["94"]),
+    }));
+    expect(r.ausentes.foraDaFolha.map((x) => x.id)).toEqual(["mubi-94"]);
+    expect(r.ausentes.comIdErp).toHaveLength(0);
+    expect(r.podeAplicar).toBe(false);
+    expect(r.alarmes.find((x) => x.id === "ausente-sem-dono")?.nivel).toBe("bloqueia");
+  });
+
+  it("mudouSobAPrevia acusa o registro que outro aparelho editou entre a busca e o clique", () => {
+    const antigo = pg({ id: "mubi-95", valor: 1000 });
+    const novo = pg({ id: "mubi-95", valor: 1100 });
+    const vivo = pg({ id: "mubi-95", valor: 1200 }); // veio pelo sync no meio
+    const diff: DiffPagamentos = { iguais: [], alterados: [{ antigo, novo }], novos: [], ausentes: [] };
+    expect(mudouSobAPrevia(diff, new Set(), [vivo])).toEqual([{ id: "mubi-95", motivo: "editado" }]);
+    expect(mudouSobAPrevia(diff, new Set(), [antigo])).toEqual([]);
+    expect(mudouSobAPrevia(diff, new Set(), [])).toEqual([{ id: "mubi-95", motivo: "sumiu" }]);
+  });
+
+  it("o retrato guarda o registro VIVO, não o que a busca viu", () => {
+    const antigo = pg({ id: "mubi-96", valor: 1000 });
+    const novo = pg({ id: "mubi-96", valor: 1100 });
+    const vivo = pg({ id: "mubi-96", valor: 1200 });
+    const diff: DiffPagamentos = { iguais: [], alterados: [{ antigo, novo }], novos: [], ausentes: [] };
+    const r = retratoAntesDeAplicar(diff, new Set(), "2026-09-07T10:00:00.000Z", "teste", [vivo]);
+    expect(r.tocados[0].antes!.valor).toBe(1200);
+    expect(r.tocados[0].depois!.valor).toBe(1100);
+  });
+
+  it("desfazer limpa statusErp e pagoEm que a aplicação escreveu", () => {
+    const antes = pg({ id: "mubi-97", valor: 1000 });
+    expect(patchDeDesfazer(antes)).toMatchObject({ valor: 1000, statusErp: null, pagoEm: null });
+  });
+
+  it("desfazer devolve o registro que a aplicação escreveu, e pula o que foi editado depois", () => {
+    const antes = pg({ id: "mubi-98", valor: 1000 });
+    const depois = pg({ id: "mubi-98", valor: 1100 });
+    expect(planoDeDesfazer({ id: "r", em: "x", competencias: [], tocados: [{ id: "mubi-98", antes, depois }] }, [depois]).restaurar).toHaveLength(1);
+    const editadoDepois = pg({ id: "mubi-98", valor: 1234 });
+    const p = planoDeDesfazer({ id: "r", em: "x", competencias: [], tocados: [{ id: "mubi-98", antes, depois }] }, [editadoDepois]);
+    expect(p.restaurar).toHaveLength(0);
+    expect(p.pulados[0].motivo).toBe("editado depois");
   });
 });

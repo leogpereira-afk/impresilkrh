@@ -30,7 +30,9 @@ import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
 import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
 import { Societarias } from "@/components/custos/societarias";
 import { PreviaFolha, type CoberturaBusca } from "@/components/custos/previa-folha";
-import { patchDeAplicacao, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type Alarme } from "@/lib/previaFolha";
+import { TotalEquipe } from "@/components/custos/total-equipe";
+import { resumoDaEquipe, pesoDaPessoa } from "@/lib/provisaoEquipe";
+import { mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -265,14 +267,16 @@ export default function Custos() {
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
-    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; busca?: CoberturaBusca };
+    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; idsForaDaFolha?: string[]; busca?: CoberturaBusca };
     /** Competências que a busca cobriu — o que pode ser dado como ausente. */
     janela: string[];
   } | null>(null);
   // Remoção é POR LINHA marcada (07/09/2026) — nunca um checkbox que apaga
   // tudo. E cada aviso grave pede "conferi" antes de o botão liberar.
   const [ausentesMarcados, setAusentesMarcados] = useState<Set<string>>(new Set());
-  const [confirmados, setConfirmados] = useState<Set<Alarme["id"]>>(new Set());
+  // Chaves de alarme conferidas (chaveDoAlarme: tipo + quantos + valor + ids).
+  // Guardar só o tipo deixava o "Conferi" de "remover 1" valendo para "remover 74".
+  const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
   const [confirmarAplicacao, setConfirmarAplicacao] = useState(false);
   const [confirmarDesfazer, setConfirmarDesfazer] = useState(false);
   // Retratos para desfazer: cada aplicação guarda antes/depois dos tocados.
@@ -475,7 +479,7 @@ export default function Custos() {
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       janela: [...comps].filter(Boolean).sort(),
-      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
+      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, idsForaDaFolha: r.idsForaDaFolha, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
@@ -511,7 +515,7 @@ export default function Custos() {
         return;
       }
       previaDoMubi(
-        { competencia: comps[comps.length - 1], buscadoEm: r.buscadoEm, totalTitulosNoMes: r.linhas.length, paginas: 0, truncado: r.truncado, linhas: r.linhas },
+        { competencia: comps[comps.length - 1], buscadoEm: r.buscadoEm, totalTitulosNoMes: r.linhas.length, paginas: 0, truncado: r.truncado, linhas: r.linhas, idsForaDaFolha: r.idsForaDaFolha },
         vinculos,
         // A cobertura vai junto: mês que falhou aparecia só num toast e sumia.
         { truncado: r.truncado, pedidas: comps, lidas: r.competenciasLidas, falhas: r.falhas.map((f) => f.competencia) },
@@ -662,6 +666,9 @@ export default function Custos() {
     const semDono = new Set<string>();
     for (const n of folhaPrev.naoCasados) for (const t of n.titulos ?? []) semDono.add(String(t.idMubi));
     for (const l of folhaPrev.mubi?.coletivas ?? []) semDono.add(String(l.idMubi));
+    // Título que o ERP tem mas cuja conta ficou fora da lista de folha: existe,
+    // e remover destrói registro de dinheiro real.
+    const foraDaFolha = new Set((folhaPrev.mubi?.idsForaDaFolha ?? []).map(String));
     return resumoDaPrevia({
       diff: folhaPrev.diff,
       gravados: pagamentos as Pagamento[],
@@ -671,6 +678,7 @@ export default function Custos() {
       tiposEncargo: TIPOS_ENCARGO,
       busca: folhaPrev.mubi?.busca,
       semDono,
+      foraDaFolha,
     });
   }, [folhaPrev, pagamentos, ausentesMarcados, d.colabById]);
 
@@ -684,7 +692,7 @@ export default function Custos() {
     if (!ultimoRetrato || !planoDesfazer) return;
     const { restaurar, apagar, pulados, semVolta } = planoDesfazer;
     emLote(`Desfez a aplicação da folha do ERP de ${ultimoRetrato.competencias.map(compLabel).join(", ")}`, () => {
-      for (const p of restaurar) pagamentosColecao.atualizar(p.id, patchDeAplicacao(p));
+      for (const p of restaurar) pagamentosColecao.atualizar(p.id, patchDeDesfazer(p));
       for (const id of apagar) pagamentosColecao.remover(id);
     });
     recuperacoesColecao.atualizar(ultimoRetrato.id, { usado: true });
@@ -720,7 +728,23 @@ export default function Custos() {
     //    depois, numa coleção própria (nível RH no sync). É o que permite
     //    "Desfazer a última aplicação". Sem ele, o histórico guardava só
     //    contagens e o valor anterior de um "corrigido" não ficava em lugar nenhum.
-    const retrato = retratoAntesDeAplicar(diff, ausentesMarcados, new Date().toISOString(), `Folha do ERP · ${faixa}`);
+    // 0) O CHÃO AINDA É O MESMO? A prévia congela o diff na hora da busca e o
+    //    sync puxa a cada 20 s. Se alguém editou (ou apagou) um lançamento que
+    //    esta aplicação ia tocar, gravar por cima apagaria esse trabalho — e o
+    //    retrato guardaria como "antes" um valor que já não existia. Aborta e
+    //    manda refazer a busca, que é barato.
+    const mexeramEmbaixo = mudouSobAPrevia(diff, ausentesMarcados, pagamentos as Pagamento[]);
+    if (mexeramEmbaixo.length) {
+      const sumiram = mexeramEmbaixo.filter((x) => x.motivo === "sumiu").length;
+      toast(
+        `${mexeramEmbaixo.length} lançamento(s) mudaram depois desta busca` +
+          (sumiram ? ` (${sumiram} sumiram)` : "") +
+          ". Nada foi gravado — busque de novo para ver o estado atual.",
+        "erro",
+      );
+      return;
+    }
+    const retrato = retratoAntesDeAplicar(diff, ausentesMarcados, new Date().toISOString(), `Folha do ERP · ${faixa}`, pagamentos as Pagamento[]);
     if (retrato.tocados.length > 0) recuperacoesColecao.criarOuAtualizar(retrato);
 
     // 2) O lote mecânico — UMA linha no histórico, com a faixa e o que mudou.
@@ -860,6 +884,14 @@ export default function Custos() {
   );
   const fgtsLancadoMes = useMemo(() => pagsDoMes.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + p.valor, 0), [pagsDoMes]);
   const provisoesMes = useMemo(() => calcularEncargos(pagsDoMes, fgtsLancadoMes), [pagsDoMes, fgtsLancadoMes]);
+  // O total da equipe no mês + a reserva mensal (lib/provisaoEquipe, com testes).
+  // A régua é a MESMA do resumo do mês logo abaixo: se divergissem, o topo da
+  // aba individual e a aba global diriam números diferentes do mesmo mês.
+  const totalEquipe = useMemo(() => resumoDaEquipe(pagamentosDaEquipe, compAtiva), [pagamentosDaEquipe, compAtiva]);
+  const pesoDoColab = useMemo(
+    () => (colabId ? pesoDaPessoa(pagamentosDaEquipe, compAtiva, colabId) : null),
+    [pagamentosDaEquipe, compAtiva, colabId],
+  );
   const variacao = useMemo(() => variacaoMensal(pagamentosDaEquipe, compAtiva, TIPOS_ENCARGO), [pagamentosDaEquipe, compAtiva]);
   // Comparar com um mês que ainda está pela metade (adiantamento sem salário)
   // dá variação falsa: o aviso vai junto do número, nos dois lados.
@@ -1184,6 +1216,17 @@ export default function Custos() {
               />
             ) : (
               <div className="space-y-8">
+          {/* O total da equipe abre a aba: a pergunta "quanto custa a folha
+              inteira deste mês, e quanto separar por mês para pagar isso de uma
+              conta própria" vinha antes da ficha de cada pessoa. */}
+          <TotalEquipe
+            resumo={totalEquipe}
+            pessoaNome={colabSel?.nome}
+            pessoaPeso={pesoDoColab}
+            comEncargos={comEncargos}
+            onVerMes={() => setAba("global")}
+          />
+
           {/* ===================== custo individual por colaborador =====================
               A aba é só do colaborador (pedido de 06/09/2026): a ficha do mês e
               o histórico dele. O que é de todos — folha geral, rateio, evolução
@@ -2451,7 +2494,7 @@ export default function Custos() {
             onMarcarAusente={(id, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
             onMarcarBloco={(ids, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); for (const id of ids) { if (ok) n.add(id); else n.delete(id); } return n; })}
             confirmados={confirmados}
-            onConfirmar={(id, ok) => setConfirmados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
+            onConfirmar={(chave, ok) => setConfirmados((atual) => { const n = new Set(atual); if (ok) n.add(chave); else n.delete(chave); return n; })}
             salarios={folhaPrev.mubi ? salarios : []}
             salariosMarcados={salariosMarcados}
             onMarcarSalario={(id) => setSalariosMarcados((atual) => { const n = new Set(atual); if (n.has(id)) n.delete(id); else n.add(id); return n; })}

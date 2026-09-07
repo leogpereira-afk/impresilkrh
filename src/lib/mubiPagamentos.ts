@@ -53,6 +53,15 @@ export interface RespostaMubi {
    * antigas da função no ar.
    */
   contasForaDaFolha?: ContaForaDaFolha[];
+  /**
+   * Ids dos títulos que o filtro de folha recusou — só os ids.
+   *
+   * Serve a uma pergunta que a tela errava: "este lançamento gravado ainda
+   * existe no ERP?". Um título cuja conta saiu da lista de folha não vem em
+   * `linhas`, e a conciliação o dava como ausente, oferecendo remover um
+   * registro que o ERP tem. Ausente em versões antigas da função no ar.
+   */
+  idsForaDaFolha?: string[];
 }
 
 export interface ContaForaDaFolha {
@@ -135,10 +144,11 @@ export async function buscarCompetenciaCompleta(
   competencia: string,
   aoProgredir?: (pagina: number, totalPaginas: number) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[] }> {
+): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[]; idsForaDaFolha: string[] }> {
   const TETO_PAGINAS = 40;
   const linhas: LinhaMubi[] = [];
   const fora: (ContaForaDaFolha[] | undefined)[] = [];
+  const idsFora = new Set<string>();
   let pagina = 1;
   let totalPaginas = 1;
   let incompleta = false;
@@ -148,6 +158,7 @@ export async function buscarCompetenciaCompleta(
     const r = await buscarPagamentosMubi(competencia, pagina);
     linhas.push(...r.linhas);
     fora.push(r.contasForaDaFolha);
+    for (const id of r.idsForaDaFolha ?? []) idsFora.add(String(id));
     totalPaginas = r.paginas || 1;
     aoProgredir?.(pagina, totalPaginas);
     // `temMais` só existe na função nova. Numa função antiga (sem redeploy) ele
@@ -156,7 +167,7 @@ export async function buscarCompetenciaCompleta(
     pagina++;
     if (pagina > TETO_PAGINAS) { incompleta = true; break; }
   }
-  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora) };
+  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora), idsForaDaFolha: [...idsFora] };
 }
 
 /**
@@ -181,9 +192,10 @@ export async function buscarHistoricoMubi(
   competencias: string[],
   aoProgredir?: (feitos: number, total: number, competencia: string) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[] }> {
+): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[]; idsForaDaFolha: string[] }> {
   const linhas: LinhaMubi[] = [];
   const fora: (ContaForaDaFolha[] | undefined)[] = [];
+  const idsFora = new Set<string>();
   const falhas: { competencia: string; erro: string }[] = [];
   const competenciasLidas: string[] = [];
   let truncado = false;
@@ -204,6 +216,7 @@ export async function buscarHistoricoMubi(
       // dele seria pior. As falhas voltam listadas para o RH tentar de novo.
       linhas.push(...r.linhas);
       fora.push(r.contasForaDaFolha);
+      for (const id of r.idsForaDaFolha) idsFora.add(id);
       competenciasLidas.push(comp);
       if (r.incompleta) truncado = true;
     } catch (e) {
@@ -223,7 +236,7 @@ export async function buscarHistoricoMubi(
     return true;
   });
 
-  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora) };
+  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora), idsForaDaFolha: [...idsFora] };
 }
 
 /** Lista de competências (AAAA-MM) de `meses` atrás até a atual, da mais nova para a mais antiga. */

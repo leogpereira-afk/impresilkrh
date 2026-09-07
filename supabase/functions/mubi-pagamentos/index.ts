@@ -364,6 +364,15 @@ Deno.serve(async (req) => {
       fora.set(plano, x);
     }
     const contasForaDaFolha = [...fora.values()].sort((a, b) => b.total - a.total);
+    // Os IDS de TODO título recusado por `ehFolha` (não só os de nome de
+    // pessoa). A tela precisa deles para não oferecer "remover" um lançamento
+    // cujo título EXISTE no ERP e só ficou de fora pelo código da conta: para
+    // ela, sem esta lista, ele parecia ter sumido. Só ids — nenhum nome, nenhum
+    // valor (revisão de 07/09/2026).
+    const idsForaDaFolha = itens
+      .filter((i) => !ehFolha(String(i.plano_contas ?? "")))
+      .map((i) => String(i.id ?? ""))
+      .filter(Boolean);
     const linhas = folha.map((i) => {
       const nome = limpaNome(String(i.origem ?? ""));
       return {
@@ -392,6 +401,7 @@ Deno.serve(async (req) => {
       // Quem pede página a página nunca é truncado: o cliente vai até o fim.
       truncado: umaPagina ? false : totalPaginas > 4,
       contasForaDaFolha,
+      idsForaDaFolha,
       pagina: umaPagina ? paginaPedida : 1,
       temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
       linhas,

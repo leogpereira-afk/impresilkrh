@@ -4,7 +4,7 @@ import { Modal } from "@/components/ui/modal";
 import { formatBRL } from "@/lib/format";
 import { compLabel, compLabelLongo } from "@/lib/custos";
 import { corDoTipo } from "@/lib/folha";
-import { NATUREZAS_SILENCIOSAS, type Alarme, type GrupoAlterado, type Natureza, type ResumoDaPrevia } from "@/lib/previaFolha";
+import { NATUREZAS_SILENCIOSAS, chaveDoAlarme, type GrupoAlterado, type Natureza, type ResumoDaPrevia } from "@/lib/previaFolha";
 import type { Mudanca } from "@/lib/custos";
 import type { Pagamento } from "@/data/types";
 import type { SugestaoSalario } from "@/lib/mubiPagamentos";
@@ -62,8 +62,9 @@ export function PreviaFolha({
   ausentesMarcados: Set<string>;
   onMarcarAusente: (id: string, marcado: boolean) => void;
   onMarcarBloco: (ids: string[], marcado: boolean) => void;
-  confirmados: Set<Alarme["id"]>;
-  onConfirmar: (id: Alarme["id"], ok: boolean) => void;
+  /** Chaves de alarme já conferidas — ver chaveDoAlarme (conteúdo, não só o tipo). */
+  confirmados: Set<string>;
+  onConfirmar: (chave: string, ok: boolean) => void;
   salarios: SugestaoSalario[];
   salariosMarcados: Set<string>;
   onMarcarSalario: (colaboradorId: string) => void;
@@ -72,19 +73,27 @@ export function PreviaFolha({
   onAplicar: () => void;
   onCancelar: () => void;
 }) {
-  const faltaConfirmar = resumo.precisaConfirmar.filter((a) => !confirmados.has(a.id));
-  const nadaAFazer = resumo.contaNoBotao + resumo.silenciosos + salariosMarcados.size === 0;
+  // Confere por conteúdo: marcar mais remoções, vincular alguém ou mudar de
+  // valor gera outra chave e a caixa volta a pedir conferência.
+  const faltaConfirmar = resumo.precisaConfirmar.filter((a) => !confirmados.has(chaveDoAlarme(a)));
+  // CPF sozinho também é trabalho a fazer: sem ele a tela prometia preencher
+  // N cadastros com o botão escrito "Nada a alterar" e desabilitado.
+  const nadaAFazer = resumo.contaNoBotao + resumo.silenciosos + salariosMarcados.size + cpfs.length === 0;
   const podeAplicar = resumo.podeAplicar && faltaConfirmar.length === 0 && !nadaAFazer;
   const bloqueios = resumo.alarmes.filter((a) => a.nivel === "bloqueia");
   const avisos = resumo.alarmes.filter((a) => a.nivel === "avisa");
   const varios = resumo.porMes.length > 1;
   const idsForaDoQuadro = new Set(resumo.alarmes.filter((a) => a.id === "fora-do-quadro" && a.nivel === "confirma").flatMap((a) => a.ids));
 
+  const soCpf = resumo.contaNoBotao + resumo.silenciosos + salariosMarcados.size === 0 && cpfs.length > 0;
   const rotuloBotao = nadaAFazer
     ? "Nada a alterar"
+    : soCpf
+    ? `Preencher ${cpfs.length} CPF(s)`
     : `Aplicar ${resumo.contaNoBotao} alteração(ões)` +
       (resumo.silenciosos ? ` · ${resumo.silenciosos} só de texto/conta/id` : "") +
-      (salariosMarcados.size ? ` · ${salariosMarcados.size} salário(s)` : "");
+      (salariosMarcados.size ? ` · ${salariosMarcados.size} salário(s)` : "") +
+      (cpfs.length ? ` · ${cpfs.length} CPF(s)` : "");
 
   return (
     <Modal
@@ -137,12 +146,12 @@ export function PreviaFolha({
           </div>
         ))}
         {resumo.precisaConfirmar.map((a) => (
-          <label key={a.id + a.titulo} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3", confirmados.has(a.id) ? "border-amber-200 bg-amber-50/40" : "border-amber-300 bg-amber-50")}>
-            <input type="checkbox" className="mt-0.5" checked={confirmados.has(a.id)} onChange={(e) => onConfirmar(a.id, e.target.checked)} aria-label={`Conferi: ${a.titulo}`} />
+          <label key={a.id + a.titulo} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3", confirmados.has(chaveDoAlarme(a)) ? "border-amber-200 bg-amber-50/40" : "border-amber-300 bg-amber-50")}>
+            <input type="checkbox" className="mt-0.5" checked={confirmados.has(chaveDoAlarme(a))} onChange={(e) => onConfirmar(chaveDoAlarme(a), e.target.checked)} aria-label={`Conferi: ${a.titulo}`} />
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2 text-xs font-semibold text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" /> {a.titulo}{a.valor ? <span className="font-normal text-amber-800/80">· {formatBRL(a.valor)}</span> : null}</span>
               <span className="mt-0.5 block text-[11px] text-amber-800/90">{a.detalhe}</span>
-              <span className="mt-0.5 block text-[11px] font-medium text-amber-900">{confirmados.has(a.id) ? "Conferido." : "Marque para confirmar que conferiu."}</span>
+              <span className="mt-0.5 block text-[11px] font-medium text-amber-900">{confirmados.has(chaveDoAlarme(a)) ? "Conferido." : "Marque para confirmar que conferiu."}</span>
             </span>
           </label>
         ))}
@@ -182,8 +191,8 @@ export function PreviaFolha({
           <Placar n={resumo.grupos.reduce((s, g) => s + g.itens.length, 0)} rotulo="alteradas" tom="text-blue-700" borda="border-blue-200 bg-blue-50/60"
             sub={resumo.grupos.map((g) => `${g.itens.length} ${g.natureza === "renumeracao" ? "conta" : ROTULO_CAMPO[g.natureza as Mudanca["campo"]] ?? g.natureza}`).join(" · ")} />
           <Placar n={resumo.novos.length} rotulo="novas" tom="text-green-700" borda="border-green-200 bg-green-50/60" sub={formatBRL(resumo.novos.reduce((s, p) => s + (Number(p.valor) || 0), 0))} />
-          <Placar n={resumo.ausentes.comIdErp.length + resumo.ausentes.semId.length + resumo.ausentes.semDono.length} rotulo="não vieram" tom="text-amber-700" borda="border-amber-200 bg-amber-50/60"
-            sub={[resumo.ausentes.comIdErp.length ? `${resumo.ausentes.comIdErp.length} do ERP` : "", resumo.ausentes.semId.length ? `${resumo.ausentes.semId.length} de planilha` : "", resumo.ausentes.semDono.length ? `${resumo.ausentes.semDono.length} sem dono` : ""].filter(Boolean).join(" · ")} />
+          <Placar n={resumo.ausentes.comIdErp.length + resumo.ausentes.semId.length + resumo.ausentes.semDono.length + resumo.ausentes.foraDaFolha.length} rotulo="não vieram" tom="text-amber-700" borda="border-amber-200 bg-amber-50/60"
+            sub={[resumo.ausentes.comIdErp.length ? `${resumo.ausentes.comIdErp.length} do ERP` : "", resumo.ausentes.semId.length ? `${resumo.ausentes.semId.length} de planilha` : "", resumo.ausentes.semDono.length ? `${resumo.ausentes.semDono.length} sem dono` : "", resumo.ausentes.foraDaFolha.length ? `${resumo.ausentes.foraDaFolha.length} fora da lista` : ""].filter(Boolean).join(" · ")} />
         </div>
 
         {/* Salários */}
@@ -253,6 +262,11 @@ export function PreviaFolha({
           titulo="No ERP, mas sem pessoa nesta busca"
           porque="O título existe no Mubisys; só não casou com ninguém desta vez. Vincule a pessoa em “Não encontrados” — não remova."
           itens={resumo.ausentes.semDono} nomeDe={nomeDe} tom="border-sky-200 bg-sky-50/40 text-sky-900"
+        />
+        <BlocoAusentes
+          titulo="No ERP, mas a conta saiu da lista de folha"
+          porque="O título existe no Mubisys; a conta dele é que não está na lista da folha (o contador renumerou, ou é conta nova). Ajuste a lista — não remova o lançamento."
+          itens={resumo.ausentes.foraDaFolha} nomeDe={nomeDe} tom="border-violet-200 bg-violet-50/40 text-violet-900"
         />
         <BlocoAusentes
           titulo="Vieram do ERP e não voltaram nesta busca"
