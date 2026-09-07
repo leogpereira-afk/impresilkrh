@@ -14,6 +14,7 @@ import {
 } from "@/data";
 import type { Config } from "@/data/types";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
+import { gravarArmazem, armazemEmIDB, armazemHidratado, aoHidratar } from "./armazemLocal";
 import { obterSessao } from "./session";
 import { lerCopiaAnterior } from "./copiaAnterior";
 import { exportarBlobsAnteriores } from "./blobstore";
@@ -41,6 +42,15 @@ let defaultsMemo: ReturnType<typeof defaultsColecoes> | null = null;
 function defaults() {
   if (!defaultsMemo) defaultsMemo = defaultsColecoes();
   return defaultsMemo;
+}
+
+// O disco chegou: o que foi lido antes dele (possivelmente vazio) não vale mais.
+if (temWindow) {
+  aoHidratar(() => {
+    cache.clear();
+    configCache = null;
+    emitTudo();
+  });
 }
 
 function subscribers(nome: string): Set<() => void> {
@@ -75,7 +85,13 @@ function ler<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
       }
     }
   }
-  if (!val) val = defaults()[nome] as unknown[];
+  // AUSENTE não é VAZIO enquanto o disco não foi lido. Os dados moram no
+  // IndexedDB (leitura assíncrona): se cairmos em defaults() nessa janela, o
+  // app adota os registros de EXEMPLO e o sync os empurra para a nuvem — foi
+  // exatamente assim que 514 pagamentos fictícios entraram no banco em
+  // 30/07/2026. Com o disco a caminho, a coleção fica vazia por um instante e
+  // aoHidratar() repinta com o conteúdo real.
+  if (!val) val = armazemEmIDB() && !armazemHidratado() ? [] : (defaults()[nome] as unknown[]);
   cache.set(nome, val);
   return val as ColecaoMap[K][];
 }
@@ -87,7 +103,7 @@ function ler<K extends NomeColecao>(nome: K): ColecaoMap[K][] {
 function escrever(key: string, valor: string): boolean {
   if (!temWindow) return true;
   try {
-    window.localStorage.setItem(chaveLocal(key), valor);
+    if (!gravarArmazem(chaveLocal(key), valor)) throw new Error("sem espaço");
     return true;
   } catch {
     try {

@@ -1,4 +1,5 @@
 import { obterSessao } from "./session";
+import { lerArmazem, removerArmazem } from "./armazemLocal";
 
 /** O perfil faz parte do escopo para uma redução de acesso não reutilizar dados do RH. */
 export function contextoDoUsuario(): string {
@@ -9,9 +10,9 @@ export function contextoDoUsuario(): string {
 export const chaveLocal = (base: string) => `${base}:conta:${contextoDoUsuario()}`;
 
 export function lerLocal(chave: string): string | null {
-  try { return localStorage.getItem(chaveLocal(chave)); } catch { return null; }
+  return lerArmazem(chaveLocal(chave));
 }
 
 export function removerLocal(chave: string): void {
-  try { localStorage.removeItem(chaveLocal(chave)); } catch { /* sem acesso ao armazenamento */ }
+  removerArmazem(chaveLocal(chave));
 }

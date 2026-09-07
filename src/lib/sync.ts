@@ -14,6 +14,7 @@ import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
 import { obterSessao } from "@/lib/session";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
+import { gravarArmazem } from "./armazemLocal";
 import { prepararCopiaAnterior } from "./copiaAnterior";
 
 // Coleções que o app pode baixar ANTES de alguém entrar. Como o Supabase exige
@@ -53,7 +54,7 @@ function lerCfg(): CfgSync {
 // mesmo evento que o store usa.
 function guardar(chave: string, valor: string): boolean {
   if (!temWindow) return true;
-  try { localStorage.setItem(chaveLocal(chave), valor); return true; } catch {
+  try { if (!gravarArmazem(chaveLocal(chave), valor)) throw new Error("sem espaço"); return true; } catch {
     try { window.dispatchEvent(new CustomEvent("impresilk:armazenamento-cheio", { detail: { key: chave } })); } catch { /* ignora */ }
     return false;
   }
