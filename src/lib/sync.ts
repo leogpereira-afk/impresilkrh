@@ -438,15 +438,32 @@ export async function enviarColecao(nome: string): Promise<boolean> {
   setStatus("syncing");
   try {
     const bases = basesMassa();
-    const rev = bases[nome] ?? lerRev().rev;
+    const substituir = restauracoesPendentes().includes(nome);
+    // A revisão congelada entre tentativas protege a RESTAURAÇÃO (substituir):
+    // ela apaga o que não vier, então tem de partir da base que o RH conferiu.
+    // Para importação comum (só grava o que vier) o congelamento era um
+    // defeito: o servidor confere a revisão GLOBAL, e ela anda a cada linha de
+    // histórico — 1,3 s depois do congelamento já estava vencida. Resultado
+    // real (07/09/2026): o plano de contas de jul/ago puxado do Mubisys ficou
+    // meses "pendente" e nunca chegou à nuvem. Importação comum parte sempre
+    // da revisão fresca, e em conflito tenta mais uma vez com outra fresca.
+    let rev: number | null = substituir ? (bases[nome] ?? lerRev().rev) : await revisaoFresca();
     if (rev == null) throw new Error("Atualize e confira a base antes de importar.");
     if (!guardar(K_MASSA_REV, JSON.stringify({ ...bases, [nome]: rev }))) throw new Error("Não foi possível preservar a importação pendente.");
     const dados = { [nome]: obterDinamico(nome) };
     const antes = JSON.stringify(dados[nome]);
     const filaInicial = new Set(lerFila().filter(a => a.colecao === nome).map(a => a.mutationId));
-    const r = await chamar("aplicarRetrato", { dados, rev, substituir: restauracoesPendentes().includes(nome) });
+    let r: { rev?: number };
+    try {
+      r = await chamar("aplicarRetrato", { dados, rev, substituir });
+    } catch (e) {
+      if (substituir || !ehConflitoDeRevisao(e)) throw e;
+      rev = await revisaoFresca();
+      if (rev == null) throw e;
+      r = await chamar("aplicarRetrato", { dados, rev, substituir });
+    }
     const seguintes = basesMassa(); delete seguintes[nome];
-    for (const n of lerMassa()) if (n !== nome && (seguintes[n] ?? rev) === rev) seguintes[n] = r.rev;
+    for (const n of lerMassa()) if (n !== nome && (seguintes[n] ?? rev) === rev) seguintes[n] = r.rev ?? rev;
     guardar(K_MASSA_REV, JSON.stringify(seguintes));
     gravarFila(lerFila().filter(a => !filaInicial.has(a.mutationId)));
     if (JSON.stringify(obterDinamico(nome)) === antes) {
@@ -456,10 +473,29 @@ export async function enviarColecao(nome: string): Promise<boolean> {
     zerarRev();
     return true;
   } catch (e) {
+    // Conflito de revisão numa importação comum não pode ficar congelado: a
+    // próxima volta do ciclo pede outra revisão fresca.
+    if (ehConflitoDeRevisao(e) && !restauracoesPendentes().includes(nome)) {
+      const seguintes = basesMassa(); delete seguintes[nome]; guardar(K_MASSA_REV, JSON.stringify(seguintes));
+    }
     if (!(e instanceof SessaoAlterada)) marcarErro("envio", e);
     return false;
   } finally { enviandoMassa = false; recalcStatus(); }
 }
+
+/** A revisão global do servidor, agora — não a última que este aparelho viu. */
+async function revisaoFresca(): Promise<number | null> {
+  try {
+    const r = (await chamar("rev")) as { rev?: number | null };
+    return r?.rev ?? lerRev().rev;
+  } catch {
+    return lerRev().rev;
+  }
+}
+
+/** O servidor recusou porque a revisão andou (rh_aplicar_retrato devolve `conflito`). */
+const ehConflitoDeRevisao = (e: unknown): boolean =>
+  e instanceof ErroHttp && /os dados mudaram em outro aparelho/i.test(e.message);
 
 // Enfileira EXCLUSÕES (lápides) de registros específicos. Serve para as
 // importações que SUBSTITUEM dados (folha, comissões, plano de contas): os
