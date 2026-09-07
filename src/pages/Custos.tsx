@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Wallet,
@@ -20,7 +20,7 @@ import {
   ChevronRight,
   CalendarDays,
   RefreshCw,
-  Clock, History, AlertTriangle, TrendingDown, Landmark } from "lucide-react";
+  Clock, History, AlertTriangle, TrendingDown, Landmark, PiggyBank } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
@@ -32,6 +32,7 @@ import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
 import { Societarias } from "@/components/custos/societarias";
 import { PreviaFolha, type CoberturaBusca } from "@/components/custos/previa-folha";
 import { TotalEquipe } from "@/components/custos/total-equipe";
+import { EncargosEstimados } from "@/components/custos/encargos-estimados";
 import { resumoDaEquipe, pesoDaPessoa, porPessoaNoMes, type PessoaNoMes } from "@/lib/provisaoEquipe";
 import { mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
@@ -110,7 +111,7 @@ const TOM_CLASSES: Record<Tom, string> = {
 let ultimaFalhaMubi: { competencia: string; em: number } | null = null;
 const ESPERA_APOS_FALHA_MS = 30 * 60 * 1000;
 
-const ABAS = ["custos", "global", "societarias", "sync", "viagens"];
+const ABAS = ["custos", "global", "encargos", "societarias", "sync", "viagens"];
 
 export default function Custos() {
   const sessao = useSessao();
@@ -956,6 +957,12 @@ export default function Custos() {
   // A régua é a MESMA do resumo do mês logo abaixo: se divergissem, o topo da
   // aba individual e a aba global diriam números diferentes do mesmo mês.
   const totalEquipe = useMemo(() => resumoDaEquipe(pagamentosDaEquipe, compAtiva), [pagamentosDaEquipe, compAtiva]);
+  // Estado da folha de cada mês, para a reserva de encargos não tirar média
+  // de mês pela metade (só adiantamento). Mesma conferência do topo da tela.
+  const estadoDaFolha = useCallback(
+    (c: string) => conferirCompetencia(c, pagamentos as Pagamento[], d.colaboradores).estado,
+    [pagamentos, d.colaboradores],
+  );
   const pesoDoColab = useMemo(
     () => (colabId ? pesoDaPessoa(pagamentosDaEquipe, compAtiva, colabId) : null),
     [pagamentosDaEquipe, compAtiva, colabId],
@@ -2184,6 +2191,21 @@ export default function Custos() {
           </section>
                 <CustoGlobalFuncionarios comp={compAtiva} competencias={competencias} onComp={setComp} irParaSync={() => irParaSinal("plano")} />
               </div>
+            ),
+          },
+          {
+            id: "encargos",
+            label: "Encargos estimados",
+            icon: <PiggyBank className="h-4 w-4" />,
+            conteudo: (
+              <EncargosEstimados
+                pagamentos={pagamentosDaEquipe}
+                nomeDe={(id) => d.nomeColab(id)}
+                compAtiva={compAtiva}
+                estadoDe={estadoDaFolha}
+                onVerPessoa={(id) => { setColabId(id); setMostrarInativos(true); setAba("custos"); }}
+                onEscolherMes={setComp}
+              />
             ),
           },
           ...(ehMaster(sessao) ? [{
