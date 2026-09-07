@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
   ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock, Eye, EyeOff,
-  KeyRound, ChevronDown, History, CalendarDays,
+  KeyRound, ChevronDown, History, CalendarDays, Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { Badge, DotBadge } from "@/components/ui/badge";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Toggle } from "@/components/ui/form";
 import { ConteudoManager } from "@/components/painel/conteudo-manager";
+import { CadastrosSecao } from "@/components/colaboradores/cadastros";
 import { HistoricoSecao } from "@/components/painel/historico-secao";
 import { DadosControls } from "@/components/layout/dados-controls";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
@@ -110,12 +112,24 @@ function ModeloChecklistTextarea({ modelo, onGravar }: { modelo: ModeloChecklist
 export default function PainelControle() {
   const sessao = useSessao();
   const master = ehMaster(sessao);
+  const navegar = useNavigate();
   return (
     <div>
       <PageHeader title="Painel de Controle" description="Gerencie todo o conteúdo do sistema sem mexer no código. Tudo é salvo no navegador." />
       <Tabs
         abas={[
           { id: "estrutura", label: "Estrutura", icon: <Building2 className="h-4 w-4" />, conteudo: <Estrutura /> },
+          /* Todos os cadastros, com as fichas repetidas em cima (pedido do Léo
+             em 07/09/2026: "ter algum local onde vê todos, onde pode ser
+             possível apagar o que deseja"). Mora aqui, e não em Colaboradores,
+             porque apagar cadastro é ato de administração — a mesma aba onde se
+             mexe em estrutura, usuários e permissões. */
+          {
+            id: "cadastros",
+            label: "Cadastros",
+            icon: <Users className="h-4 w-4" />,
+            conteudo: <CadastrosSecao onAbrirFicha={(id) => navegar(`/colaboradores/${id}`)} />,
+          },
           { id: "cargos", label: "Cargos & Faixas", icon: <Briefcase className="h-4 w-4" />, conteudo: <CargosSecao /> },
           { id: "conteudo", label: "Conteúdo (RH)", icon: <ClipboardList className="h-4 w-4" />, conteudo: <ConteudoSecao /> },
           { id: "aval", label: "Avaliação & Checklists", icon: <Award className="h-4 w-4" />, conteudo: <AvaliacaoSecao /> },
