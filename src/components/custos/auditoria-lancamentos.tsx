@@ -6,7 +6,7 @@ import { formatBRL } from "@/lib/format";
 import { compLabel } from "@/lib/custos";
 import { auditarLancamentos, ROTULO_REGRA, COMO_CORRIGIR, ROTULO_ONDE, type AchadoAuditoria, type Gravidade, type RegraAuditoria } from "@/lib/auditoriaLancamentos";
 import { desligamentosPeloUltimoPagamento, type PropostaDesligamento } from "@/lib/desligarPeloUltimoPagamento";
-import { reativarQuemContinuaRecebendo, admissaoAnteriorAoPrimeiroPagamento, type PropostaReativar, type PropostaAdmissao } from "@/lib/consertoCadastro";
+import { reativarQuemContinuaRecebendo, admissaoAnteriorAoPrimeiroPagamento, opcoesDeStatus, type PropostaReativar, type PropostaAdmissao } from "@/lib/consertoCadastro";
 import { Input, Select } from "@/components/ui/form";
 import type { Colaborador, Pagamento } from "@/data/types";
 
@@ -66,7 +66,15 @@ export function AuditoriaLancamentos({
     [pagamentos],
   );
   // As duas propostas que o dinheiro PROVA. Não gravam nada: a pessoa aplica.
-  const reativaveis = useMemo(() => reativarQuemContinuaRecebendo(colaboradores, pagamentos), [colaboradores, pagamentos]);
+  //
+  // Os ids vão junto porque o destino padrão de quem parou de ser CLT é
+  // "freelancer" — e propor um status que este cadastro não tem sumiria com a
+  // pessoa do quadro em silêncio (`contaHeadcount` lê `?? false`).
+  const idsDeStatus = useMemo(() => statusDisponiveis.map((s2) => s2.id), [statusDisponiveis]);
+  const reativaveis = useMemo(
+    () => reativarQuemContinuaRecebendo(colaboradores, pagamentos, idsDeStatus),
+    [colaboradores, pagamentos, idsDeStatus],
+  );
   const admissoes = useMemo(() => admissaoAnteriorAoPrimeiroPagamento(colaboradores, pagamentos), [colaboradores, pagamentos]);
   // Destino de quem volta, por pessoa: o dado prova que ela NÃO saiu, mas não
   // diz em que condição ela ficou. Quem sabe isso é quem manda.
@@ -239,7 +247,12 @@ export function AuditoriaLancamentos({
                       className="h-7 w-auto py-0 text-xs"
                       aria-label={`Status de ${r.nome}`}
                     >
-                      {(statusDisponiveis.length ? statusDisponiveis : [{ id: r.para.statusId, nome: r.para.statusId }]).map((s2) => (
+                      {/* O status proposto entra na lista quando não está nela
+                          — é o caso de quem tem um status fora do headcount
+                          (Externo, Direção) e a regra preserva o dele. Sem isto
+                          o <select> mostraria a PRIMEIRA opção enquanto o
+                          clique aplicava outra coisa: a tela mentindo. */}
+                      {opcoesDeStatus(statusDisponiveis, destino[r.colaboradorId] ?? r.para.statusId).map((s2) => (
                         <option key={s2.id} value={s2.id}>{s2.nome}</option>
                       ))}
                     </Select>

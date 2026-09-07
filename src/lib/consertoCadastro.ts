@@ -29,6 +29,16 @@ export const VERBAS_DE_QUEM_SAIU = new Set(["Rescisão", "Férias", "13º Salár
 /** Verbas de quem trabalhou no mês: depois da saída, provam que a saída não houve. */
 export const VERBAS_DE_QUEM_TRABALHA = new Set(["Salário", "Adiantamento"]);
 
+/**
+ * Para onde vai quem o cadastro dava como desligado e continua recebendo.
+ *
+ * Era "ativo". Virou "freelancer" a pedido do Léo em 07/09/2026: essa gente
+ * parou de ser CLT e continua na empreita, e ele quer ela DENTRO do quadro
+ * (por isso o status nasce com contaComoAtivo). É só o padrão do seletor — a
+ * tela deixa trocar pessoa por pessoa antes de aplicar.
+ */
+export const STATUS_DE_QUEM_PAROU_DE_SER_CLT = "freelancer";
+
 const mes = (s?: string | null) => String(s ?? "").slice(0, 7);
 const dia = (s?: string | null) => String(s ?? "").slice(0, 10);
 const comp = (s?: string | null) => (/^\d{4}-\d{2}/.test(String(s ?? "")) ? String(s).slice(0, 7) : "");
@@ -47,13 +57,26 @@ export interface PropostaReativar {
 /**
  * Quem tem data de desligamento mas continua recebendo salário depois dela.
  *
- * O conserto é limpar a data. Se o status também dizia "inativo", ele volta
- * para "ativo" — senão a pessoa continuaria fora do quadro pelo outro lado.
+ * O conserto é limpar a data. Se o status também dizia "inativo", ele passa a
+ * "freelancer" (quando esse status existe no cadastro) — senão a pessoa
+ * continuaria fora do quadro pelo outro lado.
+ *
+ * `statusDisponiveis` são os ids que EXISTEM na coleção `status`. Propor um id
+ * inexistente sumiria com a pessoa do quadro em silêncio.
  */
 export function reativarQuemContinuaRecebendo(
   colaboradores: Pick<Colaborador, "id" | "nome" | "statusId" | "dataDesligamento">[],
   pagamentos: Pick<Pagamento, "colaboradorId" | "competencia" | "tipo">[],
+  statusDisponiveis?: Iterable<string>,
 ): PropostaReativar[] {
+  // Só propõe "freelancer" se ele EXISTIR no cadastro. Um statusId que não está
+  // na coleção `status` não vira erro nenhum: `statusById.get` devolve
+  // undefined, `contaHeadcount` lê `?? false` e a pessoa some do quadro em
+  // silêncio — o contrário exato do que o Léo pediu. Sem a lista (ninguém
+  // passou), cai no "ativo" de antes, que existe desde sempre.
+  const existe = statusDisponiveis ? new Set(statusDisponiveis) : null;
+  const paraQuemParou = existe?.has(STATUS_DE_QUEM_PAROU_DE_SER_CLT) ? STATUS_DE_QUEM_PAROU_DE_SER_CLT : "ativo";
+
   const porPessoa = new Map<string, Pick<Pagamento, "colaboradorId" | "competencia" | "tipo">[]>();
   for (const p of pagamentos) {
     if (!p.colaboradorId) continue;
@@ -77,10 +100,21 @@ export function reativarQuemContinuaRecebendo(
       mesQueProva,
       verbas,
       de: { statusId: c.statusId, dataDesligamento: c.dataDesligamento ?? null },
-      // Status que conta no quadro. "ativo" é o único seguro de assumir: os
-      // outros (experiência, aviso prévio, afastado) são situações que ninguém
-      // pode deduzir de um pagamento.
-      para: { statusId: c.statusId && c.statusId !== "inativo" ? c.statusId : "ativo", dataDesligamento: null },
+      // Status que conta no quadro. Quem já tinha um status do quadro fica com
+      // o dele — experiência, aviso prévio e afastado são situações que nenhum
+      // pagamento pode deduzir, e trocá-las seria inventar.
+      //
+      // Quem o cadastro dava como INATIVO é o caso do pedido do Léo em
+      // 07/09/2026: "tem funcionários que param de trabalhar e vão para
+      // freelancer" / "na regra de cadastro, ao invés de funcionário vai pra
+      // freelancer". Parou de ser CLT e continua recebendo salário = empreita.
+      //
+      // Continua sendo PROPOSTA, e de propósito: o dado prova que a pessoa não
+      // saiu, mas não prova em que condição ela ficou. Por isso a tela põe um
+      // seletor ao lado de cada nome — quem sabe quem é freelancer é o Léo, não
+      // o banco (a verba "Freelancer (Empreita)" foi paga a 18 pessoas ativas
+      // de salário alto e não serve de prova).
+      para: { statusId: c.statusId && c.statusId !== "inativo" ? c.statusId : paraQuemParou, dataDesligamento: null },
     });
   }
   return out.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -141,4 +175,23 @@ export function admissaoAnteriorAoPrimeiroPagamento(
     });
   }
   return out.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+/**
+ * As opções do seletor "fica como" — os status do quadro MAIS o que está
+ * selecionado, se ele não estiver entre eles.
+ *
+ * Existe por um jeito de a tela mentir: um `<select>` cujo `value` não é
+ * nenhuma das `<option>` mostra a PRIMEIRA opção. O usuário lê "Ativo" e
+ * aplica "Externo". Acontece de verdade com quem tem status fora do headcount
+ * (Externo, Direção) e data de saída errada: a regra preserva o status dele, e
+ * a lista do seletor só traz os que contam no quadro.
+ */
+export function opcoesDeStatus(
+  doQuadro: { id: string; nome: string }[],
+  selecionado: string,
+): { id: string; nome: string }[] {
+  if (doQuadro.some((s) => s.id === selecionado)) return doQuadro;
+  // Sem nome bonito para mostrar, o id é mais honesto que a opção errada.
+  return [...doQuadro, { id: selecionado, nome: selecionado }];
 }

@@ -9,8 +9,12 @@
  * problema original — ela voltaria a contar no quadro e no custo do mês.
  */
 import { describe, it, expect } from "vitest";
-import { reativarQuemContinuaRecebendo, admissaoAnteriorAoPrimeiroPagamento } from "./consertoCadastro";
+import { reativarQuemContinuaRecebendo, admissaoAnteriorAoPrimeiroPagamento, opcoesDeStatus } from "./consertoCadastro";
 import type { Colaborador, Pagamento } from "@/data/types";
+
+/* Os status que CONTAM no quadro no cadastro do Léo depois do freelancer — é o
+   que a tela passa (`d.status.filter(s => s.contaComoAtivo)`). */
+const DISPONIVEIS = ["ativo", "experiencia", "aviso", "afastado", "atestado-medico", "abandono", "freelancer"];
 
 const c = (o: Partial<Colaborador> & { id: string; nome: string }) => o as Colaborador;
 const p = (colaboradorId: string, competencia: string, tipo: string, dataPagamento = "") =>
@@ -48,14 +52,36 @@ describe("reativar quem continua recebendo — o caso ruim primeiro", () => {
     expect(r.para.dataDesligamento).toBeNull();
   });
 
-  it("quem estava inativo volta para ativo; quem já tinha outro status do quadro mantém o dele", () => {
+  it("quem estava inativo vai para FREELANCER; quem já tinha outro status do quadro mantém o dele", () => {
+    // Pedido do Léo em 07/09/2026: "ao invés de funcionário vai pra freelancer".
+    // Quem parou de ser CLT e continua recebendo salário está na empreita.
     // Limpar só a data deixaria o inativo fora do quadro pelo outro lado.
     const inativo = c({ id: "o", nome: "Osmane", statusId: "inativo", dataDesligamento: "2026-06-22" });
     const emExp = c({ id: "e", nome: "Em Experiência", statusId: "experiencia", dataDesligamento: "2026-06-22" });
     const pags = [p("o", "2026-08", "Salário"), p("e", "2026-08", "Salário")];
-    const r = reativarQuemContinuaRecebendo([inativo, emExp], pags);
-    expect(r.find((x) => x.colaboradorId === "o")!.para.statusId).toBe("ativo");
+    const r = reativarQuemContinuaRecebendo([inativo, emExp], pags, DISPONIVEIS);
+    expect(r.find((x) => x.colaboradorId === "o")!.para.statusId).toBe("freelancer");
     expect(r.find((x) => x.colaboradorId === "e")!.para.statusId).toBe("experiencia");
+  });
+
+  /* O CASO RUIM DO STATUS NOVO: propor um id que o cadastro não tem.
+     `contaHeadcount` faz `statusById.get(id)?.contaComoAtivo ?? false` — um id
+     inexistente não dá erro nenhum, só SOME com a pessoa do quadro. Aplicar a
+     correção deixaria o Léo pior do que antes, e calado. */
+  it("cadastro SEM o status freelancer continua propondo ativo — nunca um id que não existe", () => {
+    const inativo = c({ id: "o", nome: "Osmane", statusId: "inativo", dataDesligamento: "2026-06-22" });
+    const pags = [p("o", "2026-08", "Salário")];
+    expect(reativarQuemContinuaRecebendo([inativo], pags, ["ativo", "experiencia"])[0].para.statusId).toBe("ativo");
+    // E quem nem passa a lista (não sabe o que existe) também cai no seguro.
+    expect(reativarQuemContinuaRecebendo([inativo], pags)[0].para.statusId).toBe("ativo");
+  });
+
+  it("o freelancer é só o PADRÃO do seletor: a proposta não some com quem não é", () => {
+    // A tela troca pessoa por pessoa antes de aplicar; a regra só sugere.
+    const inativo = c({ id: "o", nome: "Osmane", statusId: "inativo", dataDesligamento: "2026-06-22" });
+    const [r] = reativarQuemContinuaRecebendo([inativo], [p("o", "2026-08", "Salário")], DISPONIVEIS);
+    expect(DISPONIVEIS).toContain(r.para.statusId);
+    expect(r.de.statusId).toBe("inativo"); // o de-para continua legível na tela
   });
 
   it("guarda o estado ANTERIOR, para a tela mostrar o que muda", () => {
@@ -147,5 +173,25 @@ describe("as duas regras não brigam entre si", () => {
     const pags = [p("x", "2026-05", "Salário", "2026-06-05"), p("x", "2026-08", "Salário", "2026-09-04")];
     expect(reativarQuemContinuaRecebendo(pessoas, pags)).toHaveLength(1);
     expect(admissaoAnteriorAoPrimeiroPagamento(pessoas, pags)).toHaveLength(1);
+  });
+});
+
+/* O seletor "fica como" — o que a tela OFERECE tem de conter o que ela vai
+   aplicar. Um <select> com value fora das options mostra a primeira e mente. */
+describe("as opções do seletor de destino", () => {
+  const doQuadro = [{ id: "ativo", nome: "Ativo" }, { id: "freelancer", nome: "Freelancer" }];
+
+  it("o caso ruim: o selecionado NÃO está na lista — entra, para a tela não mentir", () => {
+    // Quem é "Externo" (fora do headcount) com data de saída errada: a regra
+    // preserva o status dele, que não aparece na lista dos que contam.
+    expect(opcoesDeStatus(doQuadro, "externo").map((o) => o.id)).toEqual(["ativo", "freelancer", "externo"]);
+  });
+
+  it("não mexe na lista quando o selecionado já está nela", () => {
+    expect(opcoesDeStatus(doQuadro, "freelancer")).toBe(doQuadro);
+  });
+
+  it("lista vazia devolve pelo menos o selecionado — nunca um seletor sem opção", () => {
+    expect(opcoesDeStatus([], "ativo")).toEqual([{ id: "ativo", nome: "ativo" }]);
   });
 });

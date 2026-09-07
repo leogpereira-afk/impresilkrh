@@ -24,6 +24,7 @@ import { useToast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/ui/misc";
 import { formatBRL } from "@/lib/format";
 import { slug } from "@/data/_gen";
+import { statusPadraoFaltando } from "@/lib/statusPadrao";
 import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { competenciasPlano, compLabelLongo, confidencialDoMes } from "@/lib/custos";
@@ -301,11 +302,43 @@ function StatusManager() {
 
   const abrir = (s: StatusColaborador | null) => { setForm(s ?? { nome: "", cor: "#64748b", contaComoAtivo: true, ordem: items.length }); s ? setEdit(s) : setNovo(true); };
 
+  /* Status que o sistema traz de fábrica e ESTE cadastro não tem.
+     `src/data/status.ts` só semeia quem abre o RH sem nada gravado: quem já usa
+     tem a coleção no disco e na nuvem, e o merge do sync nunca sobrescreve. Sem
+     este botão, acrescentar um status ao código não muda nada na tela de quem
+     já usa — e o "Freelancer" pedido em 07/09/2026 simplesmente não existiria
+     aqui. Continua sendo escrita pela tela, no clique. */
+  const faltando = useMemo(() => statusPadraoFaltando(items), [items]);
+  const repor = () => {
+    const falhou: string[] = [];
+    let feitos = 0;
+    for (const f of faltando) {
+      // O que não entrou tem de aparecer: repor "com sucesso" um status que não
+      // foi criado deixaria a tela dizendo que dá para usar algo que não existe.
+      try { criar(f); feitos++; } catch { falhou.push(f.nome); }
+    }
+    if (falhou.length) toast(`${feitos} reposto(s); não deu para criar: ${falhou.join(", ")}.`, "erro");
+    else toast(`${feitos} status reposto(s).`, "sucesso");
+  };
+
   return (
     <Card>
       <CardHeader title="Status do quadro" subtitle="Cada status tem cor e define o headcount" icon={<Tag className="h-[18px] w-[18px]" />}
         action={<button className="btn-outline" onClick={() => abrir(null)}><Plus className="h-4 w-4" /> Novo status</button>} />
       <CardBody className="space-y-2">
+        {faltando.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+            <p className="text-xs text-amber-900">
+              <strong className="font-semibold">
+                {faltando.length === 1 ? "Um status de fábrica não existe" : `${faltando.length} status de fábrica não existem`} neste cadastro
+              </strong>
+              {": "}{faltando.map((f) => f.nome).join(", ")}. Enquanto faltar, nenhuma pessoa pode ser marcada assim.
+            </p>
+            <button type="button" className="btn-outline ml-auto h-7 px-2 py-0 text-xs" onClick={repor}>
+              <Plus className="h-3.5 w-3.5" /> Repor
+            </button>
+          </div>
+        )}
         {[...items].sort((a, b) => a.ordem - b.ordem).map((s) => (
           <div key={s.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
             <div className="flex items-center gap-3">
