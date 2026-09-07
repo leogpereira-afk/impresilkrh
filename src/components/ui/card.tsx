@@ -44,6 +44,8 @@ export function Card({
   colapsavel = true,
   idPersistencia,
   abertoInicial = true,
+  aberto: abertoControlado,
+  onAlternar,
 }: {
   className?: string;
   children: React.ReactNode;
@@ -51,9 +53,19 @@ export function Card({
   /** Com isto, recolher/expandir fica guardado entre visitas. */
   idPersistencia?: string;
   abertoInicial?: boolean;
+  /**
+   * Forma CONTROLADA, igual à da SecaoColapsavel. Sem ela, quem estava fora do
+   * card não conseguia abri-lo: um atalho que rolava até um card recolhido —
+   * e o recolhimento é guardado — levava a pessoa a uma seção vazia.
+   */
+  aberto?: boolean;
+  onAlternar?: () => void;
 }) {
-  const [aberto, setAberto] = useAbertoPersistido(idPersistencia, abertoInicial);
-  const ctx = colapsavel ? { aberto, alternar: () => setAberto((o) => !o) } : null;
+  const [abertoLocal, setAbertoLocal] = useAbertoPersistido(idPersistencia, abertoInicial);
+  const controlado = abertoControlado !== undefined;
+  const aberto = controlado ? abertoControlado : abertoLocal;
+  const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((o) => !o));
+  const ctx = colapsavel ? { aberto, alternar } : null;
   return (
     <ColapsoCtx.Provider value={ctx}>
       <div className={cn("card min-w-0", className)}>{children}</div>

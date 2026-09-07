@@ -213,8 +213,24 @@ function janelaDaCompetencia(competencia: string) {
   return { datainicial: iso(inicio), datafinal: iso(fim) };
 }
 
-async function buscaPagina(competencia: string, page: number, perPage: number) {
-  const { datainicial, datafinal } = janelaDaCompetencia(competencia);
+/**
+ * Janela do PLANO DE CONTAS: o mês civil do vencimento.
+ *
+ * NÃO é a janela da folha (16→15). Conferido em 06/09/2026 contra a planilha do
+ * contador de jan a jun: somando os títulos pelo mês civil do vencimento, 22
+ * pares (conta × mês) batem ao centavo e 20 deles NÃO batem pela janela 16→15;
+ * pelo caminho inverso, nenhum. A faxina fecha o caso: o contador lança R$ 600
+ * em junho e são exatamente os dois títulos de 05/06.
+ */
+function janelaDoMes(competencia: string) {
+  const [ano, mes] = competencia.split("-").map(Number);
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { datainicial: iso(new Date(ano, mes - 1, 1)), datafinal: iso(new Date(ano, mes, 0)) };
+}
+
+async function buscaPagina(competencia: string, page: number, perPage: number, escopo: "folha" | "plano" = "folha") {
+  const { datainicial, datafinal } = escopo === "plano" ? janelaDoMes(competencia) : janelaDaCompetencia(competencia);
   const q = new URLSearchParams({
     filtrodata: "VENCIMENTO",
     datainicial,
@@ -266,8 +282,11 @@ Deno.serve(async (req) => {
     // continua valendo (compatibilidade com versões do app já publicadas).
     const paginaPedida = Number(corpo.page ?? 0);
     const umaPagina = Number.isFinite(paginaPedida) && paginaPedida >= 1;
+    // "plano" = plano de contas do mês (TODA despesa, agregada por conta), no
+    // lugar da folha de pessoal. Mesma paginação, outra janela de datas.
+    const escopo: "folha" | "plano" = corpo.escopo === "plano" ? "plano" : "folha";
 
-    const primeira = await buscaPagina(competencia, umaPagina ? paginaPedida : 1, PER_PAGE);
+    const primeira = await buscaPagina(competencia, umaPagina ? paginaPedida : 1, PER_PAGE, escopo);
     let itens: Record<string, unknown>[] = primeira?.data ?? [];
     // O Mubisys às vezes devolve a paginação em "pagination", às vezes em "meta"
     // (o cliente do Painel já trata os dois). Lendo só um formato, o total virava
@@ -282,9 +301,37 @@ Deno.serve(async (req) => {
     if (!umaPagina) {
       // Modo antigo: varre até a 4ª página aqui dentro.
       for (let p = 2; p <= Math.min(totalPaginas, 4); p++) {
-        const prox = await buscaPagina(competencia, p, PER_PAGE);
+        const prox = await buscaPagina(competencia, p, PER_PAGE, escopo);
         itens = itens.concat(prox?.data ?? []);
       }
+    }
+
+    if (escopo === "plano") {
+      // O plano de contas do mês: TODA despesa somada por conta, do jeito que a
+      // planilha do contador mostra. Sem nome de ninguém — conta, quantos
+      // títulos e o total.
+      const contas = new Map<string, { codigo: string; nome: string; valor: number; quantos: number }>();
+      for (const i of itens) {
+        const plano = String(i.plano_contas ?? "").trim();
+        if (!plano) continue;
+        const codigo = codigoDoPlano(plano);
+        if (!codigo) continue;
+        const x = contas.get(codigo) ?? { codigo, nome: plano.split("-").slice(1).join("-").trim() || codigo, quantos: 0, valor: 0 };
+        x.quantos += 1;
+        x.valor = Math.round((x.valor + (num(i.valor_pagamento) || num(i.valor_titulo))) * 100) / 100;
+        contas.set(codigo, x);
+      }
+      return json({
+        competencia,
+        escopo: "plano",
+        buscadoEm: new Date().toISOString(),
+        totalTitulosNoMes: itens.length,
+        paginas: totalPaginas,
+        truncado: umaPagina ? false : totalPaginas > 4,
+        pagina: umaPagina ? paginaPedida : 1,
+        temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
+        contas: [...contas.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })),
+      });
     }
 
     const folha = itens.filter((i) => ehFolha(String(i.plano_contas)));

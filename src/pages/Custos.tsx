@@ -67,6 +67,7 @@ import {
   type DiffPagamentos,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
+import { buscarPlanoCompleto, compararPlano, montarPlanoDoErp, type ComparacaoPlano } from "@/lib/mubiPlano";
 import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import type {
@@ -242,6 +243,15 @@ export default function Custos() {
   const [erroMubi, setErroMubi] = useState("");
   // Resultado da busca automática, esperando o RH querer revisar.
   const [respostaMubi, setRespostaMubi] = useState<RespostaMubi | null>(null);
+  // Plano de contas puxado do ERP, esperando a conferência do RH.
+  const [planoPrev, setPlanoPrev] = useState<{
+    competencia: string;
+    contas: ContaPlano[];
+    comparacao: ComparacaoPlano;
+    titulos: number;
+    incompleta: boolean;
+  } | null>(null);
+  const [buscandoPlano, setBuscandoPlano] = useState("");
   // Sugestões de salário para o cadastro (vindas do ERP) e quem o RH marcou.
   const [salarios, setSalarios] = useState<SugestaoSalario[]>([]);
   const [salariosMarcados, setSalariosMarcados] = useState<Set<string>>(new Set());
@@ -322,6 +332,47 @@ export default function Custos() {
     } catch (e) {
       toast(e instanceof Error ? e.message : "Falha ao ler a planilha.", "erro");
     }
+  };
+
+  // O plano de contas do mês direto do ERP, para o mês que o contador ainda não
+  // fechou. Cai na mesma regra da planilha: nada é gravado sem o RH conferir.
+  const puxarPlanoDoErp = async () => {
+    setBuscandoPlano("Consultando o Mubisys…");
+    try {
+      const r = await buscarPlanoCompleto(compUpload, (pag, tot) =>
+        setBuscandoPlano(tot > 1 ? `Consultando o Mubisys… página ${pag}/${tot}` : "Consultando o Mubisys…"),
+      );
+      if (r.contas.length === 0) {
+        toast(`O ERP não tem título nenhum vencendo em ${compLabelLongo(compUpload)}.`, "erro");
+        return;
+      }
+      const contas = montarPlanoDoErp(r.contas, compUpload);
+      setPlanoPrev({
+        competencia: compUpload,
+        contas,
+        comparacao: compararPlano(planoContas.filter((p: ContaPlano) => p.competencia === compUpload), contas),
+        titulos: r.titulos,
+        incompleta: r.incompleta,
+      });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Falha ao consultar o Mubisys.", "erro");
+    } finally {
+      setBuscandoPlano("");
+    }
+  };
+
+  const aplicarPlanoDoErp = () => {
+    if (!planoPrev) return;
+    const { competencia, contas } = planoPrev;
+    const novosIds = new Set(contas.map((c) => c.id));
+    const removidos = planoContas.filter((p: ContaPlano) => p.competencia === competencia && !novosIds.has(p.id)).map((p: ContaPlano) => p.id);
+    planoColecao.definir([...planoContas.filter((p: ContaPlano) => p.competencia !== competencia), ...contas]);
+    apagarRegistrosNuvem("planoContas", removidos);
+    void enviarColecao("planoContas");
+    setComp(competencia);
+    registrarAcaoManual(`Montou o plano de contas de ${compLabelLongo(competencia)} pelo Mubisys`, `${contas.length} conta(s)`, "planoContas");
+    toast(`Plano de contas de ${compLabel(competencia)} montado pelo ERP: ${contas.length} contas.`);
+    setPlanoPrev(null);
   };
 
   // Busca a folha do mês direto no Contas a Pagar do Mubisys e cai na MESMA
@@ -700,11 +751,17 @@ export default function Custos() {
     return [...sinais].sort((a, b) => peso[a.tom] - peso[b.tom])[0] ?? null;
   }, [sinais]);
   const atualizacaoRef = useRef<HTMLDivElement>(null);
+  // Recolhimento do "Resumo do mês" guardado aqui (e não dentro do Card) porque
+  // o atalho das pendências precisa poder abri-lo de fora.
+  const [resumoAberto, setResumoAberto] = useAbertoPersistido("custos:resumo-mes");
   const irParaSinal = (id: Sinal["id"]) => {
     // Troca de aba primeiro e rola depois do render — rolar antes leva a um
     // alvo que ainda não existe na tela.
     if (id === "pendencias") {
       setAba("global");
+      // O aviso de pendências mora DENTRO do "Resumo do mês", que recolhe e
+      // guarda a escolha: sem abrir, o atalho rolava até uma seção vazia.
+      setResumoAberto(true);
       window.setTimeout(() => document.getElementById("folha-geral")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
       return;
     }
@@ -1396,10 +1453,10 @@ export default function Custos() {
           <section>
             <div className="mb-3 flex items-center gap-2">
               <Users className="h-5 w-5 text-brand" />
-              <h2 id="folha-geral" className="scroll-mt-4 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
+              <h2 id="folha-geral" className="scroll-mt-20 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
             </div>
 
-            <Card idPersistencia="custos:resumo-mes">
+            <Card aberto={resumoAberto} onAlternar={() => setResumoAberto((v) => !v)}>
               <CardHeader
                 title="Resumo do mês"
                 subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
@@ -1534,7 +1591,7 @@ export default function Custos() {
                     <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p className="text-xs text-slate-600">
                       <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
-                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam zerados até você enviar a planilha do contador deste mês.
+                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam indisponíveis — não zerados — até você enviar a planilha do contador deste mês.
                     </p>
                   </div>
                 )}
@@ -1819,7 +1876,7 @@ export default function Custos() {
           Os dois quadros de carga (plano do contador + folha do ERP) moram na
           aba Sincronização (pedido de 06/09/2026): as outras abas ficam só com
           o que é do colaborador e só com o que é global. */}
-      <div ref={atualizacaoRef} className="mb-6 scroll-mt-4">
+      <div ref={atualizacaoRef} className="mb-6 scroll-mt-20">
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
@@ -1850,6 +1907,18 @@ export default function Custos() {
             />
             <button className="btn-primary sm:mb-0" onClick={() => refPlano.current?.click()}>
               <Upload className="h-4 w-4" /> Enviar plano
+            </button>
+            {/* O mesmo dado, sem esperar o contador fechar o mês: soma o Contas
+                a Pagar por conta. Julho e agosto de 2026 ficaram sem rateio e
+                sem Custo Global só porque a planilha não tinha chegado. */}
+            <button
+              className="btn-outline sm:mb-0"
+              onClick={puxarPlanoDoErp}
+              disabled={!!buscandoPlano}
+              title="Monta o plano de contas somando os títulos do Contas a Pagar que vencem no mês — mostra a comparação antes de gravar"
+            >
+              <RefreshCw className={"h-4 w-4" + (buscandoPlano ? " animate-spin" : "")} />
+              {buscandoPlano || "Puxar do Mubisys"}
             </button>
           </CardBody>
         </Card>
@@ -1983,6 +2052,88 @@ export default function Custos() {
           },
         ]}
       />
+
+      {planoPrev && (() => {
+        const cp = planoPrev.comparacao;
+        const jaTinha = cp.iguais + cp.mudaram + cp.somem > 0;
+        const fmtDif = (v: number) => `${v > 0 ? "+" : "−"}${formatBRL(Math.abs(v))}`;
+        return (
+          <Modal
+            aberto
+            onFechar={() => setPlanoPrev(null)}
+            titulo={`Plano de contas de ${compLabelLongo(planoPrev.competencia)} pelo Mubisys`}
+            descricao="Soma dos títulos do Contas a Pagar que vencem neste mês, agrupados por conta. Confira antes de gravar — importar SUBSTITUI a competência inteira."
+            largura="max-w-3xl"
+            rodape={<>
+              <button className="btn-outline" onClick={() => setPlanoPrev(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={aplicarPlanoDoErp}>
+                <FileSpreadsheet className="h-4 w-4" /> Gravar {planoPrev.contas.length} conta(s)
+              </button>
+            </>}
+          >
+            <div className="space-y-3">
+              {planoPrev.incompleta && (
+                <div className="rounded-xl border border-red-300 bg-red-50 p-3">
+                  <p className="text-xs font-semibold text-red-800">A consulta não chegou ao fim</p>
+                  <p className="mt-1 text-[11px] text-red-700/90">Parte dos títulos do mês ficou de fora, então os valores abaixo estão incompletos. Tente de novo antes de gravar.</p>
+                </div>
+              )}
+              {cp.somem > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-xs font-semibold text-amber-900">{cp.somem} conta(s) que existem hoje e o ERP não tem</p>
+                  <p className="mt-1 text-[11px] text-amber-800/90">
+                    Gravar apaga essas linhas. É o esperado quando o mês já tem a planilha do contador: ele lança provisão (FGTS, férias) que
+                    não passa pelo Contas a Pagar. <strong>Se este mês já veio do contador, cancele</strong> — a planilha fechada é a verdade contábil.
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  { n: cp.iguais, r: "iguais", cor: "text-slate-600", borda: "border-slate-200 bg-slate-50/60" },
+                  { n: cp.mudaram, r: "mudam", cor: "text-blue-700", borda: "border-blue-200 bg-blue-50/60" },
+                  { n: cp.novas, r: "novas", cor: "text-green-700", borda: "border-green-200 bg-green-50/60" },
+                  { n: cp.somem, r: "somem", cor: "text-amber-700", borda: "border-amber-200 bg-amber-50/60" },
+                ].map((x) => (
+                  <div key={x.r} className={`rounded-xl border px-3 py-2 text-center ${x.borda}`}>
+                    <p className={`text-xl font-bold tabular-nums ${x.cor}`}>{x.n}</p>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-400">{x.r}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500">
+                {planoPrev.titulos} título(s) lidos do ERP · total {formatBRL(cp.totalDepois)}
+                {jaTinha && <> · hoje gravado {formatBRL(cp.totalAntes)} ({fmtDif(Math.round((cp.totalDepois - cp.totalAntes) * 100) / 100)})</>}
+              </p>
+              <div className="max-h-80 overflow-y-auto rounded-xl border border-slate-200/70">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 border-b border-slate-100 bg-slate-50">
+                    <tr>
+                      <th className="th">Conta</th>
+                      <th className="th text-right">Hoje</th>
+                      <th className="th text-right">Pelo ERP</th>
+                      <th className="th text-right">Diferença</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {cp.linhas.map((l) => (
+                      <tr key={l.codigo} className={l.estado === "some" ? "bg-amber-50/40" : l.estado === "nova" ? "bg-green-50/30" : undefined}>
+                        <td className="td">
+                          <span className="font-mono text-xs text-slate-500">{l.codigo}</span> <span className="text-slate-700">{l.nome}</span>
+                        </td>
+                        <td className="td text-right tabular-nums text-slate-500">{l.antes == null ? <span className="text-slate-300">—</span> : formatBRL(l.antes)}</td>
+                        <td className="td text-right font-medium tabular-nums text-slate-800">{l.depois == null ? <span className="text-amber-600">sai</span> : formatBRL(l.depois)}</td>
+                        <td className="td text-right tabular-nums text-xs">
+                          {l.dif == null ? <span className="text-slate-300">—</span> : l.dif === 0 ? <span className="text-slate-400">igual</span> : <span className={l.dif > 0 ? "text-blue-700" : "text-slate-600"}>{fmtDif(l.dif)}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {folhaPrev && (() => {
         const { diff, naoCasados } = folhaPrev;

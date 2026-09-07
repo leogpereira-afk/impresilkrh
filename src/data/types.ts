@@ -762,6 +762,13 @@ export interface ContaPlano {
   nome: string;
   valor: number;
   folha: boolean;
+  /**
+   * De onde a conta veio. "erp" = somada do Contas a Pagar do Mubisys (mês civil
+   * do vencimento); ausente/"planilha" = a planilha fechada do contador, que é a
+   * verdade contábil e manda quando chega. Sem isto, um mês montado do ERP fica
+   * indistinguível de um mês fechado — e ninguém sabe se pode confiar no rateio.
+   */
+  origem?: "erp" | "planilha";
 }
 
 // Classe de custo de cada conta (editável na tela de Custos):
