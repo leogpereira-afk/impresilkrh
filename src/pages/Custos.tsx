@@ -73,6 +73,7 @@ import {
   ehDoMubi,
   ehManual,
   contaEhConfidencial,
+  classeDaConta,
   confidencialDoMes,
   type DiffPagamentos,
 } from "@/lib/custos";
@@ -1080,9 +1081,13 @@ export default function Custos() {
 
   const definirClasse = (conta: ContaPlano, classe: ClasseCusto) => {
     if (contaEhConfidencial(conta)) return; // não reclassificar confidenciais
-    const existente = classificacaoCustos.find((c: ClassificacaoConta) => c.codigo === conta.codigo);
+    // As classes vivem na numeração do CONTADOR. Conta que chegou do ERP com
+    // código renumerado grava pela referência (equivaleA) — gravar pelo código
+    // novo mudava a classe de OUTRA conta nos meses do contador (07/09/2026).
+    const chave = conta.equivaleA ?? conta.codigo;
+    const existente = classificacaoCustos.find((c: ClassificacaoConta) => c.codigo === chave);
     if (existente) classifColecao.atualizar(existente.id, { classe, nome: conta.nome });
-    else classifColecao.criar({ codigo: conta.codigo, nome: conta.nome, classe });
+    else classifColecao.criar({ codigo: chave, nome: conta.nome, classe });
   };
 
   /* Abre o modal de lançamento em modo "novo", SEMPRE limpo. O dia e as horas
@@ -1197,7 +1202,10 @@ export default function Custos() {
         tipo: lancTipo,
         valor: Math.round(valor * 100) / 100,
         // Hora extra tem dia próprio; os demais caem no dia 15 como antes.
-        dataPagamento: ehLancHE && heDia ? heDia : `${compAtiva}-15`,
+        // Dia que PERTENCE à competência escolhida pela régua 16→15 (dia 20):
+        // dia 15 caía no mês anterior e a auditoria oferecia "corrigir" a
+        // comissão de agosto para julho.
+        dataPagamento: ehLancHE && heDia ? heDia : `${compAtiva}-20`,
         descricao: descricao || "Lançamento manual",
         // Pagamento em dinheiro não passa pelo ERP: sem esta marca, a prévia
         // da varredura listaria o lançamento como "fora do ERP" com o botão
@@ -2876,7 +2884,8 @@ export default function Custos() {
               Individual vai para a ficha do colaborador; rateio é dividido entre todos; encargo entra no custo real; ignorar fica de fora.
             </p>
             {folhasEditor.map((c: ContaPlano) => {
-              const classeAtual = mapaClasse.get(c.codigo) ?? "ignorar";
+              // A mesma régua do rateio (classeDaConta): pela referência quando renumerou.
+              const classeAtual = classeDaConta(c, mapaClasse);
               return (
                 <div
                   key={c.codigo}
@@ -2885,7 +2894,7 @@ export default function Custos() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-800">{c.nome}</p>
                     <p className="text-xs text-slate-400">
-                      {c.codigo} · {formatBRL(c.valor)}
+                      {c.codigo}{c.equivaleA ? ` (ref. ${c.equivaleA} no plano do contador)` : ""} · {formatBRL(c.valor)}
                     </p>
                   </div>
                   <Select

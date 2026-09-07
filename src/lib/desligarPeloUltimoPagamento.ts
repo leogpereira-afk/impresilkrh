@@ -49,9 +49,13 @@ export function desligamentosPeloUltimoPagamento(
     if (c.ehDirecao || c.statusId === "direcao") continue;
     const u = ultimo.get(c.id);
     if (!u || u > ate) continue;
-    const data = fimDoMes(u);
     const dataAtual = (c.dataDesligamento ?? "").slice(0, 10) || null;
-    const mudaData = dataAtual !== data;
+    // A régua é o MÊS: se o RH já anotou uma saída dentro do último mês com
+    // lançamento (o dia real, que alimenta férias e experiência), esse dia
+    // fica. Só quem não tem data, ou tem data em outro mês, recebe o fim do
+    // mês — que é o que a folha prova, na falta de coisa melhor.
+    const mudaData = (dataAtual ?? "").slice(0, 7) !== u;
+    const data = mudaData ? fimDoMes(u) : dataAtual!;
     const mudaStatus = c.statusId !== "inativo";
     if (!mudaData && !mudaStatus) continue;
     out.push({

@@ -2,7 +2,7 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, casarPelaDescricao, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi } from "./mubiPagamentos";
+import { casarColaborador, casarPelaDescricao, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi, normalizarLinhas, tituloEmAberto, tituloCancelado} from "./mubiPagamentos";
 import { conciliarPagamentos } from "./custos";
 import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
@@ -521,5 +521,25 @@ describe("paraRegistros — origem genérica, CNPJ e guias", () => {
     ], CADASTRO, {});
     expect(r.naoCasados[0].titulos.map((t) => t.idMubi)).toEqual(["t7", "t8"]);
     expect(r.naoCasados[0].total).toBe(300);
+  });
+});
+
+describe("estado do título no ERP", () => {
+  it("cancelado ou estornado nunca vira pagamento", () => {
+    const linhas = [
+      { idMubi: "1", nome: "A", planoContas: "2.1.1-Salário", valor: 100, status: "PAGO" },
+      { idMubi: "2", nome: "B", planoContas: "2.1.1-Salário", valor: 100, status: "Cancelado" },
+      { idMubi: "3", nome: "C", planoContas: "2.1.1-Salário", valor: 100, status: "ESTORNADO" },
+      { idMubi: "4", nome: "D", planoContas: "2.1.1-Salário", valor: 100, status: "ABERTO" },
+    ] as unknown as Parameters<typeof normalizarLinhas>[0];
+    expect(normalizarLinhas(linhas).map((l) => l.idMubi)).toEqual(["1", "4"]);
+  });
+  it("em aberto é reconhecido nas grafias do ERP; ausente não é aberto", () => {
+    expect(tituloEmAberto("ABERTO")).toBe(true);
+    expect(tituloEmAberto("Vencido")).toBe(true);
+    expect(tituloEmAberto("A PAGAR")).toBe(true);
+    expect(tituloEmAberto("PAGO")).toBe(false);
+    expect(tituloEmAberto(undefined)).toBe(false);
+    expect(tituloCancelado("Estornado")).toBe(true);
   });
 });

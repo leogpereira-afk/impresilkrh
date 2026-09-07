@@ -16,12 +16,15 @@
 // Sócio não entra: quem chama já filtra (pagamentosDaEquipe).
 import { calcularEncargos } from "./encargos";
 import { TIPOS_ENCARGO } from "./folha";
+import { tituloEmAberto } from "./mubiPagamentos";
 
 export interface Pag {
   competencia: string;
   tipo: string;
   valor: number;
   colaboradorId?: string;
+  /** Estado do título no ERP (PAGO, ABERTO…). Ausente = legado, conta como pago. */
+  statusErp?: string;
 }
 
 export interface MesDaEquipe {
@@ -33,6 +36,12 @@ export interface MesDaEquipe {
   base: number;
   /** Quantas pessoas tiveram algum lançamento no mês. */
   pessoas: number;
+  /**
+   * Quanto do "pago" ainda está EM ABERTO no ERP (título que venceu ou vence e
+   * não foi baixado). Entra na soma — é a folha do mês — mas a tela tem de
+   * dizer que esse pedaço ainda não saiu do caixa (auditoria de 07/09/2026).
+   */
+  emAberto: number;
 }
 
 export interface ResumoDaEquipe extends MesDaEquipe {
@@ -60,6 +69,7 @@ export function mesDaEquipe(pags: Pag[], comp: string): MesDaEquipe {
   const fgtsLancado = doMes.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const enc = calcularEncargos(doMes, fgtsLancado);
   const pago = somaPagos(doMes);
+  const emAberto = somaPagos(doMes.filter((p) => tituloEmAberto(p.statusErp)));
   return {
     competencia: comp,
     pago,
@@ -67,6 +77,7 @@ export function mesDaEquipe(pags: Pag[], comp: string): MesDaEquipe {
     estimado: pago + enc.total,
     base: enc.bruto,
     pessoas: new Set(doMes.map((p) => p.colaboradorId).filter(Boolean)).size,
+    emAberto,
   };
 }
 

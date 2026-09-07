@@ -122,11 +122,26 @@ export async function buscarPagamentosMubi(competencia: string, page?: number): 
  * quando nem o nome nem o código da conta dizem nada. Toda linha do ERP passa
  * por `buscarPagamentosMubi`, então este é o único lugar que precisa disso.
  */
+/** Título que o ERP cancelou ou estornou: não é dinheiro, não entra. */
+export const tituloCancelado = (status: unknown): boolean => /CANCEL|ESTORN/i.test(String(status ?? ""));
+
+/**
+ * Título que ainda não foi pago (em aberto, pendente, vencido). Ausente =
+ * legado gravado antes de o estado existir: conta como pago, como sempre contou.
+ */
+export const tituloEmAberto = (status: unknown): boolean => /ABERT|PENDENT|VENCID|A ?PAGAR/i.test(String(status ?? ""));
+
 export const normalizarLinhas = (linhas: LinhaMubi[]): LinhaMubi[] =>
-  // A reserva vale só quando o ERP NÃO mandou conta. Se mandou e nós não
-  // reconhecemos, o certo é "Outros" — visível: aceitar o palpite da função
-  // (que resolve 2.1.11.x pelo prefixo antigo) repetiria calado o erro de julho.
-  linhas.map((l) => ({ ...l, tipo: tipoDoPlanoErp(l.planoContas, l.planoContas ? "Outros" : (l.tipo || "Outros")) }));
+  linhas
+    // Cancelado/estornado nunca vira pagamento: a busca pede status TODOS e o
+    // título cancelado entrava com valor cheio e era somado como pago (auditoria
+    // de 07/09/2026). Quem já estava gravado e foi cancelado depois volta como
+    // "não voltou" na prévia — e o RH decide.
+    .filter((l) => !tituloCancelado(l.status))
+    // A reserva vale só quando o ERP NÃO mandou conta. Se mandou e nós não
+    // reconhecemos, o certo é "Outros" — visível: aceitar o palpite da função
+    // (que resolve 2.1.11.x pelo prefixo antigo) repetiria calado o erro de julho.
+    .map((l) => ({ ...l, tipo: tipoDoPlanoErp(l.planoContas, l.planoContas ? "Outros" : (l.tipo || "Outros")) }));
 
 /**
  * Uma competência inteira, percorrendo TODAS as páginas até o fim.

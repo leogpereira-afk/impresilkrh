@@ -113,3 +113,16 @@ describe("porPessoaNoMes", () => {
     expect(porPessoaNoMes(pags, "2026-01")).toEqual([]);
   });
 });
+
+describe("títulos em aberto no ERP", () => {
+  it("entram no pago do mês, mas a parcela em aberto é dita à parte", () => {
+    const pags = [
+      { competencia: "2026-09", colaboradorId: "a", tipo: "Salário", valor: 1000, statusErp: "PAGO" },
+      { competencia: "2026-09", colaboradorId: "b", tipo: "Salário", valor: 700, statusErp: "ABERTO" },
+      { competencia: "2026-09", colaboradorId: "c", tipo: "Salário", valor: 300 }, // legado, sem estado
+    ];
+    const m = mesDaEquipe(pags, "2026-09");
+    expect(m.pago).toBe(2000);
+    expect(m.emAberto).toBe(700);
+  });
+});

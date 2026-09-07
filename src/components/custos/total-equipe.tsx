@@ -80,6 +80,9 @@ export function TotalEquipe({
               {comEncargos
                 ? `Pago ${formatBRL(resumo.pago)} + provisões ${formatBRL(resumo.provisoes)} (FGTS 8%, 13º e férias sobre ${formatBRL(resumo.base)}). Não é o custo patronal completo.`
                 : `Pago às pessoas. FGTS e INSS lançados ficam fora — são custo da empresa.`}
+              {resumo.emAberto > 0.005 && (
+                <> <strong className="font-semibold text-amber-700">{formatBRL(resumo.emAberto)} ainda em aberto no ERP</strong> — entra na folha do mês, mas não saiu do caixa.</>
+              )}
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               <StatCard label="Pago à equipe" value={formatBRL(resumo.pago)} icon={<Users className="h-4 w-4" />} accent="blue" onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />

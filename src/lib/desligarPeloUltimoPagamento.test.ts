@@ -63,6 +63,18 @@ describe("desligamentosPeloUltimoPagamento", () => {
     expect(r.map((x) => x.colaboradorId)).toEqual(["bruno", "paulo"]);
   });
 
+  it("saída anotada com o dia real dentro do último mês FICA como está", () => {
+    const certoNoDia = col({ id: "d", nome: "Dia Real", statusId: "inativo", dataDesligamento: "2026-03-15" });
+    expect(desligamentosPeloUltimoPagamento([certoNoDia], [pg("d", "2026-03")], "2026-06")).toEqual([]);
+  });
+
+  it("ativo com a saída anotada no mês certo: só o status muda, o dia é preservado", () => {
+    const ativo = col({ id: "e", nome: "Ativo", statusId: "ativo", dataDesligamento: "2026-03-15" });
+    const r2 = desligamentosPeloUltimoPagamento([ativo], [pg("e", "2026-03")], "2026-06");
+    expect(r2[0].muda).toBe("status");
+    expect(r2[0].para.dataDesligamento).toBe("2026-03-15");
+  });
+
   it("limite inválido não propõe nada", () => {
     expect(desligamentosPeloUltimoPagamento(pessoas, pags, "junho")).toEqual([]);
   });
