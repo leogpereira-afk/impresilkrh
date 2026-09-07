@@ -757,6 +757,8 @@ export default function Custos() {
     () => pagamentos.filter((p: Pagamento) => p.colaboradorId === colabId && p.competencia === compAtiva),
     [pagamentos, colabId, compAtiva],
   );
+  // Base da régua de % nos lançamentos da pessoa: tudo que ela recebeu no mês.
+  const totalLancColab = useMemo(() => pagsDoColab.reduce((t: number, p: Pagamento) => t + (Number(p.valor) || 0), 0), [pagsDoColab]);
   const linhasColab = useMemo(() => somaPorTipo(pagsDoColab), [pagsDoColab]);
 
   // ---------- Resumo geral do mês (folha de todos os colaboradores) ----------
@@ -1419,6 +1421,16 @@ export default function Custos() {
                                     manual
                                   </span>
                                 )}
+                              </span>
+                            </td>
+                            {/* Régua de % também aqui (pedido do Léo, 07/09/2026):
+                                a parte de cada lançamento no mês da pessoa. */}
+                            <td className="w-44 px-3 py-2">
+                              <span className="flex items-center gap-2">
+                                <span className="h-1.5 flex-1 rounded-full bg-slate-100" aria-hidden="true">
+                                  <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(0, Math.min(100, totalLancColab > 0 ? ((Number(p.valor) || 0) / totalLancColab) * 100 : 0))}%`, backgroundColor: corDoTipo(p.tipo) }} />
+                                </span>
+                                <span className="w-11 text-right text-xs tabular-nums text-slate-500">{totalLancColab > 0 ? `${(((Number(p.valor) || 0) / totalLancColab) * 100).toFixed(1).replace(".", ",")}%` : "—"}</span>
                               </span>
                             </td>
                             <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(p.valor)}</td>
