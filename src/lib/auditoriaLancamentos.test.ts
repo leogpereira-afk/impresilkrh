@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditarLancamentos } from "./auditoriaLancamentos";
+import { auditarLancamentos, ROTULO_REGRA, COMO_CORRIGIR, ROTULO_ONDE } from "./auditoriaLancamentos";
 import type { Colaborador, Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> & { id: string }): Pagamento =>
@@ -116,5 +116,50 @@ describe("auditoria dos lançamentos", () => {
     expect(r.resumo.consertaveis).toBe(1);
     expect(r.resumo.porGravidade.erro).toBeGreaterThanOrEqual(2);
     expect(r.resumo.linhas).toBe(2);
+  });
+});
+
+/* COMO CORRIGIR — o pedido de 07/09/2026: "mostra esses defeitos mas não mostra
+   como corrigir". Apontar sem dizer o que fazer joga o trabalho todo em quem lê.
+   Estes testes existem para regra nova não chegar à tela muda. */
+describe("como corrigir", () => {
+  it("toda regra que a auditoria sabe apontar sabe dizer como se conserta", () => {
+    for (const regra of Object.keys(ROTULO_REGRA) as (keyof typeof ROTULO_REGRA)[]) {
+      const c = COMO_CORRIGIR[regra];
+      expect(c, `regra "${regra}" sem instrução de conserto`).toBeTruthy();
+      expect(c.causa.length, `causa vazia em "${regra}"`).toBeGreaterThan(20);
+      expect(c.passos.length, `sem passos em "${regra}"`).toBeGreaterThan(0);
+      expect(ROTULO_ONDE[c.onde], `onde inválido em "${regra}"`).toBeTruthy();
+    }
+  });
+
+  it("nenhum passo é vago: todos dizem uma ação concreta", () => {
+    for (const [regra, c] of Object.entries(COMO_CORRIGIR)) {
+      for (const passo of c.passos) {
+        expect(passo.length, `passo curto demais em "${regra}"`).toBeGreaterThan(30);
+        // "verifique se está tudo certo" é o tipo de passo que não ajuda ninguém.
+        expect(passo.toLowerCase(), `passo vago em "${regra}"`).not.toMatch(/tudo certo|se necess[áa]rio|caso contr[áa]rio apenas/);
+      }
+    }
+  });
+
+  it("só as regras com conserto determinístico prometem o botão automático", () => {
+    // Prometer "automático" onde o botão não resolve é pior que não prometer:
+    // a pessoa clica, nada muda, e ela perde a confiança no painel inteiro.
+    const automaticas = Object.entries(COMO_CORRIGIR).filter(([, c]) => c.onde === "automatico").map(([r]) => r).sort();
+    expect(automaticas).toEqual(["classificacao", "competencia"]);
+  });
+
+  it("o achado de cadastro manda para a ficha, que é onde a data se acerta", () => {
+    expect(COMO_CORRIGIR.cadastro.onde).toBe("ficha");
+    expect(COMO_CORRIGIR.cadastro.passos.join(" ")).toContain("Desligar pelo último pagamento");
+  });
+
+  it("mês no quadro sem lançamento manda olhar 'Não encontrados' ANTES de mexer no cadastro", () => {
+    // A ordem importa: mexer na data de admissão para calar o aviso, quando a
+    // causa era vínculo não casado, estraga o cadastro e esconde o problema.
+    const passos = COMO_CORRIGIR["sem-lancamento"].passos;
+    expect(passos[0]).toContain("Não encontrados");
+    expect(passos.findIndex((p) => p.includes("admissão"))).toBeGreaterThan(0);
   });
 });

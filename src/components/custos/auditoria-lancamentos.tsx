@@ -4,7 +4,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { formatBRL } from "@/lib/format";
 import { compLabel } from "@/lib/custos";
-import { auditarLancamentos, ROTULO_REGRA, type AchadoAuditoria, type Gravidade, type RegraAuditoria } from "@/lib/auditoriaLancamentos";
+import { auditarLancamentos, ROTULO_REGRA, COMO_CORRIGIR, ROTULO_ONDE, type AchadoAuditoria, type Gravidade, type RegraAuditoria } from "@/lib/auditoriaLancamentos";
 import { desligamentosPeloUltimoPagamento, type PropostaDesligamento } from "@/lib/desligarPeloUltimoPagamento";
 import { Input, Select } from "@/components/ui/form";
 import type { Colaborador, Pagamento } from "@/data/types";
@@ -140,6 +140,33 @@ export function AuditoriaLancamentos({
                 <span className="ml-auto text-xs text-slate-500">{aberto ? "esconder" : "ver"}</span>
               </button>
               {aberto && (
+                <>
+                {/* COMO CORRIGIR — vem antes da lista de propósito. A auditoria
+                    apontava e parava aí; quem lê não conhece a regra que gerou
+                    o achado e ficava com o problema na mão, sem o caminho. */}
+                {(() => {
+                  const c = COMO_CORRIGIR[regra];
+                  if (!c) return null;
+                  return (
+                    <div className="border-t border-black/5 bg-white/70 px-3 py-2.5">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Como corrigir</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{ROTULO_ONDE[c.onde]}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-600">{c.causa}</p>
+                      <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-xs text-slate-700 marker:text-slate-400">
+                        {c.passos.map((passo) => (
+                          <li key={passo}>{passo}</li>
+                        ))}
+                      </ol>
+                      {c.onde === "automatico" && consertaveis.length > 0 && (
+                        <button type="button" className="btn-outline mt-2 h-8 py-0 text-xs" onClick={() => setConfirmar(true)}>
+                          <Wand2 className="h-3.5 w-3.5" /> Corrigir {consertaveis.length} automático(s)
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
                 <ul className="space-y-1.5 border-t border-black/5 px-3 py-2">
                   {lista.slice(0, MOSTRAR).map((a, i) => (
                     <li key={`${a.regra}:${a.colaboradorId}:${a.pagamentoIds[0] ?? i}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
@@ -159,6 +186,7 @@ export function AuditoriaLancamentos({
                     </li>
                   )}
                 </ul>
+                </>
               )}
             </div>
           );

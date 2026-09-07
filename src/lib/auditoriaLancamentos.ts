@@ -235,3 +235,121 @@ export const ROTULO_REGRA: Record<RegraAuditoria, string> = {
   "sem-lancamento": "Mês no quadro sem lançamento",
   "sem-salario": "Mês sem salário",
 };
+
+// ---------------------------------------------------------------------------
+// COMO CORRIGIR CADA ACHADO
+//
+// A auditoria apontava e parava aí (pedido do Léo, 07/09/2026: "mostra esses
+// defeitos mas não mostra como corrigir"). Apontar sem dizer o que fazer
+// transfere o trabalho inteiro para quem lê — e o RH não conhece as regras que
+// geraram o achado.
+//
+// Cada regra diz TRÊS coisas: a causa (por que apareceu), os passos (na ordem,
+// no imperativo) e onde se resolve. O primeiro passo é sempre o que resolve o
+// caso mais comum; os seguintes são as exceções.
+// ---------------------------------------------------------------------------
+
+/** Onde o conserto acontece — vira o rótulo do atalho na tela. */
+export type OndeCorrigir = "automatico" | "ficha" | "erp" | "quadro";
+
+export interface ComoCorrigir {
+  /** Por que este achado existe, numa frase. */
+  causa: string;
+  /** O que fazer, na ordem. O primeiro resolve o caso comum. */
+  passos: string[];
+  onde: OndeCorrigir;
+}
+
+export const COMO_CORRIGIR: Record<RegraAuditoria, ComoCorrigir> = {
+  classificacao: {
+    causa: "O nome da conta no ERP diz um tipo e o lançamento está gravado com outro.",
+    onde: "automatico",
+    passos: [
+      "Use “Corrigir automático(s)” aqui em cima: a regra lê o NOME da conta e regrava o tipo.",
+      "Se o tipo certo não for o que a conta diz, o erro está no Mubisys — corrija a conta lá, porque aqui quem manda é o nome dela.",
+    ],
+  },
+  "conta-desconhecida": {
+    causa: "O contador criou ou renomeou uma conta que nenhuma regra de classificação reconhece; o tipo gravado foi um palpite.",
+    onde: "ficha",
+    passos: [
+      "Abra a pessoa e confira se o tipo gravado faz sentido para essa conta.",
+      "Se a conta veio para ficar, peça para incluir o nome dela na regra — assim o mês que vem já entra classificado.",
+      "Nunca classifique pelo código: o contador renumera o plano inteiro e o código muda de dono.",
+    ],
+  },
+  competencia: {
+    causa: "A competência gravada não é a que o vencimento manda (a janela vai do dia 16 ao 15 do mês seguinte).",
+    onde: "automatico",
+    passos: [
+      "Use “Corrigir automático(s)”: recalcula a competência pela data de vencimento.",
+      "Só recuse se alguém lançou à mão de propósito num mês diferente — aí o certo é o que está gravado.",
+    ],
+  },
+  orfao: {
+    causa: "O lançamento aponta para uma pessoa que não existe no cadastro.",
+    onde: "erp",
+    passos: [
+      "Quase sempre é id variante: a pessoa EXISTE com outro id. Procure pelo nome no cadastro e reconecte antes de apagar qualquer coisa.",
+      "Se ninguém corresponde, o vínculo do ERP casou errado: rode “Buscar do Mubisys” e aponte a pessoa certa na prévia.",
+    ],
+  },
+  "duplicado-erp": {
+    causa: "O mesmo título do ERP entrou mais de uma vez — o dinheiro está contado em dobro no mês.",
+    onde: "ficha",
+    passos: [
+      "Abra a pessoa e apague as cópias, deixando um lançamento por título.",
+      "Depois rode “Buscar do Mubisys” do mês: o título tem id próprio, então a reimportação passa a atualizar em vez de duplicar.",
+    ],
+  },
+  "possivel-duplicata": {
+    causa: "Dois lançamentos iguais na mesma pessoa, tipo, valor e dia. Pode ser duplicidade do ERP ou dois pagamentos de verdade.",
+    onde: "ficha",
+    passos: [
+      "Confira no Mubisys se são dois títulos distintos ou o mesmo lançado duas vezes.",
+      "Se for o mesmo, apague um na ficha da pessoa.",
+      "Se forem dois pagamentos reais (duas diárias no mesmo dia, por exemplo), não mexa — o aviso continua aparecendo e está certo.",
+    ],
+  },
+  valor: {
+    causa: "Lançamento com valor zero ou negativo.",
+    onde: "ficha",
+    passos: [
+      "Abra a pessoa e confira o valor contra o Mubisys.",
+      "Zero costuma ser importação que não leu o campo; negativo costuma ser estorno lançado como pagamento.",
+    ],
+  },
+  cadastro: {
+    causa: "A data de admissão, a de desligamento ou o status brigam com os pagamentos que existem.",
+    onde: "ficha",
+    passos: [
+      "Abra a ficha e acerte a data de desligamento (ou tire o status inativo de quem continua recebendo).",
+      "Se a pessoa saiu mesmo, use “Desligar pelo último pagamento” aqui embaixo: grava a data no fim do último mês em que ela recebeu.",
+      "Enquanto não corrigir, ela some do quadro do mês e a ficha dela abre vazia — o total do mês fica errado por baixo, sem avisar.",
+    ],
+  },
+  "sem-lancamento": {
+    causa: "A pessoa estava no quadro naquele mês e não tem lançamento nenhum.",
+    onde: "erp",
+    passos: [
+      "Primeiro procure o nome dela em “Não encontrados”, na prévia da busca: o vínculo do ERP pode não ter casado por diferença de grafia ou CPF em branco.",
+      "Se não estiver lá, a data de admissão ou de desligamento do cadastro está errada e põe a pessoa num mês em que ela não estava.",
+      "Se o mês inteiro estiver vazio para todo mundo, use “Puxar histórico” para trazer a folha que faltou.",
+    ],
+  },
+  "sem-salario": {
+    causa: "A pessoa recebeu outras verbas no mês, mas nem salário, nem rescisão, nem férias.",
+    onde: "erp",
+    passos: [
+      "No mês corrente isso é normal: o salário da competência vence no início do mês seguinte.",
+      "Em mês antigo, falta folha: use “Puxar histórico” e confira se o título não está no ERP com outro nome ou outro CPF.",
+    ],
+  },
+};
+
+export const ROTULO_ONDE: Record<OndeCorrigir, string> = {
+  automatico: "Tem conserto automático",
+  ficha: "Resolve na ficha da pessoa",
+  erp: "Resolve na busca do Mubisys",
+  quadro: "Resolve no cadastro",
+};
