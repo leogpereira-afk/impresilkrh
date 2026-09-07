@@ -46,6 +46,7 @@ import { posicaoNaFaixa } from "@/lib/posicaoNaFaixa";
 import { formatBRL, formatDate, diaLocalISO, parseBRL } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { Cargo, Colaborador } from "@/data/types";
+import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 
 const COR_ENQ: Record<string, string> = {
   Crítico: "bg-red-500", Abaixo: "bg-amber-500", Dentro: "bg-emerald-500", Acima: "bg-sky-500",
@@ -396,8 +397,18 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
     /* Cargo novo nasce com a faixa zerada: ela pertence ao PLANO DE CARREIRA e
        se ajusta no Painel de Controle. Aqui só existe um salário — dois números
        para a mesma pergunta fariam a proposta sair do errado. */
+    if (cargo) {
+      // Só o que mudou em relação ao retrato de abertura — e nunca as faixas
+      // (elas são do Painel de Controle). Gravar a cópia inteira devolvia a
+      // faixa zerada e a descrição velha por cima do que chegou pelo sync.
+      const patch = patchDoQueMudou(cargo, form, { nunca: ["faixas", "id"] });
+      if (Object.keys(patch).length === 0) { toast("Nada mudou."); onFechar(); return; }
+      onSalvar(patch);
+      toast("Cargo atualizado.");
+      return;
+    }
     onSalvar({ ...form, faixas: (form.faixas ?? [0, 0, 0, 0, 0]) as Cargo["faixas"] });
-    toast(cargo ? "Cargo atualizado." : "Cargo criado.");
+    toast("Cargo criado.");
   };
 
   return (

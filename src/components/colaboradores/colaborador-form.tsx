@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
-import { useColecao } from "@/lib/store";
+import { useColecao, obter } from "@/lib/store";
+import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 import { useDominio, enquadrar, noQuadro } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
@@ -173,7 +174,21 @@ export function ColaboradorForm({
     };
 
     if (editar) {
-      atualizar(editar.id, dados);
+      // O retrato de abertura pode estar velho: o pull de 20 s traz o que outra
+      // pessoa mudou enquanto este formulário estava aberto. Se o registro
+      // mudou de versão, não grava por cima — avisa e pede para reabrir. E o
+      // que grava é só a diferença contra o retrato, nunca a cópia inteira.
+      const atual = obter("colaboradores").find((c) => c.id === editar.id) as (Colaborador & { _rhRev?: number }) | undefined;
+      const revAbriu = (editar as Colaborador & { _rhRev?: number })._rhRev;
+      if (atual && revAbriu !== undefined && atual._rhRev !== undefined && atual._rhRev !== revAbriu) {
+        toast("Este cadastro foi alterado por outra pessoa enquanto você editava. Feche e reabra para continuar.", "erro");
+        return;
+      }
+      const patch = patchDoQueMudou(editar, dados, {
+        sempre: ["salario", "filhos", "qtdFilhos", "contatoEmergencia", "refMin", "refMax", "enquadramento", "dataDesligamento"],
+        nunca: ["id"],
+      });
+      atualizar(editar.id, patch);
       // Mesmo registro que a edição no lugar faz: sem isto, promover pelo
       // formulário grande continuava invisível na linha do tempo.
       registrarMovimentacaoDeCarreira(editar, { ...editar, ...dados } as Colaborador, d, criarMov);

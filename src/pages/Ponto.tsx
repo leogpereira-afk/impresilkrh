@@ -251,14 +251,27 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   const [ocupado, setOcupado] = useState(false);
   const [modo, setModo] = useState<"tudo" | "resumo">("tudo");
   const [excluir, setExcluir] = useState<string | null>(null);
-  const [verMes, setVerMes] = useState<Ponto | null>(null);
+  // Só o ID fica no estado; o registro é derivado da coleção a cada render.
+  // Guardar o objeto congelava o mês: corrigir o dia 15 e depois o dia 22
+  // gravava o dia 15 de volta ao que era (auditoria de 07/09/2026).
+  const [verMesId, setVerMesId] = useState<string | null>(null);
+  const verMes = useMemo(() => (verMesId ? pontos.find((p) => p.id === verMesId) ?? null : null), [pontos, verMesId]);
+  const setVerMes = (p: Ponto | null) => setVerMesId(p ? p.id : null);
   // Cards do topo filtram a lista abaixo (clicar de novo limpa).
   const [foco, setFoco] = useState<"extras" | "faltasHoras" | "faltasDias" | "atestados" | null>(null);
   const alternarFoco = (f: NonNullable<typeof foco>) => setFoco((a) => (a === f ? null : f));
   // Lançamento manual: null = fechado; objeto = aberto (com quem pré-selecionar).
   const [manual, setManual] = useState<{ colaboradorId?: string | null; nome?: string; existente?: Ponto | null } | null>(null);
   // Correção de um dia específico do extrato.
-  const [editandoDia, setEditandoDia] = useState<{ ponto: Ponto; dia: PontoDia } | null>(null);
+  const [editandoDiaRef, setEditandoDiaRef] = useState<{ pontoId: string; data: string; dia: PontoDia } | null>(null);
+  const editandoDia = useMemo(() => {
+    if (!editandoDiaRef) return null;
+    const ponto = pontos.find((p) => p.id === editandoDiaRef.pontoId);
+    if (!ponto) return null;
+    const dia = (ponto.dias ?? []).find((d) => d.data === editandoDiaRef.data) ?? editandoDiaRef.dia;
+    return { ponto, dia };
+  }, [pontos, editandoDiaRef]);
+  const setEditandoDia = (v: { ponto: Ponto; dia: PontoDia } | null) => setEditandoDiaRef(v ? { pontoId: v.ponto.id, data: v.dia.data, dia: v.dia } : null);
   const [expandido, setExpandido] = useState<Set<string>>(() => new Set());
   const toggleExp = (id: string) =>
     setExpandido((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });

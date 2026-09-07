@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Plus, Pencil, Trash2, Building2, Layers, Tag, Briefcase, SlidersHorizontal,
   ClipboardList, Palette, Database, Award, UserCog, ShieldCheck, Lock, Eye, EyeOff,
@@ -68,6 +68,39 @@ function PesoInput({ valor, onGravar }: { valor: number; onGravar: (n: number) =
            da nota sem ninguém ver. Nesse caso o valor volta a ser o que era. */
         if (rascunho.trim() !== "" && Number.isFinite(n) && n >= 0) onGravar(n);
         setRascunho(null);
+      }}
+    />
+  );
+}
+
+
+/**
+ * O texto dos modelos de checklist, CONTROLADO. Era um textarea sem estado
+ * que gravava em todo blur: clicar no campo para ler e clicar fora devolvia a
+ * lista velha por cima do que outro aparelho tinha acabado de salvar. Agora o
+ * texto acompanha o registro (o pull de 20 s repõe), e só grava se mudou.
+ */
+const serializarItens = (itens: { titulo: string; responsavel: string }[]) => itens.map((i) => `${i.titulo} | ${i.responsavel}`).join("\n");
+function ModeloChecklistTextarea({ modelo, onGravar }: { modelo: ModeloChecklist; onGravar: (itens: { titulo: string; responsavel: string }[]) => void }) {
+  const gravado = serializarItens(modelo.itens);
+  const [texto, setTexto] = useState(gravado);
+  const [tocado, setTocado] = useState(false);
+  // Enquanto não há digitação, o campo segue o registro (que pode ter mudado
+  // pelo sync). Depois de digitar, o rascunho manda até o blur.
+  useEffect(() => { if (!tocado) setTexto(gravado); }, [gravado, tocado]);
+  return (
+    <textarea
+      className="input min-h-[180px] font-mono text-xs"
+      value={texto}
+      onChange={(e) => { setTexto(e.target.value); setTocado(true); }}
+      onBlur={() => {
+        setTocado(false);
+        const itens = texto.split("\n").filter((l) => l.trim()).map((l) => {
+          const [titulo, responsavel] = l.split("|").map((x) => x.trim());
+          return { titulo, responsavel: responsavel ?? "RH" };
+        }).filter((it) => it.titulo); // descarta linhas sem título (ex.: "| RH")
+        if (serializarItens(itens) === gravado) return; // nada mudou: não grava, não sobe, não avisa
+        onGravar(itens);
       }}
     />
   );
@@ -630,17 +663,9 @@ function AvaliacaoSecao() {
           {(modelos as ModeloChecklist[]).map((m) => (
             <div key={m.id} className="rounded-lg border border-slate-100 p-3">
               <p className="mb-2 text-sm font-semibold text-slate-700">{m.tipo}</p>
-              <textarea
-                className="input min-h-[180px] font-mono text-xs"
-                defaultValue={m.itens.map((i) => `${i.titulo} | ${i.responsavel}`).join("\n")}
-                onBlur={(e) => {
-                  const itens = e.target.value.split("\n").filter((l) => l.trim()).map((l) => {
-                    const [titulo, responsavel] = l.split("|").map((x) => x.trim());
-                    return { titulo, responsavel: responsavel ?? "RH" };
-                  }).filter((it) => it.titulo); // descarta linhas sem título (ex.: "| RH")
-                  atualizarModelo(m.id, { itens });
-                  toast(`Modelo ${m.tipo} atualizado.`);
-                }}
+              <ModeloChecklistTextarea
+                modelo={m}
+                onGravar={(itens) => { atualizarModelo(m.id, { itens }); toast(`Modelo ${m.tipo} atualizado.`); }}
               />
               <p className="mt-1 text-[11px] text-slate-400">Um item por linha: <code>Título | Responsável</code></p>
             </div>
