@@ -291,6 +291,10 @@ export default function Custos() {
   // Remoção é POR LINHA marcada (07/09/2026) — nunca um checkbox que apaga
   // tudo. E cada aviso grave pede "conferi" antes de o botão liberar.
   const [ausentesMarcados, setAusentesMarcados] = useState<Set<string>>(new Set());
+  /* Alterações que a pessoa DESMARCOU na prévia. Vazio = aplica tudo, que é o
+     caso comum; o pedido do Léo era poder tirar as duvidosas sem cancelar a
+     importação inteira. */
+  const [excluidos, setExcluidos] = useState<Set<string>>(new Set());
   // Chaves de alarme conferidas (chaveDoAlarme: tipo + quantos + valor + ids).
   // Guardar só o tipo deixava o "Conferi" de "remover 1" valendo para "remover 74".
   const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
@@ -719,13 +723,14 @@ export default function Custos() {
       gravados: pagamentos as Pagamento[],
       janela: new Set(folhaPrev.janela),
       ausentesMarcados,
+      excluidos,
       colaboradorPor: (id) => d.colabById.get(id),
       tiposEncargo: TIPOS_ENCARGO,
       busca: folhaPrev.mubi?.busca,
       semDono,
       foraDaFolha,
     });
-  }, [folhaPrev, pagamentos, ausentesMarcados, d.colabById]);
+  }, [folhaPrev, pagamentos, ausentesMarcados, excluidos, d.colabById]);
 
   const ultimoRetrato = useMemo(
     () => [...(recuperacoesColecao.items as RetratoFolha[])].filter((r) => !r.usado).sort((a, b) => b.em.localeCompare(a.em))[0] ?? null,
@@ -2673,6 +2678,9 @@ export default function Custos() {
             cobertura={folhaPrev.mubi?.busca}
             nomeDe={(id) => d.nomeColab(id)}
             ausentesMarcados={ausentesMarcados}
+            excluidos={excluidos}
+            onExcluir={(id, fora) => setExcluidos((s2) => { const n = new Set(s2); if (fora) n.add(id); else n.delete(id); return n; })}
+            onExcluirBloco={(ids, fora) => setExcluidos((s2) => { const n = new Set(s2); for (const i of ids) { if (fora) n.add(i); else n.delete(i); } return n; })}
             onMarcarAusente={(id, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
             onMarcarBloco={(ids, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); for (const id of ids) { if (ok) n.add(id); else n.delete(id); } return n; })}
             confirmados={confirmados}

@@ -39,6 +39,7 @@ describe("PreviaFolha — diz o que muda e trava até conferir", () => {
           resumo={resumo} iguais={0} cobertura={{ truncado: false, pedidas: ["2026-07"], lidas: ["2026-07"], falhas: [] }}
           nomeDe={(id) => pessoas[id]?.nome ?? id}
           ausentesMarcados={new Set()} onMarcarAusente={() => {}} onMarcarBloco={() => {}}
+          excluidos={new Set()} onExcluir={() => {}} onExcluirBloco={() => {}}
           confirmados={confirmados as never} onConfirmar={() => {}}
           salarios={[]} salariosMarcados={new Set()} onMarcarSalario={() => {}} cpfs={[]}
           onAplicar={() => {}} onCancelar={() => {}}
@@ -74,5 +75,72 @@ describe("PreviaFolha — diz o que muda e trava até conferir", () => {
   it("o número de dinheiro está na tela", () => {
     expect(texto()).toContain("Pago à equipe nos meses da busca");
     expect(texto().replace(/\u00a0/g, " ")).toContain("R$ 1.000,00"); // formatBRL usa espaço duro
+  });
+});
+
+/* ESCOLHER O QUE APLICAR — "aqui eu tenho que escolher os que eu quero fazer e
+   os que não quero; aqui fica obrigado a fazer" (Léo, 07/09/2026). */
+describe("PreviaFolha — dá para desmarcar linha a linha", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const antigo = pg({ id: "mubi-1", valor: 1000 });
+  const novo = pg({ id: "mubi-1", valor: 1500 });
+  const gravados = [antigo];
+  const entrada = (excluidos: Set<string>) => resumoDaPrevia({
+    diff: { iguais: [], alterados: [{ antigo, novo }], novos: [], ausentes: [] },
+    gravados, janela: new Set(["2026-07"]), ausentesMarcados: new Set(), excluidos,
+    colaboradorPor: (id) => pessoas[id], tiposEncargo: ["FGTS", "INSS"], hoje: new Date(2026, 8, 7), semDono: new Set(),
+  });
+  const desenhar = (excluidos: Set<string>, onExcluir: (id: string, fora: boolean) => void = () => {}) => {
+    act(() => {
+      root.render(
+        <PreviaFolha
+          resumo={entrada(excluidos)} iguais={0}
+          nomeDe={(id) => pessoas[id]?.nome ?? id}
+          ausentesMarcados={new Set()} onMarcarAusente={() => {}} onMarcarBloco={() => {}}
+          excluidos={excluidos} onExcluir={onExcluir} onExcluirBloco={() => {}}
+          confirmados={new Set() as never} onConfirmar={() => {}}
+          salarios={[]} salariosMarcados={new Set()} onMarcarSalario={() => {}} cpfs={[]}
+          onAplicar={() => {}} onCancelar={() => {}}
+        />,
+      );
+    });
+  };
+
+  beforeEach(() => { container = document.createElement("div"); document.body.appendChild(container); act(() => { root = createRoot(container); }); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); });
+
+  it("cada alteração tem sua caixa, marcada por padrão", () => {
+    desenhar(new Set());
+    const cx = document.body.querySelector("input[aria-label^='Aplicar a alteração']") as HTMLInputElement;
+    expect(cx, "faltou a caixa por linha").toBeTruthy();
+    expect(cx.checked).toBe(true);
+  });
+
+  it("desmarcar avisa quem chamou, com o id e o novo estado", () => {
+    const vistos: [string, boolean][] = [];
+    desenhar(new Set(), (id, fora) => vistos.push([id, fora]));
+    const cx = document.body.querySelector("input[aria-label^='Aplicar a alteração']") as HTMLInputElement;
+    act(() => { cx.click(); });
+    expect(vistos).toEqual([["mubi-1", true]]);
+  });
+
+  it("desmarcada, a linha CONTINUA visível — riscada, não some", () => {
+    desenhar(new Set(["mubi-1"]));
+    expect((document.body.textContent ?? "")).toContain("Ana");
+    const cx = document.body.querySelector("input[aria-label^='Aplicar a alteração']") as HTMLInputElement;
+    expect(cx.checked).toBe(false);
+  });
+
+  it("o BOTÃO reflete a escolha — o número prometido é o que será aplicado", () => {
+    desenhar(new Set());
+    expect((document.body.textContent ?? "")).toContain("Aplicar 1 alteração(ões)");
+    desenhar(new Set(["mubi-1"]));
+    expect((document.body.textContent ?? "")).toContain("Nada a alterar");
+  });
+
+  it("o bloco mostra quantas ficaram de fora", () => {
+    desenhar(new Set(["mubi-1"]));
+    expect((document.body.textContent ?? "")).toContain("1 fora");
   });
 });

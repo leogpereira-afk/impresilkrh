@@ -285,3 +285,92 @@ describe("freios que não podem afrouxar", () => {
     expect(p.pulados[0].motivo).toBe("editado depois");
   });
 });
+
+/* ESCOLHER O QUE APLICAR — pedido do Léo em 07/09/2026, olhando o botão
+   "Aplicar 7 alteração(ões)": "aqui eu tenho que escolher os que eu quero fazer
+   e os que não quero; aqui fica obrigado a fazer".
+
+   O filtro entra na ORIGEM do resumo. Se entrasse só no fim, a tela mostraria
+   "vai mudar R$ 82 mil" e aplicaria outra coisa — pior que não deixar escolher. */
+describe("desmarcar alterações na prévia", () => {
+  const antigo = pg({ id: "mubi-1", valor: 1000 });
+  const novoValor = pg({ id: "mubi-1", valor: 1500 });
+  const outroAntigo = pg({ id: "mubi-2", colaboradorId: "bia", valor: 800 });
+  const outroNovo = pg({ id: "mubi-2", colaboradorId: "bia", valor: 900 });
+  const inedito = pg({ id: "mubi-3", colaboradorId: "bia", valor: 300 });
+  const diff = {
+    alterados: [{ antigo, novo: novoValor }, { antigo: outroAntigo, novo: outroNovo }],
+    novos: [inedito],
+  };
+  const gravados = [antigo, outroAntigo];
+
+  it("sem desmarcar nada, conta as três", () => {
+    expect(resumoDaPrevia(entrada(diff, gravados)).contaNoBotao).toBe(3);
+  });
+
+  it("desmarcar uma alteração tira ela da conta do botão", () => {
+    const r = resumoDaPrevia(entrada(diff, gravados, { excluidos: new Set(["mubi-1"]) }));
+    expect(r.contaNoBotao).toBe(2);
+    // A linha CONTINUA na lista, marcada como fora — some-la tiraria da pessoa
+    // a chance de voltar atrás, e ela nem veria o que acabou de tirar.
+    const todos = r.grupos.flatMap((g) => g.itens);
+    expect(todos.map((i) => i.antigo.id).sort()).toEqual(["mubi-1", "mubi-2"]);
+    expect(todos.find((i) => i.antigo.id === "mubi-1")!.fora).toBe(true);
+    expect(todos.find((i) => i.antigo.id === "mubi-2")!.fora).toBe(false);
+  });
+
+  it("desmarcar um NOVO também tira", () => {
+    const r = resumoDaPrevia(entrada(diff, gravados, { excluidos: new Set(["mubi-3"]) }));
+    expect(r.contaNoBotao).toBe(2);
+    expect(r.novos.map((n) => n.id)).toEqual(["mubi-3"]); // continua listado
+    expect(r.excluidos.has("mubi-3")).toBe(true);
+  });
+
+  it("o TOTAL mostrado deixa de contar o que foi desmarcado", () => {
+    // É o ponto todo: prometer um número e aplicar outro seria pior.
+    const tudo = resumoDaPrevia(entrada(diff, gravados));
+    const semUm = resumoDaPrevia(entrada(diff, gravados, { excluidos: new Set(["mubi-1"]) }));
+    expect(tudo.totalDepois - semUm.totalDepois).toBe(500); // 1500 − 1000
+    expect(semUm.delta).toBe(tudo.delta - 500);
+  });
+
+  it("desmarcar tudo deixa o botão sem nada a fazer", () => {
+    const r = resumoDaPrevia(entrada(diff, gravados, { excluidos: new Set(["mubi-1", "mubi-2", "mubi-3"]) }));
+    expect(r.contaNoBotao).toBe(0);
+    // Tudo visível, tudo fora: o botão fica sem nada a fazer, mas a lista
+    // continua na tela para a pessoa remarcar o que quiser.
+    expect(r.grupos.flatMap((g) => g.itens).every((i) => i.fora)).toBe(true);
+    expect(r.excluidos.size).toBe(3);
+  });
+
+  it("o ALARME do que foi desmarcado some junto — não se confirma o que não vai acontecer", () => {
+    // Trocar de pessoa dispara "confirma". Desmarcada, a confirmação não faz
+    // mais sentido: pedir para conferir algo que não vai ser aplicado treina a
+    // pessoa a clicar em confirmar sem ler.
+    const trocaPessoa = { antigo, novo: pg({ id: "mubi-1", colaboradorId: "bia", valor: 1000 }) };
+    const comAlarme = resumoDaPrevia(entrada({ alterados: [trocaPessoa] }, gravados));
+    expect(comAlarme.alarmes.some((a) => a.id === "muda-pessoa")).toBe(true);
+    const semAlarme = resumoDaPrevia(entrada({ alterados: [trocaPessoa] }, gravados, { excluidos: new Set(["mubi-1"]) }));
+    expect(semAlarme.alarmes.some((a) => a.id === "muda-pessoa")).toBe(false);
+  });
+
+  it("id que não existe na prévia não muda nada", () => {
+    const r = resumoDaPrevia(entrada(diff, gravados, { excluidos: new Set(["nao-existe"]) }));
+    expect(r.contaNoBotao).toBe(3);
+  });
+
+  it("conjunto vazio é igual a não passar nada", () => {
+    const a = resumoDaPrevia(entrada(diff, gravados, { excluidos: new Set() }));
+    const b = resumoDaPrevia(entrada(diff, gravados));
+    expect(a.contaNoBotao).toBe(b.contaNoBotao);
+    expect(a.totalDepois).toBe(b.totalDepois);
+  });
+
+  it("desmarcar NÃO mexe nos ausentes — quem some é escolhido no bloco próprio", () => {
+    const some = pg({ id: "mubi-9", valor: 700 });
+    const r = resumoDaPrevia(
+      entrada({ ...diff, ausentes: [some] }, [...gravados, some], { excluidos: new Set(["mubi-1"]), ausentesMarcados: new Set(["mubi-9"]) }),
+    );
+    expect(r.ausentes.comIdErp.map((a) => a.id)).toEqual(["mubi-9"]);
+  });
+});

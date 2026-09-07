@@ -52,6 +52,9 @@ export function PreviaFolha({
   onMarcarSalario,
   cpfs,
   extras,
+  excluidos,
+  onExcluir,
+  onExcluirBloco,
   onAplicar,
   onCancelar,
 }: {
@@ -70,6 +73,10 @@ export function PreviaFolha({
   onMarcarSalario: (colaboradorId: string) => void;
   cpfs: { colaboradorId: string; cpf: string }[];
   extras?: ReactNode;
+  /** Ids desmarcados: continuam na lista, fora de todas as contas. */
+  excluidos: Set<string>;
+  onExcluir: (id: string, fora: boolean) => void;
+  onExcluirBloco: (ids: string[], fora: boolean) => void;
   onAplicar: () => void;
   onCancelar: () => void;
 }) {
@@ -228,7 +235,7 @@ export function PreviaFolha({
         )}
 
         {/* Alterados, por natureza — cada linha diz o que mudou */}
-        {resumo.grupos.map((g) => <GrupoDeMudanca key={g.natureza} grupo={g} nomeDe={nomeDe} />)}
+        {resumo.grupos.map((g) => <GrupoDeMudanca key={g.natureza} grupo={g} nomeDe={nomeDe} onExcluir={onExcluir} onExcluirBloco={onExcluirBloco} />)}
 
         {/* Novos */}
         {resumo.novos.length > 0 && (
@@ -306,7 +313,14 @@ function legivel(m: Mudanca, lado: "de" | "para", nomeDe: (id: string) => string
   return v || "—";
 }
 
-function GrupoDeMudanca({ grupo, nomeDe }: { grupo: GrupoAlterado; nomeDe: (id: string) => string }) {
+function GrupoDeMudanca({ grupo, nomeDe, onExcluir, onExcluirBloco }: {
+  grupo: GrupoAlterado;
+  nomeDe: (id: string) => string;
+  onExcluir: (id: string, fora: boolean) => void;
+  onExcluirBloco: (ids: string[], fora: boolean) => void;
+}) {
+  const ids = grupo.itens.map((i) => i.antigo.id);
+  const dentro = grupo.itens.filter((i) => !i.fora).length;
   const silencioso = NATUREZAS_SILENCIOSAS.has(grupo.natureza);
   const tom = silencioso ? "border-slate-200" : grupo.natureza === "valor" ? "border-blue-200" : "border-amber-200";
   const cab = silencioso ? "bg-slate-50/60 text-slate-700 border-slate-100" : grupo.natureza === "valor" ? "bg-blue-50/50 text-blue-800 border-blue-100" : "bg-amber-50/50 text-amber-900 border-amber-100";
@@ -316,12 +330,35 @@ function GrupoDeMudanca({ grupo, nomeDe }: { grupo: GrupoAlterado; nomeDe: (id: 
         {ROTULO[grupo.natureza]} · {grupo.itens.length}
         {grupo.natureza === "valor" && ` · ${sinal(grupo.deltaValor)}`}
         {silencioso && <span className="ml-1 font-normal opacity-70">· não conta no botão</span>}
+        {dentro !== grupo.itens.length && (
+          <span className="ml-1 font-normal opacity-70">· {grupo.itens.length - dentro} fora</span>
+        )}
       </summary>
+      {/* Escolher o que aplicar. Opt-OUT: vem tudo marcado, porque a folha do
+          mês são ~140 linhas certas e meia dúzia duvidosas — pedir para marcar
+          uma a uma trocaria um atrito por outro pior. */}
+      <label className="flex cursor-pointer items-center gap-1.5 border-b border-black/5 px-3 py-1.5 text-[11px] text-slate-500">
+        <input
+          type="checkbox"
+          checked={dentro > 0}
+          ref={(el) => { if (el) el.indeterminate = dentro > 0 && dentro < grupo.itens.length; }}
+          onChange={(ev) => onExcluirBloco(ids, !ev.target.checked)}
+        />
+        aplicar as {grupo.itens.length} deste bloco
+      </label>
       <div className="max-h-64 overflow-y-auto">
         <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
-          {grupo.itens.map(({ antigo, novo, muds }) => (
-            <tr key={antigo.id}>
-              <td className="td font-medium text-slate-700">{nomeDe(novo.colaboradorId)}</td>
+          {grupo.itens.map(({ antigo, novo, muds, fora }) => (
+            <tr key={antigo.id} className={fora ? "opacity-45" : undefined}>
+              <td className="td w-8">
+                <input
+                  type="checkbox"
+                  checked={!fora}
+                  onChange={() => onExcluir(antigo.id, !fora)}
+                  aria-label={`Aplicar a alteração de ${nomeDe(novo.colaboradorId)}`}
+                />
+              </td>
+              <td className={cn("td font-medium text-slate-700", fora && "line-through")}>{nomeDe(novo.colaboradorId)}</td>
               <td className="td text-slate-500">{compLabel(novo.competencia)} · {novo.tipo} · {formatBRL(novo.valor)}</td>
               <td className="td">
                 <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">

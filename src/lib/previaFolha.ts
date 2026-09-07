@@ -24,7 +24,14 @@ export const ORDEM_NATUREZAS: Natureza[] = [...ORDEM_CAMPOS.filter((c) => c !== 
 /** O que NÃO conta no botão: nada de dinheiro, pessoa, mês, tipo ou data muda. */
 export const NATUREZAS_SILENCIOSAS = new Set<Natureza>(["texto", "conta", "renumeracao", "adocao", "status"]);
 
-export interface ItemAlterado { antigo: Pagamento; novo: Pagamento; muds: Mudanca[]; natureza: Natureza }
+export interface ItemAlterado {
+  antigo: Pagamento;
+  novo: Pagamento;
+  muds: Mudanca[];
+  natureza: Natureza;
+  /** Desmarcado na prévia: continua NA LISTA, mas fora de todas as contas. */
+  fora?: boolean;
+}
 export interface GrupoAlterado { natureza: Natureza; itens: ItemAlterado[]; deltaValor: number }
 export interface LinhaMes {
   competencia: string;
@@ -97,6 +104,8 @@ export interface ResumoDaPrevia {
   contaNoBotao: number;
   /** Alterações silenciosas (texto, conta renumerada, adoção de id, status). */
   silenciosos: number;
+  /** Ids desmarcados: a lista os mostra, mas nenhuma conta os inclui. */
+  excluidos: Set<string>;
   alarmes: Alarme[];
   podeAplicar: boolean;
   precisaConfirmar: Alarme[];
@@ -116,6 +125,21 @@ export interface EntradaResumo {
   busca?: { truncado: boolean; pedidas: string[]; lidas: string[]; falhas: string[] };
   /** idMubi dos títulos que vieram do ERP sem pessoa (não encontrados / coletivas). */
   semDono?: Set<string>;
+  /**
+   * Ids de alterações e de novos que a pessoa DESMARCOU na prévia.
+   *
+   * Existe porque a prévia era tudo-ou-nada: "Aplicar 7 alteração(ões)" ou
+   * cancelar, sem escolher. Pedido do Léo em 07/09/2026: "aqui eu tenho que
+   * escolher os que eu quero fazer e os que não quero; aqui fica obrigado a
+   * fazer".
+   *
+   * É opt-OUT, não opt-in: importar a folha do mês são ~140 linhas certas e
+   * meia dúzia duvidosas — exigir marcar uma a uma trocaria um atrito por um
+   * pior. O filtro entra na ORIGEM do resumo, então total, alarmes e a conta
+   * do botão já saem sem o que foi desmarcado; mostrar "vai mudar R$ 82 mil" e
+   * aplicar outra coisa seria pior que não deixar escolher.
+   */
+  excluidos?: Set<string>;
   /** idMubi dos títulos que o ERP tem mas a conta ficou fora da lista de folha. */
   foraDaFolha?: Set<string>;
   limites?: { pctFechada: number; pctAberta: number };
@@ -146,11 +170,25 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   const contaNaFolha = (p: Pagamento) => !e.tiposEncargo.includes(p.tipo) && !ehSocioId(p.colaboradorId);
   const valorFolha = (p: Pagamento) => (contaNaFolha(p) ? num(p.valor) : 0);
 
-  const itens = classificarAlterados(e.diff);
+  // Tira o que a pessoa desmarcou ANTES de qualquer conta. Filtrar só no fim
+  // faria a tela prometer um número e aplicar outro.
+  const fora = e.excluidos ?? new Set<string>();
+  const diff: DiffPagamentos = fora.size === 0 ? e.diff : {
+    ...e.diff,
+    alterados: e.diff.alterados.filter((x) => !fora.has(x.antigo.id)),
+    novos: e.diff.novos.filter((n) => !fora.has(n.id)),
+  };
+
+  // As CONTAS saem do diff filtrado; a LISTA mostra tudo, com o desmarcado
+  // riscado. Sumir com a linha ao desmarcar tiraria da pessoa a chance de
+  // voltar atrás — e ela nem veria o que tinha acabado de tirar.
+  const itens = classificarAlterados(diff);
+  const todosOsItens: ItemAlterado[] = classificarAlterados(e.diff).map((i) => ({ ...i, fora: fora.has(i.antigo.id) }));
   const grupos: GrupoAlterado[] = ORDEM_NATUREZAS
     .map((natureza) => {
-      const doGrupo = itens.filter((i) => i.natureza === natureza);
-      return { natureza, itens: doGrupo, deltaValor: arred(doGrupo.reduce((s, i) => s + valorFolha(i.novo) - valorFolha(i.antigo), 0)) };
+      const doGrupo = todosOsItens.filter((i) => i.natureza === natureza);
+      const ativos = doGrupo.filter((i) => !i.fora);
+      return { natureza, itens: doGrupo, deltaValor: arred(ativos.reduce((s, i) => s + valorFolha(i.novo) - valorFolha(i.antigo), 0)) };
     })
     .filter((g) => g.itens.length > 0);
 
@@ -158,19 +196,19 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   const semDonoIds = e.semDono ?? new Set<string>();
   const foraDaFolhaIds = e.foraDaFolha ?? new Set<string>();
   const ausentes: AusentesSeparados = { comIdErp: [], semId: [], semDono: [], foraDaFolha: [] };
-  for (const a of e.diff.ausentes) {
+  for (const a of diff.ausentes) {
     const id = idMubiDe(a);
     if (id && semDonoIds.has(id)) ausentes.semDono.push(a);
     else if (id && foraDaFolhaIds.has(id)) ausentes.foraDaFolha.push(a);
     else if (id) ausentes.comIdErp.push(a);
     else ausentes.semId.push(a);
   }
-  const removidos = e.diff.ausentes.filter((a) => e.ausentesMarcados.has(a.id));
+  const removidos = diff.ausentes.filter((a) => e.ausentesMarcados.has(a.id));
 
   // ---- por competência: hoje × depois ----
   const comps = new Set<string>(e.janela);
   for (const i of itens) { comps.add(i.antigo.competencia); comps.add(i.novo.competencia); }
-  for (const n of e.diff.novos) comps.add(n.competencia);
+  for (const n of diff.novos) comps.add(n.competencia);
   for (const a of removidos) comps.add(a.competencia);
   const porMes: LinhaMes[] = [...comps].filter(Boolean).sort().map((competencia) => {
     const hojeMes = arred(e.gravados.filter((p) => p.competencia === competencia).reduce((s, p) => s + valorFolha(p), 0));
@@ -189,7 +227,7 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
         if (i.antigo.competencia !== competencia) mexe++;
       }
     }
-    for (const n of e.diff.novos) if (n.competencia === competencia) { depoisMes += valorFolha(n); mexe++; bruto += valorFolha(n); }
+    for (const n of diff.novos) if (n.competencia === competencia) { depoisMes += valorFolha(n); mexe++; bruto += valorFolha(n); }
     for (const a of removidos) if (a.competencia === competencia) { depoisMes -= valorFolha(a); mexe++; bruto += valorFolha(a); }
     depoisMes = arred(depoisMes);
     const delta = arred(depoisMes - hojeMes);
@@ -244,7 +282,7 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   if (mudaMes.length) alarmes.push({ id: "muda-mes", nivel: "confirma", titulo: `${mudaMes.length} lançamento(s) trocam de mês`, detalhe: "O vencimento cruzou o dia 15: sai de um mês e entra no outro.", quantos: mudaMes.length, valor: soma(mudaMes.map((i) => i.novo)), ids: mudaMes.map((i) => i.antigo.id) });
   const mudaTipo = itens.filter((i) => i.muds.some((m) => m.campo === "tipo"));
   if (mudaTipo.length) alarmes.push({ id: "muda-tipo", nivel: "confirma", titulo: `${mudaTipo.length} lançamento(s) trocam de tipo`, detalhe: "Se você corrigiu o tipo à mão, a importação desfaz. Confira o de → para.", quantos: mudaTipo.length, valor: soma(mudaTipo.map((i) => i.novo)), ids: mudaTipo.map((i) => i.antigo.id) });
-  const foraDoQuadro = e.diff.novos.filter((n) => { const c = e.colaboradorPor(n.colaboradorId); return c && !ehSocio(c) && !noQuadroEm(c, n.competencia); });
+  const foraDoQuadro = diff.novos.filter((n) => { const c = e.colaboradorPor(n.colaboradorId); return c && !ehSocio(c) && !noQuadroEm(c, n.competencia); });
   if (foraDoQuadro.length) {
     const acerto = foraDoQuadro.filter((n) => TIPOS_DE_QUEM_SAIU.has(n.tipo));
     const suspeito = foraDoQuadro.filter((n) => !TIPOS_DE_QUEM_SAIU.has(n.tipo));
@@ -254,11 +292,11 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   if (removidos.length) alarmes.push({ id: "remocao", nivel: "confirma", titulo: `${removidos.length} lançamento(s) serão removidos`, detalhe: "Somem da tela e ficam arquivados no banco. Título que o ERP ainda tem não volta sozinho depois.", quantos: removidos.length, valor: soma(removidos), ids: removidos.map((a) => a.id) });
 
   const silenciosos = itens.filter((i) => NATUREZAS_SILENCIOSAS.has(i.natureza)).length;
-  const contaNoBotao = (itens.length - silenciosos) + e.diff.novos.length + removidos.length;
+  const contaNoBotao = (itens.length - silenciosos) + diff.novos.length + removidos.length;
   const podeAplicar = !alarmes.some((a) => a.nivel === "bloqueia");
   return {
     porMes, totalHoje, totalDepois, delta: arred(totalDepois - totalHoje),
-    grupos, novos: e.diff.novos, ausentes, contaNoBotao, silenciosos,
+    grupos, novos: e.diff.novos, ausentes, contaNoBotao, silenciosos, excluidos: fora,
     alarmes, podeAplicar, precisaConfirmar: alarmes.filter((a) => a.nivel === "confirma"),
   };
 }
