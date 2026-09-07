@@ -45,7 +45,9 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
   const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   vm.runInNewContext(code, {
     createClient: () => admin,
-    Deno: { env: { get: () => "ficticio" }, serve: (fn: any) => { handler = fn; } },
+    // As chaves do Supabase existem; o id do master NÃO — para o padrão do
+    // código ("leonardo-goncalves") valer no teste como vale em produção.
+    Deno: { env: { get: (k: string) => (k === "RH_MASTER_COLAB_ID" ? undefined : "ficticio") }, serve: (fn: any) => { handler = fn; } },
     json: (data: any, status = 200) => new Response(JSON.stringify(data), { status }), preflight: () => null,
     Response, Request, Blob, console, Date, crypto,
   });
