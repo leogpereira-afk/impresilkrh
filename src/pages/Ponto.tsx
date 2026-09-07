@@ -16,6 +16,7 @@ import { useToast } from "@/components/ui/toast";
 import { BarrasVerticais, BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
+import { enviarConfigNuvem } from "@/lib/sync";
 import { emLote } from "@/lib/auditoria";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
@@ -317,6 +318,9 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
       if (colId) vinc[chaveNome(linha.nomePdf)] = colId;
       else delete vinc[chaveNome(linha.nomePdf)];
       salvarConfig({ vinculosPonto: vinc });
+      // Sobe o vínculo; sem isto ele ficava só neste aparelho e a config da
+      // nuvem o apagava na abertura seguinte (auditoria de 07/09/2026).
+      enviarConfigNuvem();
     }
     setPrevia({ ...previa, linhas: previa.linhas.map((l, j) => (j === i ? { ...l, colaboradorId: colId || null, colaboradorNome: nomeColab(colId) } : l)) });
   };

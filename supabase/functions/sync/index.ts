@@ -436,9 +436,19 @@ Deno.serve(async (req) => {
       }
       case "setCfg": {
         if (!ehAdmin) return json({ erro: "Configuração global é restrita ao RH." }, 403);
-        const { error } = await admin.from("config_global").upsert({ id: true, config: body.config, atualizado_em: new Date().toISOString() });
+        // MESCLA por chave, nunca substitui a linha: cliente novo manda só o que
+        // mudou (`patch`); cliente antigo ainda manda `config` inteira, e mesmo
+        // ela entra mesclada — nunca apaga uma chave que só outro aparelho tem.
+        const patch = (body.patch ?? body.config ?? null) as Record<string, unknown> | null;
+        if (!patch || typeof patch !== "object" || Array.isArray(patch)) return json({ erro: "Patch de configuração inválido." }, 400);
+        const merged = await admin.rpc("rh_mesclar_config", { p_patch: patch });
+        if (!merged.error) return json({ ok: true, config: merged.data });
+        // Sem a função no banco (migração ainda não aplicada): lê, mescla e grava.
+        const { data: atual } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
+        const config = { ...((atual?.config as Record<string, unknown> | null) ?? {}), ...patch };
+        const { error } = await admin.from("config_global").upsert({ id: true, config, atualizado_em: new Date().toISOString() });
         if (error) throw new Error(error.message);
-        return json({ ok: true });
+        return json({ ok: true, config });
       }
 
       // ---- fotos / anexos (bucket "arquivos", conteúdo = data URL cru, igual ao Blobs) ----

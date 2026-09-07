@@ -14,7 +14,7 @@ import {
 } from "@/data";
 import type { Config } from "@/data/types";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
-import { gravarArmazem, armazemEmIDB, armazemHidratado, aoHidratar } from "./armazemLocal";
+import { gravarArmazem, lerArmazem, removerArmazem, armazemEmIDB, armazemHidratado, aoHidratar } from "./armazemLocal";
 import { obterSessao } from "./session";
 import { lerCopiaAnterior } from "./copiaAnterior";
 import { exportarBlobsAnteriores } from "./blobstore";
@@ -357,9 +357,62 @@ export function obterConfig(): Config {
   return val;
 }
 
+// As CHAVES da config que mudaram neste aparelho e ainda não subiram. É o que
+// permite mandar para a nuvem só o que mudou (patch), e não a config inteira:
+// mandar a config inteira era a raiz de cinco achados da auditoria de
+// 07/09/2026 — um aparelho defasado apagava vínculos do ERP e tipos criados em
+// outro. Fica no localStorage para sobreviver a aba fechada antes de subir.
+const CONFIG_SUJAS_KEY = `${CONFIG_KEY}:sujas`;
+function lerSujas(): Record<string, true> {
+  if (!temWindow) return {};
+  try { return JSON.parse(lerArmazem(CONFIG_SUJAS_KEY) || "{}") as Record<string, true>; } catch { return {}; }
+}
+function gravarSujas(sujas: Record<string, true>) {
+  if (!temWindow) return;
+  if (Object.keys(sujas).length === 0) { removerArmazem(CONFIG_SUJAS_KEY); return; }
+  gravarArmazem(CONFIG_SUJAS_KEY, JSON.stringify(sujas));
+}
+/** Chaves da config alteradas aqui e ainda não confirmadas pela nuvem. */
+export function chavesSujasDaConfig(): (keyof Config)[] {
+  return Object.keys(lerSujas()) as (keyof Config)[];
+}
+/**
+ * Marca como enviadas as chaves cujo valor ATUAL ainda é o que subiu. Uma
+ * chave que mudou de novo durante o envio continua suja — senão a segunda
+ * mudança nunca subiria.
+ */
+export function confirmarChavesEnviadas(enviado: Partial<Config>): void {
+  const sujas = lerSujas();
+  const atual = obterConfig() as unknown as Record<string, unknown>;
+  for (const k of Object.keys(enviado)) {
+    if (JSON.stringify(atual[k]) === JSON.stringify((enviado as Record<string, unknown>)[k])) delete sujas[k];
+  }
+  gravarSujas(sujas);
+}
+
 export function salvarConfig(patch: Partial<Config>): void {
   const novo = { ...obterConfig(), ...patch };
   if (!escrever(CONFIG_KEY, JSON.stringify(novo))) throw new Error("A configuração não foi salva. Libere espaço neste aparelho.");
+  configCache = novo;
+  const sujas = lerSujas();
+  for (const k of Object.keys(patch)) sujas[k] = true;
+  gravarSujas(sujas);
+  emit("__config__");
+}
+
+/**
+ * A config que desceu da nuvem entra por cima da local — EXCETO nas chaves
+ * que mudaram aqui e ainda não subiram: a local é a mais nova e vai subir.
+ * Sem esta exceção, salvar sem internet (ou fechar a aba antes de 1,5 s)
+ * perdia o vínculo na abertura seguinte, quando a nuvem gravava por cima.
+ */
+export function aplicarConfigDaNuvem(daNuvem: Partial<Config>): void {
+  const sujas = lerSujas();
+  const patch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(daNuvem)) if (!sujas[k]) patch[k] = v;
+  if (Object.keys(patch).length === 0) return;
+  const novo = { ...obterConfig(), ...patch } as Config;
+  if (!escrever(CONFIG_KEY, JSON.stringify(novo))) return;
   configCache = novo;
   emit("__config__");
 }

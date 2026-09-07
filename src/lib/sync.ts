@@ -8,7 +8,7 @@
 // 100% local (como antes).
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecao, obterDinamico, definirColecaoDinamica, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, salvarConfig, type RegistroGenerico } from "@/lib/store";
+import { obter, definirColecao, obterDinamico, definirColecaoDinamica, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, chavesSujasDaConfig, confirmarChavesEnviadas, aplicarConfigDaNuvem, type RegistroGenerico } from "@/lib/store";
 import type { Config } from "@/data/types";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
@@ -618,18 +618,46 @@ export async function sincronizarAgora(): Promise<void> {
 // ficava com a sua. Agora: sobe quando o RH salva (com debounce, para não
 // disparar a cada arrasto do seletor de cor) e desce uma vez ao abrir o app.
 let cfgTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Sobe para a nuvem SÓ as chaves da config que mudaram neste aparelho.
+ *
+ * Antes subia obterConfig() inteira, e o servidor gravava por cima: um
+ * aparelho com a config de duas horas atrás apagava os 40 vínculos do ERP
+ * que outro acabara de fazer (auditoria de 07/09/2026). Agora: as chaves
+ * sujas ficam guardadas até a nuvem confirmar; falha (offline, aba fechada)
+ * não engole nada — o ciclo de 20 s tenta de novo.
+ */
 export function enviarConfigNuvem(): void {
   if (!syncHabilitado()) return;
   if (cfgTimer) clearTimeout(cfgTimer);
   const contexto = contextoDoUsuario();
-  cfgTimer = setTimeout(() => { if (contexto !== contextoDoUsuario()) return; void chamar("setCfg", { config: obterConfig() }).catch(() => { /* retenta no próximo salvar */ }); }, 1500);
+  cfgTimer = setTimeout(() => { cfgTimer = null; if (contexto !== contextoDoUsuario()) return; void subirConfigSuja(); }, 1500);
+}
+let subindoCfg = false;
+async function subirConfigSuja(): Promise<void> {
+  if (subindoCfg || !syncHabilitado()) return;
+  const chaves = chavesSujasDaConfig();
+  if (chaves.length === 0) return;
+  const tudo = obterConfig() as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const k of chaves) patch[k] = tudo[k] ?? null;
+  subindoCfg = true;
+  try {
+    await chamar("setCfg", { patch });
+    confirmarChavesEnviadas(patch as Partial<Config>);
+  } catch {
+    /* fica sujo; o ciclo tenta de novo */
+  } finally {
+    subindoCfg = false;
+  }
 }
 async function puxarConfig(): Promise<void> {
   if (!syncHabilitado()) return;
   try {
     const r = (await chamar("getCfg")) as { config?: { config?: Record<string, unknown> } | Record<string, unknown> | null };
     const c = ((r?.config as { config?: Record<string, unknown> })?.config ?? r?.config) as Record<string, unknown> | null;
-    if (c && typeof c === "object" && !Array.isArray(c)) salvarConfig(c as Partial<Config>);
+    // Entra por cima da local, menos nas chaves que mudaram aqui e ainda não subiram.
+    if (c && typeof c === "object" && !Array.isArray(c)) aplicarConfigDaNuvem(c as Partial<Config>);
   } catch { /* offline ou sem config remota — segue com a local */ }
 }
 
@@ -692,6 +720,10 @@ if (temWindow) {
     void (async () => { for (const nome of lerMassa()) await enviarColecao(nome); })();
     void trySync();
     void pull();
+    // A config também anda no ciclo: o que ficou sujo sobe (offline, aba
+    // fechada cedo) e o que outro aparelho mudou desce — antes só descia ao
+    // abrir, e um aparelho aberto o dia inteiro nunca via o tipo novo.
+    void subirConfigSuja().then(() => puxarConfig());
   };
   ciclo(); // ao abrir
   void puxarConfig(); // config da empresa desce uma vez, ao abrir

@@ -17,6 +17,7 @@ import { Campo, Input, Textarea, Select, Toggle } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
 import { useDominio, faixaNoNivel } from "@/lib/dominio";
 import { obterConfig, salvarConfig } from "@/lib/store";
+import { enviarConfigNuvem } from "@/lib/sync";
 import { gerarAnuncio, CANAIS, type CanalAnuncio, type DadosAnuncio } from "@/lib/anuncioVaga";
 import { cn } from "@/lib/cn";
 import type { Vaga } from "@/data/types";
@@ -72,6 +73,7 @@ export function GeradorAnuncio({ vaga, onFechar }: { vaga: Vaga; onFechar: () =>
       anuncioBeneficios: beneficios,
       anuncioComoCandidatar: comoCandidatar,
     });
+    enviarConfigNuvem();
   };
 
   const copiar = async () => {
