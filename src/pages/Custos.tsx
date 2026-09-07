@@ -249,7 +249,9 @@ export default function Custos() {
   // Fica no último mês COM plano (não no último com folha): o seletor de meses
   // cresceu e o envio de planilha sobrescreve a competência escolhida — mudar
   // esse padrão calado seria trocar o mês em que o plano do contador cai.
-  const [compUpload, setCompUpload] = useState<string>(compPadrao || hojeIso);
+  // Abre no mês ATUAL (pedido do Léo, 07/09/2026), não no último com dado.
+  const [compUpload, setCompUpload] = useState<string>(hojeIso);
+  const [anoPlano, setAnoPlano] = useState<string>(hojeIso.slice(0, 4));
   // Importação avulsa de comissões, casando por NOME (caso à parte)
   // Prévia de conciliação da folha (subir a mesma planilha: mexe só no diferente).
   const [folhaPrev, setFolhaPrev] = useState<{
@@ -371,6 +373,54 @@ export default function Custos() {
     } finally {
       setBuscandoPlano("");
     }
+  };
+
+  /**
+   * Puxa e GRAVA o plano de um mês sem prévia — o caminho da automação e do
+   * "puxar o ano". Devolve o que aconteceu, para quem chamou contar.
+   * Mês fechado pelo contador não é tocado.
+   */
+  const puxarPlanoDoErpEmSilencio = async (comp: string): Promise<"gravado" | "contador" | "vazio" | "incompleto" | "falhou"> => {
+    try {
+      setBuscandoPlano(`Trazendo ${compLabel(comp)} do Mubisys…`);
+      const r = await buscarPlanoCompleto(comp);
+      if (r.incompleta) return "incompleto";
+      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse);
+      const base = planoColecao.items as ContaPlano[];
+      if (competenciaEhDoContador(base, comp)) return "contador";
+      salvarCfg({ ultimoPlanoMubi: { competencia: comp, em: new Date().toISOString(), contas: montado.contas.length } });
+      if (montado.contas.length === 0) return "vazio";
+      planoColecao.definir(mesclarPlano(base, montado.contas, comp));
+      void enviarColecao("planoContas");
+      registrarAcaoManual(`Trouxe o plano de contas de ${compLabelLongo(comp)} do Mubisys`, `${montado.contas.length} conta(s) coletiva(s)`, "planoContas");
+      return "gravado";
+    } catch {
+      salvarCfg({ ultimoPlanoMubi: { competencia: comp, em: new Date().toISOString(), contas: 0 } });
+      return "falhou";
+    } finally {
+      setBuscandoPlano("");
+    }
+  };
+
+  // O ANO INTEIRO (pedido do Léo, 07/09/2026): mês a mês, do primeiro ao
+  // corrente, cada um pelo mesmo caminho seguro. Mês do contador é pulado e
+  // dito no fim. Sequencial de propósito — o ERP não aguenta doze de uma vez.
+  const puxarAnoDoErp = async (ano: string) => {
+    const hojeComp = hojeIso;
+    const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, "0")}`).filter((c) => c <= hojeComp);
+    const placar = { gravado: [] as string[], contador: [] as string[], vazio: [] as string[], incompleto: [] as string[], falhou: [] as string[] };
+    for (const comp of meses) {
+      const r = await puxarPlanoDoErpEmSilencio(comp);
+      placar[r].push(compLabel(comp));
+    }
+    const partes = [
+      placar.gravado.length ? `${placar.gravado.length} mês(es) gravado(s)` : "",
+      placar.contador.length ? `${placar.contador.length} do contador (não tocados)` : "",
+      placar.vazio.length ? `${placar.vazio.length} sem coletivo` : "",
+      placar.incompleto.length ? `${placar.incompleto.length} incompleto(s)` : "",
+      placar.falhou.length ? `${placar.falhou.length} falharam: ${placar.falhou.join(", ")}` : "",
+    ].filter(Boolean);
+    toast(`Plano de ${ano} pelo Mubisys: ${partes.join(" · ")}.`, placar.falhou.length ? "erro" : undefined);
   };
 
   const aplicarPlanoDoErp = () => {
@@ -518,6 +568,26 @@ export default function Custos() {
     void buscarDoMubi(compAtual, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessao]);
+
+  // PLANO DE CONTAS SOZINHO (pedido do Léo, 07/09/2026: "se resolve na
+  // sincronização automática"). Ao abrir um mês que tem folha e não tem plano
+  // nenhum — e que não é mês fechado pelo contador — o coletivo vem do ERP e
+  // entra sem clique. É seguro porque o caminho já é o de mesclar: só entra o
+  // que não é pagamento a pessoa, nada é apagado, 2.14 não passa. No máximo
+  // uma tentativa por mês a cada 6 horas; falha fica quieta e espera.
+  const planoAutoRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!compAtiva || !podeGerir(sessao) || buscandoPlano) return;
+    if (planoAutoRef.current.has(compAtiva)) return;
+    const temFolha = (pagamentos as Pagamento[]).some((p) => p.competencia === compAtiva);
+    const temPlano = (planoContas as ContaPlano[]).some((p) => p.competencia === compAtiva);
+    if (!temFolha || temPlano) return;
+    const ultimo = config.ultimoPlanoMubi;
+    if (ultimo?.competencia === compAtiva && ultimo.em && Date.now() - new Date(ultimo.em).getTime() < 6 * 60 * 60 * 1000) return;
+    planoAutoRef.current.add(compAtiva);
+    void puxarPlanoDoErpEmSilencio(compAtiva);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compAtiva, sessao, pagamentos, planoContas]);
 
   // Vincula um nome do ERP a um colaborador e REFAZ a prévia na hora, com o
   // pagamento já no lugar certo. O vínculo fica guardado (e sobe para a nuvem):
@@ -1650,7 +1720,7 @@ export default function Custos() {
                     <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p className="text-xs text-slate-600">
                       <span className="font-semibold text-slate-700">Sem plano de contas em {compLabelLongo(compAtiva)}.</span>{" "}
-                      A folha por pessoa está aqui normalmente, mas o rateio, os encargos e o Custo Global ficam indisponíveis — não zerados — até puxar o plano deste mês do Mubisys, na aba Sincronização.
+                      A folha por pessoa está aqui normalmente; o rateio, os encargos e o Custo Global ficam indisponíveis — não zerados — até o plano deste mês chegar do Mubisys, o que acontece sozinho ao abrir o mês.
                     </p>
                   </div>
                 )}
@@ -1841,16 +1911,17 @@ export default function Custos() {
                  contas. Sem o plano do contador, mandar a pessoa "classificar"
                  é mandar procurar o que não existe — e o zero parecia resultado. */
               semPlanoNaComp ? (
-                <EmptyState
-                  title={`Sem plano de contas em ${compLabelLongo(compAtiva)}`}
-                  description="Rateio e Custo Global ficam indisponíveis — não zerados — até puxar o plano deste mês do Mubisys, na aba Sincronização."
-                  icon={<FileSpreadsheet className="h-8 w-8" />}
-                  acao={
-                    <button type="button" className="btn-outline" onClick={() => irParaSinal("plano")}>
-                      <RefreshCw className="h-4 w-4" /> Puxar o plano do Mubisys
-                    </button>
-                  }
-                />
+                /* Sem cartão vazio com botão (pedido do Léo, 07/09/2026): o
+                   plano vem sozinho do Mubisys ao abrir o mês. Se não veio, a
+                   linha diz, e o chip lá em cima leva a Sincronização. */
+                <p className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <RefreshCw className={"h-4 w-4 shrink-0 text-slate-400" + (buscandoPlano ? " animate-spin" : "")} />
+                  <span>
+                    {buscandoPlano
+                      ? `${buscandoPlano} O rateio aparece assim que ele chegar.`
+                      : `Sem plano de contas em ${compLabelLongo(compAtiva)} ainda. Ele é trazido do Mubisys sozinho ao abrir o mês; se não veio, tente em Sincronização.`}
+                  </span>
+                </p>
               ) : (
                 <EmptyState
                   title="Sem custos classificados nesta competência"
@@ -2070,6 +2141,23 @@ export default function Custos() {
             >
               <RefreshCw className={"h-4 w-4" + (buscandoPlano ? " animate-spin" : "")} />
               {buscandoPlano || "Puxar do Mubisys"}
+            </button>
+            {/* O ano inteiro de uma vez (pedido do Léo, 07/09/2026): mês a mês,
+                pelo mesmo caminho seguro, sem prévia. Mês do contador é pulado. */}
+            <Campo label="Ano" className="sm:w-28">
+              <Select value={anoPlano} onChange={(e) => setAnoPlano(e.target.value)}>
+                {[...new Set([hojeIso.slice(0, 4), ...competencias.map((c) => c.slice(0, 4))])].sort().reverse().map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </Select>
+            </Campo>
+            <button
+              className="btn-outline sm:mb-0"
+              onClick={() => void puxarAnoDoErp(anoPlano)}
+              disabled={!!buscandoPlano}
+              title="Traz e grava o plano coletivo de cada mês do ano, até o mês atual, direto do Contas a Pagar. Mês fechado pelo contador não é tocado."
+            >
+              <History className="h-4 w-4" /> Puxar o ano
             </button>
           </CardBody>
         </Card>
@@ -2977,14 +3065,14 @@ function CustoGlobalFuncionarios({
     return (
       <EmptyState
         title={compAtiva ? `Sem plano de contas em ${compLabelLongo(compAtiva)}` : "Sem plano de contas importado"}
-        description="O custo global depende do plano de contas deste mês. Puxe-o do Mubisys em Sincronização — até lá este bloco fica indisponível, não zerado."
+        description="O custo global depende do plano de contas deste mês, que chega sozinho do Mubisys ao abrir o mês. Até lá este bloco fica indisponível, não zerado."
         icon={<Layers className="h-10 w-10" />}
         acao={
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button type="button" className="btn-outline" onClick={irParaSync}><RefreshCw className="h-4 w-4" /> Puxar o plano do Mubisys</button>
+            <button type="button" className="btn-outline" onClick={irParaSync}><RefreshCw className="h-4 w-4" /> Ver a sincronização</button>
             <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
               <ChevronRight className="h-4 w-4" />
             </button>

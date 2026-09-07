@@ -573,6 +573,13 @@ export interface Config {
    * no toast, que some — e a pergunta "o que essa sincronização mudou?" ficava
    * sem resposta um minuto depois. Valores em R$ ao lado das contagens.
    */
+  /**
+   * Última vez que o plano de contas de um mês foi puxado do Mubisys SOZINHO
+   * (07/09/2026): ao abrir a tela num mês com folha e sem plano, o app traz o
+   * coletivo do ERP sem ninguém clicar. O carimbo evita repetir a chamada
+   * (~40s) a cada abertura.
+   */
+  ultimoPlanoMubi?: { competencia: string; em: string; contas: number } | null;
   ultimaConciliacaoMubi?: {
     em: string;
     competencias: string[];
