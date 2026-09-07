@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { UserMinus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useColecao, obter } from "@/lib/store";
@@ -8,6 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
+import { desligamentoDeHoje, avisoDoDesligamento, podeDesligar } from "@/lib/desligamento";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
@@ -273,6 +275,46 @@ export function ColaboradorForm({
           <Select value={form.statusId ?? ""} onChange={(e) => set({ statusId: e.target.value })}>
             {d.status.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
           </Select>
+        </Campo>
+
+        {/* DESLIGAMENTO — o campo não existia, e mesmo assim o valor era gravado:
+            quem precisava acertar a data (a causa nº 1 do achado "cadastro
+            contradiz os pagamentos") não tinha onde. O botão põe a data de hoje
+            e o campo continua editável, que foi o pedido. */}
+        <Campo label="Data de desligamento">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              className="min-w-[9.5rem] flex-1"
+              value={(form.dataDesligamento ?? "").slice(0, 10)}
+              onChange={(e) => set({ dataDesligamento: e.target.value || null })}
+            />
+            {podeDesligar(form.statusId, form.dataDesligamento) ? (
+              <button
+                type="button"
+                className="btn-outline h-[42px] shrink-0 whitespace-nowrap text-red-600"
+                title="Marca como inativo e põe a data de hoje — dá para trocar a data depois, e só vale ao Salvar."
+                onClick={() => set(desligamentoDeHoje())}
+              >
+                <UserMinus className="h-4 w-4" /> Desligar funcionário
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-outline h-[42px] shrink-0 whitespace-nowrap"
+                title="Tira a data e devolve a pessoa ao quadro"
+                onClick={() => set({ dataDesligamento: null, statusId: form.statusId === "inativo" ? "ativo" : form.statusId })}
+              >
+                Desfazer
+              </button>
+            )}
+          </div>
+          {(() => {
+            const a = avisoDoDesligamento(form.statusId, form.dataDesligamento, d.status);
+            if (!a) return null;
+            const cor = a.tom === "erro" ? "text-red-600" : a.tom === "atencao" ? "text-amber-700" : "text-slate-500";
+            return <p className={`mt-1 text-xs ${cor}`}>{a.texto}</p>;
+          })()}
         </Campo>
         <Campo label="Perfil de acesso">
           <Select value={form.perfil ?? "COLABORADOR"} onChange={(e) => set({ perfil: e.target.value as Colaborador["perfil"] })}>
