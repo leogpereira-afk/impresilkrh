@@ -26,6 +26,7 @@ import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody, useAbertoPersistido } from "@/components/ui/card";
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
+import { AuditoriaLancamentos } from "@/components/custos/auditoria-lancamentos";
 import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
 import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
 import { Societarias } from "@/components/custos/societarias";
@@ -2333,6 +2334,25 @@ export default function Custos() {
                     </button>
                   </div>
                 )}
+                {/* A varredura de 07/09/2026 virou tela: roda sozinha, toda vez. */}
+                <AuditoriaLancamentos
+                  pagamentos={pagamentos as Pagamento[]}
+                  colaboradores={d.colaboradores}
+                  onVerPessoa={(id) => { setColabId(id); setMostrarInativos(true); setAba("custos"); }}
+                  onCorrigir={(achados) => {
+                    const tipos = achados.filter((a) => a.conserto?.campo === "tipo");
+                    const comps = achados.filter((a) => a.conserto?.campo === "competencia");
+                    emLote(`Auditoria: corrigiu ${tipos.length} tipo(s) e ${comps.length} competência(s)`, () => {
+                      for (const a of achados) {
+                        const alvo = a.pagamentoIds[0];
+                        if (!alvo || !a.conserto) continue;
+                        pagamentosColecao.atualizar(alvo, a.conserto.campo === "tipo" ? { tipo: a.conserto.para } : { competencia: a.conserto.para });
+                      }
+                    });
+                    toast(`${achados.length} lançamento(s) corrigido(s) pela auditoria.`, "sucesso");
+                  }}
+                />
+
                 <ConferenciaTipos
                   pagamentos={pagamentos as Pagamento[]}
                   colaboradorPor={(id) => d.colaboradores.find((c: Colaborador) => c.id === id)}
@@ -2699,6 +2719,10 @@ export default function Custos() {
           aberto={confirmarAplicacao}
           onFechar={() => setConfirmarAplicacao(false)}
           onConfirmar={aplicarFolhaAgora}
+          // O padrão do diálogo é o botão vermelho escrito "Excluir": aqui o
+          // que se faz é aplicar, e o texto tem de dizer o que vai acontecer.
+          textoConfirmar={ausentesMarcados.size ? `Aplicar e remover ${ausentesMarcados.size}` : "Aplicar"}
+          perigo={ausentesMarcados.size > 0}
           titulo={`Aplicar ${resumoPrev.contaNoBotao} alteração(ões)?`}
           mensagem={[
             `Pago à equipe: ${formatBRL(resumoPrev.totalHoje)} → ${formatBRL(resumoPrev.totalDepois)}${resumoPrev.delta !== 0 ? ` (${resumoPrev.delta > 0 ? "+" : "−"}${formatBRL(Math.abs(resumoPrev.delta))})` : ""}.`,
@@ -2716,6 +2740,8 @@ export default function Custos() {
           aberto={confirmarDesfazer}
           onFechar={() => setConfirmarDesfazer(false)}
           onConfirmar={desfazerUltimaAplicacao}
+          textoConfirmar="Desfazer"
+          perigo={false}
           titulo="Desfazer a última aplicação da folha?"
           mensagem={[
             `${ultimoRetrato.rotulo ?? "Folha do ERP"} · aplicada em ${new Date(ultimoRetrato.em).toLocaleString("pt-BR")}.`,
