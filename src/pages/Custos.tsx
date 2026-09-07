@@ -27,6 +27,7 @@ import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody, useAbertoPersistido } from "@/components/ui/card";
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
+import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -785,6 +786,17 @@ export default function Custos() {
     }),
     [compAtiva, pagsDoMesTodos.length, manuaisNoMes, contasNoPlano, conferencia, config.ultimaBuscaMubi, config.ultimaConciliacaoMubi],
   );
+  // O que cada mês tem, para os pontos sob os chips.
+  const infoDoMes = useMemo(() => {
+    const comFolha = new Set((pagamentos as Pagamento[]).map((p) => p.competencia));
+    const plano = new Map<string, "contador" | "erp">();
+    for (const p of planoContas as ContaPlano[]) {
+      // Basta UMA linha do contador para o mês ser dele.
+      if (p.origem !== "erp") plano.set(p.competencia, "contador");
+      else if (!plano.has(p.competencia)) plano.set(p.competencia, "erp");
+    }
+    return (c: string) => ({ folha: comFolha.has(c), plano: plano.get(c) ?? null });
+  }, [pagamentos, planoContas]);
   // O pior sinal do mês vira o chip ao lado do seletor de competência.
   const sinalResumo = useMemo(() => {
     const peso: Record<Tom, number> = { ruim: 0, atencao: 1, ok: 2, neutro: 3 };
@@ -1032,33 +1044,29 @@ export default function Custos() {
           seletor por aba obrigava a trocar o mês três vezes. Ao lado, o pior
           sinal do mês responde "está atualizado?" sem sair da aba — os quatro
           chips completos moram em Sincronização. */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Select
-          value={compAtiva}
-          onChange={(e) => setComp(e.target.value)}
-          className="h-10 w-auto py-0"
-          disabled={semPlano}
-          aria-label="Competência"
-        >
-          {semPlano && <option value="">Sem competências</option>}
-          {competencias.map((c) => (
-            <option key={c} value={c}>
-              {compLabelLongo(c)}
-            </option>
-          ))}
-        </Select>
-        {compAtiva && sinalResumo && (
-          <button
-            type="button"
-            onClick={() => irParaSinal(sinalResumo.id)}
-            title={sinalResumo.detalhe}
-            className={"inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition " + TOM_CLASSES[sinalResumo.tom]}
-          >
-            {sinalResumo.tom === "ok" ? <ShieldCheck className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-            <span>{sinalResumo.rotulo}: {sinalResumo.valor}</span>
-          </button>
-        )}
-      </div>
+      {/* Ano + chips de mês. A faixa não aparece em Viagens, que não usa
+          competência — uma faixa sobre uma aba que a ignora confunde. */}
+      {aba !== "viagens" && (
+        <div className="mb-4 space-y-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            <div className="min-w-0 flex-1">
+              <FaixaMeses competencias={competencias} ativa={compAtiva} onEscolher={setComp} info={infoDoMes} hoje={hojeIso} />
+            </div>
+            {compAtiva && sinalResumo && (
+              <button
+                type="button"
+                onClick={() => irParaSinal(sinalResumo.id)}
+                title={sinalResumo.detalhe}
+                className={"inline-flex h-10 shrink-0 items-center gap-1.5 self-start rounded-xl border px-3 text-xs font-medium transition lg:self-auto " + TOM_CLASSES[sinalResumo.tom]}
+              >
+                {sinalResumo.tom === "ok" ? <ShieldCheck className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                <span>{sinalResumo.rotulo}: {sinalResumo.valor}</span>
+              </button>
+            )}
+          </div>
+          <LegendaMeses />
+        </div>
+      )}
 
       <Tabs
         ativa={aba}
@@ -1528,11 +1536,7 @@ export default function Custos() {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
-                    <Select value={compAtiva} onChange={(e) => setComp(e.target.value)} className="h-9 w-auto py-0 text-sm">
-                      {competencias.map((c) => (
-                        <option key={c} value={c}>{compLabelLongo(c)}</option>
-                      ))}
-                    </Select>
+                    <span className="px-1 text-sm font-medium tabular-nums text-slate-700">{compLabelLongo(compAtiva)}</span>
                     <button
                       type="button"
                       onClick={() => irMes(1)}
@@ -1691,6 +1695,7 @@ export default function Custos() {
                         <thead className="border-b border-slate-100 bg-slate-50/50">
                           <tr>
                             <th className="th">Tipo de pagamento</th>
+                            <th className="th">Parte do mês</th>
                             <th className="th text-right">Valor</th>
                           </tr>
                         </thead>
@@ -1706,11 +1711,22 @@ export default function Custos() {
                                   {l.tipo}
                                 </span>
                               </td>
+                              {/* A régua de % (pedido do Léo, 07/09/2026): a composição
+                                  do mês num relance — o que está pesando salta aos olhos. */}
+                              <td className="td w-56">
+                                <span className="flex items-center gap-2">
+                                  <span className="h-1.5 flex-1 rounded-full bg-slate-100" aria-hidden="true">
+                                    <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(0, Math.min(100, totalMes > 0 ? (l.valor / totalMes) * 100 : 0))}%`, backgroundColor: corDoTipo(l.tipo) }} />
+                                  </span>
+                                  <span className="w-11 text-right text-xs tabular-nums text-slate-500">{totalMes > 0 ? `${((l.valor / totalMes) * 100).toFixed(1).replace(".", ",")}%` : "—"}</span>
+                                </span>
+                              </td>
                               <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
                             </tr>
                           ))}
                           <tr className="bg-slate-50/60">
                             <td className="td font-semibold text-brand-ink">Total pago no mês</td>
+                            <td className="td text-right text-xs text-slate-500">100%</td>
                             <td className="td text-right font-semibold text-brand-ink">{formatBRL(totalMes)}</td>
                           </tr>
                         </tbody>

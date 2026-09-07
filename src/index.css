@@ -297,3 +297,23 @@ main h1, main h2, main h3, .rh-sidebar .nav-section { color: var(--rh-title); }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ============================================================================
+   Impressão / "Salvar PDF" (07/09/2026). Vale para TODA tela: some o que é
+   navegação (menu lateral, cabeçalho, botões de ação), o conteúdo toma a
+   página inteira, e cartão não quebra no meio. O que está recolhido continua
+   recolhido — o PDF é a tela como ela está.
+   ============================================================================ */
+@media print {
+  @page { margin: 12mm; }
+  html, body { background: #fff !important; color: #0f172a !important; }
+  .rh-sidebar, header, .no-print, [data-menu-rh], .btn-primary, .btn-outline, .btn-ghost { display: none !important; }
+  main { max-width: none !important; padding: 0 !important; margin: 0 !important; animation: none !important; }
+  .lg\:pl-72 { padding-left: 0 !important; }
+  .card, .rounded-2xl, .rounded-xl { break-inside: avoid; box-shadow: none !important; }
+  .sticky { position: static !important; }
+  .overflow-x-auto, .overflow-y-auto, .max-h-80 { overflow: visible !important; max-height: none !important; }
+  a[href]::after { content: "" !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+

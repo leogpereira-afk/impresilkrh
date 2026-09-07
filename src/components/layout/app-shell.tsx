@@ -5,6 +5,7 @@ import {
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays, MessageSquare,
   Sun, Moon, ChevronRight, Search,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -343,6 +344,21 @@ export function AppShell() {
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
               </div>
               <NotificacoesButton />
+              {/* "Salvar PDF" em toda tela (pedido do Léo, 07/09/2026): a
+                  impressão do navegador com a folha de estilo de impressão —
+                  menu, cabeçalho e botões somem, o conteúdo ocupa a página
+                  inteira. "Salvar como PDF" é o destino padrão em qualquer
+                  navegador, sem biblioteca e sem tela por tela. */}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="no-print inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
+                title="Salvar esta tela em PDF (imprimir)"
+                aria-label="Salvar em PDF"
+              >
+                <Printer className="h-[18px] w-[18px]" />
+                <span className="hidden xl:inline">PDF</span>
+              </button>
               <button
                 onClick={alternarTema}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
