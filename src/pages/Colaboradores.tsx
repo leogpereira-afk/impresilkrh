@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, UserCheck, UserX, HeartPulse, Hourglass, CalendarOff, AlertTriangle } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -10,7 +10,8 @@ import { Input, Select } from "@/components/ui/form";
 import { MotivacaoRosto } from "@/components/ui/indicadores";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useColecao } from "@/lib/store";
-import { useDominio, trabalhandoHoje } from "@/lib/dominio";
+import { useDominio } from "@/lib/dominio";
+import { quadroPorSituacao, presenteHoje, chaveDeStatus } from "@/lib/quadroPorSituacao";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
@@ -44,6 +45,25 @@ const ORDEM_ENQUADRAMENTO: Record<string, number> = { Crítico: 0, Abaixo: 1, De
 
 // Inativo = desligado (data de desligamento) ou status "inativo".
 const ehInativo = (c: Colaborador) => c.statusId === "inativo" || !!c.dataDesligamento;
+
+/* Enfeite dos cards de presença: ícone e legenda por status conhecido. É só
+   enfeite mesmo — o que NÃO está aqui ganha o ícone genérico e segue com card
+   próprio. Nenhum número depende destas tabelas. */
+const ICONE_DO_STATUS: Record<string, typeof UserCheck> = {
+  ativo: UserCheck,
+  experiencia: Hourglass,
+  freelancer: Handshake,
+};
+const NOTA_DO_STATUS: Record<string, string> = {
+  ativo: "carteira assinada",
+  experiencia: "contrato de experiência",
+  freelancer: "empreita, sem carteira",
+};
+
+/* Cor do status + alfa, para o fundo do ícone. Só mexe em hex de 6 dígitos: o
+   resto passa direto, e um valor estranho vira fundo transparente em vez de
+   quebrar o card. */
+const comAlfa = (cor: string, alfa: string) => (/^#[0-9a-f]{6}$/i.test(cor) ? `${cor}${alfa}` : cor);
 
 function ThOrdenavel({
   campo, ordem, setOrdem, className, children,
@@ -88,8 +108,10 @@ export default function Colaboradores() {
   // Visão padrão: LISTA (abre direto a tabela). Chips de área e o alternador
   // "Por setor" continuam para quem quiser navegar por setor.
   const [visao, setVisao] = useState<"setor" | "lista">("lista");
-  // Card de resumo clicado (filtro rápido): ativos / em férias / desligados.
-  const [foco, setFoco] = useState<"presentes" | "indisponiveis" | "desligados" | null>(null);
+  // Card do quadro clicado (filtro rápido): um status presente, ou indisponíveis.
+  /* Card selecionado. Era uma união fechada de três nomes; agora há um card
+     por status presente, então a chave de status vai embutida: "st:<id>". */
+  const [foco, setFoco] = useState<string | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
   const [chips, setChips] = useState<Set<string>>(() => new Set());
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
@@ -197,38 +219,29 @@ export default function Colaboradores() {
     [escopo],
   );
 
-  /* Está disponível para trabalhar HOJE? É a pergunta que os cards respondem.
-     `trabalhandoHoje` já exige estar no quadro e com status "ativo" ou "em
-     experiência" — quem está de atestado, afastado, em abandono ou de aviso
-     prévio não entra. Falta só descontar quem está de férias. */
-  const presente = useCallback(
-    (c: Colaborador) => trabalhandoHoje(c) && !emFerias.has(c.id),
-    [emFerias],
-  );
+  /* Está trabalhando HOJE? A régua mora em lib/quadroPorSituacao, junto com a
+     conta dos cards, para as duas não divergirem — e ela lista as AUSÊNCIAS, não
+     as presenças, para um status novo não sumir dentro de "Indisponíveis". */
+  const presente = useCallback((c: Colaborador) => presenteHoje(c, emFerias), [emFerias]);
 
-  /* Cards de resumo — sobre o escopo de acesso, sem a Direção (mesma base da lista).
+  /* Cards do quadro — sobre o escopo de acesso, sem a Direção (mesma base da lista).
    *
    * Eram quatro e se sobrepunham: "Ativos" somava quem estava de férias (a nota
    * dizia "já contados em Ativos") e ainda incluía atestado médico e abandono,
-   * porque esses status contam no headcount. O número respondia "quantos estão
-   * na folha", mas era lido como "quantos tenho para trabalhar" — e no cadastro
-   * de hoje isso dava 32 quando a mão de obra disponível era 30.
+   * porque esses status contam no headcount. Viraram três, cada pessoa em um só.
    *
-   * Agora cada pessoa cai em UM card só, e a pergunta de cada um é direta:
-   *   Presentes     — dá para contar com esta pessoa hoje
-   *   Indisponíveis — ainda é da casa, mas hoje não está (férias, atestado,
-   *                   afastamento, abandono, aviso prévio)
-   *   Desligados    — saiu
-   * Presentes + Indisponíveis = o total no quadro (o que bate com a folha). */
-  const resumo = useMemo(() => {
-    const base = escopo.filter((c) => !c.ehDirecao);
-    const noQuadroAgora = base.filter((c) => !ehInativo(c));
-    return {
-      presentes: noQuadroAgora.filter(presente).length,
-      indisponiveis: noQuadroAgora.filter((c) => !presente(c)).length,
-      desligados: base.filter((c) => ehInativo(c)).length,
-    };
-  }, [escopo, presente]);
+   * Agora são um por STATUS presente, mais Indisponíveis e Desligados. Dois
+   * motivos, os dois do Léo em 08/09/2026:
+   *   "tenho que saber quantas pessoas estão na empresa" — o card único de
+   *   "Ativos" escondia que 7 dos 28 estavam em contrato de experiência;
+   *   "uma com a tela de freelancer que entra o Osmane" — e o Osmane, recém
+   *   marcado como Freelancer, estava caindo em "Indisponíveis · férias,
+   *   atestado, afastamento…" enquanto trabalhava.
+   * A soma dos cards de presença com os indisponíveis é o total na empresa. */
+  const quadro = useMemo(
+    () => quadroPorSituacao(escopo, d.status, emFerias),
+    [escopo, d.status, emFerias],
+  );
 
   // Exporta a lista filtrada atual para CSV (Excel-friendly, separador ;).
   const exportarCsv = () => {
@@ -305,9 +318,10 @@ export default function Colaboradores() {
       .filter((c) => !c.ehDirecao)
       // Card clicado tem prioridade sobre o checkbox "incluir inativos".
       .filter((c) => {
-        if (foco === "desligados") return ehInativo(c);
-        if (foco === "presentes") return presente(c);
         if (foco === "indisponiveis") return !ehInativo(c) && !presente(c);
+        // "st:<id>" — um card de presença. Exige presente() além do status: quem
+        // está de férias saiu do card, e a lista tem de concordar com o número.
+        if (foco?.startsWith("st:")) return presente(c) && chaveDeStatus(c) === foco.slice(3);
         return mostrarInativos || !ehInativo(c);
       })
       // Área tem um filtro só (os chips). O Select abaixo é outra porta para o
@@ -413,7 +427,7 @@ export default function Colaboradores() {
                 {aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
                 <span className="font-semibold text-slate-800">Resumo do quadro</span>
                 <span className="truncate text-xs text-slate-500">
-                  {resumo.presentes} presentes · {resumo.indisponiveis} indisponíveis · {resumo.desligados} desligados
+                  {quadro.naEmpresa} na empresa · {quadro.indisponiveis} indisponíveis
                 </span>
                 {emExperiencia.length > 0 && (
                   <span className={cn(
@@ -582,23 +596,37 @@ export default function Colaboradores() {
         </div>
       )}
 
-      {/* Cards de resumo do quadro — clicáveis: filtram a lista abaixo */}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* Cards do quadro — clicáveis: filtram a lista abaixo.
+          Um por status presente COM gente (na ordem do próprio status), mais
+          Indisponíveis e Desligados. Status novo entra sozinho. */}
+      <div className="mb-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {([
-          { key: "presentes", label: "Ativos", nota: "presentes hoje", valor: resumo.presentes, icon: UserCheck, cor: "text-emerald-600", bg: "bg-emerald-50" },
+          ...quadro.presentes.map((g) => ({
+            key: `st:${g.statusId}`,
+            label: g.nome,
+            nota: NOTA_DO_STATUS[g.statusId] ?? "",
+            valor: g.quantidade,
+            icon: ICONE_DO_STATUS[g.statusId] ?? Users,
+            // A cor vem do próprio status, a mesma do selo dele na lista e na
+            // ficha — não há segunda paleta para sair de sincronia.
+            tint: g.cor,
+          })),
           // Não é "afastado" no sentido do status: é todo mundo que ainda é da
           // casa mas hoje não está — férias, atestado, afastamento, abandono,
           // aviso prévio. Quem precisa saber com quantas mãos conta amanhã olha
           // este número, não o cadastro de cada um.
-          { key: "indisponiveis", label: "Indisponíveis", nota: "férias, atestado, afastamento…", valor: resumo.indisponiveis, icon: HeartPulse, cor: "text-orange-600", bg: "bg-orange-50" },
-          { key: "desligados", label: "Desligados", nota: "", valor: resumo.desligados, icon: UserX, cor: "text-slate-500", bg: "bg-slate-100" },
-        ] as const).map(({ key, label, nota, valor, icon: Icon, cor, bg }) => {
+          { key: "indisponiveis", label: "Indisponíveis", nota: "férias, atestado, afastamento…", valor: quadro.indisponiveis, icon: HeartPulse, tint: "#ea580c" },
+          // NAO ha card de Desligados: "eu nao preciso ver os desligados" (Léo,
+          // 08/09/2026). Os cards respondem "com quem eu conto hoje" — quem saiu
+          // não é essa pergunta. Continua alcançável pelo "Incluir inativos"
+          // logo abaixo, que é onde se vai de propósito procurar quem saiu.
+        ]).map(({ key, label, nota, valor, icon: Icon, tint }) => {
           const ativoCard = foco === key;
           // Card zerado não vira filtro: clicar só levaria à lista vazia.
           const semNinguem = valor === 0;
           return (
             <button
-              key={label}
+              key={key}
               type="button"
               onClick={() => setFoco(ativoCard ? null : key)}
               disabled={semNinguem}
@@ -614,8 +642,8 @@ export default function Colaboradores() {
                 semNinguem ? "cursor-default opacity-70" : !ativoCard && "hover:border-slate-300 hover:shadow-md",
               )}
             >
-              <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", bg)}>
-                <Icon className={cn("h-5 w-5", cor)} />
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: comAlfa(tint, "1a") }}>
+                <Icon className="h-5 w-5" style={{ color: tint }} />
               </span>
               <div className="min-w-0">
                 <p className="text-2xl font-bold leading-none text-slate-800">{valor}</p>
@@ -626,6 +654,19 @@ export default function Colaboradores() {
           );
         })}
       </div>
+
+      {/* O total que o Léo pediu: "tenho que saber quantas pessoas estão na
+          empresa". É a soma exata dos cards de presença com os indisponíveis —
+          a Direção fica de fora, como no resto da tela, porque é este o número
+          que bate com a folha. */}
+      <p className="mb-4 text-xs text-slate-500">
+        <strong className="font-semibold text-slate-700">{quadro.naEmpresa}</strong>{" "}
+        {quadro.naEmpresa === 1 ? "pessoa na empresa hoje" : "pessoas na empresa hoje"}
+        {quadro.presentes.length > 0 && (
+          <> · {quadro.presentes.map((g) => `${g.quantidade} ${g.nome.toLowerCase()}`).join(" · ")}</>
+        )}
+        {quadro.indisponiveis > 0 && <> · {quadro.indisponiveis} indisponível{quadro.indisponiveis > 1 ? "eis" : ""}</>}
+      </p>
 
       {/* Chips de área (multi-seleção) */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
