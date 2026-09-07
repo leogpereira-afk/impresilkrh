@@ -24,7 +24,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
-import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { Card, CardHeader, CardBody, useAbertoPersistido } from "@/components/ui/card";
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
@@ -1456,7 +1456,7 @@ export default function Custos() {
               <h2 id="folha-geral" className="scroll-mt-20 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
             </div>
 
-            <Card aberto={resumoAberto} onAlternar={() => setResumoAberto((v) => !v)}>
+            <Card aberto={resumoAberto} onAlternar={() => setResumoAberto((v: boolean) => !v)}>
               <CardHeader
                 title="Resumo do mês"
                 subtitle={`Todos os colaboradores · ${compLabelLongo(compAtiva)}`}
