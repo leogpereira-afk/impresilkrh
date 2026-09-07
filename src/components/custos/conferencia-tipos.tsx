@@ -20,14 +20,17 @@ const MOSTRAR = 60;
  */
 export function ConferenciaTipos({
   pagamentos,
+  colaboradorPor,
   nomeDe,
   onCorrigir,
 }: {
   pagamentos: Pagamento[];
+  /** Para a conferência saber quem é sócio — em sócio a conta do ERP não manda. */
+  colaboradorPor?: (id: string) => { id: string; ehDirecao?: boolean; statusId?: string } | undefined;
   nomeDe: (colaboradorId: string) => string;
   onCorrigir: (divergencias: Divergencia[]) => void;
 }) {
-  const r = useMemo(() => conferirTipos(pagamentos), [pagamentos]);
+  const r = useMemo(() => conferirTipos(pagamentos, colaboradorPor), [pagamentos, colaboradorPor]);
   const [confirmar, setConfirmar] = useState(false);
   const n = r.divergencias.length;
   const tudoCerto = n === 0;

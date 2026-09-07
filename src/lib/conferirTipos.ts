@@ -10,6 +10,7 @@
 // ============================================================================
 import type { Pagamento } from "@/data/types";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
+import { tipoSocietario } from "./societario";
 
 export interface Divergencia {
   id: string;
@@ -34,7 +35,15 @@ export interface ConferenciaTipos {
   porTroca: { de: string; para: string; quantos: number; valor: number }[];
 }
 
-export function conferirTipos(pagamentos: Pagamento[]): ConferenciaTipos {
+/**
+ * `colaboradorPor` deixa a conferência enxergar quem é SÓCIO. Sem ela, todo
+ * pagamento de direção apareceria como divergente para sempre: a conta do ERP
+ * diz "FGTS" e o registro (certo) diz "Arrendamento".
+ */
+export function conferirTipos(
+  pagamentos: Pagamento[],
+  colaboradorPor?: (id: string) => { id: string; ehDirecao?: boolean; statusId?: string } | undefined,
+): ConferenciaTipos {
   let conferiveis = 0;
   let semConta = 0;
   const divergencias: Divergencia[] = [];
@@ -42,7 +51,8 @@ export function conferirTipos(pagamentos: Pagamento[]): ConferenciaTipos {
     const plano = planoDaDescricao(p.descricao);
     if (!plano) { semConta++; continue; }
     conferiveis++;
-    const para = tipoDoPlanoErp(plano, p.tipo);
+    const quem = colaboradorPor?.(p.colaboradorId) ?? null;
+    const para = tipoSocietario(plano, quem) ?? tipoDoPlanoErp(plano, p.tipo);
     if (para !== p.tipo) {
       divergencias.push({ id: p.id, colaboradorId: p.colaboradorId, competencia: p.competencia, de: p.tipo, para, plano, valor: Number(p.valor) || 0 });
     }

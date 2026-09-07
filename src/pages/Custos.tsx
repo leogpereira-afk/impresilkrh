@@ -37,6 +37,7 @@ import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
+import { ehSocio } from "@/lib/societario";
 import { useSessao } from "@/lib/session";
 import { calcularEncargos, separarRecebido, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
 import { podeGerir } from "@/lib/rbac";
@@ -124,14 +125,13 @@ export default function Custos() {
   // por ele) ficava fora do seletor com a folha já lançada dentro.
   const competencias = useMemo(() => competenciasComDados(planoContas, pagamentos), [planoContas, pagamentos]);
   const ultimaComp = competencias[competencias.length - 1] ?? "";
-  // Abre no último mês FECHADO — o último que tem planilha do contador. Abrir
-  // direto no mês corrente mostraria o rateio, os encargos e o Custo Global
-  // zerados logo de cara, que se lê como sistema quebrado; o mês corrente fica
-  // a um clique na seta, com o aviso explicando o que ainda não venceu.
-  const compPadrao = useMemo(() => {
-    const doPlano = competenciasPlano(planoContas);
-    return doPlano[doPlano.length - 1] ?? ultimaComp;
-  }, [planoContas, ultimaComp]);
+  // Abre no mês MAIS RECENTE com dado (pedido do Léo, 07/09/2026). Antes abria
+  // no último mês fechado pelo contador, com medo de mostrar rateio e Custo
+  // Global zerados no mês corrente — mas agora a faixa de chips diz o estado de
+  // cada mês, o rateio sem plano diz "indisponível" em vez de zero, e o plano
+  // pode ser puxado do ERP na hora. Abrir em junho quando já há folha de agosto
+  // fazia a tela parecer parada.
+  const compPadrao = ultimaComp;
   const [comp, setComp] = useState<string>(compPadrao);
   // Aba ativa controlada por fora: os chips de "está atualizado?" precisam
   // mandar abrir Sincronização ou Custo Global antes de rolar até o alvo.
@@ -678,7 +678,22 @@ export default function Custos() {
   const linhasColab = useMemo(() => somaPorTipo(pagsDoColab), [pagsDoColab]);
 
   // ---------- Resumo geral do mês (folha de todos os colaboradores) ----------
-  const pagsDoMes = useMemo(() => pagamentos.filter((p: Pagamento) => p.competencia === compAtiva), [pagamentos, compAtiva]);
+  // A FOLHA GERAL É DA EQUIPE. O que sai para sócio (arrendamento, retirada,
+  // plano de saúde da direção) é despesa societária: entra na ficha da pessoa,
+  // mas não no custo da equipe, não vira base de FGTS/13º/férias e não entra na
+  // variação do mês — senão o honorário de um fundador apareceria como
+  // "a folha subiu". Ver lib/societario.
+  const ehDeSocio = useMemo(() => {
+    const socios = new Set(d.colaboradores.filter((c: Colaborador) => ehSocio(c)).map((c: Colaborador) => c.id));
+    return (p: Pagamento) => socios.has(p.colaboradorId);
+  }, [d.colaboradores]);
+  const pagamentosDaEquipe = useMemo(() => (pagamentos as Pagamento[]).filter((p) => !ehDeSocio(p)), [pagamentos, ehDeSocio]);
+  const pagsDoMes = useMemo(() => pagamentosDaEquipe.filter((p: Pagamento) => p.competencia === compAtiva), [pagamentosDaEquipe, compAtiva]);
+  const pagsSocietariosDoMes = useMemo(
+    () => (pagamentos as Pagamento[]).filter((p) => p.competencia === compAtiva && ehDeSocio(p)),
+    [pagamentos, compAtiva, ehDeSocio],
+  );
+  const totalSocietarioMes = useMemo(() => pagsSocietariosDoMes.reduce((s, p) => s + (Number(p.valor) || 0), 0), [pagsSocietariosDoMes]);
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
   const abrirDrillTipo = (tipo: string) => {
     const doTipo = pagsDoMes.filter((p) => p.tipo === tipo);
@@ -724,26 +739,30 @@ export default function Custos() {
   );
   const fgtsLancadoMes = useMemo(() => pagsDoMes.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + p.valor, 0), [pagsDoMes]);
   const provisoesMes = useMemo(() => calcularEncargos(pagsDoMes, fgtsLancadoMes), [pagsDoMes, fgtsLancadoMes]);
-  const variacao = useMemo(() => variacaoMensal(pagamentos as Pagamento[], compAtiva, TIPOS_ENCARGO), [pagamentos, compAtiva]);
+  const variacao = useMemo(() => variacaoMensal(pagamentosDaEquipe, compAtiva, TIPOS_ENCARGO), [pagamentosDaEquipe, compAtiva]);
   // Comparar com um mês que ainda está pela metade (adiantamento sem salário)
   // dá variação falsa: o aviso vai junto do número, nos dois lados.
   const anteriorIncompleto = useMemo(
     () => (variacao.compAnterior ? conferirCompetencia(variacao.compAnterior, pagamentos as Pagamento[], d.colaboradores).estado !== "completa" : false),
     [variacao.compAnterior, pagamentos, d.colaboradores],
   );
-  const manuaisNoMes = useMemo(() => pagsDoMes.filter((p) => ehManual(p)).length, [pagsDoMes]);
+  // Estes dois falam da IMPORTAÇÃO, não do custo: contam o mês inteiro, sócio
+  // incluído. Se contassem só a equipe, o chip diria "132 gravados" ao lado de
+  // uma busca que vinculou 136 e acusaria 4 faltando que estão lá.
+  const pagsDoMesTodos = useMemo(() => (pagamentos as Pagamento[]).filter((p) => p.competencia === compAtiva), [pagamentos, compAtiva]);
+  const manuaisNoMes = useMemo(() => pagsDoMesTodos.filter((p) => ehManual(p)).length, [pagsDoMesTodos]);
   const contasNoPlano = useMemo(() => planoContas.filter((p: ContaPlano) => p.competencia === compAtiva).length, [planoContas, compAtiva]);
   const sinais = useMemo(
     () => sinaisDaCompetencia({
       comp: compAtiva,
-      gravados: pagsDoMes.length,
+      gravados: pagsDoMesTodos.length,
       manuais: manuaisNoMes,
       contasNoPlano,
       conferencia,
       ultimaBusca: config.ultimaBuscaMubi ?? null,
       ultimaConciliacao: config.ultimaConciliacaoMubi ?? null,
     }),
-    [compAtiva, pagsDoMes.length, manuaisNoMes, contasNoPlano, conferencia, config.ultimaBuscaMubi, config.ultimaConciliacaoMubi],
+    [compAtiva, pagsDoMesTodos.length, manuaisNoMes, contasNoPlano, conferencia, config.ultimaBuscaMubi, config.ultimaConciliacaoMubi],
   );
   // O pior sinal do mês vira o chip ao lado do seletor de competência.
   const sinalResumo = useMemo(() => {
@@ -1456,6 +1475,21 @@ export default function Custos() {
               <h2 id="folha-geral" className="scroll-mt-20 text-base font-semibold text-brand-ink">Folha geral do mês</h2>
             </div>
 
+            {/* O que sai para sócio aparece, mas separado: é despesa
+                societária, não folha. Sem esta linha o dinheiro sumiria da vista
+                ao ser tirado dos totais da equipe. */}
+            {pagsSocietariosDoMes.length > 0 && (
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Direção · despesa societária</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador.
+                  </p>
+                </div>
+                <p className="text-xl font-semibold tabular-nums text-slate-700">{formatBRL(totalSocietarioMes)}</p>
+              </div>
+            )}
+
             <Card aberto={resumoAberto} onAlternar={() => setResumoAberto((v: boolean) => !v)}>
               <CardHeader
                 title="Resumo do mês"
@@ -2033,6 +2067,7 @@ export default function Custos() {
                     caminho normal (atualizar + sync), com rastro no histórico. */}
                 <ConferenciaTipos
                   pagamentos={pagamentos as Pagamento[]}
+                  colaboradorPor={(id) => d.colaboradores.find((c: Colaborador) => c.id === id)}
                   nomeDe={(id) => d.colaboradores.find((c: Colaborador) => c.id === id)?.nome ?? id}
                   onCorrigir={(divs) => {
                     emLote(`Reclassificou ${divs.length} lançamento(s) pelo nome da conta do ERP`, () => {

@@ -16,6 +16,7 @@ import { supabase, FN_MUBI_PAGAMENTOS } from "@/lib/supabase";
 import { competenciaPagto } from "@/lib/custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 import { tipoDoPlanoErp } from "./tipoDoPlano";
+import { tipoSocietario } from "./societario";
 
 export interface LinhaMubi {
   idMubi: string;
@@ -305,8 +306,19 @@ export const competenciaDe = (l: LinhaMubi) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(venc) ? competenciaPagto(venc) : "";
 };
 
-/** Monta o registro da coleção "pagamentos" a partir da linha do ERP. */
-export function montarPagamento(l: LinhaMubi, colaboradorId: string): Pagamento {
+/**
+ * Monta o registro da coleção "pagamentos" a partir da linha do ERP.
+ *
+ * `colaborador` é opcional só por compatibilidade: quando ele vem e é SÓCIO, o
+ * tipo deixa de sair da conta do ERP (o contador lança honorário de sócio em
+ * conta de folha) e passa a ser o societário — ver lib/societario.
+ */
+export function montarPagamento(
+  l: LinhaMubi,
+  colaboradorId: string,
+  colaborador?: Colaborador | null,
+): Pagamento {
+  const societario = tipoSocietario(l.planoContas, colaborador ?? null);
   return {
     // O id é só a chave do registro; a IDENTIDADE do título é o campo idMubi
     // abaixo — é ele que faz a reimportação atualizar em vez de duplicar, e é
@@ -315,7 +327,7 @@ export function montarPagamento(l: LinhaMubi, colaboradorId: string): Pagamento 
     idMubi: String(l.idMubi),
     colaboradorId,
     competencia: competenciaDe(l),
-    tipo: l.tipo,
+    tipo: societario ?? l.tipo,
     valor: l.valor,
     dataPagamento: l.dataVencimento,
     descricao: [l.descricao, l.planoContas].filter(Boolean).join(" · ") || undefined,
@@ -410,7 +422,7 @@ export function paraRegistros(
     // Casou pelo NOME e o cadastro está sem CPF: aprende, para o mês que vem
     // casar pela chave forte e não depender de como o ERP escreveu o nome.
     if (doc.length === 11 && !String(c.cpf ?? "").replace(/\D/g, "")) cpfs.set(c.id, doc);
-    registros.push(montarPagamento(l, c.id));
+    registros.push(montarPagamento(l, c.id, c));
   }
   return {
     registros,

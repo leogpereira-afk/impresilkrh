@@ -32,6 +32,9 @@ export const TIPOS_PAGAMENTO: { tipo: string; cor: string }[] = [
   { tipo: "Rescisão", cor: "#dc2626" },
   { tipo: "FGTS", cor: "#b45309" },
   { tipo: "INSS", cor: "#92400e" },
+  // Direção: não é folha, é despesa societária (ver lib/societario).
+  { tipo: "Arrendamento", cor: "#475569" },
+  { tipo: "Retirada", cor: "#334155" },
   { tipo: "Outros", cor: "#64748b" },
 ];
 // Tipos que são ENCARGO da empresa (não pagos à pessoa): entram no custo real,
