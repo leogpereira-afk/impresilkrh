@@ -106,7 +106,11 @@ export function ViagensPainel() {
   const alternarFoco = (f: "mesQtd" | "mesValor" | "Em andamento" | "Planejada") =>
     setFoco((atual) => (atual === f ? null : f));
 
-  const doMes = useMemo(() => lista.filter((v) => noMesAtual(v.dataInicio)), [lista]);
+  // Viagem cancelada não é gasto: UMA base sem canceladas para o card do mês,
+  // o gasto por pessoa, o ranking e o total da tabela — antes três deles
+  // somavam a cancelada e o quarto não (auditoria de 07/09/2026).
+  const validas = useMemo(() => lista.filter((v) => v.status !== "Cancelada"), [lista]);
+  const doMes = useMemo(() => validas.filter((v) => noMesAtual(v.dataInicio)), [validas]);
   const gastoMes = useMemo(() => doMes.reduce((acc, v) => acc + (v.valorTotal ?? 0), 0), [doMes]);
   const emAndamento = useMemo(() => lista.filter((v) => v.status === "Em andamento").length, [lista]);
   const planejadas = useMemo(() => lista.filter((v) => v.status === "Planejada").length, [lista]);
@@ -121,18 +125,16 @@ export function ViagensPainel() {
   // Gasto por colaborador (desconsidera viagens canceladas).
   const gastoPorColab = useMemo(() => {
     const mapa = new Map<string, number>();
-    lista
-      .filter((v) => v.status !== "Cancelada")
-      .forEach((v) => mapa.set(v.colaboradorId, (mapa.get(v.colaboradorId) ?? 0) + (v.valorTotal ?? 0)));
+    validas.forEach((v) => mapa.set(v.colaboradorId, (mapa.get(v.colaboradorId) ?? 0) + (v.valorTotal ?? 0)));
     return [...mapa.entries()]
       .map(([id, valor]) => ({ id, nome: d.nomeColab(id).split(" ")[0], valor }))
       .sort((a, b) => b.valor - a.valor);
-  }, [lista, d]);
+  }, [validas, d]);
 
   // Ranking de quem mais viaja: nº de viagens, dias e R$ por colaborador (escopo).
   const ranking = useMemo(() => {
     const mapa = new Map<string, { viagens: number; dias: number; valor: number }>();
-    lista.forEach((v) => {
+    validas.forEach((v) => {
       const atual = mapa.get(v.colaboradorId) ?? { viagens: 0, dias: 0, valor: 0 };
       atual.viagens += 1;
       atual.dias += v.dias ?? 0;
@@ -142,7 +144,7 @@ export function ViagensPainel() {
     return [...mapa.entries()]
       .map(([id, m]) => ({ id, nome: d.nomeColab(id), ...m }))
       .sort((a, b) => b.viagens - a.viagens || b.valor - a.valor);
-  }, [lista, d]);
+  }, [validas, d]);
 
   const rankingChart = useMemo(
     () => ranking.slice(0, 8).map((r) => ({ nome: r.nome.split(" ")[0], valor: r.viagens })),
@@ -273,7 +275,7 @@ export function ViagensPainel() {
 
   // O subtítulo descreve a tabela, então acompanha o filtro — senão diria
   // "12 viagens" com 3 linhas na tela.
-  const totalGeral = listaFiltrada.reduce((acc, v) => acc + (v.valorTotal ?? 0), 0);
+  const totalGeral = listaFiltrada.filter((v) => v.status !== "Cancelada").reduce((acc, v) => acc + (v.valorTotal ?? 0), 0);
 
   return (
     <div>
@@ -377,7 +379,7 @@ export function ViagensPainel() {
       <Card className="mt-6 overflow-hidden">
         <CardHeader
           title="Viagens e diárias"
-          subtitle={`${listaFiltrada.length} viagem(ns) · ${formatBRL(totalGeral)} no total`}
+          subtitle={`${listaFiltrada.length} viagem(ns) · ${formatBRL(totalGeral)} no total (sem canceladas)`}
           icon={<Plane className="h-[18px] w-[18px]" />}
           action={
             <div className="flex flex-wrap items-center justify-end gap-2">

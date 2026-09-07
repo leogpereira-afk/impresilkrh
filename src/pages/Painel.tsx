@@ -192,7 +192,12 @@ export default function Painel() {
   // teria recebido — e ela nunca viu esse dinheiro. A ficha, a tela de Custos e
   // a lente de custo em Colaboradores já descontavam; só a capa não descontava,
   // então a mesma competência mostrava um número aqui e outro na ficha.
-  const pagsEscopo = pagamentos.filter((p) => ids.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo));
+  // UMA base para o card e para a barra mês a mês: pagamento passado não
+  // depende do status de hoje (quem saiu em junho recebeu em março), e FGTS/INSS
+  // ficam fora dos dois — antes o card e a barra da MESMA competência diziam
+  // números diferentes (auditoria de 07/09/2026).
+  const pagsFolha = pagamentos.filter((p) => idsBruto.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo));
+  const pagsEscopo = pagsFolha;
   const pagsPeriodo = compFiltro
     ? pagsEscopo.filter((p) => p.competencia === compFiltro)
     : pagsEscopo.filter((p) => p.competencia.startsWith(`${filtroAno}-`));
@@ -274,7 +279,7 @@ export default function Painel() {
     .sort((a, b) => b.valor - a.valor);
 
   // ---------- Folha comparativa mês a mês (valores reais) ----------
-  const serieFolha = serieMensal(pagamentos.filter((p) => idsBruto.has(p.colaboradorId)));
+  const serieFolha = serieMensal(pagsFolha);
   const folhaComparativa = serieFolha.map((s) => ({ nome: s.nome, valor: s.valor }));
   // Clicar na barra de um mês leva o Painel inteiro para aquela competência —
   // o rótulo do gráfico ("Mar/2026") volta a virar ano+mês do filtro.

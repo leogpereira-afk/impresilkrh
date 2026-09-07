@@ -50,6 +50,9 @@ const aposOuIgual = (s: string | null | undefined, ref: Date) => {
 import { COR_POSICAO_FAIXA, COR_HUMOR, COR_RISCO } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
+import { TIPOS_ENCARGO } from "@/lib/folha";
+import { ehSocio } from "@/lib/societario";
+import { tituloCancelado, tituloEmAberto } from "@/lib/mubiPagamentos";
 
 // Cor da nota/média de desempenho (verde ≥80, âmbar ≥60, vermelho abaixo).
 const corNota = (n: number) => (n >= 80 ? "#16a34a" : n >= 60 ? "#d97706" : "#dc2626");
@@ -177,23 +180,37 @@ export default function Relatorios() {
   //    "caixa" = pelo dia em que o pagamento saiu (dataPagamento);
   //    "competencia" = pelo mês de referência (competencia). Respeita o período. --
   const { items: pagamentos } = useColecao("pagamentos");
-  // A folha REAL é dinheiro que saiu do caixa: entra quem está no quadro, mesmo
-  // afastado (INSS/licença continua recebendo). "Ativo" para HEADCOUNT exclui
-  // afastado — usar aquele conjunto aqui apagava a folha dessas pessoas do
-  // gráfico e do total (R$ 49 mil em 2026), como se nunca tivessem sido pagas.
+  // A folha REAL é dinheiro que saiu do caixa: entra TODO mundo que não é
+  // sócio — ativo, afastado, e quem já saiu. Filtrar pelo quadro de HOJE
+  // apagava do passado os pagamentos de quem foi desligado depois, inclusive
+  // toda Rescisão (auditoria de 07/09/2026); antes disso, o filtro por "ativo"
+  // já tinha sumido com R$ 49 mil de afastados. A mesma régua de Custos.
   const idsFolha = useMemo(
-    () => new Set(colaboradores.filter((c) => !c.ehDirecao && noQuadro(c)).map((c) => c.id)),
+    () => new Set(colaboradores.filter((c) => !ehSocio(c)).map((c) => c.id)),
     [colaboradores],
   );
+  // Um pagamento entra na folha real quando é dinheiro PAGO À PESSOA: FGTS e
+  // INSS lançados por pessoa são custo da empresa (a pessoa nunca viu) e título
+  // cancelado no ERP não é dinheiro. Título em aberto conta por competência
+  // (é a folha do mês) e NÃO conta no caixa (ainda não saiu).
+  const entraNaFolhaReal = useCallback(
+    (p: { colaboradorId: string; tipo: string; statusErp?: string }) =>
+      idsFolha.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo) && !tituloCancelado(p.statusErp),
+    [idsFolha],
+  );
+  const mesDoCaixa = (p: { competencia: string; dataPagamento?: string | null; pagoEm?: string | null }) => {
+    const dt = parseData(p.pagoEm ?? p.dataPagamento);
+    return dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia;
+  };
   const [baseFolha, setBaseFolha] = useState<"caixa" | "competencia">("caixa");
   const folhaReal = useMemo(() => {
     const porCaixa = new Map<string, number>();
     const porComp = new Map<string, number>();
     for (const p of pagamentos) {
-      if (!idsFolha.has(p.colaboradorId)) continue; // quem está no quadro (inclui afastado)
+      if (!entraNaFolhaReal(p)) continue;
       porComp.set(p.competencia, (porComp.get(p.competencia) ?? 0) + p.valor);
-      const dt = parseData(p.dataPagamento);
-      const ck = dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia;
+      if (tituloEmAberto(p.statusErp)) continue; // ainda não saiu do caixa
+      const ck = mesDoCaixa(p);
       porCaixa.set(ck, (porCaixa.get(ck) ?? 0) + p.valor);
     }
     const compDe = (mes: number) => `${filtroAno}-${String(mes).padStart(2, "0")}`;
@@ -205,7 +222,7 @@ export default function Relatorios() {
       return { total, serie, mapa: m };
     };
     return { caixa: resumo(porCaixa), competencia: resumo(porComp), temDados: porCaixa.size > 0 || porComp.size > 0 };
-  }, [pagamentos, idsFolha, filtroMes, filtroAno]);
+  }, [pagamentos, entraNaFolhaReal, filtroMes, filtroAno]);
   const folhaAtual = folhaReal[baseFolha];
 
   const drillFolhaReal = useCallback(
@@ -213,12 +230,12 @@ export default function Relatorios() {
       const i = MESES_PT.findIndex((m) => m.slice(0, 3) === nomeMes);
       if (i < 0) return;
       const key = `${filtroAno}-${String(i + 1).padStart(2, "0")}`;
-      const noMes = (p: { competencia: string; dataPagamento?: string | null }) => {
+      const noMes = (p: { competencia: string; dataPagamento?: string | null; pagoEm?: string | null; statusErp?: string }) => {
         if (baseFolha === "competencia") return p.competencia === key;
-        const dt = parseData(p.dataPagamento);
-        return (dt ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` : p.competencia) === key;
+        if (tituloEmAberto(p.statusErp)) return false;
+        return mesDoCaixa(p) === key;
       };
-      const ids = new Set(pagamentos.filter((p) => idsFolha.has(p.colaboradorId) && noMes(p)).map((p) => p.colaboradorId));
+      const ids = new Set(pagamentos.filter((p) => entraNaFolhaReal(p) && noMes(p)).map((p) => p.colaboradorId));
       // Lista a partir de TODO o quadro, não só dos ativos: a folha soma quem
       // está afastado (o dinheiro saiu), mas `d.ativos` exclui esse pessoal. O
       // resultado era um total cheio ao lado de uma lista curta — o afastado
@@ -226,7 +243,7 @@ export default function Relatorios() {
       const lista = d.colaboradores.filter((c) => ids.has(c.id));
       drill.abrir(`Folha real (${baseFolha}) — ${nomeMes}/${filtroAno}`, lista, `${formatBRL(folhaReal[baseFolha].mapa.get(key) ?? 0)} · ${lista.length} colaborador(es)`);
     },
-    [pagamentos, idsFolha, d.colaboradores, filtroAno, baseFolha, folhaReal, drill],
+    [pagamentos, entraNaFolhaReal, d.colaboradores, filtroAno, baseFolha, folhaReal, drill],
   );
 
   // -- Indicadores de cabeçalho --

@@ -38,6 +38,7 @@ import { vinculosDoColaborador } from "@/lib/vinculos";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import type { Colaborador } from "@/data/types";
 import { BlocoCompletude } from "@/components/colaboradores/completude";
+import { competenciaPagto } from "@/lib/custos";
 
 const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 
@@ -1094,7 +1095,12 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   // A competência corrente costuma ter só o adiantamento (o saldo vence no mês
   // seguinte): incluí-la puxava as médias para baixo todo começo de mês. Ela
   // sai da conta quando há outros meses para comparar.
-  const compsFechadas = comps.filter((k) => k !== `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`);
+  // A competência corrente é a da RÉGUA 16→15, não o mês do calendário: em
+  // 07/09 o salário de agosto (vence dia 5) pode não ter chegado, e 2026-08
+  // é que está pela metade — chamar setembro de corrente jogava agosto na
+  // média como mês fechado (auditoria de 07/09/2026).
+  const compCorrente = competenciaPagto(diaLocalISO(HOJE));
+  const compsFechadas = comps.filter((k) => k !== compCorrente);
   const baseMedia = compsFechadas.length ? compsFechadas : comps;
   const pagsBaseMedia = meus.filter((p) => baseMedia.includes(p.competencia));
   const mediaMensal = baseMedia.length ? totalDe(pagsBaseMedia) / baseMedia.length : 0;
@@ -1109,7 +1115,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   // sem Salário+Adiantamento como parcial acusava meses fechados há muito tempo
   // de quem é pago por Estágio, Empreita ou Prestação de Serviços — pessoas que
   // nunca terão nenhum dos dois tipos.
-  const competenciaCorrente = compSel === `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`;
+  const competenciaCorrente = compSel === compCorrente;
   const parcial = competenciaCorrente && (!tiposMes.has("Salário") || !tiposMes.has("Adiantamento"));
 
   // Resumo anual — derivados (não-hooks; os hooks já foram calculados acima).
