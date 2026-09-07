@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Landmark, PiggyBank, TrendingUp, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -26,7 +27,8 @@ export function TotalEquipe({
   pessoaNome,
   pessoaPeso,
   comEncargos,
-  onVerMes,
+  onAbrirMes,
+  onIrParaMes,
 }: {
   resumo: ResumoDaEquipe;
   pessoaNome?: string;
@@ -34,8 +36,14 @@ export function TotalEquipe({
   pessoaPeso: number | null;
   /** Segue o mesmo botão da ficha: estimado com provisões ou só o pago. */
   comEncargos: boolean;
-  onVerMes?: () => void;
+  /** Abre quem compõe o total de uma competência (a lista de pessoas com o valor de cada uma). */
+  onAbrirMes?: (competencia: string) => void;
+  /** Leva a tela inteira para outra competência. */
+  onIrParaMes?: (competencia: string) => void;
 }) {
+  // A régua mês a mês fica escondida até alguém querer ver de onde sai a média:
+  // é referência, não é o número do mês.
+  const [verSerie, setVerSerie] = useState(false);
   const principal = comEncargos ? resumo.estimado : resumo.pago;
   const maior = Math.max(...resumo.serie.map((m) => m.estimado), 1);
   return (
@@ -65,16 +73,26 @@ export function TotalEquipe({
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {comEncargos ? "Custo estimado do mês (c/ provisões)" : "Custo pago do mês"}
             </p>
-            <p className="mt-1 text-3xl font-semibold tabular-nums text-brand-ink">{formatBRL(principal)}</p>
+            {/* O número do mês abre quem o compõe, pessoa por pessoa (pedido do
+                Leonardo, 07/09/2026: "aqui tem que ser clicável"). */}
+            <button
+              type="button"
+              onClick={() => onAbrirMes?.(resumo.competencia)}
+              disabled={!onAbrirMes || resumo.pessoas === 0}
+              className="mt-1 block text-left text-3xl font-semibold tabular-nums text-brand-ink hover:underline disabled:cursor-default disabled:no-underline"
+              title={resumo.pessoas ? "Ver quem compõe este total" : undefined}
+            >
+              {formatBRL(principal)}
+            </button>
             <p className="mt-1 text-xs text-slate-500">
               {comEncargos
                 ? `Pago ${formatBRL(resumo.pago)} + provisões ${formatBRL(resumo.provisoes)} (FGTS 8%, 13º e férias sobre ${formatBRL(resumo.base)}). Não é o custo patronal completo.`
                 : `Pago às pessoas. FGTS e INSS lançados ficam fora — são custo da empresa.`}
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <StatCard label="Pago à equipe" value={formatBRL(resumo.pago)} icon={<Users className="h-4 w-4" />} accent="blue" onClick={onVerMes} />
+              <StatCard label="Pago à equipe" value={formatBRL(resumo.pago)} icon={<Users className="h-4 w-4" />} accent="blue" onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
               <StatCard label="Provisões" value={formatBRL(resumo.provisoes)} icon={<PiggyBank className="h-4 w-4" />} accent="gold" hint={`sobre ${formatBRL(resumo.base)}`} />
-              <StatCard label="Média por pessoa" value={formatBRL(resumo.mediaPorPessoa)} icon={<TrendingUp className="h-4 w-4" />} accent="brand" hint={`${resumo.pessoas} pessoa(s)`} />
+              <StatCard label="Média por pessoa" value={formatBRL(resumo.mediaPorPessoa)} icon={<TrendingUp className="h-4 w-4" />} accent="brand" hint={`${resumo.pessoas} pessoa(s)`} onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
             </div>
             {pessoaNome && pessoaPeso !== null && (
               <p className="mt-3 text-xs text-slate-600">
@@ -91,33 +109,81 @@ export function TotalEquipe({
               <p className="mt-2 text-sm text-slate-500">Sem meses com lançamento — a reserva precisa de histórico para ser calculada.</p>
             ) : (
               <>
-                <dl className="mt-2 space-y-1.5 text-sm">
+                {/* O MÊS NA FRENTE (pedido do Leonardo, 07/09/2026: "tem que ser
+                    apenas o do mês"). A média e o pior mês ficam abaixo, como
+                    referência para dimensionar a conta — em corpo menor, e nunca
+                    um número de ano competindo com o do mês. */}
+                <button
+                  type="button"
+                  onClick={() => onAbrirMes?.(resumo.competencia)}
+                  disabled={!onAbrirMes || resumo.pessoas === 0}
+                  className="mt-2 block w-full text-left disabled:cursor-default"
+                  title={resumo.pessoas ? "Ver quem compõe este total" : undefined}
+                >
+                  <span className="block text-sm text-slate-600">Separar para {compLabelLongo(resumo.competencia)}</span>
+                  <span className="mt-0.5 block text-2xl font-semibold tabular-nums text-brand-ink">{formatBRL(resumo.estimado)}</span>
+                  <span className="block text-[11px] text-slate-500">o custo estimado deste mês, com provisões</span>
+                </button>
+
+                <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-sm">
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-slate-600">Depósito mensal sugerido</dt>
+                    <dt>
+                      <button type="button" onClick={() => setVerSerie((v) => !v)} className="text-slate-600 hover:text-brand-ink hover:underline">
+                        Média de {resumo.serie.length} mês(es) {verSerie ? "▾" : "▸"}
+                      </button>
+                    </dt>
                     <dd className="font-semibold tabular-nums text-brand-ink">{formatBRL(resumo.mediaEstimada)}</dd>
                   </div>
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-slate-600">
-                      Pior mês da série{resumo.competenciaDoPico ? ` (${compLabel(resumo.competenciaDoPico)})` : ""}
+                    <dt>
+                      <button
+                        type="button"
+                        onClick={() => resumo.competenciaDoPico && onIrParaMes?.(resumo.competenciaDoPico)}
+                        disabled={!onIrParaMes || !resumo.competenciaDoPico}
+                        className="text-slate-600 hover:text-brand-ink hover:underline disabled:no-underline"
+                        title="Abrir este mês na tela"
+                      >
+                        Pior mês{resumo.competenciaDoPico ? ` (${compLabel(resumo.competenciaDoPico)})` : ""}
+                      </button>
                     </dt>
                     <dd className="font-semibold tabular-nums text-brand-ink">{formatBRL(resumo.picoEstimado)}</dd>
                   </div>
-                  <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-1.5">
-                    <dt className="text-slate-600">Doze meses nesse ritmo</dt>
-                    <dd className="font-semibold tabular-nums text-brand-ink">{formatBRL(resumo.projecaoAno)}</dd>
-                  </div>
                 </dl>
+
+                {verSerie && (
+                  <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-slate-100">
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {[...resumo.serie].reverse().map((m) => (
+                          <tr key={m.competencia} className="border-b border-slate-50 last:border-0">
+                            <td className="px-2 py-1">
+                              <button type="button" className="text-slate-600 hover:text-brand-ink hover:underline" onClick={() => onIrParaMes?.(m.competencia)}>
+                                {compLabel(m.competencia)}
+                              </button>
+                            </td>
+                            <td className="px-2 py-1 text-right tabular-nums text-slate-500">{m.pessoas} pessoa(s)</td>
+                            <td className="px-2 py-1 text-right font-medium tabular-nums text-brand-ink">{formatBRL(m.estimado)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                  Média de {resumo.serie.length} mês(es) com lançamento. Mês sem folha não entra como zero — ausência não é
-                  R$ 0,00 e puxaria a reserva para baixo.
+                  A média serve para dimensionar a conta; o depósito de cada mês é o valor do próprio mês. Mês sem folha
+                  não entra na média como R$ 0,00 — ausência não é zero e puxaria a reserva para baixo.
                 </p>
-                {/* Série: a barra do mês aberto fica destacada. */}
-                <div className="mt-3 flex h-16 items-end gap-1" aria-hidden>
+                {/* Série: a barra do mês aberto fica destacada, e cada uma leva ao seu mês. */}
+                <div className="mt-3 flex h-16 items-end gap-1">
                   {resumo.serie.map((m) => (
-                    <div
+                    <button
                       key={m.competencia}
+                      type="button"
+                      onClick={() => onIrParaMes?.(m.competencia)}
                       title={`${compLabel(m.competencia)} · ${formatBRL(m.estimado)}`}
-                      className={`flex-1 rounded-t ${m.competencia === resumo.competencia ? "bg-brand" : "bg-brand/25"}`}
+                      aria-label={`Abrir ${compLabel(m.competencia)}`}
+                      className={`flex-1 rounded-t transition-opacity hover:opacity-80 ${m.competencia === resumo.competencia ? "bg-brand" : "bg-brand/25"}`}
                       style={{ height: `${Math.max(6, (m.estimado / maior) * 100)}%` }}
                     />
                   ))}

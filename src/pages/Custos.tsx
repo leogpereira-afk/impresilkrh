@@ -32,7 +32,7 @@ import { FaixaMeses, LegendaMeses } from "@/components/custos/faixa-meses";
 import { Societarias } from "@/components/custos/societarias";
 import { PreviaFolha, type CoberturaBusca } from "@/components/custos/previa-folha";
 import { TotalEquipe } from "@/components/custos/total-equipe";
-import { resumoDaEquipe, pesoDaPessoa } from "@/lib/provisaoEquipe";
+import { resumoDaEquipe, pesoDaPessoa, porPessoaNoMes, type PessoaNoMes } from "@/lib/provisaoEquipe";
 import { mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
@@ -115,7 +115,21 @@ export default function Custos() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
-  const drill = useDrill();
+  const drillBase = useDrill();
+  // Valor de cada pessoa no mês aberto pelo drill — vira a coluna extra da lista.
+  // Qualquer OUTRO drill limpa a coluna: uma lista de pessoas com a coluna
+  // "Custo estimado" de um mês que não é o dela seria número errado na tela.
+  const [valorDoMesPorPessoa, setValorDoMesPorPessoa] = useState<Map<string, PessoaNoMes>>(new Map());
+  const drill = useMemo(
+    () => ({
+      ...drillBase,
+      abrir: (titulo: string, lista: Colaborador[], subtitulo?: string) => {
+        setValorDoMesPorPessoa(new Map());
+        drillBase.abrir(titulo, lista, subtitulo);
+      },
+    }),
+    [drillBase],
+  );
 
   const config = useConfig(); // guarda o último mês buscado no ERP e os vínculos
   // salvarConfig só escreve no navegador. Os vínculos de nome do ERP são trabalho
@@ -318,6 +332,11 @@ export default function Custos() {
   // Varredura do histórico: quantos meses para trás, onde está e o cancelamento.
   const [mesesHistorico, setMesesHistorico] = useState(12);
   const [varrendo, setVarrendo] = useState<{ feitos: number; total: number; onde: string } | null>(null);
+  // A mesma régua do lado dos Pagamentos, para o plano do ano (pedido do
+  // Leonardo, 07/09/2026): puxar 9 meses leva minutos e o botão sozinho não diz
+  // onde está nem deixa parar.
+  const [puxandoAno, setPuxandoAno] = useState<{ feitos: number; total: number; onde: string } | null>(null);
+  const pararAnoRef = useRef(false);
   const cancelarVarreduraRef = useRef(false);
   // Quantos daqueles lançamentos já casam com alguém do cadastro. É a MESMA
   // contagem gravada em "Última busca" — sem isso o aviso mostra o total do ERP
@@ -427,10 +446,20 @@ export default function Custos() {
     const hojeComp = hojeIso;
     const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, "0")}`).filter((c) => c <= hojeComp);
     const placar = { gravado: [] as string[], contador: [] as string[], vazio: [] as string[], incompleto: [] as string[], falhou: [] as string[] };
-    for (const comp of meses) {
-      const r = await puxarPlanoDoErpEmSilencio(comp);
-      placar[r].push(compLabel(comp));
+    pararAnoRef.current = false;
+    setPuxandoAno({ feitos: 0, total: meses.length, onde: "" });
+    try {
+      for (let i = 0; i < meses.length; i++) {
+        if (pararAnoRef.current) break;
+        const comp = meses[i];
+        setPuxandoAno({ feitos: i, total: meses.length, onde: compLabel(comp) });
+        const r = await puxarPlanoDoErpEmSilencio(comp);
+        placar[r].push(compLabel(comp));
+      }
+    } finally {
+      setPuxandoAno(null);
     }
+    const parou = pararAnoRef.current ? " (interrompido — o que já veio ficou gravado)" : "";
     const partes = [
       placar.gravado.length ? `${placar.gravado.length} mês(es) gravado(s)` : "",
       placar.contador.length ? `${placar.contador.length} do contador (não tocados)` : "",
@@ -438,7 +467,7 @@ export default function Custos() {
       placar.incompleto.length ? `${placar.incompleto.length} incompleto(s)` : "",
       placar.falhou.length ? `${placar.falhou.length} falharam: ${placar.falhou.join(", ")}` : "",
     ].filter(Boolean);
-    toast(`Plano de ${ano} pelo Mubisys: ${partes.join(" · ")}.`, placar.falhou.length ? "erro" : undefined);
+    toast(`Plano de ${ano} pelo Mubisys: ${partes.join(" · ") || "nada a trazer"}${parou}.`, placar.falhou.length ? "erro" : undefined);
   };
 
   const aplicarPlanoDoErp = () => {
@@ -841,6 +870,30 @@ export default function Custos() {
   );
   const totalSocietarioMes = useMemo(() => pagsSocietariosDoMes.reduce((s, p) => s + (Number(p.valor) || 0), 0), [pagsSocietariosDoMes]);
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
+  // Quem compõe o total de um mês, pessoa por pessoa e com o valor de cada uma
+  // (pedido do Leonardo, 07/09/2026: o número do mês tem de ser clicável).
+  const abrirDrillDoMes = (comp: string) => {
+    const linhas = porPessoaNoMes(pagamentosDaEquipe, comp);
+    const pessoas = linhas
+      .map((l) => d.colabById.get(l.colaboradorId))
+      .filter((c): c is NonNullable<typeof c> => !!c);
+    const porPessoa = new Map(linhas.map((l) => [l.colaboradorId, l]));
+    setValorDoMesPorPessoa(porPessoa);
+    // Lançamento de quem não está no cadastro entra na SOMA do mês mas não tem
+    // linha na lista. Sem esta frase, o total do cabeçalho não fecharia com o
+    // que está embaixo dele e ninguém saberia por quê.
+    const semCadastro = linhas.filter((l) => !d.colabById.get(l.colaboradorId));
+    const total = linhas.reduce((s, l) => s + l.estimado, 0);
+    drillBase.abrir(
+      `Custo estimado de ${compLabelLongo(comp)}`,
+      pessoas,
+      `${formatBRL(total)} · ${pessoas.length} pessoa(s) · pago + provisões, sem sócios` +
+        (semCadastro.length
+          ? ` · ${semCadastro.length} lançamento(s) de quem não está no cadastro (${formatBRL(semCadastro.reduce((s, l) => s + l.estimado, 0))}) entram na soma e não têm linha aqui`
+          : ""),
+    );
+  };
+
   const abrirDrillTipo = (tipo: string) => {
     const doTipo = pagsDoMes.filter((p) => p.tipo === tipo);
     const ids = new Set(doTipo.map((p) => p.colaboradorId));
@@ -1217,17 +1270,6 @@ export default function Custos() {
               />
             ) : (
               <div className="space-y-8">
-          {/* O total da equipe abre a aba: a pergunta "quanto custa a folha
-              inteira deste mês, e quanto separar por mês para pagar isso de uma
-              conta própria" vinha antes da ficha de cada pessoa. */}
-          <TotalEquipe
-            resumo={totalEquipe}
-            pessoaNome={colabSel?.nome}
-            pessoaPeso={pesoDoColab}
-            comEncargos={comEncargos}
-            onVerMes={() => setAba("global")}
-          />
-
           {/* ===================== custo individual por colaborador =====================
               A aba é só do colaborador (pedido de 06/09/2026): a ficha do mês e
               o histórico dele. O que é de todos — folha geral, rateio, evolução
@@ -1548,6 +1590,18 @@ export default function Custos() {
               </CardBody>
             </Card>
           </section>
+          {/* O total da equipe fica ABAIXO da ficha individual (pedido do
+              Leonardo, 07/09/2026): primeiro a pessoa aberta, depois quanto ela
+              pesa no mês inteiro e quanto separar para a conta dos acertos. */}
+          <TotalEquipe
+            resumo={totalEquipe}
+            pessoaNome={colabSel?.nome}
+            pessoaPeso={pesoDoColab}
+            comEncargos={comEncargos}
+            onAbrirMes={abrirDrillDoMes}
+            onIrParaMes={(c) => setComp(c)}
+          />
+
           {/* ===================== histórico do colaborador — mês a mês ===================== */}
           <section>
             <div className="mb-3 flex items-center gap-2">
@@ -2199,12 +2253,34 @@ export default function Custos() {
             <button
               className="btn-outline sm:mb-0"
               onClick={() => void puxarAnoDoErp(anoPlano)}
-              disabled={!!buscandoPlano}
+              disabled={!!buscandoPlano || !!puxandoAno}
               title="Traz e grava o plano coletivo de cada mês do ano, até o mês atual, direto do Contas a Pagar. Mês fechado pelo contador não é tocado."
             >
               <History className="h-4 w-4" /> Puxar o ano
             </button>
           </CardBody>
+          {puxandoAno && (
+            <CardBody className="pt-0">
+              <div className="rounded-lg border border-brand-200 bg-brand-50/50 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-brand-ink">
+                    Puxando o plano: {puxandoAno.feitos} de {puxandoAno.total} mês(es)
+                    {puxandoAno.onde ? ` · ${puxandoAno.onde}` : ""}
+                  </p>
+                  <button className="btn-ghost h-7 px-2 py-0 text-xs text-red-600" onClick={() => { pararAnoRef.current = true; }}>
+                    Parar
+                  </button>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
+                  <div className="h-full rounded-full bg-brand transition-all"
+                    style={{ width: `${puxandoAno.total ? (puxandoAno.feitos / puxandoAno.total) * 100 : 0}%` }} />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Cada mês leva de 30s a 1 minuto. O que já foi gravado permanece se você parar.
+                </p>
+              </div>
+            </CardBody>
+          )}
         </Card>
 
         <Card>
@@ -2938,7 +3014,20 @@ export default function Custos() {
         titulo="Excluir lançamento"
         mensagem="Este pagamento será removido da folha do colaborador. Esta ação não pode ser desfeita."
       />
-      <DrillModal {...drill.props} />
+      <DrillModal
+        {...drillBase.props}
+        colunaExtra={
+          valorDoMesPorPessoa.size
+            ? {
+                titulo: "Custo estimado",
+                render: (c) => {
+                  const l = valorDoMesPorPessoa.get(c.id);
+                  return l ? <span className="tabular-nums">{formatBRL(l.estimado)}</span> : "—";
+                },
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

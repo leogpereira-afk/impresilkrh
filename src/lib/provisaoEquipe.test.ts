@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mesDaEquipe, resumoDaEquipe, pesoDaPessoa } from "./provisaoEquipe";
+import { mesDaEquipe, resumoDaEquipe, pesoDaPessoa, porPessoaNoMes } from "./provisaoEquipe";
 
 const p = (competencia: string, colaboradorId: string, tipo: string, valor: number) => ({ competencia, colaboradorId, tipo, valor });
 
@@ -86,5 +86,30 @@ describe("pesoDaPessoa", () => {
 
   it("mês zerado não vira divisão por zero", () => {
     expect(pesoDaPessoa([], "2026-08", "a")).toBeNull();
+  });
+});
+
+describe("porPessoaNoMes", () => {
+  const pags = [
+    p("2026-08", "a", "Salário", 1000),
+    p("2026-08", "b", "Salário", 3000),
+    p("2026-08", "b", "Diária", 200),
+    p("2026-07", "a", "Salário", 999),
+  ];
+
+  it("a soma das pessoas fecha com o estimado do mês", () => {
+    const lista = porPessoaNoMes(pags, "2026-08");
+    const mes = mesDaEquipe(pags, "2026-08");
+    expect(lista.reduce((s, x) => s + x.estimado, 0)).toBeCloseTo(mes.estimado, 6);
+  });
+
+  it("vem do maior para o menor e não traz outro mês", () => {
+    const lista = porPessoaNoMes(pags, "2026-08");
+    expect(lista.map((x) => x.colaboradorId)).toEqual(["b", "a"]);
+    expect(lista).toHaveLength(2);
+  });
+
+  it("mês sem ninguém devolve lista vazia", () => {
+    expect(porPessoaNoMes(pags, "2026-01")).toEqual([]);
   });
 });

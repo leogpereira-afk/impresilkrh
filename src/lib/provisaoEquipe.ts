@@ -98,6 +98,35 @@ export function resumoDaEquipe(pags: Pag[], comp: string, meses = 12): ResumoDaE
   };
 }
 
+export interface PessoaNoMes {
+  colaboradorId: string;
+  pago: number;
+  provisoes: number;
+  estimado: number;
+}
+
+/**
+ * O mês aberto por pessoa — quem compõe o total, do maior para o menor.
+ *
+ * É a mesma régua do mês (mesDaEquipe): pago sem FGTS/INSS lançados, provisão
+ * sobre salário + adiantamento. A soma dos estimados fecha com o estimado do
+ * mês; se não fechasse, a tela do total e a lista de quem o compõe diriam
+ * números diferentes do mesmo dinheiro.
+ */
+export function porPessoaNoMes(pags: Pag[], comp: string): PessoaNoMes[] {
+  const doMes = pags.filter((p) => p.competencia === comp && p.colaboradorId);
+  const ids = [...new Set(doMes.map((p) => String(p.colaboradorId)))];
+  return ids
+    .map((colaboradorId) => {
+      const dela = doMes.filter((p) => p.colaboradorId === colaboradorId);
+      const fgtsLancado = dela.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + (Number(p.valor) || 0), 0);
+      const enc = calcularEncargos(dela, fgtsLancado);
+      const pago = somaPagos(dela);
+      return { colaboradorId, pago, provisoes: enc.total, estimado: pago + enc.total };
+    })
+    .sort((a, b) => b.estimado - a.estimado);
+}
+
 /** Quanto uma pessoa pesa no estimado do mês (0 a 1). Null quando o mês é zero. */
 export function pesoDaPessoa(pags: Pag[], comp: string, colaboradorId: string): number | null {
   const mes = mesDaEquipe(pags, comp);

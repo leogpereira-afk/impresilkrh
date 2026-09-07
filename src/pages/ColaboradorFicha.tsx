@@ -741,6 +741,23 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
       </SecaoColapsavel>
 
       <SecaoColapsavel title="Dados profissionais" subtitle={edit ? "Clique em um valor para editar" : undefined} icon={<Briefcase className="h-[18px] w-[18px]" />}>
+          {/* O par status × datas é o que decide de quais MESES a pessoa faz
+              parte. A auditoria dos lançamentos de 07/09/2026 achou 11 fichas
+              contraditórias, e enquanto elas não são corrigidas a ficha de custo
+              da pessoa aparece vazia nos meses em que ela trabalhou. */}
+          {c.statusId === "inativo" && !c.dataDesligamento && (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <strong className="font-semibold">Falta a data de desligamento.</strong> Sem ela, esta pessoa não pertence ao
+              quadro de mês nenhum: some das listas por mês e a ficha de custo dela fica vazia mesmo nos meses em que
+              recebeu. Preencha em “Desligamento”, abaixo.
+            </p>
+          )}
+          {c.statusId === "ativo" && c.dataDesligamento && (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <strong className="font-semibold">Marcada como ativa, mas com data de desligamento</strong> ({formatDate(c.dataDesligamento)}).
+              Ou apague a data, ou mude o status — do jeito que está, ela sai do quadro a partir do mês seguinte a essa data.
+            </p>
+          )}
           <dl className="grid grid-cols-2 gap-4">
             <CampoEditavel
               label="Cargo" exibicao={d.nomeCargo(c)} valor={c.cargoId ?? ""} tipo="select" editavel={edit}
@@ -784,6 +801,43 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 // Chefe de si mesmo ou ciclo A→B→A trava a árvore do organograma.
                 if (v && criaCicloDeGestor(c.id, v, d.colabById)) return "Isso criaria um ciclo na hierarquia.";
                 gravar({ gestorId: v || null });
+              }}
+            />
+            {/* AS DUAS DATAS FICAM AQUI, no grid, e não escondidas embaixo dos
+                quadros de tempo (pedido do Leonardo, 07/09/2026: "não localizei
+                onde coloca a data de contratação e a de desligamento").
+                Elas mandam em muita coisa: a admissão comanda férias e
+                experiência; o desligamento decide de que meses a pessoa faz
+                parte do quadro — data errada esvazia a ficha de custo dela nos
+                meses em que ela trabalhou. */}
+            <CampoEditavel
+              label="Admissão" exibicao={c.dataAdmissao ? formatDate(c.dataAdmissao) : "—"}
+              valor={(c.dataAdmissao ?? "").slice(0, 10)} tipo="data" editavel={edit}
+              dica="Comanda férias, experiência e o quadro do mês"
+              onSalvar={(v) => {
+                if (v && !anoOk(v)) return "Ano fora do razoável — confira a data.";
+                if (v && v > diaLocalISO(HOJE)) return "Admissão no futuro.";
+                if (v && c.dataDesligamento && v > c.dataDesligamento.slice(0, 10)) return "Depois do desligamento.";
+                gravar({ dataAdmissao: v });
+              }}
+            />
+            <CampoEditavel
+              label="Desligamento" exibicao={c.dataDesligamento ? formatDate(c.dataDesligamento) : (c.statusId === "inativo" ? "— falta preencher" : "—")}
+              valor={(c.dataDesligamento ?? "").slice(0, 10)} tipo="data" editavel={edit}
+              dica="Último mês em que a pessoa conta no quadro"
+              onSalvar={(v) => {
+                if (v && !anoOk(v)) return "Ano fora do razoável — confira a data.";
+                if (v && c.dataAdmissao && v < c.dataAdmissao.slice(0, 10)) return "Anterior à admissão.";
+                // Apagar a data de quem está inativo recria o defeito que a
+                // auditoria acusa: sem data, a pessoa não pertence ao quadro de
+                // MÊS NENHUM e a ficha de custo dela fica vazia em todos.
+                if (!v && c.statusId === "inativo") {
+                  return "Pessoa inativa precisa da data — sem ela, some do quadro de todos os meses. Se voltou, mude o status para ativo antes.";
+                }
+                gravar({ dataDesligamento: v || null });
+                if (v && c.statusId === "ativo") {
+                  toast("Data gravada. O status ainda está ATIVO — se ela saiu mesmo, mude o status; senão a pessoa segue contando como do quadro.", "info");
+                }
               }}
             />
             <CampoEditavel
@@ -855,20 +909,11 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
             <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tempo de casa</p>
               <p className="mt-1 text-lg font-semibold text-brand-ink">{tempoDeCasa(c.dataAdmissao)}</p>
-              <dl>
-                <CampoEditavel
-                  label="Admissão" exibicao={c.dataAdmissao ? formatDate(c.dataAdmissao) : "—"}
-                  valor={(c.dataAdmissao ?? "").slice(0, 10)} tipo="data" editavel={edit}
-                  dica="Muda os prazos de férias e experiência"
-                  onSalvar={(v) => {
-                    // A admissão comanda férias e contrato de experiência: uma
-                    // data pela metade aqui apaga os dois alarmes em silêncio.
-                    if (v && !anoOk(v)) return "Ano fora do razoável — confira a data.";
-                    if (v && v > diaLocalISO(HOJE)) return "Admissão no futuro.";
-                    gravar({ dataAdmissao: v });
-                  }}
-                />
-              </dl>
+              <p className="mt-1 text-xs text-slate-500">
+                {c.dataAdmissao ? `Admitido(a) em ${formatDate(c.dataAdmissao)}` : "Sem data de admissão"}
+                {c.dataDesligamento ? ` · saída em ${formatDate(c.dataDesligamento)}` : ""}
+                {" — as duas datas se editam acima."}
+              </p>
             </div>
           </div>
           {cargo && (
