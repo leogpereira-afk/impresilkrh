@@ -197,7 +197,12 @@ async function chamarAdmin(action: string, payload: Record<string, unknown> = {}
 export interface ContaServidor { usuario: string; colaboradorId: string; nome?: string; perfil: string; atualizadoEm: string }
 export const definirSenhaUsuario = (p: { usuario: string; colaboradorId: string; perfil: string; nome?: string; senha: string }) =>
   chamarAdmin("provisionar", p);
-export const removerSenhaUsuario = (usuario: string) => chamarAdmin("removerAcesso", { usuario });
+/** Revoga a conta no servidor. Pelo colaborador quando possível — é o que o servidor guarda. */
+export const removerSenhaUsuario = (alvo: string | { colaboradorId: string }): Promise<{ ok: boolean; removido?: boolean }> =>
+  chamarAdmin("removerAcesso", typeof alvo === "string" ? { usuario: alvo } : { colaboradorId: alvo.colaboradorId }) as Promise<{ ok: boolean; removido?: boolean }>;
+/** Ativa/desativa ou troca o perfil da conta NO SERVIDOR (login e sync conferem `perfis`). */
+export const atualizarPerfilServidor = (p: { colaboradorId: string; perfil?: string; ativo?: boolean }): Promise<{ ok: boolean; atualizado?: boolean }> =>
+  chamarAdmin("atualizarPerfil", p) as Promise<{ ok: boolean; atualizado?: boolean }>;
 
 // Lê direto da tabela "perfis" (RLS: ADMIN_RH vê todas as linhas) — não precisa
 // de Edge Function.

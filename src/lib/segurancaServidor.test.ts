@@ -67,3 +67,51 @@ describe("permissões efetivas da função RH", () => {
     expect(s.rpcs).toHaveLength(0);
   });
 });
+
+describe("vazamentos fechados em 07/09/2026", () => {
+  it("conta societária (2.14, inclusive renumerada por equivaleA) não sai para ADMIN_RH que não é o master", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [
+      linha("planoContas", "pc_2026-07_2.11.2.2", { codigo: "2.11.2.2", equivaleA: "2.14.2.2", nome: "Leonardo", valor: 28105.64, competencia: "2026-07" }),
+      linha("planoContas", "pc_2026-07_2.14.1.2", { codigo: "2.14.1.2", nome: "Pedro", valor: 5000, competencia: "2026-07" }),
+      linha("planoContas", "pc_2026-07_2.1.14", { codigo: "2.1.14", nome: "Contribuição Sindical", valor: 2526.42, competencia: "2026-07" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["planoContas"] });
+    expect(r.status).toBe(200);
+    expect(r.body.registros.map((x: any) => x.registro.codigo)).toEqual(["2.1.14"]);
+  });
+  it("o master vê as contas societárias", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "leonardo-goncalves", rows: [
+      linha("planoContas", "pc_2026-07_2.14.1.2", { codigo: "2.14.1.2", nome: "Pedro", valor: 5000, competencia: "2026-07" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["planoContas"] });
+    expect(r.body.registros).toHaveLength(1);
+  });
+  it("ADMIN_RH que não é o master não grava conta societária", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [] });
+    const r = await s.call({ action: "upsert", colecao: "planoContas", registro: { id: "pc_x", codigo: "2.14.2.2", valor: 1 }, baseVersao: 0, mutationId: "m9" });
+    expect(r.status).toBe(403);
+  });
+  it("feedback em preparo não chega à própria pessoa; o que chega vem sem o roteiro", async () => {
+    const s = servidorRh({ perfil: "COLABORADOR", pessoa: "carlos", rows: [
+      linha("feedbacks", "f1", { colaboradorId: "carlos", tipo: "Ajuste", roteiro: "falar da peça", preparadoEm: "2026-09-07", conteudo: "" }),
+      linha("feedbacks", "f2", { colaboradorId: "carlos", tipo: "Elogio", roteiro: "rascunho", preparadoEm: "2026-09-01", ocorridoEm: "2026-09-05", conteudo: "Mandou bem" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["feedbacks"] });
+    const regs = r.body.registros.map((x: any) => x.registro);
+    expect(regs.map((x: any) => x.id)).toEqual(["f2"]);
+    expect(regs[0].roteiro).toBeUndefined();
+    expect(regs[0].preparadoEm).toBeUndefined();
+    expect(regs[0].conteudo).toBe("Mandou bem");
+  });
+  it("gestora não recebe os próprios dados de gestão, mas recebe os da subordinada", async () => {
+    const s = servidorRh({ perfil: "GESTOR", pessoa: "maria", rows: [
+      linha("colaboradores", "maria", { nome: "Maria", riscoSaida: "alto", potencial: "alto", cargoId: "c" }),
+      linha("colaboradores", "bia", { nome: "Bia", gestorId: "maria", riscoSaida: "baixo", cargoId: "c" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["colaboradores"] });
+    const por = Object.fromEntries(r.body.registros.map((x: any) => [x.registro.id, x.registro]));
+    expect(por.maria.riscoSaida).toBeUndefined();
+    expect(por.maria.potencial).toBeUndefined();
+    expect(por.bia.riscoSaida).toBe("baixo");
+  });
+});

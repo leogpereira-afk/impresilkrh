@@ -71,7 +71,10 @@ export function podeVerGestao(
 ): boolean {
   if (!sessao) return false;
   if (sessao.perfil === "ADMIN_RH") return true;
-  if (sessao.perfil === "GESTOR") return idsDaEquipe(sessao.colaboradorId, colaboradores).includes(colaboradorId);
+  // idsDaEquipe começa pela própria pessoa (ela lidera a si mesma no
+  // organograma); aqui isso não vale: gestor NUNCA vê os próprios dados de
+  // gestão — a regra deste arquivo é "nunca ao próprio colaborador".
+  if (sessao.perfil === "GESTOR") return sessao.colaboradorId !== colaboradorId && idsDaEquipe(sessao.colaboradorId, colaboradores).includes(colaboradorId);
   return false; // colaborador não vê dados de gestão (nem os próprios)
 }
 
@@ -99,7 +102,11 @@ export function ehMaster(sessao: Sessao | null): boolean {
 export function modulosLiberados(sessao: Sessao | null, usuarios: Usuario[]): Set<string> | null {
   // ADMIN_RH e o diretor master têm acesso irrestrito a todos os módulos.
   if (!sessao || sessao.perfil === "ADMIN_RH" || sessao.colaboradorId === MASTER_COLAB_ID) return null;
-  const u = usuarios.find((x) => x.ativo && x.colaboradorId === sessao.colaboradorId);
+  const u = usuarios.find((x) => x.colaboradorId === sessao.colaboradorId);
+  // Usuário DESATIVADO não é "sem restrição": é sem módulo nenhum. Buscar só
+  // os ativos fazia o inativo cair no `return null` e ganhar todos os
+  // módulos do perfil (auditoria de 07/09/2026).
+  if (u && u.ativo === false) return new Set();
   if (!u || !u.permissoes || u.permissoes.length === 0 || u.permissoes.includes("*")) return null;
   return new Set(u.permissoes);
 }

@@ -177,6 +177,16 @@ Deno.serve(async (req) => {
   if (!sessao) return json({ erro: "Não autorizado." }, 401);
 
   const ehAdmin = sessao.perfil === "ADMIN_RH";
+  // O diretor master é o ÚNICO que vê as contas societárias (2.14 —
+  // arrendamento, retiradas). "Nem o RH vê" é a regra do cliente (rbac.ts),
+  // mas a porta de dados entregava o planoContas inteiro a qualquer ADMIN_RH
+  // e ele saía pelo Exportar (auditoria de 07/09/2026). Agora corta aqui.
+  const MASTER_COLAB_ID = Deno.env.get("RH_MASTER_COLAB_ID") || "leonardo-goncalves";
+  const ehMaster = sessao.colaborador_id === MASTER_COLAB_ID;
+  const contaConfidencial = (r: any) => {
+    const bate = (c: unknown) => typeof c === "string" && (c === "2.14" || c.startsWith("2.14."));
+    return bate(r?.codigo) || bate(r?.equivaleA);
+  };
   // Gestão = quem lidera equipe (gestor ou RH). Treinamento e feedback são
   // trabalho de gestão, não de colaborador comum.
   const ehGestao = ehAdmin || sessao.perfil === "GESTOR";
@@ -213,6 +223,7 @@ Deno.serve(async (req) => {
         id: env.registro.id, _apagado: true, atualizadoEm: env.registro.atualizadoEm,
       } };
     }
+    if (env.colecao === "planoContas" && !ehMaster && contaConfidencial(env.registro)) return null;
     if (ehAdmin) return env;
     if (env.colecao === "usuarios") {
       if (env.registro?.colaboradorId !== meuId) return null;
@@ -226,7 +237,18 @@ Deno.serve(async (req) => {
       if (r.statusId === "inativo") return null;
       return { colecao: env.colecao, registro: { id: r.id, nome: r.nome, cargoId: r.cargoId, nivelId: r.nivelId, areaId: r.areaId, gestorId: r.gestorId, statusId: "ativo", _rhRev: r._rhRev } };
     }
-    if (env.colecao === "feedbacks" && ehGestao && pertenceEquipe("feedbacks", env.registro)) return env;
+    // Feedback da EQUIPE, para quem lidera — nunca o feedback sobre si mesmo
+    // (a equipe começa pela própria pessoa; aqui ela não conta).
+    if (env.colecao === "feedbacks" && ehGestao && pertenceEquipe("feedbacks", env.registro) && env.registro?.colaboradorId !== meuId) return env;
+    if (env.colecao === "feedbacks" && env.registro?.colaboradorId === meuId) {
+      // A própria pessoa: feedback EM PREPARO (preparado ou agendado, ainda não
+      // dado) não sai — o roteiro do gestor não é dela até a conversa
+      // acontecer. O que sai, sai sem o roteiro (auditoria de 07/09/2026).
+      const r = env.registro;
+      if (!r.ocorridoEm && (r.preparadoEm || r.agendadaPara)) return null;
+      const { roteiro: _roteiro, preparadoEm: _preparadoEm, ...semRoteiro } = r;
+      return { ...env, registro: semRoteiro };
+    }
     const { nivel, campos } = escopoDe(env.colecao);
     if (nivel === "rh") return null;
     if (nivel === "gestao") {
@@ -240,7 +262,8 @@ Deno.serve(async (req) => {
     if (campos) {
       const r = { ...env.registro };
       if (!meuRegistro(env.colecao, env.registro)) for (const k of campos) delete r[k];
-      if (env.colecao === "colaboradores" && !ehGestao) {
+      // Dados de gestão nunca para a própria pessoa — nem quando ela é gestora.
+      if (env.colecao === "colaboradores" && (!ehGestao || meuRegistro(env.colecao, env.registro))) {
         for (const k of ["riscoSaida", "potencial", "perfilComportamental", "pontosFortes", "pontosMelhoria", "humor", "estiloAprendizagem", "motivacao", "motivacaoAnterior", "enquadramento", "observacaoEnquadramento"]) delete r[k];
       }
       return { ...env, registro: r };
@@ -253,6 +276,7 @@ Deno.serve(async (req) => {
      quem administra e que muda. Sem isso, qualquer logado reescrevia a tabela
      de cargos pelo sync. */
   const podeEscrever = (colecao: string, reg: any): boolean => {
+    if (colecao === "planoContas" && contaConfidencial(reg) && !ehMaster) return false;
     if (ehAdmin) return true;
     if (["pagamentos", "movimentacoes"].includes(colecao)) return false;
     if (colecao === "feedbacks") return ehGestao && reg?.autorId === meuId && pertenceEquipe(colecao, reg);

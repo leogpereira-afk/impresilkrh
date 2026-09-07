@@ -36,6 +36,7 @@ import { useToast } from "@/components/ui/toast";
 import { slug } from "@/data/_gen";
 import { cn } from "@/lib/cn";
 import type { Colaborador } from "@/data/types";
+import { removerSenhaUsuario } from "@/lib/auth";
 
 type Visao = "hierarquia" | "area" | "empresa";
 
@@ -223,6 +224,7 @@ export default function Organograma() {
   const toast = useToast();
   const { criar, atualizar, remover } = useColecao("colaboradores");
   const { criar: criarMov } = useColecao("movimentacoes");
+  const { items: usuarios, atualizar: atualizarUsuario } = useColecao("usuarios");
   const podeEditar = ehRH(sessao);
 
   const [colapsados, setColapsados] = useState<Set<string>>(new Set());
@@ -304,7 +306,7 @@ export default function Organograma() {
   // Agora: quem tem histórico é DESLIGADO (sai do quadro, o histórico fica
   // inteiro e pode ser reativado). Só some de vez quem não tem nada pendurado
   // — o caso do cadastro criado por engano.
-  const removerDoOrganograma = (c: Colaborador) => {
+  const removerDoOrganograma = async (c: Colaborador) => {
     const v = vinculosDoColaborador(c.id);
     // Subordinados passam a se reportar ao gestor de quem saiu (nos dois casos).
     const filhos = d.colaboradores.filter((x) => x.gestorId === c.id);
@@ -320,6 +322,14 @@ export default function Organograma() {
         descricao: "Saída registrada pelo organograma.",
         registradoPor: "RH",
       });
+      // Desligar pelo organograma deixava o login vivo: no dia seguinte a
+      // pessoa entrava e via a equipe. O mesmo fecho da ficha, aqui também.
+      const conta = usuarios.find((u) => u.colaboradorId === c.id && u.ativo);
+      if (conta) {
+        atualizarUsuario(conta.id, { ativo: false });
+        try { await removerSenhaUsuario({ colaboradorId: c.id }); }
+        catch { toast("Saída registrada, mas não deu para revogar o acesso no servidor agora. Refaça em Painel de Controle quando estiver online.", "erro"); }
+      }
       toast(`${c.nome} saiu do quadro. O histórico foi preservado.${reposicionados}`);
     } else {
       // Sem histórico: some de vez, mas antes limpa quem apontava para ela.

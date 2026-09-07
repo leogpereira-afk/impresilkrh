@@ -88,13 +88,40 @@ Deno.serve(async (req) => {
 
       // -------- remover acesso (apaga a conta inteira) --------
       case "removerAcesso": {
+        // Pelo COLABORADOR quando ele vier: é o que `perfis` guarda de fato
+        // (provisionar grava colaborador_id). Casar pelo e-mail não achava
+        // ninguém — a conta é criada pelo nome — e o desligar dizia "acesso
+        // revogado" sem revogar nada (auditoria de 07/09/2026).
+        const colaboradorId = String(body.colaboradorId ?? "").trim();
         const usuario = normalizarUsuario(String(body.usuario ?? ""));
-        if (!usuario) return json({ erro: "usuario obrigatório." }, 400);
-        const { data: existente } = await admin.from("perfis").select("user_id").eq("usuario", usuario).maybeSingle();
-        if (!existente) return json({ ok: true }); // já não existe: idempotente
+        if (!colaboradorId && !usuario) return json({ erro: "colaboradorId ou usuario obrigatório." }, 400);
+        const consulta = admin.from("perfis").select("user_id");
+        const { data: existente } = colaboradorId
+          ? await consulta.eq("colaborador_id", colaboradorId).maybeSingle()
+          : await consulta.eq("usuario", usuario).maybeSingle();
+        if (!existente) return json({ ok: true, removido: false }); // já não existe: idempotente, mas DIZ
         const { error } = await admin.auth.admin.deleteUser(existente.user_id); // cascade apaga a linha em "perfis"
         if (error) throw new Error(error.message);
-        return json({ ok: true });
+        return json({ ok: true, removido: true });
+      }
+
+      // -------- ativar/desativar ou trocar o perfil, NO SERVIDOR --------
+      // O toggle "Ativo" e o perfil do Painel de Controle mudavam só a tabela
+      // local (coleção usuarios); login e sync conferem `perfis`, que ninguém
+      // tocava. Desativado continuava entrando.
+      case "atualizarPerfil": {
+        const colaboradorId = String(body.colaboradorId ?? "").trim();
+        if (!colaboradorId) return json({ erro: "colaboradorId obrigatório." }, 400);
+        const patch: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
+        if (body.perfil !== undefined) {
+          const perfil = String(body.perfil);
+          if (!["ADMIN_RH", "GESTOR", "COLABORADOR"].includes(perfil)) return json({ erro: "Perfil inválido." }, 400);
+          patch.perfil = perfil;
+        }
+        if (body.ativo !== undefined) patch.ativo = body.ativo === true;
+        const { data, error } = await admin.from("perfis").update(patch).eq("colaborador_id", colaboradorId).select("user_id");
+        if (error) throw new Error(error.message);
+        return json({ ok: true, atualizado: (data?.length ?? 0) > 0 });
       }
 
       default:

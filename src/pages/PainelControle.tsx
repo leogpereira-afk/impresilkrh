@@ -17,7 +17,7 @@ import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { enviarConfigNuvem } from "@/lib/sync";
 import { useDominio } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { MODO_JWT, definirSenhaUsuario, removerSenhaUsuario } from "@/lib/auth";
+import { MODO_JWT, definirSenhaUsuario, removerSenhaUsuario, atualizarPerfilServidor } from "@/lib/auth";
 import { criarHash, podeHashear } from "@/lib/senha";
 import { ehMaster } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
@@ -775,6 +775,23 @@ function UsuariosSecao() {
   // No login real (MODO_JWT), a senha precisa ir para o SERVIDOR (hash). Aqui
   // provisionamos a senha de um usuário usando o nome do colaborador como login
   // (o servidor normaliza). Sem colaborador vinculado ou sem senha, ignora.
+  // Ativar/desativar vale NO SERVIDOR primeiro (login e sync conferem `perfis`).
+  // Mudar só a tabela local deixava o desativado entrando — e, pior, sem
+  // restrição de módulos (auditoria de 07/09/2026). Sem servidor, não muda.
+  const alternarAtivo = async (u: Usuario, v: boolean) => {
+    if (u.colaboradorId) {
+      try {
+        const r = await atualizarPerfilServidor({ colaboradorId: u.colaboradorId, ativo: v });
+        if (!r.atualizado) toast("Não há conta no servidor para este usuário; só a tabela local mudou.", "info");
+      } catch {
+        toast("Não deu para mudar no servidor agora (sem internet?). O usuário continua como estava.", "erro");
+        return;
+      }
+    }
+    atualizar(u.id, { ativo: v });
+    toast(v ? "Usuário ativado." : "Usuário desativado.");
+  };
+
   const provisionarNoServidor = async (u: { colaboradorId?: string | null; perfil: Perfil; senha?: string }) => {
     if (!MODO_JWT || !u.senha || !u.colaboradorId) return;
     const nomeColab = d.nomeColab(u.colaboradorId);
@@ -866,7 +883,7 @@ function UsuariosSecao() {
                 </td>
                 <td className="td">
                   <div className="flex justify-center">
-                    <Toggle checked={u.ativo} onChange={(v) => { atualizar(u.id, { ativo: v }); toast(v ? "Usuário ativado." : "Usuário desativado."); }} />
+                    <Toggle checked={u.ativo} onChange={(v) => void alternarAtivo(u, v)} />
                   </div>
                 </td>
                 <td className="td text-right">
@@ -894,6 +911,21 @@ function UsuariosSecao() {
                 if (!podeHashear()) { toast("Este navegador não consegue proteger a senha. Use o app pelo endereço https.", "erro"); return; }
                 campos.senhaHash = await criarHash(digitada);
                 campos.senha = undefined; // apaga qualquer texto puro que restasse
+              }
+              // Perfil e Ativo valem no SERVIDOR: mudar só a tabela local deixava
+              // a tela dizendo "Colaborador" enquanto o servidor seguia
+              // entregando dados de gestor (auditoria de 07/09/2026).
+              if (edit?.colaboradorId) {
+                const mudaPerfil = campos.perfil !== undefined && campos.perfil !== edit.perfil;
+                const mudaAtivo = campos.ativo !== undefined && campos.ativo !== edit.ativo;
+                if (mudaPerfil || mudaAtivo) {
+                  try {
+                    await atualizarPerfilServidor({ colaboradorId: edit.colaboradorId, ...(mudaPerfil ? { perfil: campos.perfil } : {}), ...(mudaAtivo ? { ativo: campos.ativo } : {}) });
+                  } catch {
+                    toast("Não deu para mudar perfil/ativo no servidor agora (sem internet?). Nada foi alterado.", "erro");
+                    return;
+                  }
+                }
               }
               if (edit) atualizar(edit.id, campos);
               else criar({ id: slug(`user ${dados.email || dados.nome}`), criadoEm: new Date().toISOString(), ...campos });

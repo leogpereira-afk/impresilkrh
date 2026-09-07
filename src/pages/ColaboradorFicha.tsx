@@ -2030,8 +2030,12 @@ function DesligarModal({ aberto, onFechar, c }: { aberto: boolean; onFechar: () 
     // vale assim mesmo e o aviso diz o que fazer).
     if (conta) {
       atualizarUsuario(conta.id, { ativo: false });
+      // Pelo COLABORADOR, que é o que o servidor guarda: mandar o e-mail não
+      // achava a conta e a tela dizia "revogado" sem revogar (auditoria de
+      // 07/09/2026). E só afirma o que o servidor confirmou.
       try {
-        await removerSenhaUsuario(conta.email || conta.nome);
+        const r = await removerSenhaUsuario({ colaboradorId: c.id });
+        if (!r.removido) toast("Cadastro desligado. Não havia conta no servidor para este colaborador — nada a revogar.", "info");
       } catch {
         toast("Cadastro desligado, mas não deu para remover a senha no servidor agora. Refaça em Painel de Controle quando estiver online.", "erro");
       }
