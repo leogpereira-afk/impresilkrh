@@ -778,7 +778,6 @@ export default function Custos() {
     [pagamentos, compAtiva, ehDeSocio],
   );
   const totalSocietarioMes = useMemo(() => pagsSocietariosDoMes.reduce((s, p) => s + (Number(p.valor) || 0), 0), [pagsSocietariosDoMes]);
-  const cardsSocietarios = useMemo(() => confidencialDoMes(planoContas, compAtiva, CARDS_CONFIDENCIAIS), [planoContas, compAtiva]);
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
   const abrirDrillTipo = (tipo: string) => {
     const doTipo = pagsDoMes.filter((p) => p.tipo === tipo);
@@ -2035,10 +2034,9 @@ export default function Custos() {
               <Societarias
                 socios={d.colaboradores.filter((c: Colaborador) => ehSocio(c))}
                 pagamentos={pagamentos as Pagamento[]}
-                cardsPlano={cardsSocietarios}
+                plano={planoContas as ContaPlano[]}
                 compAtiva={compAtiva}
                 onEscolherMes={setComp}
-                semPlanoNoMes={semPlanoNaComp}
               />
             ),
           }] : []),
