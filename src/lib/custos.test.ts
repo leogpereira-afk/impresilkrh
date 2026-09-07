@@ -2,8 +2,8 @@
 // (R$ 62.576,49) quando a mesma planilha subiu duas vezes. A regra de subir de
 // novo sem duplicar fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados } from "./custos";
-import type { Pagamento } from "@/data/types";
+import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes } from "./custos";
+import type { ContaPlano, Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> = {}): Pagamento =>
   ({
@@ -208,5 +208,23 @@ describe("lançamento manual × conciliação", () => {
     expect(r.alterados).toHaveLength(1);
     expect(r.alterados[0].antigo.id).toBe("pg_man_teste");
     expect(r.alterados[0].novo.idMubi).toBe("999");
+  });
+});
+
+describe("confidencialDoMes — o card pega a conta-pai também", () => {
+  const conta = (codigo: string, valor: number, folha = true): ContaPlano =>
+    ({ id: `pc_2026-04_${codigo}`, competencia: "2026-04", codigo, nome: codigo, valor, folha });
+  it("dinheiro lançado direto em 2.14.2 entra no card de retiradas (o caso de abril/2026)", () => {
+    const plano = [conta("2.14.2", 35000), conta("2.14.2.2", 1200), conta("2.14.1.2", 6000), conta("2.1.1", 999)];
+    const cards = confidencialDoMes(plano, "2026-04", [
+      { id: "arrendamento", titulo: "Arrendamento", prefixos: ["2.14.1."] },
+      { id: "leonardo", titulo: "Retiradas", prefixos: ["2.14.2."] },
+    ]);
+    expect(cards.find((c) => c.id === "leonardo")?.total).toBe(36200);
+    expect(cards.find((c) => c.id === "arrendamento")?.total).toBe(6000);
+  });
+  it("2.14.20 não é 2.14.2", () => {
+    const cards = confidencialDoMes([conta("2.14.20", 50)], "2026-04", [{ id: "l", titulo: "R", prefixos: ["2.14.2."] }]);
+    expect(cards[0].total).toBe(0);
   });
 });

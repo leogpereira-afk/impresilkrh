@@ -38,9 +38,10 @@ import { useToast } from "@/components/ui/toast";
 import { useColecao, useConfig, salvarConfig } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { ehSocio } from "@/lib/societario";
+import { faltasDoMes, pagosForaDoQuadro, quadroDoMes, quantosNoQuadro } from "@/lib/quadroNoMes";
 import { useSessao } from "@/lib/session";
 import { calcularEncargos, separarRecebido, PREFIXO_FUNCIONARIOS } from "@/lib/encargos";
-import { podeGerir } from "@/lib/rbac";
+import { podeGerir, ehMaster } from "@/lib/rbac";
 import { formatBRL, formatDate } from "@/lib/format";
 import {
   calcularHoraExtra, minutosDaDuracao, diferencaDoCalculo, valorDigitado,
@@ -65,9 +66,11 @@ import {
   ehDoMubi,
   ehManual,
   ehContaConfidencial,
+  confidencialDoMes,
   type DiffPagamentos,
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
+import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
 import { buscarPlanoCompleto, compararPlano, montarPlanoDoErp, type ComparacaoPlano } from "@/lib/mubiPlano";
 import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
@@ -136,11 +139,14 @@ export default function Custos() {
   // Aba ativa controlada por fora: os chips de "está atualizado?" precisam
   // mandar abrir Sincronização ou Custo Global antes de rolar até o alvo.
   const [aba, setAba] = useAbaAtiva("custos:aba", ABAS, "custos");
+  // Declarado aqui em cima porque o quadro do mês (ativosOrdenados) precisa dele.
+  const compAtiva = comp && competencias.includes(comp) ? comp : compPadrao;
 
-  const ativosOrdenados = useMemo(
-    () => [...d.ativos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
-    [d.ativos],
-  );
+  // O QUADRO DO MÊS ABERTO, não o de hoje (pedido do Léo, 07/09/2026): quem
+  // entrou depois só aparece do mês dele em diante, quem saiu some do mês
+  // seguinte. No Custo Global nada disso muda — lá o dinheiro dele fez parte
+  // daquela conta e continua somando.
+  const ativosOrdenados = useMemo(() => quadroDoMes(d.colaboradores, compAtiva), [d.colaboradores, compAtiva]);
   // Fora do quadro mas COM lançamento: inativo, desligado, afastado ou direção
   // que tem folha histórica. Antes eles eram invisíveis na seção individual —
   // o dinheiro estava lá, contava na folha geral, e não havia como "entrar" na
@@ -153,6 +159,17 @@ export default function Custos() {
       .filter((c: Colaborador) => !noQuadro.has(c.id) && comPag.has(c.id))
       .sort((a: Colaborador, b: Colaborador) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [ativosOrdenados, pagamentos, d.colaboradores]);
+  // Quem estava no quadro do mês e não tem lançamento — a conferência que
+  // faltava. Junho tinha 8 pessoas assim e a tela não dizia, porque ela só
+  // mostrava quem TEM pagamento.
+  const faltantes = useMemo(
+    () => faltasDoMes(d.colaboradores, pagamentos as Pagamento[], compAtiva),
+    [d.colaboradores, pagamentos, compAtiva],
+  );
+  const recebeuForaDoQuadro = useMemo(
+    () => pagosForaDoQuadro(d.colaboradores, pagamentos as Pagamento[], compAtiva),
+    [d.colaboradores, pagamentos, compAtiva],
+  );
   // Seletor no topo da seção individual (pedido de 02/08): por padrão a
   // navegação fica SÓ no quadro atual — as setas passavam por inativo no meio
   // dos ativos e parecia erro. Ligando "Com inativos", entram os fora do
@@ -164,6 +181,14 @@ export default function Custos() {
     [ativosOrdenados, foraDoQuadroComLanc, mostrarInativos],
   );
   const [colabId, setColabId] = useState<string>(ativosOrdenados[0]?.id ?? "");
+  // Trocar de mês pode tirar a pessoa aberta do quadro (ela entrou depois, ou
+  // já tinha saído). Sem isto a tela ficava numa pessoa que o seletor daquele
+  // mês diz não existir — mostrando zero, que se lê como "não recebeu".
+  useEffect(() => {
+    if (!colabId) return;
+    const visivel = mostrarInativos ? [...ativosOrdenados, ...foraDoQuadroComLanc] : ativosOrdenados;
+    if (visivel.length > 0 && !visivel.some((c) => c.id === colabId)) setColabId(visivel[0].id);
+  }, [ativosOrdenados, foraDoQuadroComLanc, mostrarInativos, colabId]);
 
   const [comAdiantamento, setComAdiantamento] = useState<boolean>(true);
   const [comEncargos, setComEncargos] = useState<boolean>(true);
@@ -201,7 +226,6 @@ export default function Custos() {
   const [valorTocado, setValorTocado] = useState(false);
 
   // Competência efetiva (cai para a última quando a selecionada some / inicial vazia).
-  const compAtiva = comp && competencias.includes(comp) ? comp : compPadrao;
 
   // Navegação por setas: entre colaboradores (‹ ›, circular) e entre meses (‹ ›).
   const idxColab = navegaveis.findIndex((c) => c.id === colabId);
@@ -215,7 +239,8 @@ export default function Custos() {
     const i = idxComp + delta;
     if (i >= 0 && i < competencias.length) setComp(competencias[i]);
   };
-  const nColab = d.ativos.length;
+  // O divisor é o quadro DAQUELE mês, não o de hoje (pedido do Léo, 07/09/2026).
+  const nColab = useMemo(() => quantosNoQuadro(d.colaboradores, compAtiva), [d.colaboradores, compAtiva]);
   const mapaClasse = useMemo(() => classeMap(classificacaoCustos), [classificacaoCustos]);
 
   // ---------- Uploads ----------
@@ -694,6 +719,17 @@ export default function Custos() {
     [pagamentos, compAtiva, ehDeSocio],
   );
   const totalSocietarioMes = useMemo(() => pagsSocietariosDoMes.reduce((s, p) => s + (Number(p.valor) || 0), 0), [pagsSocietariosDoMes]);
+  const societariosPorPessoa = useMemo(() => {
+    const m = new Map<string, { id: string; nome: string; total: number; tipos: string[] }>();
+    for (const p of pagsSocietariosDoMes) {
+      const x = m.get(p.colaboradorId) ?? { id: p.colaboradorId, nome: d.colabById.get(p.colaboradorId)?.nome ?? p.colaboradorId, total: 0, tipos: [] };
+      x.total += Number(p.valor) || 0;
+      if (!x.tipos.includes(p.tipo)) x.tipos.push(p.tipo);
+      m.set(p.colaboradorId, x);
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total);
+  }, [pagsSocietariosDoMes, d.colabById]);
+  const cardsSocietarios = useMemo(() => confidencialDoMes(planoContas, compAtiva, CARDS_CONFIDENCIAIS), [planoContas, compAtiva]);
   const linhasMes = useMemo(() => somaPorTipo(pagsDoMes), [pagsDoMes]);
   const abrirDrillTipo = (tipo: string) => {
     const doTipo = pagsDoMes.filter((p) => p.tipo === tipo);
@@ -837,8 +873,8 @@ export default function Custos() {
 
   // ---------- Seção 3: evolução mês a mês ----------
   const serie = useMemo(
-    () => serieCustos(planoContas, mapaClasse, nColab),
-    [planoContas, mapaClasse, nColab],
+    () => serieCustos(planoContas, mapaClasse, (c) => quantosNoQuadro(d.colaboradores, c)),
+    [planoContas, mapaClasse, d.colaboradores],
   );
 
   // ---------- Editor de classificação ----------
@@ -1066,7 +1102,7 @@ export default function Custos() {
               <h2 className="text-base font-semibold text-brand-ink">Custo individual por colaborador</h2>
               <div className="ml-auto">
                 <SegToggle
-                  opcoes={[{ v: false, label: `Quadro atual (${ativosOrdenados.length})` }, { v: true, label: `Com inativos (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
+                  opcoes={[{ v: false, label: `Quadro de ${compLabel(compAtiva)} (${ativosOrdenados.length})` }, { v: true, label: `Com quem saiu (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
                   valor={mostrarInativos}
                   onChange={(v) => {
                     setMostrarInativos(v);
@@ -1113,7 +1149,7 @@ export default function Custos() {
                       className="h-9 w-auto py-0 text-sm"
                     >
                       {navegaveis.length === 0 && <option value="">Sem colaboradores</option>}
-                      <optgroup label="Quadro atual">
+                      <optgroup label={`Quadro de ${compLabel(compAtiva)}`}>
                         {ativosOrdenados.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.nome}
@@ -1637,9 +1673,35 @@ export default function Custos() {
                     icon={<Coins className="h-8 w-8" />}
                   />
                 ) : (
-                  <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="space-y-5">
+                    {/* Cards em cima e as despesas em linha embaixo (pedido do
+                        Léo, 07/09/2026): os quatro números primeiro, a lista
+                        por tipo na largura toda — cabe mais e lê melhor. */}
+                    {/* Destaques do mês */}
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
+                      <StatCard
+                        label="Colaboradores pagos"
+                        value={pessoasNoMes}
+                        accent="blue"
+                        icon={<Users className="h-4 w-4" />}
+                        hint="Com lançamento no mês"
+                        title="Ver quem recebeu neste mês"
+                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard
+                        label="Média por colaborador"
+                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
+                        accent="gold"
+                        icon={<Coins className="h-4 w-4" />}
+                        hint="Total ÷ pagos"
+                        title="Ver quem entra no divisor da média"
+                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
+                      />
+                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
+                    </div>
                     {/* Tabela por tipo (mês inteiro) */}
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200/70">
                       <table className="w-full">
                         <thead className="border-b border-slate-100 bg-slate-50/50">
                           <tr>
@@ -1670,29 +1732,96 @@ export default function Custos() {
                       </table>
                     </div>
 
-                    {/* Destaques do mês */}
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                      <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
-                      <StatCard
-                        label="Colaboradores pagos"
-                        value={pessoasNoMes}
-                        accent="blue"
-                        icon={<Users className="h-4 w-4" />}
-                        hint="Com lançamento no mês"
-                        title="Ver quem recebeu neste mês"
-                        onClick={() => drill.abrir("Colaboradores pagos", colabsPagosNoMes, `${pessoasNoMes} com lançamento em ${compLabelLongo(compAtiva)}`)}
-                      />
-                      <StatCard
-                        label="Média por colaborador"
-                        value={formatBRL(pessoasNoMes ? totalMes / pessoasNoMes : 0)}
-                        accent="gold"
-                        icon={<Coins className="h-4 w-4" />}
-                        hint="Total ÷ pagos"
-                        title="Ver quem entra no divisor da média"
-                        onClick={() => drill.abrir("Média por colaborador", colabsPagosNoMes, `${formatBRL(totalMes)} ÷ ${pessoasNoMes} pago(s) em ${compLabelLongo(compAtiva)}`)}
-                      />
-                      <StatCard label="Tipos de pagamento" value={linhasMes.length} accent="green" icon={<ReceiptText className="h-4 w-4" />} hint="Categorias no mês" />
+                  </div>
+                )}
+
+                {/* No quadro do mês e SEM lançamento nenhum. O aviso acima só
+                    pega quem tem adiantamento sem salário; quem não tem nada
+                    passava batido — junho/2026 tinha 8 pessoas assim. */}
+                {faltantes.some((f) => f.semLancamento) && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-3">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-red-900">
+                          {faltantes.filter((f) => f.semLancamento).length} pessoa(s) do quadro de {compLabelLongo(compAtiva)} sem nenhum lançamento
+                        </p>
+                        <p className="mt-0.5 text-xs text-red-800">
+                          Estavam na casa neste mês pelo cadastro (admissão e desligamento) e não têm um único pagamento gravado. Ou o título está no ERP com outro nome e ficou em “não encontrados”, ou a pessoa não foi paga por aqui, ou a data do cadastro está errada.
+                        </p>
+                        <p className="mt-1.5 flex flex-wrap gap-1">
+                          {faltantes.filter((f) => f.semLancamento).map((f) => (
+                            <button
+                              key={f.colaborador.id}
+                              type="button"
+                              onClick={() => drill.abrir("Sem lançamento nesta competência", [f.colaborador], compLabelLongo(compAtiva))}
+                              className="rounded-full border border-red-300 bg-white/70 px-2 py-0.5 text-[11px] text-red-900 hover:brightness-95"
+                              title={f.semDataAdmissao ? "Sem data de admissão no cadastro — a presença é presumida" : "Ver a ficha"}
+                            >
+                              {f.colaborador.nome}{f.semDataAdmissao ? " · sem data de admissão" : ""}
+                            </button>
+                          ))}
+                        </p>
+                        {recebeuForaDoQuadro.length > 0 && (
+                          <p className="mt-2 text-[11px] text-red-800/80">
+                            Recebeu neste mês sem estar no quadro dele (acerto de quem saiu, ou cadastro sem a data certa): {recebeuForaDoQuadro.map((c) => c.nome).join(", ")}.
+                          </p>
+                        )}
+                      </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Societárias — só a direção vê. O que sai para sócio, pessoa a
+                    pessoa, ao lado do que o plano do contador diz em 2.14: os
+                    dois têm de bater. */}
+                {ehMaster(sessao) && (pagsSocietariosDoMes.length > 0 || cardsSocietarios.some((c) => c.total > 0)) && (
+                  <div className="mt-4 rounded-xl border border-slate-300 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Societárias · só a direção vê</p>
+                      <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500">fora da folha</span>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Pago aos sócios (Contas a Pagar)</p>
+                        {societariosPorPessoa.length === 0 ? (
+                          <p className="text-sm text-slate-400">Nada gravado neste mês.</p>
+                        ) : (
+                          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+                            {societariosPorPessoa.map((x) => (
+                              <li key={x.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                                <span className="text-slate-700">{x.nome} <span className="text-xs text-slate-400">· {x.tipos.join(", ")}</span></span>
+                                <span className="font-medium tabular-nums text-slate-800">{formatBRL(x.total)}</span>
+                              </li>
+                            ))}
+                            <li className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-sm font-semibold text-brand-ink">
+                              <span>Total</span><span className="tabular-nums">{formatBRL(totalSocietarioMes)}</span>
+                            </li>
+                          </ul>
+                        )}
+                      </div>
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">Plano de contas do contador (2.14)</p>
+                        {cardsSocietarios.every((c) => c.total === 0) ? (
+                          <p className="text-sm text-slate-400">{semPlanoNaComp ? "Sem plano de contas neste mês." : "Nada em 2.14 neste mês."}</p>
+                        ) : (
+                          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+                            {cardsSocietarios.map((c) => (
+                              <li key={c.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                                <span className="text-slate-700">{c.titulo}</span>
+                                <span className="font-medium tabular-nums text-slate-800">{formatBRL(c.total)}</span>
+                              </li>
+                            ))}
+                            <li className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-sm font-semibold text-brand-ink">
+                              <span>Total</span><span className="tabular-nums">{formatBRL(cardsSocietarios.reduce((s, c) => s + c.total, 0))}</span>
+                            </li>
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Os dois lados leem janelas diferentes (Contas a Pagar pela competência 16→15; plano do contador pelo mês civil) — diferença pequena é vencimento na virada. Diferença grande é título em conta errada.
+                    </p>
                   </div>
                 )}
               </CardBody>
@@ -2472,7 +2601,7 @@ export default function Custos() {
                                 onChange={(e) => vincularMubi(n.nome, e.target.value)}
                               >
                                 <option value="">Vincular a…</option>
-                                <optgroup label="Quadro atual">
+                                <optgroup label={`Quadro de ${compLabel(compAtiva)}`}>
                                   {opcoesVinculo.quadro.map((c) => (
                                     <option key={c.id} value={c.id}>{c.nome}</option>
                                   ))}
@@ -2529,7 +2658,7 @@ export default function Custos() {
                                           onChange={(e) => vincularTitulo(t.idMubi, e.target.value)}
                                         >
                                           <option value="">Escolher…</option>
-                                          <optgroup label="Quadro atual">
+                                          <optgroup label={`Quadro de ${compLabel(compAtiva)}`}>
                                             {opcoesVinculo.quadro.map((c) => (
                                               <option key={c.id} value={c.id}>{c.nome}</option>
                                             ))}

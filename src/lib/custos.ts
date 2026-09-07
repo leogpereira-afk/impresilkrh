@@ -76,11 +76,19 @@ export function totaisDoMes(plano: ContaPlano[], m: Map<string, ClasseCusto>, co
   return { individual, rateio, rateioPorColab: nColab > 0 ? rateio / nColab : 0, encargo, contasIndividual, contasRateio };
 }
 
-// Série mês a mês (para o dash de evolução).
-export function serieCustos(plano: ContaPlano[], m: Map<string, ClasseCusto>, nColab: number) {
+/**
+ * Série mês a mês (para o dash de evolução).
+ *
+ * `nColabDe` devolve o tamanho do quadro DAQUELE mês. Antes era um número só —
+ * o quadro de hoje — e o custo médio de janeiro saía dividido pelas pessoas de
+ * setembro: quanto mais para trás, mais errado, justamente no gráfico onde se
+ * olha tendência. Ver lib/quadroNoMes.
+ */
+export function serieCustos(plano: ContaPlano[], m: Map<string, ClasseCusto>, nColabDe: (comp: string) => number) {
   return competenciasPlano(plano).map((comp) => {
-    const t = totaisDoMes(plano, m, comp, nColab);
-    return { competencia: comp, nome: compLabel(comp), individual: t.individual, rateio: t.rateio, rateioPorColab: t.rateioPorColab, medioIndividual: nColab > 0 ? t.individual / nColab : 0 };
+    const n = nColabDe(comp);
+    const t = totaisDoMes(plano, m, comp, n);
+    return { competencia: comp, nome: compLabel(comp), individual: t.individual, rateio: t.rateio, rateioPorColab: t.rateioPorColab, nColab: n, medioIndividual: n > 0 ? t.individual / n : 0 };
   });
 }
 
@@ -91,9 +99,13 @@ export function confidencialDoMes(
   cards: { id: string; titulo: string; prefixos: string[] }[],
 ) {
   const folhas = folhasDoMes(plano, comp);
+  // O prefixo vem com ponto no fim ("2.14.2.") e a conta-pai não tem ponto
+  // ("2.14.2"): só startsWith deixava de fora o dinheiro lançado DIRETO no pai —
+  // R$ 35.000 de abril/2026 em 2.14.2 sumiam do card da própria diretoria.
+  const casa = (codigo: string, pre: string) => codigo === pre.replace(/\.$/, "") || codigo.startsWith(pre);
   return cards.map((card) => {
     const itens = folhas
-      .filter((p) => card.prefixos.some((pre) => p.codigo.startsWith(pre)))
+      .filter((p) => card.prefixos.some((pre) => casa(p.codigo, pre)))
       .sort((a, b) => b.valor - a.valor);
     return { ...card, itens, total: itens.reduce((s, p) => s + p.valor, 0) };
   });
