@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { UserMinus } from "lucide-react";
+import { UserMinus, Trash2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
-import { useColecao, obter } from "@/lib/store";
+import { useColecao, obter, obterDinamico, definirColecaoDinamica } from "@/lib/store";
 import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 import { useDominio, enquadrar, noQuadro } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
@@ -10,6 +10,9 @@ import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EM
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import { desligamentoDeHoje, avisoDoDesligamento, podeDesligar } from "@/lib/desligamento";
+import { inventarioDaPessoa, resumoDoQueSome, exigeDigitarNome, nomeConfere, COLECOES_DA_PESSOA } from "@/lib/apagarColaborador";
+import { apagarRegistrosNuvem, enviarColecao } from "@/lib/sync";
+import { registrarAcaoManual, emLote } from "@/lib/auditoria";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
 const POTENCIAIS = ["Baixo", "Médio", "Alto"];
@@ -46,7 +49,7 @@ export function ColaboradorForm({
 }) {
   const toast = useToast();
   const d = useDominio();
-  const { criar, atualizar } = useColecao("colaboradores");
+  const { criar, atualizar, remover: removerColaborador } = useColecao("colaboradores");
   const { criar: criarMov } = useColecao("movimentacoes");
 
   const vazio: Partial<Colaborador> = {
@@ -100,6 +103,54 @@ export function ColaboradorForm({
   };
   const gestoresPossiveis = comOAtual(form.gestorId);
   const padrinhosPossiveis = comOAtual(form.padrinhoId);
+
+  // ---- Apagar o cadastro e tudo que está pendurado nele ----
+  const [confirmarApagar, setConfirmarApagar] = useState(false);
+  const [nomeDigitado, setNomeDigitado] = useState("");
+  // Conta ANTES de perguntar: "tem certeza?" ninguém lê; "somem 73 lançamentos
+  // de folha" faz parar. Só monta quando o diálogo abre — varrer 24 coleções a
+  // cada tecla do formulário seria desperdício.
+  const inventario = useMemo(
+    () => (confirmarApagar && editar
+      ? inventarioDaPessoa(
+          editar.id,
+          editar.nome,
+          Object.fromEntries(COLECOES_DA_PESSOA.map((c) => [c, obterDinamico(c) as { colaboradorId?: string | null }[]])),
+          d.colaboradores,
+        )
+      : null),
+    [confirmarApagar, editar, d.colaboradores],
+  );
+  const podeConfirmarApagar = !!inventario && (!exigeDigitarNome(inventario) || nomeConfere(nomeDigitado, inventario.nome));
+
+  const apagarTudo = () => {
+    if (!editar || !inventario) return;
+    // Uma linha só no histórico, com o tamanho do estrago: apagar 24 coleções
+    // gerando uma linha por registro enterraria o resto do dia.
+    emLote(`Apagou o cadastro de ${editar.nome} e ${inventario.total} registro(s)`, () => {
+      for (const colecao of COLECOES_DA_PESSOA) {
+        const itens = obterDinamico(colecao) as { id: string; colaboradorId?: string | null }[];
+        const meus = itens.filter((r) => r?.colaboradorId === editar.id).map((r) => r.id);
+        if (!meus.length) continue;
+        definirColecaoDinamica(colecao, itens.filter((r) => r?.colaboradorId !== editar.id));
+        apagarRegistrosNuvem(colecao, meus);
+        void enviarColecao(colecao);
+      }
+      // Quem apontava para ela como chefe ou padrinho fica com um id morto: o
+      // <select> passa a exibir a PRIMEIRA opção da lista enquanto o dado
+      // gravado continua o id que não existe mais.
+      for (const q of inventario.apontamPraEla) {
+        atualizar(q.id, q.papel === "gestor" ? { gestorId: null } : { padrinhoId: null });
+      }
+      removerColaborador(editar.id);
+      apagarRegistrosNuvem("colaboradores", [editar.id]);
+      void enviarColecao("colaboradores");
+    });
+    registrarAcaoManual("Apagou cadastro e todos os dados", `${editar.nome} · ${inventario.total} registro(s)`, "colaboradores");
+    toast(`Cadastro de ${editar.nome} apagado com ${inventario.total} registro(s).`, "sucesso");
+    setConfirmarApagar(false);
+    onFechar();
+  };
 
   const salvar = () => {
     if (!form.nome?.trim()) {
@@ -223,6 +274,15 @@ export function ColaboradorForm({
       largura="max-w-2xl"
       rodape={
         <>
+          {editar && (
+            <button
+              className="btn-outline mr-auto text-red-600"
+              onClick={() => { setNomeDigitado(""); setConfirmarApagar(true); }}
+              title="Apaga a ficha e todos os registros dela no sistema"
+            >
+              <Trash2 className="h-4 w-4" /> Apagar cadastro
+            </button>
+          )}
           <button className="btn-outline" onClick={onFechar}>Cancelar</button>
           <button className="btn-primary" onClick={salvar}>Salvar</button>
         </>
@@ -483,6 +543,72 @@ export function ColaboradorForm({
           </Campo>
         </div>
       </div>
+
+      {/* CERTO QUE VAI APAGAR? — com o tamanho do estrago na frente.
+          Não é um ConfirmDialog: aquele embrulha a mensagem num <p> (lista
+          dentro de parágrafo é HTML inválido) e não deixa travar o botão até a
+          pessoa digitar o nome. */}
+      {confirmarApagar && inventario && (
+        <Modal
+          aberto
+          onFechar={() => setConfirmarApagar(false)}
+          titulo={`Apagar o cadastro de ${inventario.nome}?`}
+          descricao="Isto apaga a ficha e todos os registros dela no sistema. Não dá para desfazer."
+          largura="max-w-lg"
+          rodape={<>
+            <button className="btn-outline" onClick={() => setConfirmarApagar(false)}>Cancelar</button>
+            <button
+              className="btn-danger disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!podeConfirmarApagar}
+              onClick={apagarTudo}
+            >
+              <Trash2 className="h-4 w-4" /> Apagar tudo
+            </button>
+          </>}
+        >
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <p className="text-red-800">{resumoDoQueSome(inventario)}</p>
+            </div>
+
+            {inventario.linhas.length > 0 && (
+              <ul className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-3 text-xs">
+                {inventario.linhas.map((l) => (
+                  <li key={l.colecao} className="flex items-baseline justify-between gap-3">
+                    <span className={l.temDinheiro ? "font-medium text-red-700" : "text-slate-600"}>
+                      {l.rotulo}{l.temDinheiro && " · tem valor em R$"}
+                    </span>
+                    <span className="tabular-nums text-slate-500">{l.quantidade}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {inventario.apontamPraEla.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <p className="font-medium">
+                  {inventario.apontamPraEla.length} pessoa(s) apontam para {inventario.nome.split(" ")[0]}:
+                </p>
+                <p className="mt-1">
+                  {inventario.apontamPraEla.map((q) => `${q.nome} (${q.papel})`).join(", ")}. Esses campos ficam vazios — sem isso, a ficha delas mostraria um chefe que não existe mais.
+                </p>
+              </div>
+            )}
+
+            {exigeDigitarNome(inventario) && (
+              <Campo label={`Para confirmar, digite o nome: ${inventario.nome}`}>
+                <Input
+                  value={nomeDigitado}
+                  onChange={(e) => setNomeDigitado(e.target.value)}
+                  placeholder={inventario.nome}
+                  autoFocus
+                />
+              </Campo>
+            )}
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
