@@ -327,3 +327,22 @@ export function minutosEntre(inicio: string, fim: string): number {
   if (a == null || b == null) return 0;
   return b >= a ? b - a : 24 * 60 - a + b;
 }
+
+
+/** Situações do dia que NÃO descontam: atestado, abono, feriado, férias, folga. */
+export const SITUACOES_SEM_DESCONTO: ReadonlySet<string> = new Set(["atestado", "abono", "feriado", "ferias", "folga"]);
+
+/**
+ * Horas de falta que DESCONTAM no mês.
+ *
+ * Com o dia a dia, soma só os dias cuja situação desconta (falta, normal com
+ * atraso, sem registro): um dia trocado para Atestado que ficou com 08:48 no
+ * campo de falta seguia para a contabilidade como desconto e para o resumo
+ * como "+ em atrasos" (auditoria de 07/09/2026). Sem o dia a dia, vale o
+ * total do PDF.
+ */
+export function faltasQueDescontam(p: { faltasMin?: number; dias?: { situacao: string; faltasMin?: number }[] }): number {
+  const dias = p.dias ?? [];
+  if (dias.length === 0) return p.faltasMin ?? 0;
+  return dias.filter((d) => !SITUACOES_SEM_DESCONTO.has(d.situacao)).reduce((s, d) => s + (d.faltasMin || 0), 0);
+}

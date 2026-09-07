@@ -23,7 +23,7 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeGerir } from "@/lib/rbac";
 import { formatDate, formatNumber, formatPercent, formatBRL, diaLocalISO, parseData } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { calcularHoraExtra, calcularFalta, horasDecimais } from "@/lib/pontoFolha";
+import { calcularHoraExtra, calcularFalta, horasDecimais, faltasQueDescontam, SITUACOES_SEM_DESCONTO } from "@/lib/pontoFolha";
 import { TIPOS_ADVERTENCIA } from "@/lib/constants";
 import { GlossarioComportamental } from "@/components/comportamental/glossario";
 import { Link } from "react-router-dom";
@@ -1240,10 +1240,12 @@ function montarApuracao(pontos: Ponto[], nomeDe: (p: Ponto) => string): LinhaApu
     if (!temDetalhe && (p.faltasMin > 0 || p.extrasMin > 0)) compl.push("Sem detalhe diário — reimportar o PDF do mês para ter as datas");
     // Falta acima de ~1/3 do mês quase sempre é afastamento (INSS, licença) e
     // não falta a descontar: avisa em vez de deixar passar como falta comum.
-    if (p.faltasMin > 60 * 60) compl.push(`CONFERIR: ${minParaHora(p.faltasMin)} de falta — parece afastamento, não desconto`);
+    const faltasMin = faltasQueDescontam(p);
+    if (faltasMin > 60 * 60) compl.push(`CONFERIR: ${minParaHora(faltasMin)} de falta — parece afastamento, não desconto`);
     return {
       nome: nomeDe(p),
-      faltasTxt: minParaHora(p.faltasMin),
+      // Só o que desconta: atestado, abono, férias e folga não entram (auditoria de 07/09/2026).
+      faltasTxt: minParaHora(faltasMin),
       extrasTxt: minParaHora(p.extrasMin),
       // Sem o dia a dia não dá para afirmar "0": seria dizer que não houve falta
       // quando a verdade é que o dado não existe.
@@ -1355,7 +1357,10 @@ function ModalPontoManual({
   const [extras, setExtras] = useState(existente ? minParaHora(existente.extrasMin) : "");
   const [dias, setDias] = useState<PontoDia[]>(existente?.dias ? [...existente.dias] : []);
   const [novoDia, setNovoDia] = useState("");
-  const [novaSit, setNovaSit] = useState<SituacaoDia>("falta");
+  // "atraso" é escolha de TELA: grava dia normal com horas de falta. Sem ela,
+  // uma falta de 01:00 lançada à mão virava dia inteiro (1/30 + DSR) e entrava
+  // em DIAS FALTAS na apuração (auditoria de 07/09/2026).
+  const [novaSit, setNovaSit] = useState<SituacaoDia | "atraso">("falta");
   const [novaHora, setNovaHora] = useState("");
 
   const addDia = () => {
@@ -1364,12 +1369,13 @@ function ModalPontoManual({
     const min = horaParaMin(novaHora);
     const dia: PontoDia = {
       data: novoDia,
-      situacao: novaSit,
+      situacao: novaSit === "atraso" ? "normal" : novaSit,
       marcacoes: [],
       normaisMin: 0,
-      // "normal" com hora informada = hora extra do dia; falta/atraso = horas de falta.
+      // "normal" com hora informada = hora extra do dia; falta = dia inteiro
+      // com as horas; atraso = dia normal com horas de falta.
       extrasMin: novaSit === "normal" ? min : 0,
-      faltasMin: novaSit === "falta" ? min : 0,
+      faltasMin: novaSit === "falta" || novaSit === "atraso" ? min : 0,
     };
     setDias([...dias, dia].sort((a, b) => a.data.localeCompare(b.data)));
     setNovoDia(""); setNovaHora("");
@@ -1478,11 +1484,12 @@ function ModalPontoManual({
           <div className="flex flex-wrap items-end gap-2">
             <Campo label="Dia" className="w-40"><Input type="date" value={novoDia} onChange={(e) => setNovoDia(e.target.value)} /></Campo>
             <Campo label="Situação" className="w-40">
-              <Select value={novaSit} onChange={(e) => setNovaSit(e.target.value as SituacaoDia)}>
-                {SITS.map((s) => <option key={s} value={s}>{SIT_LABEL[s]}</option>)}
+              <Select value={novaSit} onChange={(e) => setNovaSit(e.target.value as SituacaoDia | "atraso")}>
+                {SITS.map((s) => <option key={s} value={s}>{SIT_LABEL[s]}{s === "falta" ? " (dia inteiro)" : ""}</option>)}
+                <option value="atraso">Atraso / saída antecipada</option>
               </Select>
             </Campo>
-            <Campo label={novaSit === "normal" ? "Horas extras" : novaSit === "falta" ? "Horas de falta" : "Horas"} className="w-32">
+            <Campo label={novaSit === "normal" ? "Horas extras" : novaSit === "falta" || novaSit === "atraso" ? "Horas de falta" : "Horas"} className="w-32">
               <Input value={novaHora} onChange={(e) => setNovaHora(e.target.value)} placeholder="00:00" />
             </Campo>
             <button className="btn-outline mb-0.5" onClick={addDia}><Plus className="h-4 w-4" /> Adicionar</button>
@@ -1881,7 +1888,7 @@ function ModalEditarDia({
           <Campo label="Horas extras"><Input value={extras} onChange={(e) => setExtras(e.target.value)} placeholder="00:00" /></Campo>
         </div>
         <Campo label="Situação do dia">
-          <Select value={situacao} onChange={(e) => setSituacao(e.target.value as SituacaoDia)}>
+          <Select value={situacao} onChange={(e) => { const v = e.target.value as SituacaoDia; setSituacao(v); if (SITUACOES_SEM_DESCONTO.has(v)) setFaltas(""); }}>
             {SITS.map((s) => <option key={s} value={s}>{SIT_LABEL[s]}</option>)}
           </Select>
         </Campo>
@@ -1925,7 +1932,7 @@ interface LinhaResumo {
 function ocorrenciasDo(p: Ponto): LinhaResumo {
   const dias = p.dias ?? [];
   const faltasDias = dias.filter((x) => x.situacao === "falta");
-  const faltasMin = p.faltasMin ?? 0;
+  const faltasMin = faltasQueDescontam(p);
   const faltaCheiaMin = faltasDias.reduce((s, x) => s + (x.faltasMin || 0), 0);
   return {
     nome: p.colaboradorId ? "" : p.nomePdf, // nome real é preenchido por quem chama (tem o cadastro)

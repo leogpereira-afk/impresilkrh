@@ -3,8 +3,7 @@
 import { describe, it, expect } from "vitest";
 import {
   valorHora, calcularHoraExtra, calcularFalta, diasDaCompetencia, minutosEntre,
-  horasDecimais, valorDigitado, DIVISOR_MENSAL_PADRAO,
-} from "./pontoFolha";
+  horasDecimais, valorDigitado, DIVISOR_MENSAL_PADRAO, faltasQueDescontam } from "./pontoFolha";
 
 describe("valorHora", () => {
   it("salário 2000 ÷ 220 = 9,09", () => {
@@ -201,5 +200,21 @@ describe("valorDigitado", () => {
 describe("horasDecimais", () => {
   it("337 min = 5,62 h", () => {
     expect(horasDecimais(337)).toBe(5.62);
+  });
+});
+
+describe("faltasQueDescontam (auditoria de 07/09/2026)", () => {
+  it("atestado com horas no campo de falta não desconta; falta e atraso descontam", () => {
+    const p = { faltasMin: 528, dias: [
+      { situacao: "atestado", faltasMin: 528 },
+      { situacao: "falta", faltasMin: 480 },
+      { situacao: "normal", faltasMin: 60 },
+      { situacao: "ferias", faltasMin: 100 },
+    ] };
+    expect(faltasQueDescontam(p)).toBe(540);
+  });
+  it("sem o dia a dia, vale o total do PDF", () => {
+    expect(faltasQueDescontam({ faltasMin: 528, dias: [] })).toBe(528);
+    expect(faltasQueDescontam({ faltasMin: 528 })).toBe(528);
   });
 });
