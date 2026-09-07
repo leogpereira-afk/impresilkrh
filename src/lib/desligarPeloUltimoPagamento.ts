@@ -13,6 +13,7 @@
 //   - quem não tem lançamento nenhum fica de fora — não há "último mês";
 //   - quem recebeu DEPOIS do limite fica para decisão humana.
 import type { Colaborador, Pagamento } from "@/data/types";
+import { VERBAS_DE_QUEM_SAIU } from "./consertoCadastro";
 
 export interface PropostaDesligamento {
   colaboradorId: string;
@@ -34,13 +35,20 @@ export function fimDoMes(comp: string): string {
 
 export function desligamentosPeloUltimoPagamento(
   colaboradores: Colaborador[],
-  pagamentos: Pick<Pagamento, "colaboradorId" | "competencia">[],
+  pagamentos: Pick<Pagamento, "colaboradorId" | "competencia" | "tipo">[],
   ate: string,
 ): PropostaDesligamento[] {
   if (!/^\d{4}-\d{2}$/.test(ate)) return [];
   const ultimo = new Map<string, string>();
   for (const p of pagamentos) {
     if (!p.colaboradorId || !/^\d{4}-\d{2}$/.test(String(p.competencia ?? ""))) continue;
+    // "Último mês em que TRABALHOU" — o acerto de quem saiu não conta. FGTS e
+    // INSS individualizados caem na competência SEGUINTE (a guia vence no dia
+    // 20 e a janela é 16→15), então quem saiu em 15/04 com encargo lançado em
+    // maio tinha a saída empurrada para 31/05: 46 dias a mais no quadro, no
+    // relógio de férias e no turnover, dentro de um lote que a tela mostrava
+    // como "só ajuste de data".
+    if (VERBAS_DE_QUEM_SAIU.has(String(p.tipo ?? ""))) continue;
     const atual = ultimo.get(p.colaboradorId) ?? "";
     if (p.competencia > atual) ultimo.set(p.colaboradorId, p.competencia);
   }

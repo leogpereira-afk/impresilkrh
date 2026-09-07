@@ -176,3 +176,38 @@ describe("ligado pelo nome, não pelo ID", () => {
     expect(ROTULO_REGRA["casado-pelo-nome"]).toBeTruthy();
   });
 });
+
+/* REVISÃO ADVERSARIAL DE 07/09/2026 — a auditoria acusava quem saiu de verdade.
+   TIPOS_DE_QUEM_SAIU estava declarada no arquivo e nunca era usada: `ultima`
+   era o máximo de TODAS as competências. Como o FGTS/INSS individualizado cai
+   SEMPRE na competência seguinte (guia vence dia 20, janela 16→15), todo
+   desligado com encargo no nome dele virava erro vermelho — enquanto o quadro
+   verde da mesma tela, que filtra as verbas, não o listava. Dois blocos, duas
+   respostas opostas sobre a mesma ficha. */
+describe("cadastro × pagamentos: o acerto de quem saiu não é contradição", () => {
+  const saiu = col({ id: "s", nome: "Saiu Mesmo", statusId: "inativo", dataDesligamento: "2026-06-22" });
+
+  it("rescisão, férias, 13º e FGTS depois da saída NÃO viram achado", () => {
+    const pags = [
+      pg({ id: "r1", colaboradorId: "s", competencia: "2026-06", tipo: "Salário" }),
+      pg({ id: "r2", colaboradorId: "s", competencia: "2026-07", tipo: "Rescisão" }),
+      pg({ id: "r3", colaboradorId: "s", competencia: "2026-07", tipo: "Férias" }),
+      pg({ id: "r4", colaboradorId: "s", competencia: "2026-08", tipo: "FGTS" }),
+      pg({ id: "r5", colaboradorId: "s", competencia: "2026-08", tipo: "INSS" }),
+    ];
+    expect(achado(auditarLancamentos(pags, [saiu]), "cadastro")).toEqual([]);
+  });
+
+  it("SALÁRIO depois da saída continua sendo achado — esse é o defeito real", () => {
+    const pags = [
+      pg({ id: "s1", colaboradorId: "s", competencia: "2026-08", tipo: "Salário" }),
+    ];
+    expect(achado(auditarLancamentos(pags, [saiu]), "cadastro")).toHaveLength(1);
+  });
+
+  it("quem SÓ tem acerto de saída não vira 'inativo sem data'", () => {
+    const semData = col({ id: "n", nome: "Sem Data", statusId: "inativo" });
+    const pags = [pg({ id: "n1", colaboradorId: "n", competencia: "2026-07", tipo: "Rescisão" })];
+    expect(achado(auditarLancamentos(pags, [semData]), "cadastro")).toEqual([]);
+  });
+});

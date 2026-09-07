@@ -57,6 +57,17 @@ export function ColaboradorForm({
     riscoSaida: "Baixo", potencial: "Médio", perfil: "COLABORADOR", valeTransporte: true,
   };
   const [form, setForm] = useState<Partial<Colaborador>>(editar ?? vazio);
+  /* RETRATO DE ABERTURA, congelado no primeiro render.
+     `editar` chega VIVO da loja: ColaboradorFicha passa `d.colabById.get(id)`,
+     que é o mesmo objeto que `obter("colaboradores")` devolve. Comparar um com
+     o outro era comparar o valor com ele mesmo — a trava de versão nunca
+     disparava, e o `patchDoQueMudou` passava a comparar contra o registro JÁ
+     atualizado pelo pull de 20s, gravando por cima do que a outra pessoa tinha
+     acabado de mudar. Pelo Organograma a trava funcionava, porque lá o objeto
+     vem de um state; pela ficha, não. */
+  const [retrato] = useState<(Colaborador & { _rhRev?: number }) | null>(
+    () => (editar ? ({ ...editar } as Colaborador & { _rhRev?: number }) : null),
+  );
   const set = (patch: Partial<Colaborador>) => setForm((f) => ({ ...f, ...patch }));
   // O salário é guardado como TEXTO enquanto se digita e só vira número ao
   // salvar: assim "2.500," no meio da digitação não é lido como valor nenhum.
@@ -232,7 +243,7 @@ export function ColaboradorForm({
       // mudou de versão, não grava por cima — avisa e pede para reabrir. E o
       // que grava é só a diferença contra o retrato, nunca a cópia inteira.
       const atual = obter("colaboradores").find((c) => c.id === editar.id) as (Colaborador & { _rhRev?: number }) | undefined;
-      const revAbriu = (editar as Colaborador & { _rhRev?: number })._rhRev;
+      const revAbriu = retrato?._rhRev;
       if (atual && revAbriu !== undefined && atual._rhRev !== undefined && atual._rhRev !== revAbriu) {
         toast("Este cadastro foi alterado por outra pessoa enquanto você editava. Feche e reabra para continuar.", "erro");
         return;
@@ -244,7 +255,7 @@ export function ColaboradorForm({
       atualizar(editar.id, patch);
       // Mesmo registro que a edição no lugar faz: sem isto, promover pelo
       // formulário grande continuava invisível na linha do tempo.
-      registrarMovimentacaoDeCarreira(editar, { ...editar, ...dados } as Colaborador, d, criarMov);
+      registrarMovimentacaoDeCarreira(retrato ?? editar, { ...(retrato ?? editar), ...dados } as Colaborador, d, criarMov);
       toast("Colaborador atualizado.");
     } else {
       const novo = criar(dados);

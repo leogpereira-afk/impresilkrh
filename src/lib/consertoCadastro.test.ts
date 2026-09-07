@@ -195,3 +195,42 @@ describe("as opções do seletor de destino", () => {
     expect(opcoesDeStatus([], "ativo")).toEqual([{ id: "ativo", nome: "ativo" }]);
   });
 });
+
+/* REVISÃO ADVERSARIAL DE 07/09/2026 — os três que sobreviveram aos céticos. */
+describe("admissão: só verba de VÍNCULO prova que a pessoa já era da casa", () => {
+  it("empreita paga antes da contratação NÃO recua a admissão", () => {
+    /* A casa paga "Freelancer (Empreita)" a gente que depois vira CLT — 18
+       pessoas ativas recebem essa verba. Recuar a admissão por causa dela
+       matava o aviso dos 90 dias: o fim da experiência caía para trás, o
+       alerta sumia, e o contrato virava por tempo indeterminado sem ninguém
+       decidir nada. */
+    const pessoas = [c({ id: "t", nome: "Thiago", dataAdmissao: "2026-07-29" })];
+    const pags = [p("t", "2026-05", "Freelancer (Empreita)", "2026-05-20")];
+    expect(admissaoAnteriorAoPrimeiroPagamento(pessoas, pags)).toEqual([]);
+  });
+
+  it("diária e benefício também não provam vínculo", () => {
+    const pessoas = [c({ id: "t", nome: "T", dataAdmissao: "2026-07-29" })];
+    const pags = [p("t", "2026-05", "Diária", "2026-05-20"), p("t", "2026-05", "Plano de Saúde", "2026-05-20")];
+    expect(admissaoAnteriorAoPrimeiroPagamento(pessoas, pags)).toEqual([]);
+  });
+
+  it("salário antes da admissão continua recuando — o caso do Thiago real", () => {
+    const pessoas = [c({ id: "t", nome: "Thiago", dataAdmissao: "2026-07-29" })];
+    const pags = [p("t", "2026-05", "Salário", "2026-06-05"), p("t", "2026-05", "Diária", "2026-05-02")];
+    const [r] = admissaoAnteriorAoPrimeiroPagamento(pessoas, pags);
+    // A diária de 02/05 é ignorada; quem manda é o salário.
+    expect(r.primeiraComp).toBe("2026-05");
+    expect(r.primeiroVenc).toBe("2026-06-05");
+  });
+
+  it("rescisão e férias contam como vínculo — são de quem foi empregado", () => {
+    const pessoas = [c({ id: "x", nome: "X", dataAdmissao: "2026-07-01" })];
+    expect(admissaoAnteriorAoPrimeiroPagamento(pessoas, [p("x", "2026-05", "Rescisão", "2026-06-05")])).toHaveLength(1);
+  });
+
+  it("quem só tem verba avulsa não entra nem quando falta a admissão", () => {
+    const pessoas = [c({ id: "f", nome: "Freela" })];
+    expect(admissaoAnteriorAoPrimeiroPagamento(pessoas, [p("f", "2026-08", "Freelancer (Empreita)", "2026-09-04")])).toEqual([]);
+  });
+});

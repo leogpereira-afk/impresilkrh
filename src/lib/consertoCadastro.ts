@@ -145,9 +145,9 @@ export interface PropostaAdmissao {
  */
 export function admissaoAnteriorAoPrimeiroPagamento(
   colaboradores: Pick<Colaborador, "id" | "nome" | "dataAdmissao">[],
-  pagamentos: Pick<Pagamento, "colaboradorId" | "competencia" | "dataPagamento">[],
+  pagamentos: Pick<Pagamento, "colaboradorId" | "competencia" | "dataPagamento" | "tipo">[],
 ): PropostaAdmissao[] {
-  const porPessoa = new Map<string, Pick<Pagamento, "colaboradorId" | "competencia" | "dataPagamento">[]>();
+  const porPessoa = new Map<string, Pick<Pagamento, "colaboradorId" | "competencia" | "dataPagamento" | "tipo">[]>();
   for (const p of pagamentos) {
     if (!p.colaboradorId) continue;
     const arr = porPessoa.get(p.colaboradorId);
@@ -159,7 +159,18 @@ export function admissaoAnteriorAoPrimeiroPagamento(
     const dela = (porPessoa.get(c.id) ?? []).filter((p) => comp(p.competencia));
     if (!dela.length) continue;
     const adm = dia(c.dataAdmissao);
-    const antes = adm ? dela.filter((p) => dia(p.dataPagamento) && dia(p.dataPagamento) < adm) : dela;
+    // SÓ verba que prova vínculo de EMPREGO. Empreita, diária e benefício são
+    // pagos a quem ainda não foi contratado — a casa paga empreita a 18 pessoas
+    // que depois viram CLT. Aceitar qualquer verba recuava a admissão para
+    // antes da contratação e matava o aviso dos 90 dias de experiência: o
+    // contrato virava "por tempo indeterminado" sem ninguém decidir nada.
+    const provaVinculo = dela.filter(
+      (p) => VERBAS_DE_QUEM_TRABALHA.has(String(p.tipo)) || VERBAS_DE_QUEM_SAIU.has(String(p.tipo)),
+    );
+    if (!provaVinculo.length) continue;
+    const antes = adm
+      ? provaVinculo.filter((p) => dia(p.dataPagamento) && dia(p.dataPagamento) < adm)
+      : provaVinculo;
     if (!antes.length) continue;
 
     const primeiraComp = antes.map((p) => comp(p.competencia)).sort()[0];

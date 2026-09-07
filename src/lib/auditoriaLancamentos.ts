@@ -72,7 +72,14 @@ export interface ResumoAuditoria {
 }
 
 /** Tipos que uma pessoa pode receber DEPOIS de sair — não são erro de quadro. */
-const TIPOS_DE_QUEM_SAIU = new Set(["Rescisão", "Férias", "13º Salário", "FGTS"]);
+/* Verbas do ACERTO de quem saiu. Recebê-las depois da data de saída é o
+   esperado, não contradição — e o FGTS/INSS individualizado cai SEMPRE na
+   competência seguinte (a guia vence no dia 20 e a janela é 16→15), então todo
+   desligado com encargo no nome dele caía aqui como erro vermelho.
+   Pior: o quadro verde logo acima, que filtra as verbas, NÃO listava essa
+   pessoa — dois blocos da mesma tela davam respostas opostas sobre a mesma
+   ficha. A constante existia desde o início e nunca tinha sido usada. */
+const TIPOS_DE_QUEM_SAIU = new Set(["Rescisão", "Férias", "13º Salário", "FGTS", "INSS"]);
 /** O que conta como "recebeu o mês": sem isso o mês da pessoa está pela metade. */
 const TIPOS_DE_MES_FECHADO = new Set(["Salário", "Rescisão", "Férias"]);
 const mes = (d?: string | null) => (d ?? "").slice(0, 7);
@@ -165,10 +172,17 @@ export function auditarLancamentos(
     const problemas: string[] = [];
     const adm = mes(c.dataAdmissao);
     const des = mes(c.dataDesligamento);
-    const ultima = dela.length ? dela.map((p) => p.competencia).sort().slice(-1)[0] : "";
+    // "Até quando ela foi paga COMO QUEM TRABALHA". O acerto de quem saiu não
+    // conta: FGTS e INSS individualizados caem SEMPRE na competência seguinte
+    // (a guia vence no dia 20 e a janela é 16→15), então todo desligado com
+    // encargo no nome dele virava erro vermelho aqui — enquanto o quadro verde
+    // da mesma tela, que filtra as verbas, não o listava. Dois blocos, duas
+    // respostas opostas sobre a mesma ficha.
+    const trabalhadas = dela.filter((p) => !TIPOS_DE_QUEM_SAIU.has(p.tipo));
+    const ultima = trabalhadas.length ? trabalhadas.map((p) => p.competencia).sort().slice(-1)[0] : "";
     const primeira = dela.length ? dela.map((p) => p.competencia).sort()[0] : "";
-    if (dela.length && des && ultima > des) problemas.push(`pago até ${ultima}, mas o cadastro diz desligado em ${des}`);
-    if (dela.length && !des && c.statusId === "inativo") problemas.push(`inativo sem data de desligamento (pago até ${ultima})`);
+    if (trabalhadas.length && des && ultima > des) problemas.push(`pago até ${ultima}, mas o cadastro diz desligado em ${des}`);
+    if (trabalhadas.length && !des && c.statusId === "inativo") problemas.push(`inativo sem data de desligamento (pago até ${ultima})`);
     if (c.statusId === "ativo" && des) problemas.push(`marcado ativo, mas com data de desligamento (${des})`);
     if (!adm && dela.length) problemas.push("sem data de admissão");
     if (dela.length && adm && primeira < adm) {

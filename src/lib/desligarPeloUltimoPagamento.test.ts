@@ -3,7 +3,7 @@ import { desligamentosPeloUltimoPagamento, fimDoMes } from "./desligarPeloUltimo
 import type { Colaborador } from "@/data/types";
 
 const col = (over: Partial<Colaborador> & { id: string; nome: string }): Colaborador => ({ statusId: "ativo", ...over } as Colaborador);
-const pg = (colaboradorId: string, competencia: string) => ({ colaboradorId, competencia });
+const pg = (colaboradorId: string, competencia: string, tipo = "Salário") => ({ colaboradorId, competencia, tipo });
 
 describe("fimDoMes", () => {
   it("acerta fevereiro, bissexto e meses de 31", () => {
@@ -77,5 +77,36 @@ describe("desligamentosPeloUltimoPagamento", () => {
 
   it("limite inválido não propõe nada", () => {
     expect(desligamentosPeloUltimoPagamento(pessoas, pags, "junho")).toEqual([]);
+  });
+});
+
+/* REVISÃO ADVERSARIAL DE 07/09/2026 — a data anotada à mão era sobrescrita.
+   A régua antiga era o MÊS bater. Mas o FGTS e o INSS individualizados caem na
+   competência SEGUINTE (a guia vence no dia 20 e a janela é 16→15), então quem
+   saiu no meio de abril, com encargo lançado em maio, tinha a saída empurrada
+   para 31/05 — 46 dias a mais no quadro, no relógio de férias e no turnover,
+   dentro de um lote que a tela mostrava como "só ajuste de data". */
+describe("data de saída já anotada é intocável", () => {
+  it("saída em 15/04 com encargo na competência de maio CONTINUA 15/04", () => {
+    const pessoas = [col({ id: "x", nome: "Xis", statusId: "inativo", dataDesligamento: "2026-04-15" })];
+    const pags = [pg("x", "2026-04"), pg("x", "2026-05", "FGTS")];
+    expect(desligamentosPeloUltimoPagamento(pessoas, pags, "2026-06")).toEqual([]);
+  });
+
+  /* Este teste eu escrevi errado na primeira tentativa: afirmava que data
+     anotada NUNCA é sobrescrita. Mas corrigir data errada é o propósito desta
+     função — dois testes antigos provaram isso na hora. O defeito real era
+     mais estreito: o encargo do mês seguinte contava como "último mês". */
+  it("data anotada em mês anterior ao último SALÁRIO continua sendo corrigida", () => {
+    const pessoas = [col({ id: "x", nome: "Xis", statusId: "ativo", dataDesligamento: "2026-01-10" })];
+    const [r] = desligamentosPeloUltimoPagamento(pessoas, [pg("x", "2026-05")], "2026-06");
+    expect(r.para.dataDesligamento).toBe("2026-05-31");
+  });
+
+  it("quem NÃO tem data continua recebendo o fim do último mês pago", () => {
+    const pessoas = [col({ id: "y", nome: "Ipsilon", statusId: "inativo" })];
+    const [r] = desligamentosPeloUltimoPagamento(pessoas, [pg("y", "2026-04")], "2026-06");
+    expect(r.para.dataDesligamento).toBe("2026-04-30");
+    expect(r.muda).toBe("data");
   });
 });
