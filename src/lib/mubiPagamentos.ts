@@ -481,13 +481,30 @@ export function paraRegistros(
   const ids = mapaDeIds(colaboradores);
 
   for (const l of linhas) {
-    if (!l.nome.trim()) { coletivas.push(l); continue; }
+    /* ORIGEM VAZIA NÃO PODE SAIR ANTES DE ALGUÉM LER A DESCRIÇÃO (08/09/2026).
+     *
+     * Esta linha era `if (!l.nome.trim()) { coletivas.push(l); continue; }` e
+     * era a PRIMEIRA do laço — antes do casamento por ID no texto e antes de
+     * `casarPelaDescricao`, que existe exatamente para achar a pessoa quando a
+     * origem não diz nada. Título sem fornecedor no ERP ia direto para
+     * "Despesas de pessoal sem nome", que não tem seletor de vínculo: não
+     * casava sozinho e não dava para consertar na mão.
+     *
+     * Achado na auditoria adversarial do caminho ERP → ficha (07/09/2026), no
+     * caso do curso da Marcella: o Léo corrigiu no ERP pondo o nome na
+     * descrição, e a correção dele não teria efeito nenhum por causa daqui.
+     *
+     * O que MUDA é só isto: a descrição passa a ser consultada. Quem não casar
+     * volta para `coletivas` no fim, como sempre foi — a fila de "vincular a…"
+     * é do RH, não um depósito de tudo que o ERP manda sem fornecedor.
+     */
+    const semOrigem = !l.nome.trim();
     const doc = String(l.cpfCnpj ?? "").replace(/\D/g, "");
 
     // A ordem é a força da chave: CPF do título → ID escrito no título (origem
     // ou descrição) → vínculo/nome da origem → vínculo por título → nome na
     // descrição. Só as duas primeiras não são palpite (regra do Leonardo).
-    const porChave = casarColaboradorComo(l.nome, colaboradores, vinculos, l.cpfCnpj);
+    const porChave = semOrigem ? null : casarColaboradorComo(l.nome, colaboradores, vinculos, l.cpfCnpj);
     const porIdTexto = porChave?.como === "cpf" ? null : acharPorIdNoTexto(`${l.nome} ${l.descricao ?? ""}`, ids);
     const casado =
       (porChave?.como === "cpf" ? porChave : null) ??
@@ -498,6 +515,8 @@ export function paraRegistros(
     const c = casado?.c ?? null;
 
     if (!c) {
+      // Sem origem e sem ninguém na descrição: coletiva, como sempre foi.
+      if (semOrigem) { coletivas.push(l); continue; }
       // CNPJ é fornecedor (padaria da alimentação, plano de saúde da empresa):
       // não é de ninguém — vai para as coletivas e segue no rateio, em vez de
       // ficar na lista pedindo um vínculo que seria errado.

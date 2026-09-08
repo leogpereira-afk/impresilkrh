@@ -610,3 +610,72 @@ describe("paraRegistros casa pelo ID antes do nome e diz como casou", () => {
     expect(r.registros).toHaveLength(0);
   });
 });
+
+/* ORIGEM VAZIA: A DESCRIÇÃO PRECISA SER LIDA (08/09/2026).
+ *
+ * O Léo achou no ERP o curso da Marcella lançado em 2.1.16.2-Cursos com a
+ * despesa "Curso Marcela", e corrigiu lá: pôs o nome na descrição.
+ *
+ * Só que `paraRegistros` abria o laço com `if (!l.nome.trim()) { coletivas... }`
+ * — a PRIMEIRA instrução, antes de casarPelaDescricao (que existe exatamente
+ * para isso) e antes do casamento por ID no texto. Título sem fornecedor no ERP
+ * ia para "Despesas de pessoal sem nome", que NÃO tem seletor de vínculo: nem
+ * casava sozinho, nem dava para consertar na mão.
+ *
+ * Achado da auditoria adversarial de 07/09 (mubiPagamentos.ts:484).
+ *
+ * Começa pelo caso ruim: encher a lista de "não encontrados" com guia da
+ * empresa que hoje sai quieta.
+ */
+describe("título sem origem: a descrição decide", () => {
+  const equipe = [
+    { id: "marcella-laiara-rocha-farias", nome: "Marcella Laiara Rocha Farias", cpf: "" },
+    { id: "adriano-pinheiro-lima", nome: "Adriano Pinheiro Lima", cpf: "" },
+  ] as unknown as Colaborador[];
+  const linha = (descricao: string, extra: Record<string, unknown> = {}) => ({
+    idMubi: "t1", nome: "", ehColaborador: false, cpfCnpj: null,
+    planoContas: "2.1.16.2-Cursos", tipo: "Treinamentos", descricao,
+    valor: 350, dataVencimento: "2026-08-05", dataPagamento: "2026-08-05",
+    status: "PAGO", formaPagamento: "PIX", centroCusto: "2.02 Administrativo",
+    ...extra,
+  }) as unknown as LinhaMubi;
+
+  it("O CASO RUIM: sem origem e sem nome na descrição continua saindo quieto", () => {
+    // Guia de FGTS sem fornecedor: hoje vai para coletivas e tem de continuar
+    // indo. Jogar isso na fila de "vincular a…" seria trocar um defeito por
+    // outro — e essa fila é do RH, não um depósito.
+    const r = paraRegistros([linha("FGTS")], equipe, {}, {});
+    expect(r.registros).toHaveLength(0);
+    expect(r.coletivas).toHaveLength(1);
+    expect(r.naoCasados).toHaveLength(0);
+  });
+
+  it("despesa qualquer sem origem também continua em coletivas", () => {
+    const r = paraRegistros([linha("Compra de material de escritório")], equipe, {}, {});
+    expect(r.coletivas).toHaveLength(1);
+    expect(r.naoCasados).toHaveLength(0);
+  });
+
+  it("O CONSERTO: nome completo na descrição chega na ficha da pessoa", () => {
+    const r = paraRegistros([linha("Curso Marcella Laiara Rocha Farias")], equipe, {}, {});
+    expect(r.coletivas).toHaveLength(0);
+    expect(r.registros).toHaveLength(1);
+    expect(r.registros[0].colaboradorId).toBe("marcella-laiara-rocha-farias");
+  });
+
+  it("o ID escrito no título também vale, sem origem nenhuma", () => {
+    const comId = [{ ...equipe[0], cpf: "12345612345" }] as unknown as Colaborador[];
+    // id = 6 primeiros dígitos do CPF; a régua da casa é o id, não o nome.
+    const r = paraRegistros([linha("Curso 123456")], comId, {}, {});
+    expect(r.registros).toHaveLength(1);
+    expect(r.registros[0].colaboradorId).toBe("marcella-laiara-rocha-farias");
+  });
+
+  it("nome PARCIAL na descrição não inventa dono — volta para coletivas", () => {
+    // "Marcela" sozinho não prova que é a Marcella Laiara. Atribuir dinheiro à
+    // pessoa errada é pior que não atribuir.
+    const r = paraRegistros([linha("Curso Marcela")], equipe, {}, {});
+    expect(r.registros).toHaveLength(0);
+    expect(r.coletivas).toHaveLength(1);
+  });
+});
