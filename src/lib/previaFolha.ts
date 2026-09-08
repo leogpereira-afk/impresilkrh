@@ -324,11 +324,13 @@ export const mesmoConteudo = (a: Pagamento | null, b: Pagamento | null): boolean
  * e só eles. É a MESMA lista que aplicarFolha usa: o retrato do "depois" tem
  * de ser exatamente o que vai ficar gravado, senão desfazer não reconhece.
  */
-export function patchDeAplicacao(novo: Pagamento): Partial<Pagamento> {
+export function patchDeAplicacao(novo: Pagamento, antes?: Pagamento | null): Partial<Pagamento> {
   return {
     colaboradorId: novo.colaboradorId,
     competencia: novo.competencia,
-    tipo: novo.tipo,
+    // Tipo travado na tela vence a conta do ERP (ver Pagamento.tipoTravado).
+    tipo: antes?.tipoTravado ? antes.tipo : novo.tipo,
+    ...(antes?.tipoTravado ? { tipoTravado: true } : {}),
     valor: novo.valor,
     dataPagamento: novo.dataPagamento,
     descricao: novo.descricao,
@@ -382,7 +384,7 @@ export function retratoAntesDeAplicar(
   const comps = new Set<string>();
   for (const { antigo, novo } of diff.alterados) {
     const antes = vivo.get(antigo.id) ?? antigo;
-    tocados.push({ id: antigo.id, antes, depois: { ...antes, ...patchDeAplicacao(novo) } });
+    tocados.push({ id: antigo.id, antes, depois: { ...antes, ...patchDeAplicacao(novo, antes) } });
     comps.add(antigo.competencia); comps.add(novo.competencia);
   }
   for (const n of diff.novos) { tocados.push({ id: n.id, antes: null, depois: n }); comps.add(n.competencia); }

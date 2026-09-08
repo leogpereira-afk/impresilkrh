@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chaveDoAlarme, classificarAlterados, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo } from "./previaFolha";
+import { chaveDoAlarme, classificarAlterados, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo, patchDeAplicacao } from "./previaFolha";
 import { chefeDasMudancas, mudancas, type DiffPagamentos } from "./custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 
@@ -372,5 +372,36 @@ describe("desmarcar alterações na prévia", () => {
       entrada({ ...diff, ausentes: [some] }, [...gravados, some], { excluidos: new Set(["mubi-1"]), ausentesMarcados: new Set(["mubi-9"]) }),
     );
     expect(r.ausentes.comIdErp.map((a) => a.id)).toEqual(["mubi-9"]);
+  });
+});
+
+describe("tipo travado na tela", () => {
+  const doErp = (over: Partial<Pagamento> = {}): Pagamento =>
+    ({ id: "p1", colaboradorId: "ana", competencia: "2026-01", tipo: "Salário", valor: 530,
+       dataPagamento: "2026-02-11", descricao: "DOCUMENTO SAVEIRO 2026 · 2.1.1-Salário", idMubi: "57913", ...over }) as Pagamento;
+
+  it("a importação não propõe mudar o tipo que a tela travou", () => {
+    const antes = doErp({ tipo: "Outros", tipoTravado: true });
+    const novo = doErp({ tipo: "Salário" }); // o ERP continua dizendo Salário
+    expect(mudancas(antes, novo).some((m) => m.campo === "tipo")).toBe(false);
+  });
+
+  it("sem a trava, a mudança de tipo continua aparecendo", () => {
+    expect(mudancas(doErp({ tipo: "Outros" }), doErp({ tipo: "Salário" })).some((m) => m.campo === "tipo")).toBe(true);
+  });
+
+  it("aplicar mantém o tipo travado e a marca, e atualiza o resto", () => {
+    const antes = doErp({ tipo: "Outros", tipoTravado: true, valor: 530 });
+    const novo = doErp({ tipo: "Salário", valor: 545 });
+    const patch = patchDeAplicacao(novo, antes);
+    expect(patch.tipo).toBe("Outros");
+    expect(patch.tipoTravado).toBe(true);
+    expect(patch.valor).toBe(545);
+  });
+
+  it("sem trava, aplicar grava o tipo do ERP e não inventa a marca", () => {
+    const patch = patchDeAplicacao(doErp({ tipo: "Salário" }), doErp({ tipo: "Outros" }));
+    expect(patch.tipo).toBe("Salário");
+    expect(patch.tipoTravado).toBeUndefined();
   });
 });

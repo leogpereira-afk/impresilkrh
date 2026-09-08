@@ -462,7 +462,9 @@ export function mudancas(a: Pag, b: Pag): Mudanca[] {
   if (Math.round((a.valor ?? 0) * 100) !== Math.round((b.valor ?? 0) * 100)) m.push({ campo: "valor", de: String(a.valor ?? 0), para: String(b.valor ?? 0) });
   if (a.colaboradorId !== b.colaboradorId) m.push({ campo: "pessoa", de: a.colaboradorId, para: b.colaboradorId });
   if (a.competencia !== b.competencia) m.push({ campo: "mes", de: a.competencia, para: b.competencia });
-  if (a.tipo !== b.tipo) m.push({ campo: "tipo", de: a.tipo, para: b.tipo });
+  // Tipo travado: quem mandou foi a tela, não a conta do ERP. Sem isto, a
+  // importação seguinte propunha desfazer a correção — todo mês.
+  if (a.tipo !== b.tipo && !(a as { tipoTravado?: boolean }).tipoTravado) m.push({ campo: "tipo", de: a.tipo, para: b.tipo });
   if (dia10(a.dataPagamento) !== dia10(b.dataPagamento)) m.push({ campo: "data", de: dia10(a.dataPagamento), para: dia10(b.dataPagamento) });
   const sa = (a as { statusErp?: string }).statusErp, sb = (b as { statusErp?: string }).statusErp;
   if (sa && sb && sa !== sb) m.push({ campo: "status", de: sa, para: sb });

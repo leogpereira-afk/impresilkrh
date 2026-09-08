@@ -769,6 +769,17 @@ export interface Pagamento {
    */
   casadoPor?: "cpf" | "id" | "titulo" | "vinculo" | "nome" | "descricao";
   /**
+   * O TIPO deste lançamento foi decidido AQUI, não pela conta do ERP.
+   *
+   * O ERP classifica pela conta contábil: um documento de veículo lançado em
+   * "2.1.1-Salário" virava tipo Salário e entrava na base de FGTS/13º/férias.
+   * Quando o dono corrige o tipo na tela, a importação seguinte proporia
+   * desfazer — e a correção teria de ser refeita todo mês. Com esta marca, a
+   * importação não mexe mais no tipo deste título (valor, data e o resto
+   * continuam vindo do ERP).
+   */
+  tipoTravado?: boolean;
+  /**
    * Lançado à mão pelo RH (ex.: pagamento em dinheiro que não passa pelo ERP).
    * A conciliação NUNCA lista um manual como "fora do ERP" — não existir no
    * Mubisys é a natureza dele, não um erro a corrigir. Se um dia o título

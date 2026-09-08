@@ -813,7 +813,7 @@ export default function Custos() {
       }
       // O registro inteiro, com a MESMA lista de campos do retrato (patchDeAplicacao):
       // gravar só valor/data deixava pessoa, competência e tipo congelados.
-      for (const { antigo, novo } of diff.alterados) pagamentosColecao.atualizar(antigo.id, patchDeAplicacao(novo));
+      for (const { antigo, novo } of diff.alterados) pagamentosColecao.atualizar(antigo.id, patchDeAplicacao(novo, antigo as Pagamento));
       for (const n of diff.novos) pagamentosColecao.criarOuAtualizar(n);
       for (const a of removidos) pagamentosColecao.remover(a.id);
     });
@@ -1215,12 +1215,21 @@ export default function Custos() {
       descricao = [descricao, partes.join(" · ")].filter(Boolean).join(" — ");
     }
     if (lancEditId) {
+      // Trocar o tipo de um título do ERP é uma decisão da casa: o ERP
+      // classifica pela conta (documento de veículo em "2.1.1-Salário" virava
+      // Salário e gerava FGTS/13º/férias). A marca faz a importação seguinte
+      // respeitar a correção em vez de propor desfazê-la todo mês.
+      const original = (pagamentos as Pagamento[]).find((p) => p.id === lancEditId);
+      const trocouTipo = !!original && original.tipo !== lancTipo && ehDoMubi(original);
       pagamentosColecao.atualizar(lancEditId, {
         tipo: lancTipo,
         valor: Math.round(valor * 100) / 100,
         descricao: descricao || "Lançamento manual",
+        ...(trocouTipo ? { tipoTravado: true } : {}),
       });
-      toast("Lançamento atualizado.");
+      toast(trocouTipo
+        ? `Lançamento atualizado. O tipo "${lancTipo}" fica travado: a próxima importação não vai desfazê-lo.`
+        : "Lançamento atualizado.");
     } else {
       pagamentosColecao.criar({
         colaboradorId: colabId,
