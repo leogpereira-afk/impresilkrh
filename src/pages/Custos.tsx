@@ -285,7 +285,7 @@ export default function Custos() {
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
-    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; idsForaDaFolha?: string[]; busca?: CoberturaBusca };
+    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; foraOmitidas?: number; idsForaDaFolha?: string[]; busca?: CoberturaBusca };
     /** Competências que a busca cobriu — o que pode ser dado como ausente. */
     janela: string[];
   } | null>(null);
@@ -523,7 +523,7 @@ export default function Custos() {
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       janela: [...comps].filter(Boolean).sort(),
-      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, idsForaDaFolha: r.idsForaDaFolha, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
+      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, foraOmitidas: r.contasForaOmitidas, idsForaDaFolha: r.idsForaDaFolha, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
@@ -2780,6 +2780,13 @@ export default function Custos() {
                       </li>
                     ))}
                   </ul>
+                  {(folhaPrev.mubi?.foraOmitidas ?? 0) > 0 && (
+                    /* Lista que parece completa sem ser é pior que lista curta declarada:
+                       quem procura a conta que sumiu e não acha conclui que ela não existe. */
+                    <p className="mt-2 text-[11px] font-semibold text-amber-900">
+                      E mais {folhaPrev.mubi!.foraOmitidas} conta(s) não listada(s) — a lista tem teto. Se a conta que você procura não está aqui, ela pode estar entre essas.
+                    </p>
+                  )}
                 </div>
               )}
               {/* Despesas de pessoal sem dono (bolo, Uber, reembolso): não são de

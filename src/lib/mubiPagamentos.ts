@@ -56,6 +56,13 @@ export interface RespostaMubi {
    */
   contasForaDaFolha?: ContaForaDaFolha[];
   /**
+   * Quantas contas recusadas NÃO couberam na lista acima (teto de 80 por
+   * página). Zero é o normal. Quando não é zero, a tela precisa dizer — uma
+   * lista que parece completa sem ser é pior que uma lista curta declarada:
+   * quem procura a conta que sumiu e não acha conclui que ela não existe.
+   */
+  contasForaOmitidas?: number;
+  /**
    * Ids dos títulos que o filtro de folha recusou — só os ids.
    *
    * Serve a uma pergunta que a tela errava: "este lançamento gravado ainda
@@ -190,10 +197,11 @@ export async function buscarCompetenciaCompleta(
   competencia: string,
   aoProgredir?: (pagina: number, totalPaginas: number) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[]; idsForaDaFolha: string[] }> {
+): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[]; contasForaOmitidas: number; idsForaDaFolha: string[] }> {
   const TETO_PAGINAS = 40;
   const linhas: LinhaMubi[] = [];
   const fora: (ContaForaDaFolha[] | undefined)[] = [];
+  let foraOmitidas = 0;
   const idsFora = new Set<string>();
   let pagina = 1;
   let totalPaginas = 1;
@@ -204,6 +212,7 @@ export async function buscarCompetenciaCompleta(
     const r = await buscarPagamentosMubi(competencia, pagina);
     linhas.push(...r.linhas);
     fora.push(r.contasForaDaFolha);
+    foraOmitidas += Number(r.contasForaOmitidas) || 0;
     for (const id of r.idsForaDaFolha ?? []) idsFora.add(String(id));
     totalPaginas = r.paginas || 1;
     aoProgredir?.(pagina, totalPaginas);
@@ -213,7 +222,7 @@ export async function buscarCompetenciaCompleta(
     pagina++;
     if (pagina > TETO_PAGINAS) { incompleta = true; break; }
   }
-  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora), idsForaDaFolha: [...idsFora] };
+  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora), contasForaOmitidas: foraOmitidas, idsForaDaFolha: [...idsFora] };
 }
 
 /**
@@ -238,9 +247,10 @@ export async function buscarHistoricoMubi(
   competencias: string[],
   aoProgredir?: (feitos: number, total: number, competencia: string) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[]; idsForaDaFolha: string[] }> {
+): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[]; contasForaOmitidas: number; idsForaDaFolha: string[] }> {
   const linhas: LinhaMubi[] = [];
   const fora: (ContaForaDaFolha[] | undefined)[] = [];
+  let foraOmitidas = 0;
   const idsFora = new Set<string>();
   const falhas: { competencia: string; erro: string }[] = [];
   const competenciasLidas: string[] = [];
@@ -262,6 +272,7 @@ export async function buscarHistoricoMubi(
       // dele seria pior. As falhas voltam listadas para o RH tentar de novo.
       linhas.push(...r.linhas);
       fora.push(r.contasForaDaFolha);
+      foraOmitidas += Number(r.contasForaOmitidas) || 0;
       for (const id of r.idsForaDaFolha) idsFora.add(id);
       competenciasLidas.push(comp);
       if (r.incompleta) truncado = true;
@@ -282,7 +293,7 @@ export async function buscarHistoricoMubi(
     return true;
   });
 
-  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora), idsForaDaFolha: [...idsFora] };
+  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora), contasForaOmitidas: foraOmitidas, idsForaDaFolha: [...idsFora] };
 }
 
 /** Lista de competências (AAAA-MM) de `meses` atrás até a atual, da mais nova para a mais antiga. */
