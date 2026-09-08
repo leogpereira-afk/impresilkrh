@@ -244,6 +244,9 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 .dark .btn-ghost:hover { background-color: rgba(255, 255, 255, 0.08); }
 .dark .th { color: #98a4b6; }
 .dark .td { color: #d6dfeb; }
+/* Célula de tabela deliberadamente apagada (mês estimado, valor sem dado): sem
+   este par, `.dark .td` repintava o cinza e o "isto é estimativa" sumia. */
+.dark .td.text-slate-400 { color: #98a4b6; }
 .dark .chip { background-color: rgba(255, 255, 255, 0.07); color: #bcc7d6; }
 .dark .label { color: #98a4b6; }
 

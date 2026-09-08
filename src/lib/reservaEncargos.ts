@@ -24,6 +24,7 @@
 //     esse não sobe sozinho, precisa de "Puxar histórico".
 // ============================================================================
 import { FGTS_PCT, PROVISAO_13, PROVISAO_FERIAS, calcularEncargos } from "./encargos";
+import { fimDaCompetencia } from "./custos";
 
 export interface PagReserva {
   competencia: string;
@@ -59,6 +60,10 @@ export interface EncargosDoMes {
   acertosPorTipo: { tipo: string; valor: number }[];
   /** true quando há salário/adiantamento no mês. */
   temFolha: boolean;
+  /** Alguém recebeu salário (ou rescisão) neste mês? É o sinal de que a folha fechou. */
+  temSalario: boolean;
+  /** Alguém recebeu adiantamento neste mês? */
+  temAdiantamento: boolean;
 }
 
 export interface Opcoes {
@@ -103,6 +108,8 @@ export function encargosDoMes(pags: PagReserva[], comp: string, opcoes: Opcoes =
     acertosFora,
     acertosPorTipo: [...acertos.entries()].map(([tipo, valor]) => ({ tipo, valor })).sort((a, b) => b.valor - a.valor),
     temFolha: enc.bruto > 0,
+    temSalario: doMes.some((p) => p.tipo === "Salário" || p.tipo === "Rescisão"),
+    temAdiantamento: doMes.some((p) => p.tipo === "Adiantamento"),
   };
 }
 
@@ -136,7 +143,6 @@ export function encargosPorPessoa(pags: PagReserva[], comp: string, opcoes: Opco
 }
 
 export type OrigemDoMes = "folha" | "parcial" | "buraco" | "estimado" | "vazio";
-export type EstadoFolha = "completa" | "aguardando" | "incompleta";
 
 export interface MesDaReserva extends EncargosDoMes {
   /**
@@ -162,11 +168,14 @@ export interface ReservaDoAno {
   meses: MesDaReserva[];
   /** Média do depósito dos até 12 últimos meses completos até dezembro do ano. */
   mediaMensal: number;
-  /** De onde veio a média: quantos meses e qual a faixa. */
-  baseDaMedia: { meses: number; de: string | null; ate: string | null };
+  /** De onde veio a média: quantos meses, qual a faixa e quantos meses da faixa ficaram de fora. */
+  baseDaMedia: { meses: number; de: string | null; ate: string | null; furos: number };
   /** Soma dos meses de folha completa. */
   realizado: number;
-  /** O que falta nos meses pela metade (parcial/buraco) para chegar à média. */
+  /**
+   * Total a depositar nos meses pela metade (parcial/buraco): a média — ou o
+   * próprio valor do mês, quando a folha que já entrou passou dela.
+   */
   completado: number;
   /** Soma dos meses sem folha, pela média. */
   estimado: number;
@@ -183,19 +192,55 @@ export interface ReservaDoAno {
 
 const compDe = (ano: number, m: number) => `${ano}-${String(m).padStart(2, "0")}`;
 
+/** Quanto do quadro precisa ter salário/adiantamento para o mês contar como completo. */
+export const MINIMO_DO_QUADRO = 0.8;
+
+export interface OpcoesAno extends Opcoes {
+  /** Hoje (injetável no teste). Serve para saber se a janela do mês já fechou. */
+  hoje?: Date;
+  /** Quantas pessoas estavam no quadro naquele mês — o RH sabe (lib/quadroNoMes). */
+  quadroDe?: (comp: string) => number;
+  /** Fração mínima do quadro com base para o mês contar como completo (padrão 0,8). */
+  minimoDoQuadro?: number;
+}
+
+/**
+ * O que o mês É, olhando o MÊS INTEIRO — nunca uma pessoa.
+ *
+ * A primeira versão perguntava isso a `conferirCompetencia`, que é um
+ * diagnóstico POR PESSOA: bastava UMA pessoa com adiantamento e sem salário
+ * (rotina — quem sai no meio do mês) para o mês inteiro virar "falta folha",
+ * sair da média e ainda receber a média no lugar do próprio valor. Nos dados
+ * reais isso já acontecia em junho e julho/2026. E o inverso passava batido:
+ * uma importação que trouxe 40 de 130 pessoas não deixa ninguém "sem salário",
+ * então o mês entrava na média puxando-a para baixo, com selo verde.
+ *
+ * Agora são dois sinais do mês inteiro, os dois positivos:
+ *   • ninguém recebeu salário/rescisão  → a folha não fechou;
+ *   • gente demais de fora (menos de 80% do quadro daquele mês tem base)
+ *     → a folha veio pela metade.
+ * Janela ainda aberta = "a fechar" (sobe sozinho); janela fechada = "falta
+ * folha" (precisa importar).
+ */
+function origemDoMes(m: EncargosDoMes, o: OpcoesAno): OrigemDoMes {
+  if (!m.temFolha) return "vazio";
+  const fim = fimDaCompetencia(m.competencia);
+  const janelaAberta = fim ? (o.hoje ?? new Date()) <= fim : false;
+  if (!m.temSalario) return janelaAberta ? "parcial" : "buraco";
+  const quadro = o.quadroDe?.(m.competencia) ?? 0;
+  if (quadro > 0 && m.pessoas < quadro * (o.minimoDoQuadro ?? MINIMO_DO_QUADRO)) {
+    return janelaAberta ? "parcial" : "buraco";
+  }
+  return "folha";
+}
+
 /**
  * O ano inteiro, mês a mês, com a regra mensal (média) e a anual (total).
  *
- * `estadoDe(comp)` diz se a folha do mês está completa, aguardando ou com
- * buraco; sem ela, todo mês com base conta como completo.
+ * `opcoes.quadroDe` é opcional: sem ele a checagem de "gente faltando" não
+ * roda, e o mês com salário conta como completo.
  */
-export function reservaDoAno(
-  pags: PagReserva[],
-  ano: number,
-  opcoes: Opcoes = OPCOES_PADRAO,
-  estadoDe?: (comp: string) => EstadoFolha,
-): ReservaDoAno {
-  const estado = (comp: string): EstadoFolha => (estadoDe ? estadoDe(comp) : "completa");
+export function reservaDoAno(pags: PagReserva[], ano: number, opcoes: OpcoesAno = OPCOES_PADRAO): ReservaDoAno {
   const brutos = Array.from({ length: 12 }, (_, i) => encargosDoMes(pags, compDe(ano, i + 1), opcoes));
 
   // A média é uma JANELA MÓVEL de até 12 meses completos até dezembro do ano
@@ -203,20 +248,25 @@ export function reservaDoAno(
   // janeiro o depósito fixo era a média dos 12 anteriores e em fevereiro
   // virava janeiro sozinho: um depósito "fixo" que mudava todo mês.
   const fim = `${ano}-12`;
-  const janela = [...new Set(pags.map((p) => p.competencia).filter(Boolean))]
+  const candidatos = [...new Set(pags.map((p) => p.competencia).filter(Boolean))]
     .filter((c) => c <= fim)
     .sort()
-    .map((c) => encargosDoMes(pags, c, opcoes))
-    .filter((m) => m.temFolha && estado(m.competencia) === "completa")
-    .slice(-12);
+    .map((c) => encargosDoMes(pags, c, opcoes));
+  const janela = candidatos.filter((m) => origemDoMes(m, opcoes) === "folha").slice(-12);
   const mediaMensal = janela.length ? janela.reduce((s, m) => s + m.deposito, 0) / janela.length : 0;
+  // Quantos meses da faixa ficaram DE FORA: a frase "média de 7 meses, de
+  // jan a ago" precisa dizer que a faixa tem furo, senão quem confere não
+  // descobre qual mês saiu.
+  const furos = janela.length > 1
+    ? candidatos.filter((m) => m.competencia > janela[0].competencia && m.competencia < janela[janela.length - 1].competencia
+        && origemDoMes(m, opcoes) !== "folha").length
+    : 0;
 
   const meses: MesDaReserva[] = brutos.map((m) => {
-    if (m.temFolha) {
-      const e = estado(m.competencia);
-      const origem: OrigemDoMes = e === "completa" ? "folha" : e === "aguardando" ? "parcial" : "buraco";
-      // Mês pela metade: o que falta é o salário, não o depósito. Leva a
-      // média — e nunca menos do que a folha do mês já gerou.
+    const origem = origemDoMes(m, opcoes);
+    if (origem !== "vazio") {
+      // Mês pela metade: o que falta é folha, não depósito. Leva a média — e
+      // nunca menos do que a folha do mês já gerou.
       const aDepositar = origem === "folha" ? m.deposito : Math.max(m.deposito, mediaMensal);
       return { ...m, origem, aDepositar };
     }
@@ -244,7 +294,12 @@ export function reservaDoAno(
     ano,
     meses,
     mediaMensal,
-    baseDaMedia: { meses: janela.length, de: janela[0]?.competencia ?? null, ate: janela[janela.length - 1]?.competencia ?? null },
+    baseDaMedia: {
+      meses: janela.length,
+      de: janela[0]?.competencia ?? null,
+      ate: janela[janela.length - 1]?.competencia ?? null,
+      furos,
+    },
     realizado: meses.filter((m) => m.origem === "folha").reduce((s, m) => s + m.deposito, 0),
     completado: pelaMetade.reduce((s, m) => s + m.aDepositar, 0),
     estimado: meses.filter((m) => m.origem === "estimado").reduce((s, m) => s + m.aDepositar, 0),

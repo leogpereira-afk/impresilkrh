@@ -962,11 +962,13 @@ export default function Custos() {
   // A régua é a MESMA do resumo do mês logo abaixo: se divergissem, o topo da
   // aba individual e a aba global diriam números diferentes do mesmo mês.
   const totalEquipe = useMemo(() => resumoDaEquipe(pagamentosDaEquipe, compAtiva), [pagamentosDaEquipe, compAtiva]);
-  // Estado da folha de cada mês, para a reserva de encargos não tirar média
-  // de mês pela metade (só adiantamento). Mesma conferência do topo da tela.
-  const estadoDaFolha = useCallback(
-    (c: string) => conferirCompetencia(c, pagamentos as Pagamento[], d.colaboradores).estado,
-    [pagamentos, d.colaboradores],
+  // Quantas pessoas estavam no quadro em cada mês — é o que denuncia a folha
+  // que veio pela metade (importação que trouxe parte das pessoas). A reserva
+  // NÃO usa conferirCompetencia: aquilo é diagnóstico por pessoa, e uma pessoa
+  // com adiantamento sem salário (rotina) derrubava o mês inteiro.
+  const quadroDoMesDe = useCallback(
+    (c: string) => quantosNoQuadro(d.colaboradores, c, pagamentos as Pagamento[]),
+    [d.colaboradores, pagamentos],
   );
   const pesoDoColab = useMemo(
     () => (colabId ? pesoDaPessoa(pagamentosDaEquipe, compAtiva, colabId) : null),
@@ -2207,7 +2209,7 @@ export default function Custos() {
                 pagamentos={pagamentosDaEquipe}
                 nomeDe={(id) => d.nomeColab(id)}
                 compAtiva={compAtiva}
-                estadoDe={estadoDaFolha}
+                quadroDe={quadroDoMesDe}
                 onVerPessoa={(id) => { setColabId(id); setMostrarInativos(true); setAba("custos"); }}
                 onEscolherMes={setComp}
               />

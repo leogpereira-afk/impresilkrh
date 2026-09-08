@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anosComFolha, encargosDoMes, encargosPorPessoa, reservaDoAno, taxaDaReserva, type EstadoFolha } from "./reservaEncargos";
+import { anosComFolha, encargosDoMes, encargosPorPessoa, reservaDoAno, taxaDaReserva, type OpcoesAno } from "./reservaEncargos";
 
 const p = (competencia: string, colaboradorId: string, tipo: string, valor: number) => ({ competencia, colaboradorId, tipo, valor });
 const FGTS = 0.08, P13 = 1 / 12, FER = (1 / 12) * 1.3333;
@@ -65,11 +65,14 @@ describe("reservaDoAno", () => {
     p("2026-09", "a", "Adiantamento", 400),
     p("2026-11", "a", "13º Salário", 500),
   ];
-  const estado = (c: string): EstadoFolha => (c === "2026-09" ? "aguardando" : "completa");
+  // 20/09/2026: a janela de setembro (fecha em 15/10) ainda está aberta.
+  const EM_SETEMBRO = new Date(2026, 8, 20);
+  const DEPOIS = new Date(2026, 10, 1); // 01/11: a janela de setembro já fechou
+  const o = (extra: Partial<OpcoesAno> = {}): OpcoesAno => ({ incluirFgts: true, hoje: EM_SETEMBRO, ...extra });
   const mes = 1000 * (FGTS + P13 + FER);
 
   it("12 linhas, uma por mês, com a origem certa", () => {
-    const r = reservaDoAno(ano, 2026, undefined, estado);
+    const r = reservaDoAno(ano, 2026, o());
     expect(r.meses).toHaveLength(12);
     expect(r.meses.map((m) => m.origem)).toEqual([
       "folha", "folha", "folha", "folha", "folha", "folha", "folha", "folha",
@@ -77,20 +80,44 @@ describe("reservaDoAno", () => {
     ]);
   });
 
-  it("aguardando é 'parcial' (sobe sozinho); janela fechada sem salário é 'buraco' (não sobe)", () => {
-    const r = reservaDoAno(ano, 2026, undefined, (c) => (c === "2026-09" ? "incompleta" : "completa"));
-    expect(r.meses[8].origem).toBe("buraco");
-    expect(r.mesesPelaMetade).toBe(1);
+  it("janela aberta é 'a fechar' (sobe sozinho); janela fechada é 'buraco' (não sobe)", () => {
+    expect(reservaDoAno(ano, 2026, o()).meses[8].origem).toBe("parcial");
+    expect(reservaDoAno(ano, 2026, o({ hoje: DEPOIS })).meses[8].origem).toBe("buraco");
+  });
+
+  it("UMA pessoa com adiantamento e sem salário NÃO derruba o mês", () => {
+    // Era o furo da primeira régua: ela perguntava a um diagnóstico por pessoa.
+    // Junho e julho/2026 dos dados reais têm exatamente esse caso.
+    const comUmaPendente = [...ano, p("2026-06", "b", "Adiantamento", 300)];
+    const r = reservaDoAno(comUmaPendente, 2026, o());
+    expect(r.meses[5].origem).toBe("folha");
+    expect(r.meses[5].aDepositar).toBeCloseTo(1300 * (FGTS + P13 + FER), 6);
+  });
+
+  it("folha que veio pela metade do quadro é 'buraco', mesmo com salário lançado", () => {
+    // 3 pessoas com base num mês em que o quadro tinha 10: falta gente.
+    const quadroDe = () => 10;
+    const r = reservaDoAno(ano, 2026, o({ quadroDe }));
+    expect(r.meses[0].origem).toBe("buraco");
+    // Sem saber o quadro, o mês continua contando como completo.
+    expect(reservaDoAno(ano, 2026, o()).meses[0].origem).toBe("folha");
   });
 
   it("a média usa só os meses completos: o mês pela metade não puxa o depósito para baixo", () => {
-    const r = reservaDoAno(ano, 2026, undefined, estado);
+    const r = reservaDoAno(ano, 2026, o());
     expect(r.mediaMensal).toBeCloseTo(mes, 6);
-    expect(r.baseDaMedia).toEqual({ meses: 8, de: "2026-01", ate: "2026-08" });
+    expect(r.baseDaMedia).toEqual({ meses: 8, de: "2026-01", ate: "2026-08", furos: 0 });
+  });
+
+  it("a faixa da média avisa quantos meses do meio ficaram de fora", () => {
+    const comFuro = [...ano.filter((x) => x.competencia !== "2026-04"), p("2026-04", "a", "Adiantamento", 400)];
+    const r = reservaDoAno(comFuro, 2026, o());
+    expect(r.baseDaMedia.meses).toBe(7);
+    expect(r.baseDaMedia.furos).toBe(1);
   });
 
   it("no mês pela metade, o que DEPOSITAR é a média — não a metade que já entrou", () => {
-    const r = reservaDoAno(ano, 2026, undefined, estado);
+    const r = reservaDoAno(ano, 2026, o());
     const set = r.meses[8];
     expect(set.deposito).toBeCloseTo(400 * (FGTS + P13 + FER), 6); // o que a folha do mês gerou
     expect(set.aDepositar).toBeCloseTo(mes, 6);                    // o que levar ao banco
@@ -98,12 +125,12 @@ describe("reservaDoAno", () => {
 
   it("mês pela metade que já passou da média mantém o próprio valor", () => {
     const gordo = [...ano.filter((x) => x.competencia !== "2026-09"), p("2026-09", "a", "Adiantamento", 5000)];
-    const r = reservaDoAno(gordo, 2026, undefined, estado);
+    const r = reservaDoAno(gordo, 2026, o());
     expect(r.meses[8].aDepositar).toBeCloseTo(5000 * (FGTS + P13 + FER), 6);
   });
 
   it("regra anual = 12 meses inteiros: completos + o que falta nos pela metade + estimados", () => {
-    const r = reservaDoAno(ano, 2026, undefined, estado);
+    const r = reservaDoAno(ano, 2026, o());
     expect(r.realizado).toBeCloseTo(8 * mes, 6);
     expect(r.completado).toBeCloseTo(mes, 6);
     expect(r.estimado).toBeCloseTo(3 * mes, 6);
@@ -115,13 +142,13 @@ describe("reservaDoAno", () => {
 
   it("acertos do ano vêm separados: o que a reserva funda e o que ela não cobre", () => {
     const comRescisao = [...ano, p("2026-07", "a", "Rescisão", 1800), p("2026-07", "a", "FGTS", 600)];
-    const r = reservaDoAno(comRescisao, 2026, undefined, estado);
+    const r = reservaDoAno(comRescisao, 2026, o());
     expect(r.acertosDaReserva).toBe(500);
     expect(r.acertosFora).toBe(2400);
   });
 
   it("mês estimado mostra as três parcelas na proporção da média, e elas fecham com o depósito", () => {
-    const r = reservaDoAno(ano, 2026, undefined, estado);
+    const r = reservaDoAno(ano, 2026, o());
     const out = r.meses[9];
     expect(out.origem).toBe("estimado");
     expect(out.base).toBeCloseTo(1000, 6);
@@ -129,7 +156,7 @@ describe("reservaDoAno", () => {
   });
 
   it("sem FGTS no depósito, a estimativa também fica sem ele", () => {
-    const r = reservaDoAno(ano, 2026, { incluirFgts: false }, estado);
+    const r = reservaDoAno(ano, 2026, o({ incluirFgts: false }));
     expect(r.mediaMensal).toBeCloseTo(1000 * (P13 + FER), 6);
     expect(r.meses[9].aDepositar).toBeCloseTo(1000 * (P13 + FER), 6);
     expect(r.meses[9].base).toBeCloseTo(1000, 6);
@@ -137,8 +164,8 @@ describe("reservaDoAno", () => {
   });
 
   it("ano sem folha usa a média dos últimos 12 meses completos, e diz de que faixa", () => {
-    const r = reservaDoAno(ano, 2027, undefined, estado);
-    expect(r.baseDaMedia).toEqual({ meses: 8, de: "2026-01", ate: "2026-08" });
+    const r = reservaDoAno(ano, 2027, o());
+    expect(r.baseDaMedia).toEqual({ meses: 8, de: "2026-01", ate: "2026-08", furos: 0 });
     expect(r.meses.every((m) => m.origem === "estimado")).toBe(true);
     expect(r.totalAno).toBeCloseTo(12 * mes, 6);
   });
@@ -148,23 +175,25 @@ describe("reservaDoAno", () => {
       ...[9, 10, 11, 12].map((m) => p(`2025-${m}`, "a", "Salário", 1000)),
       p("2026-01", "a", "Salário", 400), // janeiro atípico (férias)
     ];
-    const r = reservaDoAno(doisAnos, 2026);
+    const r = reservaDoAno(doisAnos, 2026, o());
     expect(r.baseDaMedia.meses).toBe(5);
     expect(r.mediaMensal).toBeCloseTo(((4 * 1000 + 400) / 5) * (FGTS + P13 + FER), 6);
   });
 
   it("sem nenhuma folha em lugar nenhum, o ano é vazio — não é zero", () => {
-    const r = reservaDoAno([], 2026);
+    const r = reservaDoAno([], 2026, o());
     expect(r.meses.every((m) => m.origem === "vazio")).toBe(true);
     expect(r.mediaMensal).toBe(0);
     expect(r.totalAno).toBe(0);
-    expect(r.baseDaMedia).toEqual({ meses: 0, de: null, ate: null });
+    expect(r.baseDaMedia).toEqual({ meses: 0, de: null, ate: null, furos: 0 });
   });
 
-  it("sem estadoDe, todo mês com base conta como completo", () => {
-    const r = reservaDoAno(ano, 2026);
-    expect(r.meses[8].origem).toBe("folha");
-    expect(r.baseDaMedia.meses).toBe(9);
+  it("sem média nenhuma, o mês pela metade fica com o próprio valor (não inventa)", () => {
+    const so = [p("2026-09", "a", "Adiantamento", 400)];
+    const r = reservaDoAno(so, 2026, o());
+    expect(r.mediaMensal).toBe(0);
+    expect(r.meses[8].origem).toBe("parcial");
+    expect(r.meses[8].aDepositar).toBeCloseTo(400 * (FGTS + P13 + FER), 6);
   });
 });
 
