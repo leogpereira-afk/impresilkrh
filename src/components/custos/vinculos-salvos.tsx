@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link2, Trash2, AlertTriangle, Check, CheckCircle2, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -43,18 +43,32 @@ export function VinculosSalvos({
 }) {
   const lista = useMemo(() => conferirVinculos(vinculos, colaboradores, conferidos), [vinculos, colaboradores, conferidos]);
   const comAlerta = lista.filter((v) => v.alerta).length;
+  /* SÓ APARECE DE NOVO SE APARECER OUTRO CONFLITO (decisão do Léo, 08/09/2026).
+     Conferido o que havia, a lista sai da frente: o quadro fica recolhido,
+     mostrando só a linha do título. Ele abre SOZINHO quando surge um conflito
+     novo — e é por isso que o estado volta ao automático toda vez que a
+     contagem de alertas muda; sem isso, quem recolheu uma vez nunca mais veria
+     o aviso seguinte. Abrir e fechar na mão continua valendo enquanto a
+     contagem não mudar. */
+  const [escolha, setEscolha] = useState<boolean | null>(null);
+  useEffect(() => { setEscolha(null); }, [comAlerta]);
+  const aberto = escolha ?? comAlerta > 0;
   const porNome = useMemo(
     () => [...colaboradores].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     [colaboradores],
   );
 
   return (
-    <Card idPersistencia="custos:vinculos-salvos">
+    <Card aberto={aberto} onAlternar={() => setEscolha(!aberto)}>
       <CardHeader
         icon={<Link2 className="h-5 w-5" />}
         title={`Vínculos guardados (${lista.length})`}
-        subtitle="Nome do ERP → ficha. Quando o Mubisys manda um título sem CPF, é por aqui que ele acha a pessoa."
-        action={comAlerta > 0 ? <Badge variant="warning">{comAlerta} para conferir</Badge> : undefined}
+        subtitle={comAlerta > 0
+          ? "Nome do ERP → ficha. Quando o Mubisys manda um título sem CPF, é por aqui que ele acha a pessoa."
+          : "Nome do ERP → ficha. Nada a conferir — este quadro volta a abrir sozinho se aparecer conflito novo."}
+        action={comAlerta > 0
+          ? <Badge variant="warning">{comAlerta} para conferir</Badge>
+          : lista.length > 0 ? <Badge variant="success">todos conferidos</Badge> : undefined}
       />
       <CardBody>
         {lista.length === 0 ? (

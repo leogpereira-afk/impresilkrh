@@ -2340,51 +2340,6 @@ export default function Custos() {
                   </div>
                 )}
 
-                {/* ---------- Vínculos guardados ----------
-                    Um vínculo errado era invisível: só reaparecia se o mesmo
-                    nome voltasse numa importação, e enquanto isso mandava
-                    dinheiro para a ficha errada calado. Achado do Léo em
-                    07/09/2026 ("esse pedro henrique santos oliveira não
-                    existe"). Aqui todos ficam à vista, com o ID da pessoa. */}
-                <VinculosSalvos
-                  vinculos={config.vinculosMubi ?? {}}
-                  colaboradores={d.colaboradores as Colaborador[]}
-                  podeEditar={podeGerir(sessao)}
-                  conferidos={config.vinculosMubiConferidos ?? {}}
-                  onRemover={(chave) => {
-                    const vinc = { ...(config.vinculosMubi ?? {}) };
-                    delete vinc[chave];
-                    // O "conferi" morre com o vínculo: guardado sozinho, ele
-                    // calaria o aviso de um vínculo futuro com a mesma chave.
-                    const conf = { ...(config.vinculosMubiConferidos ?? {}) };
-                    delete conf[chave];
-                    salvarCfg({ vinculosMubi: vinc, vinculosMubiConferidos: conf });
-                    toast(`Vínculo "${chave}" apagado. Os títulos com este nome voltam a ser casados por CPF, ID ou nome.`);
-                  }}
-                  onConferir={(chave, colaboradorId) => {
-                    salvarCfg({ vinculosMubiConferidos: { ...(config.vinculosMubiConferidos ?? {}), [chave]: colaboradorId } });
-                    registrarAcaoManual(`Conferiu o vínculo do ERP "${chave}"`, d.nomeColab(colaboradorId), "config");
-                    toast(`"${chave}" conferido. O aviso volta se este vínculo for apontado para outra pessoa.`);
-                  }}
-                  onApontar={(chave, colaboradorId) => {
-                    const anterior = config.vinculosMubi?.[chave];
-                    if (anterior === colaboradorId) return;
-                    // Apontar para outra ficha DERRUBA o "conferi" anterior: o
-                    // que foi conferido era o par antigo, não este.
-                    const conf = { ...(config.vinculosMubiConferidos ?? {}) };
-                    delete conf[chave];
-                    salvarCfg({
-                      vinculosMubi: { ...(config.vinculosMubi ?? {}), [chave]: colaboradorId },
-                      vinculosMubiConferidos: conf,
-                    });
-                    registrarAcaoManual(
-                      `Apontou o vínculo do ERP "${chave}" para outra ficha (era ${anterior ?? "—"})`,
-                      d.nomeColab(colaboradorId),
-                      "config",
-                    );
-                    toast(`"${chave}" passa a apontar para ${d.nomeColab(colaboradorId)}. Vale da próxima importação em diante.`);
-                  }}
-                />
 
       {/* ---------- Atualização de dados ----------
           Os dois quadros de carga (plano do contador + folha do ERP) moram na
@@ -2508,6 +2463,7 @@ export default function Custos() {
                     onChange={(e) => setMesesHistorico(Number(e.target.value))}
                     className="mt-0.5 w-[165px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-brand-300 focus:outline-none"
                   >
+                    <option value={3}>últimos 3 meses</option>
                     <option value={6}>últimos 6 meses</option>
                     <option value={12}>últimos 12 meses</option>
                     <option value={24}>últimos 24 meses</option>
@@ -2648,6 +2604,52 @@ export default function Custos() {
                       for (const x of divs) pagamentosColecao.atualizar(x.id, { tipo: x.para });
                     });
                     toast(`${divs.length} lançamento(s) reclassificado(s).`);
+                  }}
+                />
+
+                {/* ---------- Vínculos guardados ----------
+                    Um vínculo errado era invisível: só reaparecia se o mesmo
+                    nome voltasse numa importação, e enquanto isso mandava
+                    dinheiro para a ficha errada calado. Achado do Léo em
+                    07/09/2026 ("esse pedro henrique santos oliveira não
+                    existe"). Aqui todos ficam à vista, com o ID da pessoa. */}
+                <VinculosSalvos
+                  vinculos={config.vinculosMubi ?? {}}
+                  colaboradores={d.colaboradores as Colaborador[]}
+                  podeEditar={podeGerir(sessao)}
+                  conferidos={config.vinculosMubiConferidos ?? {}}
+                  onRemover={(chave) => {
+                    const vinc = { ...(config.vinculosMubi ?? {}) };
+                    delete vinc[chave];
+                    // O "conferi" morre com o vínculo: guardado sozinho, ele
+                    // calaria o aviso de um vínculo futuro com a mesma chave.
+                    const conf = { ...(config.vinculosMubiConferidos ?? {}) };
+                    delete conf[chave];
+                    salvarCfg({ vinculosMubi: vinc, vinculosMubiConferidos: conf });
+                    toast(`Vínculo "${chave}" apagado. Os títulos com este nome voltam a ser casados por CPF, ID ou nome.`);
+                  }}
+                  onConferir={(chave, colaboradorId) => {
+                    salvarCfg({ vinculosMubiConferidos: { ...(config.vinculosMubiConferidos ?? {}), [chave]: colaboradorId } });
+                    registrarAcaoManual(`Conferiu o vínculo do ERP "${chave}"`, d.nomeColab(colaboradorId), "config");
+                    toast(`"${chave}" conferido. O aviso volta se este vínculo for apontado para outra pessoa.`);
+                  }}
+                  onApontar={(chave, colaboradorId) => {
+                    const anterior = config.vinculosMubi?.[chave];
+                    if (anterior === colaboradorId) return;
+                    // Apontar para outra ficha DERRUBA o "conferi" anterior: o
+                    // que foi conferido era o par antigo, não este.
+                    const conf = { ...(config.vinculosMubiConferidos ?? {}) };
+                    delete conf[chave];
+                    salvarCfg({
+                      vinculosMubi: { ...(config.vinculosMubi ?? {}), [chave]: colaboradorId },
+                      vinculosMubiConferidos: conf,
+                    });
+                    registrarAcaoManual(
+                      `Apontou o vínculo do ERP "${chave}" para outra ficha (era ${anterior ?? "—"})`,
+                      d.nomeColab(colaboradorId),
+                      "config",
+                    );
+                    toast(`"${chave}" passa a apontar para ${d.nomeColab(colaboradorId)}. Vale da próxima importação em diante.`);
                   }}
                 />
               </div>
