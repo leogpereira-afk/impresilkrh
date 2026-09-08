@@ -203,3 +203,29 @@ describe("normalizarLinhas — o cliente decide o tipo, não a função no ar", 
     expect(normalizarLinhas([l])[0]).toEqual({ ...l, tipo: "Salário" });
   });
 });
+
+/* CURSO É TREINAMENTO, NÃO "PRESTAÇÃO DE SERVIÇOS" (08/09/2026).
+ *
+ * O Léo mostrou "2.1.16.2-Cursos" no ERP, com a despesa "Curso Marcela". O
+ * vocabulário por nome não conhecia a palavra "curso", então a classificação
+ * caía na escalada por CÓDIGO e herdava o 2.1.16 = "Prestação de Serviços".
+ * O lançamento entraria na ficha certa com o rótulo errado — e a regra da casa
+ * é que o NOME manda e o código só desempata.
+ *
+ * Achado da auditoria adversarial (tipoDoPlano.ts:100).
+ */
+describe("curso", () => {
+  it("O CASO RUIM: 'concurso' não pode virar treinamento", () => {
+    // Por isso a fronteira de palavra. Sem ela, qualquer "concurso" entraria.
+    expect(tipoDoPlanoErp("2.9.9-Concurso público")).not.toBe("Treinamentos");
+  });
+
+  it("2.1.16.2-Cursos é Treinamentos, não Prestação de Serviços", () => {
+    expect(tipoDoPlanoErp("2.1.16.2-Cursos")).toBe("Treinamentos");
+    expect(tipoDoPlanoErp("2.1.16.2-Curso")).toBe("Treinamentos");
+  });
+
+  it("a conta que É prestação de serviços continua sendo", () => {
+    expect(tipoDoPlanoErp("2.1.16-Prestação de Serviços")).toBe("Prestação de Serviços");
+  });
+});

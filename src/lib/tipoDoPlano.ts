@@ -69,7 +69,9 @@ const POR_NOME: [RegExp, string][] = [
   [/alimenta/, "Alimentação"],
   [/confraterniza|aniversario|festa/, "Confraternização"],
   [/prestacao/, "Prestação de Serviços"],
-  [/treinamento/, "Treinamentos"],
+  // "curso" com fronteira de palavra: sem ela, "concurso" viraria treinamento.
+  // 2.1.16.2-Cursos caía em "Prestação de Serviços" por herdar o código 2.1.16.
+  [/treinamento|\bcursos?\b/, "Treinamentos"],
   [/farmacia|minas brasil|drogaria/, "Farmácia"],
   [/plano de saude|\bsaude\b|pro ?vida|unimed|\bamil\b|odonto/, "Plano de Saúde"],
   [/salario/, "Salário"],

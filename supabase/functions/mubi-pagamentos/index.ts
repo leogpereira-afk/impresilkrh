@@ -124,7 +124,9 @@ const POR_NOME: [RegExp, string][] = [
   [/alimenta/, "Alimentação"],
   [/confraterniza|aniversario|festa/, "Confraternização"],
   [/prestacao/, "Prestação de Serviços"],
-  [/treinamento/, "Treinamentos"],
+  // "curso" com fronteira de palavra: sem ela, "concurso" viraria treinamento.
+  // 2.1.16.2-Cursos caía em "Prestação de Serviços" por herdar o código 2.1.16.
+  [/treinamento|\bcursos?\b/, "Treinamentos"],
   [/farmacia|minas brasil|drogaria/, "Farmácia"],
   [/plano de saude|\bsaude\b|pro ?vida|unimed|\bamil\b|odonto/, "Plano de Saúde"],
   [/salario/, "Salário"],
@@ -226,8 +228,24 @@ const ehFolha = (plano: string) => {
 // "Colab: Fulano de Tal" → "Fulano de Tal"
 const limpaNome = (s: string) => String(s || "").replace(/^\s*colab\s*:\s*/i, "").trim();
 
+/**
+ * Número do ERP, aceitando o formato brasileiro.
+ *
+ * Era `Number(String(v).replace(",", "."))`: troca só a PRIMEIRA vírgula e não
+ * sabe do ponto de milhar. "5.515,62" virava "5.515.62" → NaN → **zero**, e
+ * zero não dispara alarme nenhum: o título entrava valendo nada e ainda
+ * desaparecia da lista de "contas que ficaram de fora", que descarta total 0.
+ *
+ * A régua: com ponto E vírgula, o ponto é milhar e a vírgula é decimal. Só
+ * vírgula, ela é o decimal. Só ponto, fica como está — é o formato que o
+ * Mubisys manda hoje e que funciona ("955.76"), e adivinhar milhar aqui
+ * transformaria 1.234 em mil duzentos e trinta e quatro.
+ */
 const num = (v: unknown) => {
-  const n = Number(String(v ?? "").replace(",", "."));
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  let t = String(v ?? "").trim().replace(/\s|R\$/g, "");
+  if (t.includes(",")) t = t.includes(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(",", ".");
+  const n = Number(t);
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -432,12 +450,33 @@ Deno.serve(async (req) => {
         .filter(Boolean)
         .map((plano) => [codigoDoPlano(plano), { codigo: codigoDoPlano(plano), nome: plano.split("-").slice(1).join("-").trim() }] as const),
     ).values()];
-    const eqFolha = equivalenciasDeContas(refFolha.contas, contasDoMes);
+    /* `prefixosConfidenciais` também aqui: sem isso, `nomesConfidenciais` sai
+       vazio nesta rota e a rede pelo NOME — a que pegou "Leonardo" sozinho em
+       2.11.2.2 — simplesmente não existe para a folha. */
+    const eqFolha = equivalenciasDeContas(refFolha.contas, contasDoMes, { prefixosConfidenciais: ["2.14"] });
     /** Folha pela régua de sempre, OU porque a conta equivalente do contador era folha. */
     const ehFolhaOuEquivalente = (plano: string) => {
+      const c = codigoDoPlano(plano);
+      /* SOCIETÁRIA NUNCA PASSA — NEM PELA EQUIVALÊNCIA (08/09/2026).
+       *
+       * `ehFolha` diz "nunca" para 2.14 e devolve false; a equivalência então
+       * assumia e podia dizer "sim". Basta uma conta 2.14 de hoje traduzir para
+       * uma conta 2.1.x do plano antigo — e é exatamente isso que a renumeração
+       * de julho faz o tempo todo — para retirada de sócio entrar na folha do
+       * RH. O corte tem de valer nas DUAS numerações, e pelo nome quando não há
+       * par: na dúvida, esconde.
+       *
+       * Achado da auditoria adversarial do caminho ERP → ficha.
+       *
+       * UMA guarda, não três. Escrevi primeiro um `c === "2.14"` e um
+       * `antigo === "2.14"` ao lado desta chamada; o controle mostrou que os
+       * dois nunca disparam sozinhos — `ehConfidencialEquivalente` já cobre o
+       * código de hoje, o código traduzido E o nome sem par. Guarda que nunca
+       * dispara parece proteção e não é: alguém confia nela depois. */
+      if (ehConfidencialEquivalente({ codigo: c, nome: plano.split("-").slice(1).join("-").trim() }, ["2.14"], eqFolha)) return false;
       if (ehFolha(plano)) return true;
-      const antigo = codigoDeReferencia(codigoDoPlano(plano), eqFolha.mapa);
-      if (!antigo || antigo === codigoDoPlano(plano)) return false;
+      const antigo = codigoDeReferencia(c, eqFolha.mapa);
+      if (!antigo || antigo === c) return false;
       return antigo.startsWith("2.1.") || FOLHA_FORA_DO_21.some((x) => antigo === x || antigo.startsWith(x + "."));
     };
     const folha = itens.filter((i) => ehFolhaOuEquivalente(String(i.plano_contas)));
