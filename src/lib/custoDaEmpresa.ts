@@ -118,6 +118,30 @@ export function ehRazaoSocial(nome: string | null | undefined): boolean {
  * Só é chamada para títulos que NÃO casaram com ninguém — quem casou já tem
  * dono e continua individual, seja qual for o texto.
  */
+/**
+ * Palavras que aparecem AO LADO de uma guia e não são nome de gente.
+ *
+ * Duas famílias, e as duas vêm do ERP no campo de origem:
+ *  - a leva genérica, quando o contador lança um título só para todo mundo
+ *    ("COLABORADORES", 44 títulos de gente diferente num só);
+ *  - quem RECEBE o recolhimento: a Caixa (FGTS), a Receita (DARF), a
+ *    prefeitura (ISSQN), o sindicato.
+ *
+ * Nenhuma delas é o dono do dinheiro. A origem de uma guia nunca é.
+ *
+ * SÓ VALEM QUANDO O TEXTO JÁ NOMEIA UM DOCUMENTO. Sozinhas não classificam
+ * nada — senão "Caixa" viraria custo da empresa em qualquer contexto, e
+ * "colaboradores" engoliria a confraternização.
+ */
+const AO_LADO_DA_GUIA = new Set([
+  // a leva
+  "colaboradores", "colaborador", "funcionarios", "funcionario", "empregados",
+  "empregado", "trabalhadores", "equipe", "pessoal", "diversos",
+  // quem recebe ("previdencia" e "folha" já saem por DOCUMENTOS/NEUTRAS)
+  "caixa", "economica", "federal", "receita", "uniao", "tesouro",
+  "prefeitura", "municipio", "municipal", "sindicato", "governo", "secretaria",
+]);
+
 export function ehCustoDaEmpresa(nome: string | null | undefined, descricao: string | null | undefined): boolean {
   // Razão social resolve na hora: "CEMIG DISTRIBUICAO S/A" não é gente.
   if (ehRazaoSocial(nome) || ehRazaoSocial(descricao)) return true;
@@ -125,5 +149,16 @@ export function ehCustoDaEmpresa(nome: string | null | undefined, descricao: str
   // Precisa NOMEAR um documento de recolhimento…
   if (!texto.some((t) => DOCUMENTOS.has(t))) return false;
   // …e não sobrar nada que possa ser nome de gente.
-  return sobrasDoTexto(nome, descricao).length === 0;
+  //
+  // POR QUE O FILTRO (07/09/2026): a guia de FGTS de R$ 5.515,62 e o DARF de
+  // R$ 5.330,85 caíram na lista pedindo vínculo INDIVIDUAL — o Léo mandou o
+  // print. A régua reconhecia a guia quando o ERP mandava a origem vazia e
+  // deixava de reconhecer quando mandava "COLABORADORES" ou "CAIXA ECONOMICA
+  // FEDERAL": a palavra virava "sobra" e vetava. Sobra que não pode ser gente
+  // não é sobra.
+  //
+  // O veto continua de pé para o que É nome: "MARCELLA LAIARA + FGTS" segue
+  // pedindo vínculo, porque engolir calado a guia que nomeia alguém seria
+  // trocar este defeito por um pior.
+  return sobrasDoTexto(nome, descricao).filter((t) => !AO_LADO_DA_GUIA.has(t)).length === 0;
 }

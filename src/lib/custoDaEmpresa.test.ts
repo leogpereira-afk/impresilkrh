@@ -148,3 +148,57 @@ describe("razão social não é nome de gente", () => {
     expect(ehRazaoSocial(null)).toBe(false);
   });
 });
+
+/* A GUIA COM ORIGEM PREENCHIDA (07/09/2026).
+ *
+ * O Léo mandou o print da lista que pede vínculo individual, com a guia de
+ * FGTS de R$ 5.515,62 e o DARF de R$ 5.330,85 dentro dela: "esse aqui é do
+ * custo global e caiu no custo individual".
+ *
+ * A guarda já existia e citava esses mesmos R$ 5.515,62 no comentário — mas ela
+ * exige que NÃO SOBRE nenhuma palavra além das do documento. Quando o ERP manda
+ * a origem vazia, a guia é reconhecida; quando manda qualquer origem, a palavra
+ * vira "sobra" e veta. E a origem de uma guia nunca é o dono do dinheiro: é a
+ * leva genérica ("COLABORADORES") ou quem RECEBE o recolhimento (a Caixa, a
+ * Receita). Jogar a guia do mês numa pessoa estouraria o custo dela.
+ *
+ * Começa pelo caso ruim: engolir calado a guia que nomeia uma pessoa de verdade.
+ */
+describe("a guia não vira custo individual só porque a origem veio preenchida", () => {
+  it("O CASO RUIM: guia que nomeia uma pessoa continua pedindo vínculo", () => {
+    // Se sobrar nome de gente, a guia NÃO é engolida — ela aparece na lista
+    // para alguém decidir. Perder isso seria trocar um defeito por outro pior.
+    expect(ehCustoDaEmpresa("MARCELLA LAIARA ROCHA FARIAS", "FGTS")).toBe(false);
+    expect(ehCustoDaEmpresa("BARBARA PATRICIA", "DARF")).toBe(false);
+    expect(ehCustoDaEmpresa("", "FGTS Rescisório João da Silva")).toBe(false);
+  });
+
+  it("a leva genérica do ERP não é uma pessoa", () => {
+    expect(ehCustoDaEmpresa("COLABORADORES", "FGTS")).toBe(true);
+    expect(ehCustoDaEmpresa("COLABORADORES", "DARF")).toBe(true);
+    expect(ehCustoDaEmpresa("FUNCIONARIOS", "GPS")).toBe(true);
+  });
+
+  it("quem RECEBE a guia não é uma pessoa", () => {
+    expect(ehCustoDaEmpresa("CAIXA ECONOMICA FEDERAL", "FGTS")).toBe(true);
+    expect(ehCustoDaEmpresa("RECEITA FEDERAL", "DARF")).toBe(true);
+    // A contribuição sindical existe no plano da casa; "ISSQN" eu tinha posto
+    // aqui sem conferir que a palavra está no vocabulário de documentos — não
+    // está, e um teste sobre caso inventado não prova nada.
+    expect(ehCustoDaEmpresa("SINDICATO DOS TRABALHADORES", "Contribuição Sindical")).toBe(true);
+  });
+
+  it("origem vazia continua funcionando — o conserto não pode quebrar o que já ia", () => {
+    expect(ehCustoDaEmpresa("", "FGTS")).toBe(true);
+    expect(ehCustoDaEmpresa("", "DARF")).toBe(true);
+    expect(ehCustoDaEmpresa("GUIA FGTS", "FGTS")).toBe(true);
+  });
+
+  it("sem documento nenhum, essas palavras não classificam nada sozinhas", () => {
+    // "Caixa" fora do contexto de guia é caixa de papelão, e "colaboradores"
+    // sozinho não diz que a despesa é da empresa.
+    expect(ehCustoDaEmpresa("CAIXA", "Compra de material")).toBe(false);
+    expect(ehCustoDaEmpresa("COLABORADORES", "Confraternização")).toBe(false);
+    expect(ehCustoDaEmpresa("Pix", "Despesa faxina")).toBe(false);
+  });
+});
