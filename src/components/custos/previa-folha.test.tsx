@@ -144,3 +144,83 @@ describe("PreviaFolha — dá para desmarcar linha a linha", () => {
     expect((document.body.textContent ?? "")).toContain("1 fora");
   });
 });
+
+describe("aceitar algumas, rejeitar outras", () => {
+  /* Pedido do Léo em 08/09/2026: "eu precisava rejeitar algumas coisas,
+     aceitar outras e apagar o que não era necessário" — e a tela não deixava.
+     O bloco "Novos lançamentos" não tinha caixa NENHUMA: os novos entravam
+     obrigatoriamente, e são o maior volume da importação.
+
+     O mais revelador: `previaFolha` já sabia excluí-los, com teste verde
+     ("desmarcar um NOVO também tira"). A regra funcionava e a interface não
+     oferecia o caminho — teste de regra verde não prova que a tela pergunta.
+     Por isso esta suíte olha o DOM. */
+  let container: HTMLDivElement;
+  let root: Root;
+  const excluidos = new Set<string>();
+  const excluidosChamados: { id: string; fora: boolean }[] = [];
+  const blocosChamados: { ids: string[]; fora: boolean }[] = [];
+  const novoA = pg({ id: "mubi-10", tipo: "Salário" });
+  const novoB = pg({ id: "mubi-11", tipo: "Adiantamento", valor: 500 });
+  const resumo2 = resumoDaPrevia({
+    diff: { iguais: [], alterados: [], novos: [novoA, novoB], ausentes: [] },
+    gravados: [], janela: new Set(["2026-07"]), ausentesMarcados: new Set(),
+    colaboradorPor: (id) => pessoas[id], tiposEncargo: ["FGTS", "INSS"], hoje: new Date(2026, 8, 7),
+  });
+
+  beforeEach(() => {
+    excluidosChamados.length = 0; blocosChamados.length = 0;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <PreviaFolha
+          resumo={resumo2} iguais={0} cobertura={{ truncado: false, pedidas: ["2026-07"], lidas: ["2026-07"], falhas: [] }}
+          nomeDe={(id) => pessoas[id]?.nome ?? id}
+          ausentesMarcados={new Set()} onMarcarAusente={() => {}} onMarcarBloco={() => {}}
+          excluidos={excluidos}
+          onExcluir={(id, fora) => { excluidosChamados.push({ id, fora }); }}
+          onExcluirBloco={(ids, fora) => { blocosChamados.push({ ids, fora }); }}
+          confirmados={new Set() as never} onConfirmar={() => {}}
+          salarios={[]} salariosMarcados={new Set()} onMarcarSalario={() => {}} cpfs={[]}
+          onAplicar={() => {}} onCancelar={() => {}}
+        />,
+      );
+    });
+  });
+  afterEach(() => { act(() => root.unmount()); container.remove(); });
+
+  const caixaDe = (rotulo: string) =>
+    [...document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .find((c) => (c.getAttribute("aria-label") ?? "").includes(rotulo));
+
+  it("cada lançamento NOVO tem a sua caixa — dá para rejeitar um e aceitar o outro", () => {
+    const caixa = caixaDe("Aplicar o novo lançamento de Ana Silva");
+    expect(caixa, "o bloco de novos precisa de caixa por linha").toBeTruthy();
+    expect(caixa!.checked).toBe(true);
+    act(() => { caixa!.click(); });
+    expect(excluidosChamados).toEqual([{ id: "mubi-10", fora: true }]);
+  });
+
+  it("dá para rejeitar o bloco inteiro de novos de uma vez", () => {
+    const bloco = [...document.body.querySelectorAll("label")].find((l) => /aplicar os 2 novos/.test(l.textContent ?? ""));
+    expect(bloco, "faltou o marcar/desmarcar do bloco de novos").toBeTruthy();
+    act(() => { bloco!.querySelector("input")!.click(); });
+    expect(blocosChamados).toEqual([{ ids: ["mubi-10", "mubi-11"], fora: true }]);
+  });
+
+  it("“Nenhuma” zera a escolha para quem quer aceitar poucas", () => {
+    // Sem isto, aceitar meia dúzia exigia desmarcar ~160 uma a uma — que é o
+    // que fazia a tela parecer "tudo ou nada".
+    const botao = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Nenhuma");
+    expect(botao, "faltou o botão Nenhuma").toBeTruthy();
+    act(() => { botao!.click(); });
+    expect(blocosChamados[0].fora).toBe(true);
+    expect(blocosChamados[0].ids).toEqual(expect.arrayContaining(["mubi-10", "mubi-11"]));
+  });
+
+  it("o contador diz quantas estão marcadas de quantas", () => {
+    expect(document.body.textContent).toContain("2 de 2 marcadas para aplicar");
+  });
+});

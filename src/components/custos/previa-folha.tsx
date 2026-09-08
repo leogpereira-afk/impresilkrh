@@ -93,6 +93,16 @@ export function PreviaFolha({
   const varios = resumo.porMes.length > 1;
   const idsForaDoQuadro = new Set(resumo.alarmes.filter((a) => a.id === "fora-do-quadro" && a.nivel === "confirma").flatMap((a) => a.ids));
 
+  // TUDO o que dá para aceitar ou rejeitar, num lugar só — alterações e novos.
+  // Sem isto, quem queria aceitar meia dúzia tinha de desmarcar as outras
+  // ~160 uma a uma, e por isso a tela parecia só aceitar "tudo ou nada".
+  const idsEscolhiveis = [
+    ...resumo.grupos.flatMap((g) => g.itens.map((i) => i.antigo.id)),
+    ...resumo.novos.map((n) => n.id),
+  ];
+  const escolhidos = idsEscolhiveis.filter((id) => !excluidos.has(id)).length;
+  const novosFora = resumo.novos.filter((n) => excluidos.has(n.id)).length;
+
   const soCpf = resumo.contaNoBotao + resumo.silenciosos + salariosMarcados.size === 0 && cpfs.length > 0;
   const rotuloBotao = nadaAFazer
     ? "Nada a alterar"
@@ -236,19 +246,76 @@ export function PreviaFolha({
         )}
 
         {/* Alterados, por natureza — cada linha diz o que mudou */}
+        {/* ACEITAR ALGUMAS, REJEITAR OUTRAS.
+            Tudo vem marcado (a folha do mês são ~140 linhas certas e meia dúzia
+            duvidosas), mas quem quer o contrário — aceitar poucas — precisa
+            começar do zero. "Nenhuma" existe para isso. */}
+        {idsEscolhiveis.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs">
+            <span className="font-semibold text-slate-700">
+              {escolhidos} de {idsEscolhiveis.length} marcadas para aplicar
+            </span>
+            {escolhidos < idsEscolhiveis.length && (
+              <span className="text-slate-500">· {idsEscolhiveis.length - escolhidos} rejeitada(s)</span>
+            )}
+            <span className="ml-auto flex gap-1.5">
+              <button
+                type="button"
+                className="btn-outline h-7 px-2 py-0 text-xs"
+                disabled={escolhidos === idsEscolhiveis.length}
+                onClick={() => onExcluirBloco(idsEscolhiveis, false)}
+              >
+                Marcar todas
+              </button>
+              <button
+                type="button"
+                className="btn-outline h-7 px-2 py-0 text-xs"
+                disabled={escolhidos === 0}
+                onClick={() => onExcluirBloco(idsEscolhiveis, true)}
+              >
+                Nenhuma
+              </button>
+            </span>
+          </div>
+        )}
+
         {resumo.grupos.map((g) => <GrupoDeMudanca key={g.natureza} grupo={g} nomeDe={nomeDe} onExcluir={onExcluir} onExcluirBloco={onExcluirBloco} />)}
 
         {/* Novos */}
         {resumo.novos.length > 0 && (
           <details open className="rounded-xl border border-green-200">
             <summary className="cursor-pointer border-b border-green-100 bg-green-50/50 px-3 py-1.5 text-xs font-semibold text-green-800">
-              Novos lançamentos · {resumo.novos.length} · {formatBRL(resumo.novos.reduce((s, p) => s + (Number(p.valor) || 0), 0))}
+              Novos lançamentos · {resumo.novos.length} · {formatBRL(resumo.novos.filter((n) => !excluidos.has(n.id)).reduce((s, p) => s + (Number(p.valor) || 0), 0))}
+              {novosFora > 0 && <span className="ml-1 font-normal opacity-70">· {novosFora} fora</span>}
             </summary>
+            {/* REJEITAR UM LANÇAMENTO NOVO. Este bloco não tinha caixa nenhuma:
+                os novos entravam obrigatoriamente, e são o maior volume da
+                importação. Quem queria aceitar uns e recusar outros não tinha
+                como — só aplicar tudo ou cancelar tudo. A regra já sabia
+                excluí-los (previaFolha filtra `novos` pelos desmarcados); era
+                a tela que não perguntava. */}
+            <label className="flex cursor-pointer items-center gap-1.5 border-b border-black/5 px-3 py-1.5 text-[11px] text-slate-500">
+              <input
+                type="checkbox"
+                checked={resumo.novos.length - novosFora > 0}
+                ref={(el) => { if (el) el.indeterminate = novosFora > 0 && novosFora < resumo.novos.length; }}
+                onChange={(ev) => onExcluirBloco(resumo.novos.map((n) => n.id), !ev.target.checked)}
+              />
+              aplicar os {resumo.novos.length} novos
+            </label>
             <div className="max-h-64 overflow-y-auto">
               <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
                 {[...resumo.novos].sort((a, b) => a.competencia.localeCompare(b.competencia) || nomeDe(a.colaboradorId).localeCompare(nomeDe(b.colaboradorId), "pt-BR")).map((n) => (
-                  <tr key={n.id} className={idsForaDoQuadro.has(n.id) ? "bg-amber-50/40" : undefined}>
-                    <td className="td font-medium text-slate-700"><Pessoa nome={nomeDe(n.colaboradorId)} colaboradorId={n.colaboradorId} />{idsForaDoQuadro.has(n.id) && <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] text-amber-800">fora do quadro</span>}</td>
+                  <tr key={n.id} className={cn(excluidos.has(n.id) && "opacity-45", !excluidos.has(n.id) && idsForaDoQuadro.has(n.id) && "bg-amber-50/40")}>
+                    <td className="td w-8">
+                      <input
+                        type="checkbox"
+                        checked={!excluidos.has(n.id)}
+                        onChange={() => onExcluir(n.id, !excluidos.has(n.id))}
+                        aria-label={`Aplicar o novo lançamento de ${nomeDe(n.colaboradorId)}`}
+                      />
+                    </td>
+                    <td className={cn("td font-medium text-slate-700", excluidos.has(n.id) && "line-through")}><Pessoa nome={nomeDe(n.colaboradorId)} colaboradorId={n.colaboradorId} />{idsForaDoQuadro.has(n.id) && <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] text-amber-800">fora do quadro</span>}</td>
                     <td className="td text-slate-500">
                       <span className="flex flex-wrap items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: corDoTipo(n.tipo) }} />
