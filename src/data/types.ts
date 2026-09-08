@@ -577,6 +577,23 @@ export interface Config {
    */
   vinculosSocioConta?: Record<string, string>;
   /**
+   * Lançamento que o Léo escreveu À MÃO na tela de Societárias.
+   *
+   * Existe porque nem tudo que sai para um sócio passa pelo ERP ou pelo plano
+   * do contador — e quando não passa, hoje não há onde registrar. Soma SEMPRE,
+   * seja qual for a fonte do mês, porque é o dono dizendo "isto também é meu".
+   * Por isso aparece marcado na tela: quem lê precisa saber que aquela linha
+   * não veio de sistema nenhum.
+   */
+  lancamentosSocio?: {
+    id: string;
+    socioId: string;
+    competencia: string;
+    rotulo: string;
+    valor: number;
+    criadoEm?: string;
+  }[];
+  /**
    * Vínculos que o RH OLHOU e disse "está certo" — chave do ERP → o
    * colaboradorId que foi conferido.
    *

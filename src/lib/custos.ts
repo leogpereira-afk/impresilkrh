@@ -162,6 +162,9 @@ export function planoSemIndividual(plano: ContaPlano[], m: Map<string, ClasseCus
   return !doMes.some((p) => classeDaConta(p, m) === "individual");
 }
 
+/** Valor de `vinculosSocioConta` que significa "esta conta não é de sócio nenhum". */
+export const NAO_E_DE_SOCIO = "nenhum";
+
 // Cards confidenciais: agrupa folhas por prefixo de código.
 export function confidencialDoMes(
   plano: ContaPlano[],
@@ -196,6 +199,14 @@ export function confidencialDoMes(
      também no card do prefixo antigo e o dinheiro apareceria duas vezes. */
   const doCard = (p: ContaPlano, card: { id: string; prefixos: string[] }) => {
     const escolhido = vinculos[p.codigo];
+    // QUALQUER valor apontado desliga o prefixo. É o que dá o terceiro estado:
+    // NAO_E_DE_SOCIO ("nenhum") não é id de card nenhum, então a conta sai de
+    // TODOS — é o "remover" da tela. Não escrevi um `!== NAO_E_DE_SOCIO` aqui:
+    // seria guarda que nunca dispara, e guarda morta parece proteção.
+    //
+    // O que NÃO pode acontecer é o sentinela cair de volta na régua do prefixo
+    // (um `cards.some(...)` antes daqui traria a conta de volta em silêncio).
+    // Tem teste para isso.
     if (escolhido) return escolhido === card.id;
     return card.prefixos.some((pre) => casaConta(p, pre));
   };

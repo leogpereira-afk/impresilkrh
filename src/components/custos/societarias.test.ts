@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contasCandidatas, entradasDoSocio, sociosComMovimento } from "./societarias";
+import { NAO_E_DE_SOCIO } from "@/lib/custos";
 import type { Colaborador, ContaPlano, Pagamento } from "@/data/types";
 
 const pedro = { id: "pedro-ramos", nome: "Pedro Ramos", ehDirecao: true, statusId: "direcao" } as Colaborador;
@@ -186,5 +187,73 @@ describe("contasCandidatas", () => {
   it("linha zerada não é decisão a tomar", () => {
     const r = contasCandidatas([cJul("2.11.2.2", "Leonardo", 0)], "2026-07", [leo]);
     expect(r).toEqual([]);
+  });
+});
+
+/* REMOVER E LANÇAR À MÃO (08/09/2026).
+ *
+ * Pedido do Léo: "ser possível remover se achar que não faz sentido" e "em cima
+ * um botão lançamento manual".
+ *
+ * Antes só dava para TROCAR o dono de uma conta. Faltava o terceiro estado:
+ * "esta conta não é de sócio nenhum" — o prefixo do plano puxa a conta e o Léo
+ * discorda. E faltava poder acrescentar o que não passa nem pelo ERP nem pelo
+ * plano do contador.
+ *
+ * Começa pelo caso ruim: o lançamento à mão sumir porque o mês tem plano.
+ */
+describe("remover uma conta do card", () => {
+  const leo = { id: "leonardo-goncalves", nome: "Leonardo Gonçalves", ehDirecao: true, statusId: "direcao" } as Colaborador;
+
+  it("O CASO RUIM: 'não é de sócio' não pode virar só uma troca de dono", () => {
+    // Sem o terceiro estado, tirar do Pedro jogava no Leonardo (ou vice-versa).
+    // A conta tem de sair dos DOIS.
+    const plano = [conta("2026-04", "2.14.1.2", 10539.3)];
+    const v = { "2.14.1.2": NAO_E_DE_SOCIO };
+    expect(entradasDoSocio(pedro, [], plano, "2026-04", v).total).toBe(0);
+    expect(entradasDoSocio(leo, [], plano, "2026-04", v).total).toBe(0);
+  });
+
+  it("sem apontamento nenhum, o prefixo do plano continua valendo", () => {
+    expect(entradasDoSocio(pedro, [], [conta("2026-04", "2.14.1.2", 10539.3)], "2026-04").total).toBeCloseTo(10539.3, 2);
+  });
+});
+
+describe("lançamento à mão", () => {
+  const manual = (competencia: string, valor: number, rotulo = "Retirada extra") => ({
+    id: `m${competencia}${valor}`, socioId: "pedro-ramos", competencia, rotulo, valor,
+  });
+
+  it("O CASO RUIM: soma mesmo quando o mês já vem do plano do contador", () => {
+    // Se ele só entrasse na ausência de outra fonte, o Léo escreveria a linha,
+    // ela não apareceria, e ele não saberia por quê.
+    const r = entradasDoSocio(pedro, [], [conta("2026-04", "2.14.1.2", 10539.3)], "2026-04", {}, [manual("2026-04", 500)]);
+    expect(r.fonte).toBe("plano");
+    expect(r.total).toBeCloseTo(11039.3, 2);
+    expect(r.entradas.find((e) => e.manual)?.valor).toBe(500);
+  });
+
+  it("soma também quando a fonte é o Contas a Pagar", () => {
+    const r = entradasDoSocio(pedro, [pg("2026-08", 6000)], [], "2026-08", {}, [manual("2026-08", 250)]);
+    expect(r.total).toBeCloseTo(6250, 2);
+  });
+
+  it("sozinho, ele é a fonte do mês — antes o mês ficava vazio", () => {
+    const r = entradasDoSocio(pedro, [], [], "2026-09", {}, [manual("2026-09", 1200)]);
+    expect(r.fonte).toBe("manual");
+    expect(r.total).toBe(1200);
+  });
+
+  it("lançamento de OUTRO sócio ou de outro mês não entra", () => {
+    const outros = [
+      { ...manual("2026-04", 500), socioId: "leonardo-goncalves" },
+      manual("2026-03", 900),
+    ];
+    expect(entradasDoSocio(pedro, [], [], "2026-04", {}, outros).total).toBe(0);
+  });
+
+  it("a linha à mão vem marcada — quem lê precisa saber que não veio de sistema", () => {
+    const r = entradasDoSocio(pedro, [], [], "2026-04", {}, [manual("2026-04", 500)]);
+    expect(r.entradas[0].manual).toBe(true);
   });
 });

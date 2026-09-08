@@ -745,6 +745,29 @@ export default function Custos() {
     );
   };
 
+  /**
+   * Lançamento escrito à mão na tela de Societárias.
+   *
+   * Nem tudo que sai para um sócio passa pelo ERP ou pelo plano do contador, e
+   * quando não passa não havia onde registrar. Some SEMPRE do total do mês —
+   * é o dono dizendo "isto também é meu" — e a linha fica marcada "à mão".
+   */
+  const lancarManualSocio = (l: { socioId: string; competencia: string; rotulo: string; valor: number }) => {
+    const lista = [...(config.lancamentosSocio ?? [])];
+    // Id previsível o bastante para não colidir e único o bastante para o
+    // "apagar" não pegar a linha errada.
+    const id = `ls_${l.socioId}_${l.competencia}_${lista.length + 1}_${Math.abs(Math.round(l.valor * 100))}`;
+    lista.push({ ...l, id, criadoEm: new Date().toISOString() });
+    salvarCfg({ lancamentosSocio: lista });
+    registrarAcaoManual(`Lançou à mão "${l.rotulo}" em ${compLabelLongo(l.competencia)}`, `Societárias · ${formatBRL(l.valor)}`);
+  };
+
+  const apagarManualSocio = (id: string) => {
+    const lista = (config.lancamentosSocio ?? []).filter((x) => x.id !== id);
+    salvarCfg({ lancamentosSocio: lista });
+    registrarAcaoManual(`Apagou um lançamento manual de sócio`, "Societárias");
+  };
+
   // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
   // mesma planilha de novo mostra o que é igual, o que mudou e o que é novo.
   // Aplica a prévia: mexe SÓ no que mudou (corrige valores, insere novos, atualiza
@@ -2331,6 +2354,9 @@ export default function Custos() {
                 onVincular={vincularContaSocio}
                 onSincronizar={(comp) => { void puxarPlanoDoErpEmSilencio(comp); }}
                 sincronizando={buscandoPlano}
+                manuais={config.lancamentosSocio ?? []}
+                onLancarManual={lancarManualSocio}
+                onApagarManual={apagarManualSocio}
                 compAtiva={compAtiva}
                 onEscolherMes={setComp}
               />
