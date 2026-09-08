@@ -203,10 +203,13 @@ describe("aceitar algumas, rejeitar outras", () => {
     expect(excluidosChamados).toEqual([{ id: "mubi-10", fora: true }]);
   });
 
-  it("dá para rejeitar o bloco inteiro de novos de uma vez", () => {
-    const bloco = [...document.body.querySelectorAll("label")].find((l) => /aplicar os 2 novos/.test(l.textContent ?? ""));
-    expect(bloco, "faltou o marcar/desmarcar do bloco de novos").toBeTruthy();
-    act(() => { bloco!.querySelector("input")!.click(); });
+  it("dá para aprovar o bloco inteiro SEM abrir a seção — a caixa fica no cabeçalho", () => {
+    // Tudo nasce desmarcado; se a caixa do bloco morasse dentro do <details>,
+    // aprovar as 99 linhas de texto/conta exigiria expandir tudo antes.
+    const caixa = caixaDe("Aplicar os 2 lançamentos novos");
+    expect(caixa, "a caixa do bloco de novos precisa estar no <summary>").toBeTruthy();
+    expect(caixa!.closest("summary"), "a caixa tem de ficar no cabeçalho").toBeTruthy();
+    act(() => { caixa!.click(); });
     expect(blocosChamados).toEqual([{ ids: ["mubi-10", "mubi-11"], fora: true }]);
   });
 

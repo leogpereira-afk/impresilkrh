@@ -296,6 +296,15 @@ export default function Custos() {
      caso comum; o pedido do Léo era poder tirar as duvidosas sem cancelar a
      importação inteira. */
   const [excluidos, setExcluidos] = useState<Set<string>>(new Set());
+  /* TUDO NASCE DESMARCADO — ordem do Léo em 08/09/2026: "tudo desmarcável, só
+     marcar o que é certo".
+     Antes vinha tudo marcado (opt-out), com a premissa de que a folha do mês é
+     ~140 linhas certas e meia dúzia duvidosas. Serve para quem confia na
+     importação inteira e quer só vetar exceções; não serve para quem precisa
+     conferir e aprovar aos poucos, que é o uso real — e fazia a tela parecer
+     "tudo ou nada", porque aprovar meia dúzia exigia desmarcar as outras 160.
+     "Marcar todas" continua ali para quem quiser o comportamento antigo. */
+  const jaApresentados = useRef<Set<string>>(new Set());
   // Chaves de alarme conferidas (chaveDoAlarme: tipo + quantos + valor + ids).
   // Guardar só o tipo deixava o "Conferi" de "remover 1" valendo para "remover 74".
   const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
@@ -732,6 +741,22 @@ export default function Custos() {
       foraDaFolha,
     });
   }, [folhaPrev, pagamentos, ausentesMarcados, excluidos, d.colabById]);
+
+  /* Todo item que APARECE na prévia entra desmarcado — inclusive os que só
+     surgem depois, quando um vínculo novo faz mais títulos casarem. O que o
+     Léo já marcou continua marcado: recomputar a prévia não pode desfazer a
+     conferência que ele acabou de fazer. */
+  useEffect(() => {
+    if (!folhaPrev) { jaApresentados.current = new Set(); setExcluidos(new Set()); return; }
+    const todos = [
+      ...folhaPrev.diff.alterados.map((a) => a.antigo.id),
+      ...folhaPrev.diff.novos.map((n) => n.id),
+    ];
+    const inéditos = todos.filter((id) => !jaApresentados.current.has(id));
+    if (inéditos.length === 0) return;
+    for (const id of todos) jaApresentados.current.add(id);
+    setExcluidos((antes) => new Set([...antes, ...inéditos]));
+  }, [folhaPrev]);
 
   const ultimoRetrato = useMemo(
     () => [...(recuperacoesColecao.items as RetratoFolha[])].filter((r) => !r.usado).sort((a, b) => b.em.localeCompare(a.em))[0] ?? null,

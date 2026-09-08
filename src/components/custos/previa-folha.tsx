@@ -285,8 +285,17 @@ export function PreviaFolha({
         {resumo.novos.length > 0 && (
           <details open className="rounded-xl border border-green-200">
             <summary className="cursor-pointer border-b border-green-100 bg-green-50/50 px-3 py-1.5 text-xs font-semibold text-green-800">
+              <input
+                type="checkbox"
+                className="mr-1.5 align-middle"
+                checked={resumo.novos.length - novosFora > 0}
+                ref={(el) => { if (el) el.indeterminate = novosFora > 0 && novosFora < resumo.novos.length; }}
+                onClick={(ev) => ev.stopPropagation()}
+                onChange={(ev) => onExcluirBloco(resumo.novos.map((n) => n.id), !ev.target.checked)}
+                aria-label={`Aplicar os ${resumo.novos.length} lançamentos novos`}
+              />
               Novos lançamentos · {resumo.novos.length} · {formatBRL(resumo.novos.filter((n) => !excluidos.has(n.id)).reduce((s, p) => s + (Number(p.valor) || 0), 0))}
-              {novosFora > 0 && <span className="ml-1 font-normal opacity-70">· {novosFora} fora</span>}
+              <span className="ml-1 font-normal opacity-70">· {resumo.novos.length - novosFora} marcado(s)</span>
             </summary>
             {/* REJEITAR UM LANÇAMENTO NOVO. Este bloco não tinha caixa nenhuma:
                 os novos entravam obrigatoriamente, e são o maior volume da
@@ -294,15 +303,7 @@ export function PreviaFolha({
                 como — só aplicar tudo ou cancelar tudo. A regra já sabia
                 excluí-los (previaFolha filtra `novos` pelos desmarcados); era
                 a tela que não perguntava. */}
-            <label className="flex cursor-pointer items-center gap-1.5 border-b border-black/5 px-3 py-1.5 text-[11px] text-slate-500">
-              <input
-                type="checkbox"
-                checked={resumo.novos.length - novosFora > 0}
-                ref={(el) => { if (el) el.indeterminate = novosFora > 0 && novosFora < resumo.novos.length; }}
-                onChange={(ev) => onExcluirBloco(resumo.novos.map((n) => n.id), !ev.target.checked)}
-              />
-              aplicar os {resumo.novos.length} novos
-            </label>
+
             <div className="max-h-64 overflow-y-auto">
               <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
                 {[...resumo.novos].sort((a, b) => a.competencia.localeCompare(b.competencia) || nomeDe(a.colaboradorId).localeCompare(nomeDe(b.colaboradorId), "pt-BR")).map((n) => (
@@ -394,26 +395,30 @@ function GrupoDeMudanca({ grupo, nomeDe, onExcluir, onExcluirBloco }: {
   const cab = silencioso ? "bg-slate-50/60 text-slate-700 border-slate-100" : grupo.natureza === "valor" ? "bg-blue-50/50 text-blue-800 border-blue-100" : "bg-amber-50/50 text-amber-900 border-amber-100";
   return (
     <details open={!silencioso} className={cn("rounded-xl border", tom)}>
+      {/* A CAIXA DO BLOCO MORA NO CABEÇALHO, e não lá dentro.
+          Tudo nasce desmarcado ("tudo desmarcável, só marcar o que é certo"),
+          e o bloco silencioso vem recolhido — são 99 linhas de texto e conta.
+          Com a caixa aqui, dá para aprovar um bloco inteiro sem abri-lo, e
+          abrir só o que se quer escolher item a item. O stopPropagation existe
+          porque clicar no cabeçalho é o que abre e fecha a sanfona: sem ele,
+          marcar o bloco recolhia a seção na cara de quem clicou. */}
       <summary className={cn("cursor-pointer border-b px-3 py-1.5 text-xs font-semibold", cab)}>
-        {ROTULO[grupo.natureza]} · {grupo.itens.length}
-        {grupo.natureza === "valor" && ` · ${sinal(grupo.deltaValor)}`}
-        {silencioso && <span className="ml-1 font-normal opacity-70">· não conta no botão</span>}
-        {dentro !== grupo.itens.length && (
-          <span className="ml-1 font-normal opacity-70">· {grupo.itens.length - dentro} fora</span>
-        )}
-      </summary>
-      {/* Escolher o que aplicar. Opt-OUT: vem tudo marcado, porque a folha do
-          mês são ~140 linhas certas e meia dúzia duvidosas — pedir para marcar
-          uma a uma trocaria um atrito por outro pior. */}
-      <label className="flex cursor-pointer items-center gap-1.5 border-b border-black/5 px-3 py-1.5 text-[11px] text-slate-500">
         <input
           type="checkbox"
+          className="mr-1.5 align-middle"
           checked={dentro > 0}
           ref={(el) => { if (el) el.indeterminate = dentro > 0 && dentro < grupo.itens.length; }}
+          onClick={(ev) => ev.stopPropagation()}
           onChange={(ev) => onExcluirBloco(ids, !ev.target.checked)}
+          aria-label={`Aplicar as ${grupo.itens.length} de ${ROTULO[grupo.natureza]}`}
         />
-        aplicar as {grupo.itens.length} deste bloco
-      </label>
+        {ROTULO[grupo.natureza]} · {grupo.itens.length}
+        {grupo.natureza === "valor" && ` · ${sinal(grupo.deltaValor)}`}
+        {silencioso && <span className="ml-1 font-normal opacity-70">· não muda valor</span>}
+        <span className="ml-1 font-normal opacity-70">
+          · {dentro} marcada(s)
+        </span>
+      </summary>
       <div className="max-h-64 overflow-y-auto">
         <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
           {grupo.itens.map(({ antigo, novo, muds, fora }) => (
