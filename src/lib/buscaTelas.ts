@@ -54,7 +54,10 @@ export const APELIDOS: Record<string, string[]> = {
   "/mensagens": ["whatsapp", "disparo", "mensagem", "enviar"],
   "/relatorios": ["relatorio", "indicador", "numero"],
   "/aceites": ["termo", "aceite", "assinatura", "codigo de etica"],
-  "/painel-controle": ["configuracao", "ajuste", "backup", "ciclo", "modelo"],
+  // "duplicado"/"repetido"/"orfao" levam à aba Cadastros, que mora aqui: quem
+  // vai atrás disso procura pelo problema ("tem gente duplicada"), não pelo
+  // nome da tela em que o problema se resolve.
+  "/painel-controle": ["configuracao", "ajuste", "backup", "ciclo", "modelo", "cadastro", "duplicado", "duplicidade", "repetido", "ficha repetida", "orfao", "apagar cadastro", "excluir cadastro"],
   "/lgpd": ["lgpd", "acesso", "auditoria", "log", "privacidade"],
   "/calendario": ["calendario", "agenda", "data"],
   "/painel": ["inicio", "home", "resumo", "visao geral"],

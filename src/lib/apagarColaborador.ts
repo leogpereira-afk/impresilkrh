@@ -17,14 +17,24 @@
 // Nada aqui apaga. Este módulo só INVENTARIA e diz o que fazer; quem executa é
 // a tela, com o clique da pessoa.
 
-/** Coleções que guardam registros de UMA pessoa, por `colaboradorId`. */
-export const COLECOES_DA_PESSOA = [
-  "pagamentos", "documentos", "movimentacoes", "ferias", "ausencias", "pontos",
-  "treinamentos", "avaliacoes", "metas", "pdis", "advertencias", "certificacoesNr",
-  "feedbacks", "aceites", "consentimentos", "evolucao", "tarefas", "agendamentos",
-  "fechamentos", "lancamentos", "viagens", "contatos", "respostasPesquisa", "acessos",
-] as const;
-export type ColecaoDaPessoa = (typeof COLECOES_DA_PESSOA)[number];
+// A LISTA NÃO MORA MAIS AQUI (07/09/2026). A cópia à mão que ficava neste
+// arquivo divergia das outras duas em três pontos, e cada um era um defeito:
+//
+//   - listava `agendamentos`, que NÃO tem `colaboradorId` — item morto, nunca
+//     contou nada;
+//   - não conhecia `usuarios` nem `candidatos` — apagar pela ficha deixava a
+//     CONTA DE LOGIN viva apontando para um id morto (login que entra e tela
+//     que não acha o nome) e a candidatura interna órfã;
+//   - listava `acessos` como registro DA PESSOA, então o botão apagava a
+//     trilha de auditoria — append-only por desenho — e ainda mandava lápide
+//     para a nuvem. De quebra, as 3 a 10 linhas de trilha de uma ficha
+//     repetida entravam no total e faziam uma ficha VAZIA exigir digitar o
+//     nome, com o aviso "Somem 10 registro(s)" — número falso.
+//
+// Agora vem de lib/cadastrosDuplicados.ts, conferida contra data/types.ts por
+// teste. Aqui ficam só os rótulos e as regras de aviso.
+export { COLECOES_DA_PESSOA, COLECOES_TRILHA, COLECOES_CONTA } from "./cadastrosDuplicados";
+import { COLECOES_DA_PESSOA, COLECOES_TRILHA, COLECOES_CONTA } from "./cadastrosDuplicados";
 
 /** Nome que a pessoa lê, por coleção. "pdis" não diz nada a ninguém. */
 export const ROTULO_COLECAO: Record<string, string> = {
@@ -45,13 +55,15 @@ export const ROTULO_COLECAO: Record<string, string> = {
   consentimentos: "consentimentos (LGPD)",
   evolucao: "etapas de evolução",
   tarefas: "tarefas",
-  agendamentos: "agendamentos",
   fechamentos: "fechamentos de folha variável",
   lancamentos: "lançamentos de folha variável",
   viagens: "viagens",
   contatos: "contatos de emergência",
   respostasPesquisa: "respostas de pesquisa",
-  acessos: "registros de acesso",
+  candidatos: "candidaturas a vaga",
+  usuarios: "contas de acesso ao sistema",
+  acessos: "registros de acesso (trilha)",
+  alteracoes: "linhas de histórico (trilha)",
 };
 
 export interface LinhaDoInventario {
@@ -84,12 +96,23 @@ export interface InventarioDaPessoa {
    * outro.
    */
   apontamPraEla: QuemAponta[];
+  /**
+   * Trilha (auditoria e histórico): NÃO é apagada. Fica apontando para o id
+   * que saiu — é assim que se guarda o que aconteceu. Aparece no aviso como
+   * "fica", nunca como "some", e não entra no `total`.
+   */
+  trilha: LinhaDoInventario[];
+  /**
+   * Contas de login desta pessoa. Impedimento, não aviso: apagar a ficha
+   * deixaria a conta apontando para um id morto.
+   */
+  contas: LinhaDoInventario[];
 }
 
 /** Coleções cujos registros têm valor em dinheiro. */
 const COM_DINHEIRO = new Set(["pagamentos", "lancamentos", "fechamentos", "viagens"]);
 
-type Registro = { colaboradorId?: string | null };
+type Registro = { colaboradorId?: string | null; ativo?: boolean };
 type Pessoa = { id: string; nome: string; gestorId?: string | null; padrinhoId?: string | null };
 
 /**
@@ -121,6 +144,20 @@ export function inventarioDaPessoa(
   // Do maior para o menor: o número que assusta tem de estar no topo.
   linhas.sort((a, b) => b.quantidade - a.quantidade || a.rotulo.localeCompare(b.rotulo, "pt-BR"));
 
+  // Trilha e conta de login contadas à parte — nem somem nem entram no total.
+  const contarFora = (colecoes: readonly string[]): LinhaDoInventario[] => {
+    const fora: LinhaDoInventario[] = [];
+    for (const colecao of colecoes) {
+      // Conta DESATIVADA não entra: senão o aviso "desative a conta antes"
+      // vira beco sem saída — desativar marca `ativo: false` e não apaga a
+      // linha, e a ficha nunca mais poderia ser apagada.
+      const quantidade = (porColecao[colecao] ?? [])
+        .filter((r) => r?.colaboradorId === colaboradorId && r?.ativo !== false).length;
+      if (quantidade > 0) fora.push({ colecao, rotulo: ROTULO_COLECAO[colecao] ?? colecao, quantidade, temDinheiro: false });
+    }
+    return fora;
+  };
+
   const apontamPraEla: QuemAponta[] = [];
   for (const c of colaboradores) {
     if (c.id === colaboradorId) continue;
@@ -136,6 +173,8 @@ export function inventarioDaPessoa(
     total: linhas.reduce((s, l) => s + l.quantidade, 0),
     totalComDinheiro: linhas.filter((l) => l.temDinheiro).reduce((s, l) => s + l.quantidade, 0),
     apontamPraEla,
+    trilha: contarFora(COLECOES_TRILHA),
+    contas: contarFora(COLECOES_CONTA),
   };
 }
 
@@ -154,16 +193,41 @@ export function resumoDoQueSome(inv: InventarioDaPessoa): string {
   return `Somem ${inv.total} registro(s): ${lista}.${dinheiro}`;
 }
 
-/** Vale exigir que a pessoa digite o nome para confirmar? */
-export function exigeDigitarNome(inv: InventarioDaPessoa): boolean {
+/**
+ * A conta de login segura a exclusão.
+ *
+ * Sem isto, apagar a ficha deixava a linha de `usuarios` apontando para um id
+ * morto: a pessoa continua entrando no sistema e nenhuma tela acha o nome
+ * dela. A aba Cadastros já barrava; a ficha ignorava. Duas portas para o mesmo
+ * ato davam respostas diferentes.
+ */
+export function impedimentoParaApagar(inv: InventarioDaPessoa): string | null {
+  const contas = inv.contas.reduce((s, l) => s + l.quantidade, 0);
+  if (contas === 0) return null;
+  return `${contas} conta(s) de acesso ao sistema apontam para esta ficha — desative em Painel de Controle → Usuários e Permissões antes de apagar.`;
+}
+
+/** Vale exigir que a pessoa digite algo para confirmar? */
+export function exigeDigitarProva(inv: InventarioDaPessoa): boolean {
   // Ficha com dinheiro ou com histórico grande não pode sair num clique de
   // reflexo. Ficha vazia (recadastro duplicado) não merece esse atrito.
   return inv.totalComDinheiro > 0 || inv.total >= 10;
 }
 
-/** Confere o que a pessoa digitou contra o nome, sem implicar com acento e caixa. */
-export function nomeConfere(digitado: string, nome: string): boolean {
-  const n = (s: string) =>
-    s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-  return n(digitado) !== "" && n(digitado) === n(nome);
+/**
+ * A prova que se digita para apagar é o ID, não o nome.
+ *
+ * Era o nome, e o nome NÃO PROVA NADA justamente no caso em que este botão mais
+ * é usado: ficha repetida. Há três fichas "José Adilando Pereira" e três
+ * "Dermeval Vieira" no cadastro — quem abre a errada e digita o nome passa na
+ * conferência igualzinho, e o clique apaga os 31 pagamentos da ficha boa. O id
+ * é o que distingue uma da outra ("jose-adilando-pereira" ×
+ * "jose-adilando-pereira-2"), e é a regra da casa: id manda, nome só exibe.
+ *
+ * Continua tolerante com espaço sobrando e caixa — o que não dá é aceitar uma
+ * coisa por outra.
+ */
+export function provaConfere(digitado: string, colaboradorId: string): boolean {
+  const n = (s: string) => String(s ?? "").trim().toLowerCase();
+  return n(digitado) !== "" && n(digitado) === n(colaboradorId);
 }

@@ -84,7 +84,16 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
 
   const lancDe = (colId: string) => lancamentos.filter((l) => l.colaboradorId === colId && l.competencia === competencia);
   const totalDe = (colId: string) => lancDe(colId).reduce((s, l) => s + (Number(l.valor) || 0), 0);
-  const fechDe = (colId: string) => fechamentos.find((f) => f.id === `${competencia}::${colId}`);
+  /* O FECHAMENTO SE ACHA PELO DONO, NÃO PELO ID.
+     O id nasce como "<competência>::<colaboradorId>", e isso funcionava
+     enquanto o dono nunca mudava. Só que a aba Cadastros transfere o que está
+     pendurado numa ficha repetida para a ficha boa — e transferir muda o
+     `colaboradorId`, nunca o id (mudar id é apagar e recriar, e apagar deixa
+     lápide). Procurando pelo id, o mês transferido some da tela: aparece como
+     NÃO aprovado, e aprovar de novo criava um SEGUNDO fechamento do mesmo mês
+     para a mesma pessoa — o "mês em dobro" que a transferência existe para
+     evitar. Pelo dono, o registro transferido é encontrado. */
+  const fechDe = (colId: string) => fechamentos.find((f) => f.colaboradorId === colId && f.competencia === competencia);
 
   const totalGeral = escopo.reduce((s, c) => s + totalDe(c.id), 0);
   const aprovados = escopo.filter((c) => fechDe(c.id)?.aprovado).length;
@@ -239,10 +248,15 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
             // Gestor não aprova a própria verba: a equipe começa por ele mesmo
             // no organograma, mas a aprovação da verba dele é do RH.
             if (sessao?.perfil === "GESTOR" && aberto.id === sessao.colaboradorId) { toast("A sua própria folha variável é aprovada pelo RH.", "erro"); return; }
-            const id = `${competencia}::${aberto.id}`;
+            // Reaproveita o id do fechamento QUE JÁ EXISTE para esta pessoa
+            // neste mês — inclusive um que veio transferido de outra ficha e
+            // cujo id ainda carrega o dono antigo. Gravar num id novo criaria o
+            // mês em dobro.
+            const existente = fechamentos.find((f) => f.colaboradorId === aberto.id && f.competencia === competencia);
+            const id = existente?.id ?? `${competencia}::${aberto.id}`;
             const agora = new Date().toISOString();
             const base = { id, colaboradorId: aberto.id, competencia, aprovado: aprovar, aprovadoPor: sessao?.colaboradorId, aprovadoEm: aprovar ? agora : null, atualizadoEm: agora };
-            if (fechamentos.some((f) => f.id === id)) atualizarFech(id, base); else criarFech(base);
+            if (existente) atualizarFech(id, base); else criarFech(base);
             toast(aprovar ? "Folha aprovada — vai no 1º pagamento do mês." : "Aprovação removida.");
           }}
           toast={toast}

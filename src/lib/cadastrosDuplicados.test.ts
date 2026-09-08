@@ -13,6 +13,7 @@ import fs from "node:fs";
 import {
   tokensDoNome, nomeNormalizado, semelhanca, erroDeDigitacao, lacoEntre,
   aproximarCadastros, quemFica, avaliarExclusao, planoDeTransferencia,
+  planoDeExclusao, orfaosDeCadastro, sugerirDono,
   COLECOES_DA_PESSOA, COLECOES_TRILHA, COLECOES_CONTA, CONTAGEM_VAZIA,
   type FichaResumo, type ContagemFicha,
 } from "./cadastrosDuplicados";
@@ -415,5 +416,210 @@ describe("a lista de coleções cobre TUDO que aponta para uma pessoa", () => {
   it("uma coleção não pode estar em duas listas ao mesmo tempo", () => {
     const todas = [...COLECOES_DA_PESSOA, ...COLECOES_TRILHA, ...COLECOES_CONTA];
     expect(new Set(todas).size).toBe(todas.length);
+  });
+});
+
+describe("apagar de verdade: o que some junto com a ficha", () => {
+  /* Esta suíte existe por um defeito achado na revisão adversarial de
+     07/09/2026: o aviso da tela listava "31 lançamento(s) da folha" sob o
+     título "Some junto com a ficha" e o clique fazia SÓ `remover(ficha.id)`.
+     Os 31 pagamentos continuavam no banco apontando para um id inexistente —
+     invisíveis (toda tela busca o nome pelo id) e ainda somando no custo do
+     mês. Texto e código diziam coisas opostas. */
+  const registros = {
+    pagamentos: [
+      { id: "p1", colaboradorId: "ruim" },
+      { id: "p2", colaboradorId: "ruim" },
+      { id: "p3", colaboradorId: "boa" },
+    ],
+    documentos: [{ id: "d1", colaboradorId: "ruim" }],
+    acessos: [{ id: "a1", colaboradorId: "ruim" }, { id: "a2", colaboradorId: "ruim" }],
+    alteracoes: [{ id: "h1", colaboradorId: "ruim" }],
+    usuarios: [{ id: "u1", colaboradorId: "ruim" }],
+  };
+
+  it("o que o aviso diz que some, some — e nada de terceiro vai junto", () => {
+    const p = planoDeExclusao("ruim", registros);
+    expect(p.apagar.find((a) => a.colecao === "pagamentos")!.ids).toEqual(["p1", "p2"]);
+    expect(p.apagar.find((a) => a.colecao === "documentos")!.ids).toEqual(["d1"]);
+    expect(p.total).toBe(3);
+  });
+
+  it("trilha e conta de login NÃO são apagadas — aparecem como o que fica", () => {
+    const p = planoDeExclusao("ruim", registros);
+    for (const c of [...COLECOES_TRILHA, ...COLECOES_CONTA]) {
+      expect(p.apagar.some((a) => a.colecao === c), `${c} não podia ser apagada`).toBe(false);
+    }
+    expect(p.deixar).toEqual([
+      { colecao: "acessos", quantidade: 2 },
+      { colecao: "alteracoes", quantidade: 1 },
+      { colecao: "usuarios", quantidade: 1 },
+    ]);
+  });
+
+  it("o total do plano bate com o que avaliarExclusao promete perder", () => {
+    // É a conferência que o defeito quebrava: a soma do aviso e a soma do que
+    // o clique apaga têm de ser o mesmo número.
+    const p = planoDeExclusao("ruim", registros);
+    const c = { ...CONTAGEM_VAZIA, lancamentos: 2, dados: 1, trilha: 3, contas: 1 };
+    expect(p.total).toBe(c.lancamentos + c.dados);
+  });
+
+  it("ficha vazia (só trilha) não apaga nada além dela mesma", () => {
+    const p = planoDeExclusao("so-trilha", { acessos: [{ id: "a9", colaboradorId: "so-trilha" }] });
+    expect(p.apagar).toEqual([]);
+    expect(p.total).toBe(0);
+    expect(p.deixar).toEqual([{ colecao: "acessos", quantidade: 1 }]);
+  });
+
+  it("id vazio não apaga nada — nem por engano", () => {
+    expect(planoDeExclusao("", registros)).toEqual({ apagar: [], deixar: [], total: 0 });
+  });
+});
+
+describe("órfão: registro cujo dono não existe mais", () => {
+  /* Em 29/07/2026, dos 102 órfãos do RH, 16 eram dado REAL de gente da casa
+     com o id levemente errado — apagar teria perdido 13 tarefas da Candida.
+     Por isso aqui nada apaga: aponta, mede a semelhança e sugere reconectar. */
+  const FICHAS: FichaResumo[] = [
+    ficha("candida-eliza-david-barros", "Candida Eliza David Barros"),
+    ficha("douglas-thiago-silva-siqueira", "Douglas Thiago Silva Siqueira"),
+    ficha("ricardo-soares-rocha", "Ricardo Soares Rocha"),
+  ];
+
+  it("acha o registro pendurado num id que não é ficha de ninguém", () => {
+    const o = orfaosDeCadastro(
+      {
+        tarefas: [{ id: "t1", colaboradorId: "candida-elia-david-barros" }, { id: "t2", colaboradorId: "candida-elia-david-barros" }],
+        pagamentos: [{ id: "p1", colaboradorId: "candida-eliza-david-barros" }],
+      },
+      FICHAS,
+    );
+    expect(o).toHaveLength(1);
+    expect(o[0].dono).toBe("candida-elia-david-barros");
+    expect(o[0].quantidade).toBe(2);
+    expect(o[0].porColecao).toEqual([{ colecao: "tarefas", quantidade: 2 }]);
+  });
+
+  /* NENHUMA MEDIDA DE DISTÂNCIA SEPARA ESTES TRÊS CASOS — o primeiro desenho
+     de `sugerirDono` media Levenshtein entre os ids e aceitava acima de 0,8; o
+     teste derrubou na hora:
+
+       douglas-thiago-silva × ...-siqueira    0,69 lev / 0,82 difflib — MESMA
+       jose-adilando        × ...-pereira     0,62 lev / 0,77 difflib — MESMA
+       reinaldo-barbosa-…   × ronaldo-…       0,92 lev / 0,94 difflib — DUAS
+
+     O falso positivo pontua MAIS ALTO que os dois achados, nas duas réguas.
+     Por isso quem decide é `lacoEntre`, pela FORMA da diferença. */
+  it("sobrenome truncado é reconexão de certeza ALTA — o id cabe dentro do outro", () => {
+    const s = sugerirDono("douglas-thiago-silva", FICHAS)!;
+    expect(s.id).toBe("douglas-thiago-silva-siqueira");
+    expect(s.certeza).toBe("alta");
+    expect(s.motivo).toContain("cabe dentro");
+  });
+
+  it("id gerado a partir de nome incompleto também: “jose-adilando”", () => {
+    const s = sugerirDono("jose-adilando", [ficha("jose-adilando-pereira", "José Adilando Pereira")])!;
+    expect(s.id).toBe("jose-adilando-pereira");
+    expect(s.certeza).toBe("alta");
+  });
+
+  it("Candida Eli(z)a vem como MÉDIA: aponta e pergunta, não reconecta sozinha", () => {
+    const o = orfaosDeCadastro({ tarefas: [{ id: "t1", colaboradorId: "candida-elia-david-barros" }] }, FICHAS);
+    expect(o[0].sugestao!.id).toBe("candida-eliza-david-barros");
+    expect(o[0].sugestao!.certeza).toBe("media");
+  });
+
+  it("Reinaldo × Ronaldo NUNCA sai como alta — são duas pessoas", () => {
+    const s = sugerirDono("reinaldo-barbosa-de-moura", [ficha("ronaldo-barbosa-de-moura", "Ronaldo Barbosa de Moura")]);
+    expect(s?.certeza).not.toBe("alta");
+  });
+
+  it("id sem nada a ver não sugere ninguém", () => {
+    expect(sugerirDono("tiago-mendes-rocha", FICHAS)).toBeNull();
+    // Id gerado pela máquina não tem nome dentro — não dá para adivinhar.
+    expect(sugerirDono("colaboradores_43ha4hms17l", FICHAS)).toBeNull();
+  });
+
+  it("empate na mesma certeza não escolhe: é caso de perguntar", () => {
+    const gemeas = [ficha("fulano-silva-souza", "Fulano Silva Souza"), ficha("fulano-silva-costa", "Fulano Silva Costa")];
+    expect(sugerirDono("fulano-silva", gemeas)).toBeNull();
+  });
+
+  it("marca quem tem dinheiro no meio — é o que dói mais perder", () => {
+    const o = orfaosDeCadastro(
+      {
+        pagamentos: [{ id: "p1", colaboradorId: "quem-saiu" }],
+        tarefas: [{ id: "t1", colaboradorId: "outro-que-saiu" }],
+      },
+      FICHAS,
+    );
+    expect(o.find((x) => x.dono === "quem-saiu")!.temDinheiro).toBe(true);
+    expect(o.find((x) => x.dono === "outro-que-saiu")!.temDinheiro).toBe(false);
+  });
+
+  it("TRILHA não vira órfão: acessos e alterações apontam para quem saiu de propósito", () => {
+    const o = orfaosDeCadastro(
+      {
+        acessos: [{ id: "a1", colaboradorId: "gente-que-saiu-de-verdade" }],
+        alteracoes: [{ id: "h1", colaboradorId: "gente-que-saiu-de-verdade" }],
+      },
+      FICHAS,
+    );
+    expect(o).toEqual([]);
+  });
+
+  it("ponto sem dono não é órfão — é página do PDF que ainda não casou", () => {
+    const o = orfaosDeCadastro(
+      { pontos: [{ id: "x1", colaboradorId: null }, { id: "x2", colaboradorId: "" }, { id: "x3", colaboradorId: "   " }] },
+      FICHAS,
+    );
+    expect(o).toEqual([]);
+  });
+
+  it("base sem órfão devolve lista vazia, e sem ficha nenhuma não quebra", () => {
+    expect(orfaosDeCadastro({ pagamentos: [{ id: "p1", colaboradorId: "ricardo-soares-rocha" }] }, FICHAS)).toEqual([]);
+    expect(sugerirDono("qualquer-coisa", [])).toBeNull();
+    expect(sugerirDono("", FICHAS)).toBeNull();
+  });
+
+  it("o maior vem primeiro: é o que mais dói alguém apagar sem olhar", () => {
+    const o = orfaosDeCadastro(
+      {
+        tarefas: [{ id: "t1", colaboradorId: "um" }],
+        pagamentos: [{ id: "p1", colaboradorId: "dois" }, { id: "p2", colaboradorId: "dois" }, { id: "p3", colaboradorId: "dois" }],
+      },
+      FICHAS,
+    );
+    expect(o.map((x) => x.dono)).toEqual(["dois", "um"]);
+  });
+});
+
+describe("as três listas de coleções são a MESMA lista", () => {
+  /* "Lista copiada falha calada": até 07/09/2026 havia três cópias à mão do
+     que está pendurado numa pessoa, e as três divergiam —
+     vinculos.ts não conhecia pontos/lancamentos/fechamentos/alteracoes (o
+     Organograma apagava de vez quem só tinha ponto e folha variável, achando
+     a ficha vazia), e apagarColaborador.ts listava `agendamentos`, que nem
+     tem colaboradorId, e não conhecia usuarios/candidatos/alteracoes.
+     Agora as duas importam daqui; este teste reprova se alguém recriar uma. */
+  const leia = (caminho: string) => fs.readFileSync(caminho, "utf8");
+
+  it("vinculos.ts não mantém lista própria de coleções", () => {
+    const src = leia("src/lib/vinculos.ts");
+    expect(src).toContain("cadastrosDuplicados");
+    expect(src).not.toMatch(/colecao:\s*"pagamentos"/);
+  });
+
+  it("apagarColaborador.ts não mantém lista própria de coleções", () => {
+    const src = leia("src/lib/apagarColaborador.ts");
+    expect(src).toContain("cadastrosDuplicados");
+    expect(src).not.toMatch(/export const COLECOES_DA_PESSOA\s*=\s*\[/);
+  });
+
+  it("e ninguém lista `agendamentos` como coleção de pessoa — ela não tem colaboradorId", () => {
+    for (const arquivo of ["src/lib/cadastrosDuplicados.ts", "src/lib/apagarColaborador.ts", "src/lib/vinculos.ts"]) {
+      expect(leia(arquivo).includes('"agendamentos"'), arquivo).toBe(false);
+    }
   });
 });

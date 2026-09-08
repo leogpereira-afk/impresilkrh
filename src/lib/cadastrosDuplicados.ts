@@ -540,3 +540,168 @@ export function planoDeTransferencia(
 
   return { mover, conflitos, ficam, total: mover.reduce((s, m) => s + m.ids.length, 0) };
 }
+
+// ---------------------------------------------------------------------------
+// Apagar de verdade: o que some junto
+// ---------------------------------------------------------------------------
+
+export interface PlanoExclusao {
+  /** O que é apagado junto com a ficha, coleção por coleção. */
+  apagar: MudancaDeDono[];
+  /** O que NÃO é apagado e passa a apontar para um id que não existe. */
+  deixar: { colecao: string; quantidade: number }[];
+  /** Quantos registros da pessoa somem (fora a ficha). */
+  total: number;
+}
+
+/**
+ * O que some junto com a ficha — e o que fica.
+ *
+ * Existe porque a tela ESTAVA MENTINDO. O aviso listava "31 lançamento(s) da
+ * folha" sob o título "Some junto com a ficha", e o clique fazia só
+ * `remover(ficha.id)`: os 31 pagamentos continuavam no banco apontando para um
+ * id que não existe mais — invisíveis em toda tela (todas buscam o nome pelo
+ * id) e ainda somando no custo do mês. O pior dos dois mundos: parece apagado
+ * e continua contando.
+ *
+ * A regra agora é: o que o aviso diz que some, some. Trilha (acessos,
+ * alterações) e conta de login ficam de fora de propósito — trilha é
+ * testemunho do que aconteceu e não se reescreve, e conta de login é
+ * impedimento, tratado antes em `avaliarExclusao`.
+ */
+export function planoDeExclusao(deId: string, registros: Record<string, RegistroPendurado[]>): PlanoExclusao {
+  const apagar: MudancaDeDono[] = [];
+  const deixar: { colecao: string; quantidade: number }[] = [];
+  if (!deId) return { apagar: [], deixar: [], total: 0 };
+
+  for (const colecao of COLECOES_DA_PESSOA) {
+    const ids = (registros[colecao] ?? []).filter((r) => r.colaboradorId === deId).map((r) => r.id);
+    if (ids.length) apagar.push({ colecao, ids });
+  }
+  for (const colecao of [...COLECOES_TRILHA, ...COLECOES_CONTA]) {
+    const n = (registros[colecao] ?? []).filter((r) => r.colaboradorId === deId).length;
+    if (n > 0) deixar.push({ colecao, quantidade: n });
+  }
+  return { apagar, deixar, total: apagar.reduce((s, a) => s + a.ids.length, 0) };
+}
+
+// ---------------------------------------------------------------------------
+// Órfão: registro cujo dono não existe mais
+// ---------------------------------------------------------------------------
+
+export interface DonoSugerido {
+  id: string;
+  nome: string;
+  /** "alta" = reconectar com um clique. "media" = mostrar e perguntar. */
+  certeza: Certeza;
+  motivo: string;
+}
+
+export interface Orfao {
+  /** O `colaboradorId` que não existe em ficha nenhuma. */
+  dono: string;
+  quantidade: number;
+  porColecao: { colecao: string; quantidade: number }[];
+  /** Tem pagamento no meio — o que dói mais perder. */
+  temDinheiro: boolean;
+  /** A ficha viva mais parecida com este id, quando passa do limite. */
+  sugestao: DonoSugerido | null;
+}
+
+/** Coleções cujo registro carrega valor em R$. */
+const COM_DINHEIRO = new Set<string>(["pagamentos", "lancamentos", "fechamentos", "viagens"]);
+
+/**
+ * Registros pendurados num id que não é ficha de ninguém.
+ *
+ * Lição de 29/07/2026, e é o motivo de esta função sugerir em vez de apagar:
+ * dos 102 órfãos do RH, **16 eram dado real de gente da casa** — o id estava
+ * levemente errado (`candida-elia-david-barros` para uma Candida Eli**za**,
+ * sobrenome truncado em dois outros). Apagar teria perdido 13 tarefas de uma
+ * pessoa que trabalha aqui. 20 eram lixo de verdade e 66 eram das 8 pessoas
+ * realmente excluídas.
+ *
+ * Por isso: **reconectar vem antes de apagar, nunca o contrário.** A sugestão
+ * sai por semelhança entre os IDs (≥ 0,8), e vem com o número na tela porque
+ * na faixa de 0,63 a 0,65 já deu falso positivo (`tiago-mendes-rocha` ×
+ * `ricardo-soares-rocha`).
+ *
+ * Trilha não entra: `acessos` e `alteracoes` são append-only por desenho e
+ * seguem apontando para quem saiu — é assim que se guarda o que aconteceu.
+ * `Ponto.colaboradorId` nulo também não entra: não é órfão, é página do PDF
+ * que ainda não casou com ninguém, e quem resolve isso é a tela do ponto.
+ */
+export function orfaosDeCadastro(
+  registros: Record<string, RegistroPendurado[]>,
+  fichas: FichaResumo[],
+): Orfao[] {
+  const vivos = new Map(fichas.map((f) => [f.id, f]));
+  const porDono = new Map<string, Map<string, number>>();
+
+  for (const colecao of COLECOES_DA_PESSOA) {
+    for (const r of registros[colecao] ?? []) {
+      const dono = String(r.colaboradorId ?? "").trim();
+      if (!dono || vivos.has(dono)) continue;
+      const mapa = porDono.get(dono) ?? new Map<string, number>();
+      mapa.set(colecao, (mapa.get(colecao) ?? 0) + 1);
+      porDono.set(dono, mapa);
+    }
+  }
+
+  const orfaos: Orfao[] = [];
+  for (const [dono, mapa] of porDono) {
+    const porColecao = [...mapa.entries()]
+      .map(([colecao, quantidade]) => ({ colecao, quantidade }))
+      .sort((a, b) => b.quantidade - a.quantidade || a.colecao.localeCompare(b.colecao));
+    orfaos.push({
+      dono,
+      quantidade: porColecao.reduce((s, c) => s + c.quantidade, 0),
+      porColecao,
+      temDinheiro: porColecao.some((c) => COM_DINHEIRO.has(c.colecao)),
+      sugestao: sugerirDono(dono, fichas),
+    });
+  }
+  // O maior primeiro: é o que mais dói se alguém apagar sem olhar.
+  return orfaos.sort((a, b) => b.quantidade - a.quantidade || a.dono.localeCompare(b.dono));
+}
+
+/**
+ * A ficha viva que provavelmente é o dono do registro órfão.
+ *
+ * A PRIMEIRA versão disto media a distância entre os ids (Levenshtein) e
+ * aceitava acima de 0,8. O teste derrubou na hora, e o número explica por quê:
+ *
+ *   douglas-thiago-silva × ...-siqueira   0,69   — a MESMA pessoa (truncado)
+ *   jose-adilando        × ...-pereira    0,62   — a MESMA pessoa
+ *   reinaldo-barbosa-de-moura × ronaldo-… 0,92   — DUAS pessoas
+ *
+ * O falso positivo pontua mais alto que os dois achados. Trocar Levenshtein
+ * por SequenceMatcher não resolve (0,816 · 0,765 · 0,939 — mesma inversão):
+ * NENHUMA medida de distância separa isto, porque o que distingue não é o
+ * tamanho da diferença, é a FORMA dela. É a mesma armadilha de `lacoEntre`, e
+ * a saída é a mesma — só que aqui eu caí nela de novo, agora com ids.
+ *
+ * Então: o id é derivado do nome, e desfazer isso é trocar hífen por espaço.
+ * Feito isso, quem decide é `lacoEntre` — a régua já conferida contra as 93
+ * fichas reais. "Contido" (sobrenome truncado) e "letras trocadas" saem com
+ * certeza alta; "quase igual" sai como média e vai para a tela como pergunta,
+ * não como sugestão. Empate não escolhe: duas fichas igualmente prováveis é
+ * caso de perguntar.
+ */
+export function sugerirDono(idOrfao: string, fichas: FichaResumo[]): DonoSugerido | null {
+  const alvo = String(idOrfao ?? "").trim();
+  if (!alvo) return null;
+  // O id vira de novo o nome que o gerou: "jose-adilando" → "jose adilando".
+  const comoNome: FichaResumo = { id: alvo, nome: alvo.replace(/[-_]+/g, " ") };
+  const notas = fichas
+    .map((f) => ({ ficha: f, laco: lacoEntre(comoNome, f) }))
+    .filter((n): n is { ficha: FichaResumo; laco: Laco } => n.laco !== null)
+    .sort((a, b) =>
+      (a.laco.certeza === b.laco.certeza ? 0 : a.laco.certeza === "alta" ? -1 : 1) ||
+      a.ficha.id.localeCompare(b.ficha.id),
+    );
+  if (!notas.length) return null;
+  if (notas.length > 1 && notas[1].laco.certeza === notas[0].laco.certeza) return null;
+  const { ficha, laco } = notas[0];
+  return { id: ficha.id, nome: ficha.nome, certeza: laco.certeza, motivo: laco.explicacao };
+}

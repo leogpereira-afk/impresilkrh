@@ -295,6 +295,11 @@ export default function Organograma() {
   // Sem memo de propósito: só roda quando o aviso está aberto (uma pessoa por vez)
   // e precisa refletir o estado do momento em que a decisão é tomada.
   const vinculosAlvo = removerAlvo ? vinculosDoColaborador(removerAlvo.id) : null;
+  // O que segura a exclusão: registro DA PESSOA ou conta de login. Trilha não
+  // segura — ela aponta para quem saiu de propósito. Escrito assim (e não como
+  // soma de `?? 0`) porque é este `&&` que faz o TypeScript saber, lá embaixo,
+  // que `vinculosAlvo` não é nulo quando `resumirVinculos` é chamado.
+  const alvoTemHistorico = !!vinculosAlvo && (vinculosAlvo.total > 0 || vinculosAlvo.contas > 0);
 
   // Tira a pessoa do organograma.
   //
@@ -313,7 +318,11 @@ export default function Organograma() {
     for (const f of filhos) atualizar(f.id, { gestorId: c.gestorId ?? null });
     const reposicionados = filhos.length > 0 ? ` ${filhos.length} subordinado(s) reposicionado(s).` : "";
 
-    if (v.total > 0) {
+    // Conta de login também segura a exclusão: apagar a ficha deixaria a linha
+    // de `usuarios` apontando para um id morto — login que entra e tela que não
+    // acha o nome. Trilha (acessos, alterações) NÃO segura: ela é append-only e
+    // continua apontando para quem saiu de propósito.
+    if (v.total > 0 || v.contas > 0) {
       atualizar(c.id, { statusId: "inativo", dataDesligamento: c.dataDesligamento ?? diaLocalISO(HOJE) });
       criarMov({
         colaboradorId: c.id,
@@ -509,11 +518,11 @@ export default function Organograma() {
               aberto
               onFechar={() => setRemoverAlvo(null)}
               onConfirmar={() => removerDoOrganograma(removerAlvo)}
-              titulo={vinculosAlvo?.total ? "Tirar do quadro" : "Excluir do cadastro"}
-              textoConfirmar={vinculosAlvo?.total ? "Tirar do quadro" : "Excluir"}
+              titulo={alvoTemHistorico ? "Tirar do quadro" : "Excluir do cadastro"}
+              textoConfirmar={alvoTemHistorico ? "Tirar do quadro" : "Excluir"}
               mensagem={
                 <>
-                  {vinculosAlvo?.total ? (
+                  {vinculosAlvo && alvoTemHistorico ? (
                     <>
                       <strong>{removerAlvo.nome}</strong> tem histórico no sistema:{" "}
                       {resumirVinculos(vinculosAlvo)}.
@@ -524,8 +533,12 @@ export default function Organograma() {
                     </>
                   ) : (
                     <>
-                      <strong>{removerAlvo.nome}</strong> não tem nenhum registro no sistema, então será{" "}
+                      <strong>{removerAlvo.nome}</strong> não tem nenhum registro de pessoa no sistema, então será{" "}
                       <strong>excluída do cadastro</strong>. Isso não tem volta.
+                      {vinculosAlvo && vinculosAlvo.trilha > 0 && (
+                        <> As {vinculosAlvo.trilha} linha(s) de trilha (quem abriu a ficha, o que foi
+                        alterado) ficam onde estão: trilha não se reescreve.</>
+                      )}
                     </>
                   )}
                   {(filhosPorGestor.get(removerAlvo.id)?.length ?? 0) > 0 && (

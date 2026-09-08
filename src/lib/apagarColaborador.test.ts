@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  inventarioDaPessoa, resumoDoQueSome, exigeDigitarNome, nomeConfere,
+  inventarioDaPessoa, resumoDoQueSome, exigeDigitarProva, provaConfere, impedimentoParaApagar,
   COLECOES_DA_PESSOA, ROTULO_COLECAO,
 } from "./apagarColaborador";
 
@@ -125,31 +125,97 @@ describe("a frase que a pessoa lê antes de confirmar", () => {
 
 describe("quando exigir que digite o nome", () => {
   it("ficha com dinheiro SEMPRE exige — mesmo um único lançamento", () => {
-    expect(exigeDigitarNome(inventarioDaPessoa("a", "A", { pagamentos: r("a", 1) }))).toBe(true);
+    expect(exigeDigitarProva(inventarioDaPessoa("a", "A", { pagamentos: r("a", 1) }))).toBe(true);
   });
 
   it("ficha com histórico grande exige, mesmo sem dinheiro", () => {
-    expect(exigeDigitarNome(inventarioDaPessoa("a", "A", { documentos: r("a", 10) }))).toBe(true);
-    expect(exigeDigitarNome(inventarioDaPessoa("a", "A", { documentos: r("a", 9) }))).toBe(false);
+    expect(exigeDigitarProva(inventarioDaPessoa("a", "A", { documentos: r("a", 10) }))).toBe(true);
+    expect(exigeDigitarProva(inventarioDaPessoa("a", "A", { documentos: r("a", 9) }))).toBe(false);
   });
 
   it("ficha vazia NÃO exige — é o duplicado que se apaga sem atrito", () => {
     // Cobra digitar o nome para apagar uma ficha de zero registro é atrito que
     // faz a pessoa desistir de limpar duplicata, que é o caso mais comum.
-    expect(exigeDigitarNome(inventarioDaPessoa("a", "A", {}))).toBe(false);
+    expect(exigeDigitarProva(inventarioDaPessoa("a", "A", {}))).toBe(false);
   });
 });
 
-describe("conferir o nome digitado", () => {
-  it("aceita sem acento, com caixa trocada e espaço sobrando", () => {
-    expect(nomeConfere("  jose adilando PEREIRA ", "José Adilando Pereira")).toBe(true);
+describe("a prova digitada é o ID, não o nome", () => {
+  /* A conferência era pelo NOME, e o nome não prova nada justamente onde este
+     botão mais é usado: no cadastro há TRÊS fichas "José Adilando Pereira" e
+     TRÊS "Dermeval Vieira". Quem abrisse a ficha errada e digitasse o nome
+     passava igualzinho — e apagava os 31 pagamentos da ficha boa. */
+  it("o nome NÃO abre a porta: duas fichas homônimas, ids diferentes", () => {
+    expect(provaConfere("José Adilando Pereira", "jose-adilando-pereira")).toBe(false);
+    expect(provaConfere("jose-adilando-pereira", "jose-adilando-pereira-2")).toBe(false);
+    expect(provaConfere("jose-adilando-pereira-2", "jose-adilando-pereira-2")).toBe(true);
   });
 
-  it("recusa vazio, parcial e trocado", () => {
-    expect(nomeConfere("", "Ana Silva")).toBe(false);
-    expect(nomeConfere("   ", "Ana Silva")).toBe(false);
-    expect(nomeConfere("Ana", "Ana Silva")).toBe(false);
-    expect(nomeConfere("Ana Souza", "Ana Silva")).toBe(false);
+  it("tolera espaço sobrando e caixa — o que não dá é aceitar uma coisa por outra", () => {
+    expect(provaConfere("  JOSE-ADILANDO-PEREIRA ", "jose-adilando-pereira")).toBe(true);
+    expect(provaConfere("colaboradores_43ha4hms17l", "colaboradores_43ha4hms17l")).toBe(true);
+  });
+
+  it("recusa vazio e parcial", () => {
+    expect(provaConfere("", "ana-silva")).toBe(false);
+    expect(provaConfere("   ", "ana-silva")).toBe(false);
+    expect(provaConfere("ana", "ana-silva")).toBe(false);
+  });
+});
+
+describe("conta de login segura a exclusão", () => {
+  const r = (dono: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `x${i}`, colaboradorId: dono }));
+
+  it("com conta de acesso, apagar pela ficha fica impedido — como já era na aba Cadastros", () => {
+    const inv = inventarioDaPessoa("a", "A", { usuarios: r("a", 1) });
+    expect(impedimentoParaApagar(inv)).toContain("Usuários e Permissões");
+  });
+
+  it("conta DESATIVADA não impede — senão o aviso vira beco sem saída", () => {
+    /* O aviso manda "desative em Painel de Controle → Usuários e Permissões".
+       Só que desativar grava `ativo: false` e NÃO apaga a linha: contando
+       todas, a pessoa fazia exatamente o que o aviso pedia e a ficha continuava
+       travada, para sempre. */
+    const inv = inventarioDaPessoa("a", "A", { usuarios: [{ id: "u1", colaboradorId: "a", ativo: false }] });
+    expect(impedimentoParaApagar(inv)).toBeNull();
+    expect(inv.contas).toEqual([]);
+  });
+
+  it("uma conta ativa entre desativadas ainda impede", () => {
+    const inv = inventarioDaPessoa("a", "A", {
+      usuarios: [
+        { id: "u1", colaboradorId: "a", ativo: false },
+        { id: "u2", colaboradorId: "a", ativo: true },
+      ],
+    });
+    expect(impedimentoParaApagar(inv)).toContain("1 conta(s)");
+  });
+
+  it("sem conta, nada impede", () => {
+    expect(impedimentoParaApagar(inventarioDaPessoa("a", "A", { pagamentos: r("a", 3) }))).toBeNull();
+  });
+
+  it("a conta NÃO entra no total do que some — ela é impedimento, não perda", () => {
+    const inv = inventarioDaPessoa("a", "A", { usuarios: r("a", 1), documentos: r("a", 2) });
+    expect(inv.total).toBe(2);
+    expect(inv.contas).toEqual([{ colecao: "usuarios", rotulo: "contas de acesso ao sistema", quantidade: 1, temDinheiro: false }]);
+  });
+});
+
+describe("trilha não some junto com a ficha", () => {
+  const r = (dono: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `x${i}`, colaboradorId: dono }));
+
+  it("acessos e alterações ficam de fora do que some — e fora do total", () => {
+    /* As fichas repetidas do José e da Kelly tinham 9 e 10 linhas de trilha e
+       ZERO dado de pessoa. Contando trilha como conteúdo, uma ficha vazia
+       exigia digitar a prova e o aviso dizia "Somem 10 registro(s)" — número
+       falso, e a trilha (append-only) ia junto com lápide para a nuvem. */
+    const inv = inventarioDaPessoa("a", "A", { acessos: r("a", 9), alteracoes: r("a", 2) });
+    expect(inv.total).toBe(0);
+    expect(inv.linhas).toEqual([]);
+    expect(exigeDigitarProva(inv)).toBe(false);
+    expect(inv.trilha.map((l) => l.colecao)).toEqual(["acessos", "alteracoes"]);
+    expect(resumoDoQueSome(inv)).toContain("não tem nenhum registro");
   });
 });
 

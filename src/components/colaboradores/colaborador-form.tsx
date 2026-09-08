@@ -10,7 +10,7 @@ import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EM
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import { desligamentoDeHoje, avisoDoDesligamento, podeDesligar } from "@/lib/desligamento";
-import { inventarioDaPessoa, resumoDoQueSome, exigeDigitarNome, nomeConfere, COLECOES_DA_PESSOA } from "@/lib/apagarColaborador";
+import { inventarioDaPessoa, resumoDoQueSome, exigeDigitarProva, provaConfere, impedimentoParaApagar, COLECOES_DA_PESSOA } from "@/lib/apagarColaborador";
 import { apagarRegistrosNuvem, enviarColecao } from "@/lib/sync";
 import { registrarAcaoManual, emLote } from "@/lib/auditoria";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
@@ -132,7 +132,11 @@ export function ColaboradorForm({
       : null),
     [confirmarApagar, editar, d.colaboradores],
   );
-  const podeConfirmarApagar = !!inventario && (!exigeDigitarNome(inventario) || nomeConfere(nomeDigitado, inventario.nome));
+  // A prova é o ID: o NOME se repete (três fichas "José Adilando Pereira") e
+  // por isso não distingue a ficha que se quer apagar da que se quer manter.
+  const impedimento = inventario ? impedimentoParaApagar(inventario) : null;
+  const podeConfirmarApagar = !!inventario && !impedimento
+    && (!exigeDigitarProva(inventario) || provaConfere(nomeDigitado, inventario.colaboradorId));
 
   const apagarTudo = () => {
     if (!editar || !inventario) return;
@@ -607,12 +611,34 @@ export function ColaboradorForm({
               </div>
             )}
 
-            {exigeDigitarNome(inventario) && (
-              <Campo label={`Para confirmar, digite o nome: ${inventario.nome}`}>
+            {inventario.trilha.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Fica onde está:{" "}
+                {inventario.trilha.map((l) => `${l.quantidade} ${l.rotulo}`).join(", ")} — trilha é
+                testemunho do que aconteceu e não se reescreve.
+              </p>
+            )}
+
+            {impedimento && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                <p className="font-semibold">Não dá para apagar ainda</p>
+                <p className="mt-1">{impedimento}</p>
+              </div>
+            )}
+
+            {!impedimento && exigeDigitarProva(inventario) && (
+              <Campo label="Para confirmar, digite o id desta ficha">
+                {/* O ID, e não o nome: há três fichas com o nome "José Adilando
+                    Pereira" e três "Dermeval Vieira". Digitar o nome passaria
+                    na conferência mesmo com a ficha ERRADA aberta — e apagaria
+                    os 31 pagamentos da boa. */}
+                <code className="mb-1.5 block select-all rounded bg-slate-100 px-2 py-1 text-xs text-slate-700">
+                  {inventario.colaboradorId}
+                </code>
                 <Input
                   value={nomeDigitado}
                   onChange={(e) => setNomeDigitado(e.target.value)}
-                  placeholder={inventario.nome}
+                  placeholder={inventario.colaboradorId}
                   autoFocus
                 />
               </Campo>

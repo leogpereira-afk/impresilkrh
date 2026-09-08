@@ -1,17 +1,18 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, CheckCircle2, CircleHelp, Copy, Search, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, CheckCircle2, CircleHelp, Copy, Link2, Search, Trash2, Unlink, Users } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
-import { Input } from "@/components/ui/form";
+import { Input, Select } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
-import { useColecao, obterDinamico, atualizarEm, ehNomeColecao } from "@/lib/store";
+import { useColecao, obterDinamico, atualizarEm, removerEm, ehNomeColecao } from "@/lib/store";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import { formatCPF, formatDate } from "@/lib/format";
 import { idPessoa } from "@/lib/identidade";
 import {
-  aproximarCadastros, quemFica, avaliarExclusao, planoDeTransferencia, nomeNormalizado,
+  aproximarCadastros, quemFica, avaliarExclusao, planoDeTransferencia, planoDeExclusao,
+  orfaosDeCadastro, nomeNormalizado,
   COLECOES_DA_PESSOA, COLECOES_TRILHA, COLECOES_CONTA, COLECAO_LANCAMENTOS, CONTAGEM_VAZIA,
   type ContagemFicha, type FichaResumo, type AvaliacaoExclusao,
 } from "@/lib/cadastrosDuplicados";
@@ -51,7 +52,13 @@ function contarTudo(colaboradores: Colaborador[]): Map<string, ContagemFicha> {
   const somar = (colecoes: readonly string[], campo: "lancamentos" | "dados" | "trilha" | "contas") => {
     for (const nome of colecoes) {
       for (const r of obterDinamico(nome)) {
-        const dono = (r as { colaboradorId?: string | null }).colaboradorId;
+        const reg = r as { colaboradorId?: string | null; ativo?: boolean };
+        // CONTA DESATIVADA NÃO SEGURA A EXCLUSÃO. Contando todas, o aviso
+        // "desative a conta antes" virava beco sem saída: desativar marca
+        // `ativo: false` e NÃO apaga a linha, então a ficha nunca mais podia
+        // ser apagada, por mais que a pessoa fizesse o que o aviso mandava.
+        if (campo === "contas" && reg.ativo === false) continue;
+        const dono = reg.colaboradorId;
         const alvo = dono ? mapa.get(dono) : undefined;
         if (alvo) alvo[campo] += 1;
       }
@@ -196,6 +203,21 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
     return [...lista].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [colaboradores, busca]);
 
+  /**
+   * A ficha do MESMO grupo que a regra manda manter — ou `null` se esta ficha
+   * não tem grupo. Na tabela "Todos os cadastros" o botão apagar passava
+   * `null` sempre, e o aviso então AFIRMAVA "não há outra ficha desta pessoa
+   * para receber" para as fichas repetidas do José e do Demerval, que têm.
+   * Afirmação falsa some com a única saída boa (transferir antes de apagar).
+   */
+  const destinoDoGrupo = (ficha: FichaResumo): FichaResumo | null => {
+    const g = grupos.find((x) => x.fichas.some((f) => f.id === ficha.id));
+    if (!g) return null;
+    const escolha = quemFica(g.fichas, contar);
+    if (!escolha || escolha.id === ficha.id) return null;
+    return g.fichas.find((f) => f.id === escolha.id) ?? null;
+  };
+
   const abrirExclusao = (ficha: FichaResumo, destino: FichaResumo | null) => {
     // Reconta AGORA: a lista pode ter sido montada há minutos, e o que decide
     // se apagar é barato ou caro é o estado do momento da decisão.
@@ -210,9 +232,19 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
     const { ficha, contagem, destino } = apagando;
     // FREIO: lê antes de escrever. Se a ficha ganhou conteúdo (ou impedimento)
     // depois que o aviso abriu, não apaga — refaz a conta e mostra de novo.
+    if (!(colaboradores as FichaResumo[]).some((c) => c.id === ficha.id)) {
+      // Outra aba (ou o sync) já apagou esta ficha. Seguir daqui apagaria os
+      // registros de alguém que não é mais dono deles.
+      setApagando(null);
+      setVersao((v) => v + 1);
+      toast("Esta ficha já não existe mais — nada foi apagado.", "info");
+      return;
+    }
     const agora = contarTudo(colaboradores as Colaborador[]).get(ficha.id) ?? { ...CONTAGEM_VAZIA };
     const avaliacao = avaliarExclusao(agora, !!destino);
-    const cresceu = agora.lancamentos > contagem.lancamentos || agora.dados > contagem.dados;
+    const cresceu = agora.lancamentos > contagem.lancamentos || agora.dados > contagem.dados
+      || agora.contas > contagem.contas || agora.subordinados > contagem.subordinados
+      || agora.afilhados > contagem.afilhados;
     if (cresceu || avaliacao.bloqueios.length > 0) {
       setApagando({ ficha, contagem: agora, avaliacao, destino });
       setDigitado("");
@@ -220,20 +252,49 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
       toast("A ficha mudou desde que este aviso abriu. Confira os números de novo.", "erro");
       return;
     }
-    remover(ficha.id);
+    /* O QUE O AVISO DIZ QUE SOME, SOME.
+       Antes daqui saía só `remover(ficha.id)` — e o aviso logo acima listava
+       "31 lançamento(s) da folha" sob o título "Some junto com a ficha". Os 31
+       pagamentos continuavam no banco apontando para um id que não existe:
+       invisíveis em toda tela (todas buscam o nome pelo id) e ainda somando no
+       custo do mês. O pior dos dois mundos — parece apagado e continua
+       contando. Agora o clique cumpre a frase. */
+    const plano = planoDeExclusao(ficha.id, lerPendurados());
+    emLote(`Apagou a ficha ${ficha.id} e ${plano.total} registro(s) dela`, () => {
+      for (const grupo of plano.apagar) {
+        if (!ehNomeColecao(grupo.colecao)) continue;
+        for (const id of grupo.ids) removerEm(grupo.colecao, id);
+      }
+      remover(ficha.id);
+    });
     registrarAcaoManual(
-      `Apagou a ficha repetida ${ficha.id}${agora.trilha > 0 ? ` (${agora.trilha} linha(s) de trilha ficaram)` : ""}`,
+      `Apagou a ficha ${ficha.id} e ${plano.total} registro(s)${agora.trilha > 0 ? ` (${agora.trilha} linha(s) de trilha ficaram)` : ""}`,
       ficha.nome,
       "colaboradores",
     );
     setApagando(null);
     setVersao((v) => v + 1);
-    toast(`Ficha ${ficha.id} apagada.`, "sucesso");
+    toast(
+      plano.total > 0
+        ? `Ficha ${ficha.id} apagada com ${plano.total} registro(s).`
+        : `Ficha ${ficha.id} apagada.`,
+      "sucesso",
+    );
   };
 
   const confirmarTransferencia = () => {
     if (!transferindo) return;
     const { de, para } = transferindo;
+    // O mesmo freio da exclusão: a ficha de origem ou a de destino podem ter
+    // sumido (outra aba, ou o sync) entre abrir o aviso e clicar. Transferir
+    // para uma ficha que já não existe cria órfão em vez de reconectar.
+    const vivas = new Set((colaboradores as FichaResumo[]).map((c) => c.id));
+    if (!vivas.has(de.id) || !vivas.has(para.id)) {
+      setTransferindo(null);
+      setVersao((v) => v + 1);
+      toast("Uma das fichas já não existe mais — nada foi transferido.", "erro");
+      return;
+    }
     const plano = planoDeTransferencia(de.id, para.id, lerPendurados());
     if (plano.total === 0) {
       setTransferindo(null);
@@ -258,6 +319,44 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
   };
 
   const planoPrevisto = transferindo ? planoDeTransferencia(transferindo.de.id, transferindo.para.id, lerPendurados()) : null;
+
+  /* ÓRFÃOS: registro pendurado num id que não é ficha de ninguém.
+     É a outra metade do "conferir órfãos antes de apagar". A tela acima
+     transfere entre fichas VIVAS; aqui aparece o que já perdeu o dono — o que
+     em 29/07/2026 eram 102 registros, dos quais 16 eram dado real de gente da
+     casa com o id levemente errado. Reconectar vem antes de apagar. */
+  const orfaos = useMemo(
+    () => orfaosDeCadastro(lerPendurados(), colaboradores as FichaResumo[]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [colaboradores, pagamentos, versao],
+  );
+  const [reconectando, setReconectando] = useState<{ dono: string; para: string } | null>(null);
+
+  const confirmarReconexao = () => {
+    if (!reconectando) return;
+    const { dono, para } = reconectando;
+    const destino = (colaboradores as FichaResumo[]).find((c) => c.id === para);
+    if (!destino) { setReconectando(null); toast("Escolha para qual ficha os registros vão.", "erro"); return; }
+    // O mesmo plano da transferência: ele já sabe o que move, o que não muda
+    // de dono e o que criaria mês em dobro.
+    const plano = planoDeTransferencia(dono, para, lerPendurados());
+    if (plano.total === 0) { setReconectando(null); toast("Não havia nada para reconectar.", "info"); return; }
+    emLote(`Reconectou ${plano.total} registro(s) de ${dono} para ${para}`, () => {
+      for (const m of plano.mover) {
+        if (!ehNomeColecao(m.colecao)) continue;
+        for (const id of m.ids) atualizarEm(m.colecao, id, { colaboradorId: para } as PatchDono);
+      }
+    });
+    registrarAcaoManual(`Reconectou ${plano.total} registro(s) órfãos de ${dono}`, destino.nome, "colaboradores");
+    setReconectando(null);
+    setVersao((v) => v + 1);
+    toast(
+      plano.conflitos.length > 0
+        ? `${plano.total} registro(s) reconectado(s). ${plano.conflitos.length} ficaram: a ficha já tem o mesmo mês.`
+        : `${plano.total} registro(s) reconectado(s) com ${destino.nome}.`,
+      plano.conflitos.length > 0 ? "info" : "sucesso",
+    );
+  };
 
   const podeApagar = (() => {
     if (!apagando) return false;
@@ -358,6 +457,62 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
         </CardBody>
       </Card>
 
+      {orfaos.length > 0 && (
+        <Card idPersistencia="cadastros:orfaos">
+          <CardHeader
+            title="Registros sem ficha"
+            subtitle="Pendurados num id que não existe mais no cadastro. Quase nunca é lixo: costuma ser dado real de gente da casa com o id levemente errado — o certo é reconectar, não apagar."
+            icon={<Unlink className="h-5 w-5" />}
+          />
+          <CardBody>
+            <p className="mb-2 text-xs text-slate-500">
+              Em 29/07/2026 havia 102 destes, e <strong>16 eram gente que trabalha aqui</strong> (um sobrenome truncado,
+              um “Eliza” escrito “Elia”). Apagar teria perdido 13 tarefas de uma pessoa.
+            </p>
+            <ul className="divide-y divide-slate-50 rounded-xl border border-slate-200">
+              {orfaos.slice(0, 30).map((o) => (
+                <li key={o.dono} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-xs">
+                  <code className="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600">{o.dono}</code>
+                  <span className="tabular-nums font-medium text-brand-ink">{o.quantidade}</span>
+                  <span className="text-slate-500">
+                    {o.porColecao.map((c) => `${c.quantidade} em ${c.colecao}`).join(", ")}
+                  </span>
+                  {o.temDinheiro && <Badge variant="danger">tem dinheiro</Badge>}
+                  {o.sugestao ? (
+                    <span className="ml-auto flex flex-wrap items-baseline gap-x-2">
+                      <span className={o.sugestao.certeza === "alta" ? "text-emerald-800" : "text-amber-800"}>
+                        {o.sugestao.certeza === "alta" ? "é" : "pode ser"} <strong>{o.sugestao.nome}</strong> — {o.sugestao.motivo}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-outline h-7 px-2 py-0 text-xs"
+                        onClick={() => setReconectando({ dono: o.dono, para: o.sugestao!.id })}
+                      >
+                        <Link2 className="h-3.5 w-3.5" /> reconectar
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-ghost ml-auto h-7 px-2 py-0 text-xs"
+                      onClick={() => setReconectando({ dono: o.dono, para: "" })}
+                    >
+                      escolher a ficha
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {orfaos.length > 30 && (
+              <p className="mt-2 text-xs text-slate-500">e mais {orfaos.length - 30} — resolva estes primeiro.</p>
+            )}
+            <p className="mt-2 text-[11px] text-slate-500">
+              Trilha (acessos e histórico) não entra nesta lista: ela aponta para quem saiu de propósito.
+            </p>
+          </CardBody>
+        </Card>
+      )}
+
       <Card idPersistencia="cadastros:todos">
         <CardHeader
           title="Todos os cadastros"
@@ -402,7 +557,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
                         fica={null}
                         nomeStatus={nomeStatus}
                         onAbrir={onAbrirFicha ? () => onAbrirFicha(f.id) : undefined}
-                        onApagar={() => abrirExclusao(f, null)}
+                        onApagar={() => abrirExclusao(f, destinoDoGrupo(f))}
                       />
                     ))}
                   </tbody>
@@ -576,6 +731,63 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
           </div>
         </Modal>
       )}
+      {reconectando && (() => {
+        const plano = reconectando.para ? planoDeTransferencia(reconectando.dono, reconectando.para, lerPendurados()) : null;
+        const alvo = orfaos.find((o) => o.dono === reconectando.dono);
+        return (
+          <Modal
+            aberto
+            onFechar={() => setReconectando(null)}
+            largura="max-w-xl"
+            titulo="Reconectar registros sem ficha"
+            descricao={reconectando.dono}
+            rodape={
+              <>
+                <button type="button" className="btn-outline" onClick={() => setReconectando(null)}>Cancelar</button>
+                <button type="button" className="btn-primary" disabled={!plano || plano.total === 0} onClick={confirmarReconexao}>
+                  Reconectar {plano?.total ?? 0}
+                </button>
+              </>
+            }
+          >
+            <div className="space-y-3 text-sm text-slate-700">
+              <p className="text-xs text-slate-600">
+                {alvo?.quantidade ?? 0} registro(s) apontam para <code className="rounded bg-slate-100 px-1">{reconectando.dono}</code>,
+                que não é ficha de ninguém. Escolher a ficha certa faz cada um voltar a aparecer nas telas dela.
+                Nada é apagado — só muda o dono.
+              </p>
+              <label className="block text-xs text-slate-600">
+                Passar para:
+                <Select
+                  value={reconectando.para}
+                  onChange={(e) => setReconectando({ dono: reconectando.dono, para: e.target.value })}
+                  className="mt-1 h-9 py-0 text-sm"
+                >
+                  <option value="">escolha a ficha…</option>
+                  {[...(colaboradores as FichaResumo[])]
+                    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome} ({c.id})</option>
+                    ))}
+                </Select>
+              </label>
+              {alvo?.sugestao && (
+                <p className={`text-xs ${alvo.sugestao.certeza === "alta" ? "text-emerald-800" : "text-amber-800"}`}>
+                  Sugestão ({alvo.sugestao.certeza === "alta" ? "boa" : "confira"}): {alvo.sugestao.nome} — {alvo.sugestao.motivo}.
+                </p>
+              )}
+              {plano && plano.conflitos.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                  <p className="text-xs font-semibold text-amber-900">{plano.conflitos.length} ficam onde estão:</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-amber-900">
+                    {plano.conflitos.map((c) => <li key={`${c.colecao}:${c.id}`}>{c.motivo}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }

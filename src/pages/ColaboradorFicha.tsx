@@ -576,8 +576,15 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
                 </div>
               ))}
             </div>
+            {/* `total` conta só o que é DA PESSOA. Trilha (quem abriu a ficha,
+                o que foi alterado) vem à parte de propósito: ela não se apaga
+                nem se transfere, e somá-la aqui fazia uma ficha vazia parecer
+                cheia — era o que dizia "10 registros" numa ficha repetida que
+                não tinha nada além de terem aberto ela. */}
             <p className="mt-3 text-xs text-slate-400">
-              {vinc.total} registro(s) no total ligados a esta pessoa
+              {vinc.total} registro(s) desta pessoa
+              {vinc.trilha > 0 && ` · ${vinc.trilha} de trilha (não se apagam)`}
+              {vinc.contas > 0 && ` · ${vinc.contas} conta(s) de acesso`}
               {vinc.subordinados > 0 && ` · ${vinc.subordinados} subordinado(s) diretos`}.
             </p>
           </CardBody>
