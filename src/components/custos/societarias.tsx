@@ -50,6 +50,48 @@ export function entradasDoSocio(
   return { entradas: [], total: 0, fonte: null };
 }
 
+/** Pedro primeiro, Leonardo depois, o resto por nome. */
+const pesoDoSocio = (c: Colaborador) => (c.id === "pedro-ramos" ? 0 : c.id === "leonardo-goncalves" ? 1 : 2);
+
+/**
+ * Quais sócios merecem uma aba — e quantos ficaram de fora.
+ *
+ * Pedido do Léo em 08/09/2026, olhando a tela: "a saída societárias pode ficar
+ * só Leonardo e Pedro, o resto não precisa". No cadastro há TRÊS pessoas
+ * marcadas como direção; a terceira não tem lançamento nenhum nem conta 2.14 no
+ * plano do contador, então a aba dela é sempre R$ 0,00 e só ocupa espaço.
+ *
+ * A régua é o DINHEIRO, não os dois nomes escritos aqui. Se um sócio novo passar
+ * a receber, ele aparece sozinho; se um dos dois parar de vez, some. Nome fixo
+ * envelheceria no dia em que a sociedade mudasse — e alguém teria de lembrar de
+ * vir mexer no código.
+ *
+ * Duas cautelas, as duas com teste:
+ *  - basta ter dinheiro em UM mês, não no mês aberto: senão a aba piscaria
+ *    conforme o mês escolhido;
+ *  - se ninguém tiver dinheiro, mostra todos. Esconder todo mundo deixaria a
+ *    tela dizendo "nenhum sócio no cadastro", que é mentira: eles existem, só
+ *    não receberam nada.
+ */
+export function sociosComMovimento(
+  socios: Colaborador[],
+  pagamentos: Pagamento[],
+  plano: ContaPlano[],
+): { visiveis: Colaborador[]; ocultos: number } {
+  const ordenados = [...socios].sort((a, b) => pesoDoSocio(a) - pesoDoSocio(b) || a.nome.localeCompare(b.nome, "pt-BR"));
+  const temDinheiro = (s: Colaborador) => {
+    const comps = new Set<string>([
+      ...competenciasPlano(plano),
+      ...pagamentos.filter((p) => p.colaboradorId === s.id).map((p) => p.competencia),
+    ]);
+    for (const c of comps) if (entradasDoSocio(s, pagamentos, plano, c).total !== 0) return true;
+    return false;
+  };
+  const visiveis = ordenados.filter(temDinheiro);
+  if (visiveis.length === 0) return { visiveis: ordenados, ocultos: 0 };
+  return { visiveis, ocultos: ordenados.length - visiveis.length };
+}
+
 export function Societarias({
   socios,
   pagamentos,
@@ -63,11 +105,13 @@ export function Societarias({
   compAtiva: string;
   onEscolherMes: (c: string) => void;
 }) {
-  const ordenados = useMemo(() => {
-    const peso = (c: Colaborador) => (c.id === "pedro-ramos" ? 0 : c.id === "leonardo-goncalves" ? 1 : 2);
-    return [...socios].sort((a, b) => peso(a) - peso(b) || a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [socios]);
+  const { visiveis: ordenados, ocultos } = useMemo(
+    () => sociosComMovimento(socios, pagamentos, plano),
+    [socios, pagamentos, plano],
+  );
   const [socioId, setSocioId] = useState<string>(ordenados[0]?.id ?? "");
+  // Se o sócio escolhido deixar de aparecer (parou de ter dinheiro, ou a busca
+  // trouxe outro conjunto), cai no primeiro em vez de mostrar tela vazia.
   const socio = ordenados.find((s) => s.id === socioId) ?? ordenados[0];
 
   const mes = useMemo(() => (socio ? entradasDoSocio(socio, pagamentos, plano, compAtiva) : null), [socio, pagamentos, plano, compAtiva]);
@@ -105,6 +149,13 @@ export function Societarias({
           );
         })}
       </div>
+      {ocultos > 0 && (
+        /* Nunca esconder calado: quem lê precisa saber que a lista foi filtrada,
+           e por qual régua. */
+        <p className="-mt-4 text-xs text-slate-400">
+          {ocultos} pessoa(s) da direção sem nenhum valor lançado não aparecem aqui.
+        </p>
+      )}
 
       {/* O número do mês — um só. */}
       <div className="rounded-2xl bg-brand-ink px-6 py-5 text-white">
