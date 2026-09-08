@@ -16,7 +16,7 @@
 //  - é lento: 25-40s por requisição.
 // ============================================================================
 import { json, preflight } from "../_shared/cors.ts";
-import { ehConfidencialEquivalente, equivalenciasDeContas, serializar, type ContaRef } from "../_shared/renumeracao.ts";
+import { codigoDeReferencia, ehConfidencialEquivalente, equivalenciasDeContas, serializar, type ContaRef } from "../_shared/renumeracao.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const MUBI_BASE = Deno.env.get("MUBI_BASE_URL") ?? "https://api.mubisys.com/api";
@@ -388,7 +388,39 @@ Deno.serve(async (req) => {
       });
     }
 
-    const folha = itens.filter((i) => ehFolha(String(i.plano_contas)));
+    /* A FOLHA SEGUE O CONTADOR, NÃO O NÚMERO (07/09/2026).
+     *
+     * `ehFolha` decide por código (2.1.x + a lista fechada) e por nome. Isso
+     * quebra quando o contador RENUMERA: em julho o grupo 2.3 inteiro mudou de
+     * significado — era "Despesas Limpeza", virou IOF, ISSQN e aluguéis — e a
+     * faxina da Barbara e da Marcella, que vivia em 2.3.2.1, parou de chegar.
+     * Ninguém viu: a pessoa continua na folha porque o salário dela vem, e o
+     * mês só fecha um pouco menor.
+     *
+     * Agora a decisão passa pela EQUIVALÊNCIA: o mesmo mecanismo que a rota do
+     * plano já usa aprende, pelo NOME dentro do grupo, qual conta de hoje
+     * corresponde a qual conta do plano de referência do contador. Se a conta
+     * antiga era folha, a nova é folha — seja qual for o número.
+     *
+     * O antigo continua valendo: quem casa por código ou por nome entra como
+     * sempre entrou. A equivalência só ACRESCENTA quem o número novo escondia.
+     */
+    const refFolha = await planoDeReferencia();
+    const contasDoMes = [...new Map(
+      itens
+        .map((i) => String(i.plano_contas ?? "").trim())
+        .filter(Boolean)
+        .map((plano) => [codigoDoPlano(plano), { codigo: codigoDoPlano(plano), nome: plano.split("-").slice(1).join("-").trim() }] as const),
+    ).values()];
+    const eqFolha = equivalenciasDeContas(refFolha.contas, contasDoMes);
+    /** Folha pela régua de sempre, OU porque a conta equivalente do contador era folha. */
+    const ehFolhaOuEquivalente = (plano: string) => {
+      if (ehFolha(plano)) return true;
+      const antigo = codigoDeReferencia(codigoDoPlano(plano), eqFolha.mapa);
+      if (!antigo || antigo === codigoDoPlano(plano)) return false;
+      return antigo.startsWith("2.1.") || FOLHA_FORA_DO_21.some((x) => antigo === x || antigo.startsWith(x + "."));
+    };
+    const folha = itens.filter((i) => ehFolhaOuEquivalente(String(i.plano_contas)));
 
     // O QUE FICOU DE FORA, dito em voz alta.
     //
@@ -398,26 +430,42 @@ Deno.serve(async (req) => {
     // FOLHA_FORA_DO_21). Um zero silencioso parece "não teve"; então toda conta
     // recusada cujo NOME é de pagamento a pessoa volta agregada (conta, quantos,
     // total), sem nome de ninguém, para o RH decidir se ela entra na lista.
+    // O PONTO CEGO QUE ISSO FECHA (07/09/2026). A lista voltava só as contas
+    // recusadas cujo NOME bate no vocabulário de pagamento a pessoa. Mas o caso
+    // que mais dói é o contrário: o contador RENOMEIA a conta e o nome novo não
+    // bate em nada — aí ela some das DUAS listas, do filtro da folha e daqui.
+    // Foi o que aconteceu com a faxina da Barbara e da Marcella: para em
+    // jun/2026 e nada na tela dizia para onde foi.
+    //
+    // Agora volta TODA conta recusada que moveu dinheiro, com o palpite
+    // `pareceGente` para a tela destacar as suspeitas. Ver conta demais é
+    // ruído; não ver a conta que sumiu é perder dinheiro em silêncio.
     const NOME_DE_PESSOA = /faxina|limpeza|empreita|freela|diaria|comiss|bonus|hora ?extra|adiantamento|salario|ferias|rescis|vale ?transporte|decimo|estagio|uniforme|produtividade/;
-    const fora = new Map<string, { plano: string; quantos: number; total: number }>();
+    const TETO_FORA = 80;
+    const fora = new Map<string, { plano: string; quantos: number; total: number; pareceGente: boolean }>();
     for (const i of itens) {
       const plano = String(i.plano_contas ?? "");
-      if (!plano || ehFolha(plano)) continue;
+      if (!plano || ehFolhaOuEquivalente(plano)) continue;
       const nome = normalizar(plano.split("-").slice(1).join("-"));
-      if (!nome || !NOME_DE_PESSOA.test(nome)) continue;
-      const x = fora.get(plano) ?? { plano, quantos: 0, total: 0 };
+      const x = fora.get(plano) ?? { plano, quantos: 0, total: 0, pareceGente: !!nome && NOME_DE_PESSOA.test(nome) };
       x.quantos += 1;
       x.total = Math.round((x.total + (num(i.valor_pagamento) || num(i.valor_titulo))) * 100) / 100;
       fora.set(plano, x);
     }
-    const contasForaDaFolha = [...fora.values()].sort((a, b) => b.total - a.total);
+    const todasFora = [...fora.values()]
+      .filter((c) => c.total !== 0)
+      // Suspeita primeiro; depois o que move mais dinheiro.
+      .sort((a, b) => Number(b.pareceGente) - Number(a.pareceGente) || Math.abs(b.total) - Math.abs(a.total));
+    // Corte declarado, nunca calado: quem lê precisa saber que há mais.
+    const contasForaDaFolha = todasFora.slice(0, TETO_FORA);
+    const contasForaOmitidas = Math.max(0, todasFora.length - contasForaDaFolha.length);
     // Os IDS de TODO título recusado por `ehFolha` (não só os de nome de
     // pessoa). A tela precisa deles para não oferecer "remover" um lançamento
     // cujo título EXISTE no ERP e só ficou de fora pelo código da conta: para
     // ela, sem esta lista, ele parecia ter sumido. Só ids — nenhum nome, nenhum
     // valor (revisão de 07/09/2026).
     const idsForaDaFolha = itens
-      .filter((i) => !ehFolha(String(i.plano_contas ?? "")))
+      .filter((i) => !ehFolhaOuEquivalente(String(i.plano_contas ?? "")))
       .map((i) => String(i.id ?? ""))
       .filter(Boolean);
     const linhas = folha.map((i) => {
@@ -448,6 +496,7 @@ Deno.serve(async (req) => {
       // Quem pede página a página nunca é truncado: o cliente vai até o fim.
       truncado: umaPagina ? false : totalPaginas > 4,
       contasForaDaFolha,
+      contasForaOmitidas,
       idsForaDaFolha,
       pagina: umaPagina ? paginaPedida : 1,
       temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,

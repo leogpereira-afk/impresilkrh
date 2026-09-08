@@ -141,6 +141,42 @@ describe("juntarForaDaFolha — o que o filtro recusou, somado de várias págin
   it("página de função antiga (sem o campo) não quebra", () => {
     expect(juntarForaDaFolha([undefined, undefined])).toEqual([]);
   });
+
+  /* O destaque "parece nome de gente" (07/09/2026): a conta que o filtro de
+     folha recusou mas cujo nome parece uma pessoa é a candidata a folha
+     escondida — foi assim que a faxina sumiu quando o contador renumerou o
+     plano. Começa pelo caso ruim: carimbar resposta que ninguém apurou. */
+  it("página que não sabe do campo NÃO ganha um 'não parece gente'", () => {
+    // Função antiga (sem redeploy) não manda `pareceGente`. Gravar `false`
+    // aqui seria afirmar que alguém olhou e descartou — e ninguém olhou.
+    const [conta] = juntarForaDaFolha([[{ plano: "2.4.7-Limpeza", quantos: 1, total: 300 }]]);
+    expect("pareceGente" in conta).toBe(false);
+  });
+
+  it("basta um mês suspeitar para a conta ficar destacada nos outros", () => {
+    const [conta] = juntarForaDaFolha([
+      [{ plano: "2.7.5.2-Marcella Laiara", quantos: 1, total: 300 }],
+      [{ plano: "2.7.5.2-Marcella Laiara", quantos: 1, total: 300, pareceGente: true }],
+    ]);
+    expect(conta.pareceGente).toBe(true);
+    expect(conta.total).toBeCloseTo(600, 2);
+  });
+
+  it("nome de gente vem antes, mesmo valendo menos", () => {
+    expect(juntarForaDaFolha([[
+      { plano: "2.6.1-Energia Elétrica", quantos: 9, total: 9000 },
+      { plano: "2.7.5.2-Marcella Laiara", quantos: 1, total: 300, pareceGente: true },
+    ]]).map((c) => c.plano)).toEqual(["2.7.5.2-Marcella Laiara", "2.6.1-Energia Elétrica"]);
+  });
+
+  it("estorno grande não vai para o fim da fila por ser negativo", () => {
+    // Ordenar por `b.total - a.total` jogava -8000 para depois de +50: o maior
+    // buraco do mês ficava no rodapé, e o teto de 80 contas podia cortá-lo.
+    expect(juntarForaDaFolha([[
+      { plano: "2.9.1-Empreita", quantos: 1, total: 50 },
+      { plano: "2.3.9-Estorno", quantos: 1, total: -8000 },
+    ]]).map((c) => c.plano)).toEqual(["2.3.9-Estorno", "2.9.1-Empreita"]);
+  });
 });
 
 describe("normalizarLinhas — o cliente decide o tipo, não a função no ar", () => {

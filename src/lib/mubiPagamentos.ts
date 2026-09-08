@@ -70,6 +70,16 @@ export interface ContaForaDaFolha {
   plano: string;
   quantos: number;
   total: number;
+  /**
+   * O nome da conta parece pagamento a pessoa.
+   *
+   * A lista voltava SÓ as suspeitas, e o caso que mais dói é o contrário: o
+   * contador renomeia a conta, o nome novo não bate em nada, e ela some das
+   * duas listas — do filtro da folha e daqui. Foi assim que a faxina parou em
+   * jun/2026 sem nada na tela dizer para onde foi. Agora vem tudo o que moveu
+   * dinheiro; este campo é só o destaque.
+   */
+  pareceGente?: boolean;
 }
 
 /** Junta as listas de "ficou de fora" de várias páginas/meses numa só. */
@@ -80,10 +90,19 @@ export function juntarForaDaFolha(listas: (ContaForaDaFolha[] | undefined)[]): C
       const x = m.get(c.plano) ?? { plano: c.plano, quantos: 0, total: 0 };
       x.quantos += c.quantos;
       x.total = Math.round((x.total + c.total) * 100) / 100;
+      // Basta um mês suspeitar para a conta ficar destacada em todos.
+      //
+      // Só carimba quando é VERDADE. Escrever `pareceGente: false` numa página
+      // que veio de função antiga (sem o campo) inventaria um "já olhei e não
+      // parece gente" que ninguém apurou — e a tela leria isso como resposta.
+      if (c.pareceGente) x.pareceGente = true;
       m.set(c.plano, x);
     }
   }
-  return [...m.values()].sort((a, b) => b.total - a.total);
+  // Quem parece nome de pessoa primeiro: é a conta que pode estar escondendo
+  // folha fora da folha. Depois, o maior valor ABSOLUTO — estorno é negativo e
+  // um estorno de R$ 8.000 importa tanto quanto um pagamento de R$ 8.000.
+  return [...m.values()].sort((a, b) => Number(!!b.pareceGente) - Number(!!a.pareceGente) || Math.abs(b.total) - Math.abs(a.total));
 }
 
 export const norm = (s: string) =>
