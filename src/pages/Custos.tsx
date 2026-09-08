@@ -310,6 +310,7 @@ export default function Custos() {
   const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
   const [confirmarAplicacao, setConfirmarAplicacao] = useState(false);
   const [confirmarDesfazer, setConfirmarDesfazer] = useState(false);
+  const [confirmarDevolver, setConfirmarDevolver] = useState(false);
   // Retratos para desfazer: cada aplicação guarda antes/depois dos tocados.
   const recuperacoesColecao = useColecao("recuperacoesFolha");
   // Busca no ERP Mubisys
@@ -818,6 +819,33 @@ export default function Custos() {
     [recuperacoesColecao.items],
   );
   const planoDesfazer = useMemo(() => (ultimoRetrato ? planoDeDesfazer(ultimoRetrato, pagamentos as Pagamento[]) : null), [ultimoRetrato, pagamentos]);
+
+  /* O QUE AS IMPORTAÇÕES REMOVERAM E AINDA FALTA — de TODOS os retratos, não só
+     do último. Em 08/09/2026 duas aplicações removeram 19 lançamentos vindos de
+     planilha (R$ 11.824,55): o adiantamento de junho do Pedro Henrique, o
+     incentivo de viagens do Lucas, as faxinas antigas da Marcella e da Barbara.
+     Desfazer a aplicação inteira devolveria esses, mas desfaria junto 184
+     alterações legítimas — então a devolução tem botão próprio. */
+  const removidosParaVoltar = useMemo(() => {
+    const vivos = new Set((pagamentos as Pagamento[]).map((p) => p.id));
+    const porId = new Map<string, Pagamento>();
+    for (const r of recuperacoesColecao.items as RetratoFolha[]) {
+      for (const t of r.tocados) {
+        if (t.antes && !t.depois && !vivos.has(t.id) && !porId.has(t.id)) porId.set(t.id, t.antes as Pagamento);
+      }
+    }
+    return [...porId.values()].sort((a, b) => (b.valor || 0) - (a.valor || 0));
+  }, [recuperacoesColecao.items, pagamentos]);
+
+  const devolverRemovidos = () => {
+    if (!removidosParaVoltar.length) return;
+    const total = removidosParaVoltar.reduce((t, p) => t + (Number(p.valor) || 0), 0);
+    emLote(`Devolveu ${removidosParaVoltar.length} lançamento(s) que a importação tinha removido`, () => {
+      for (const p of removidosParaVoltar) pagamentosColecao.criar(p as Partial<Pagamento>);
+    });
+    toast(`${removidosParaVoltar.length} lançamento(s) de volta — ${formatBRL(total)}.`, "sucesso");
+    setConfirmarDevolver(false);
+  };
 
   const desfazerUltimaAplicacao = () => {
     if (!ultimoRetrato || !planoDesfazer) return;
@@ -2603,6 +2631,26 @@ export default function Custos() {
                     </button>
                   </div>
                 )}
+                {/* O QUE FOI REMOVIDO E NÃO VOLTOU. Fica fora do card acima de
+                    propósito: devolver não é desfazer, e desfazer a aplicação
+                    inteira levaria junto as alterações que estão certas. */}
+                {removidosParaVoltar.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Removidos pela importação</p>
+                      <p className="mt-0.5 text-sm text-amber-900">
+                        {removidosParaVoltar.length} lançamento(s) · {formatBRL(removidosParaVoltar.reduce((t, p) => t + (Number(p.valor) || 0), 0))} saíram da folha e não voltaram.
+                      </p>
+                      <p className="text-[11px] text-amber-800/90">
+                        {removidosParaVoltar.slice(0, 3).map((p) => `${d.nomeColab(p.colaboradorId)} · ${compLabel(p.competencia)} · ${p.tipo} ${formatBRL(p.valor)}`).join(" · ")}
+                        {removidosParaVoltar.length > 3 ? ` · e mais ${removidosParaVoltar.length - 3}` : ""}
+                      </p>
+                    </div>
+                    <button type="button" className="btn-outline border-amber-300 text-amber-900" onClick={() => setConfirmarDevolver(true)}>
+                      <History className="h-4 w-4" /> Devolver
+                    </button>
+                  </div>
+                )}
                 {/* A varredura de 07/09/2026 virou tela: roda sozinha, toda vez. */}
                 <AuditoriaLancamentos
                   pagamentos={pagamentos as Pagamento[]}
@@ -3143,6 +3191,17 @@ export default function Custos() {
             salariosMarcados.size ? `${salariosMarcados.size} salário(s) do cadastro serão preenchidos.` : "",
             "Um retrato do que muda fica guardado: dá para desfazer em Sincronização.",
           ].filter(Boolean).join(" ")}
+        />
+      )}
+
+      {removidosParaVoltar.length > 0 && (
+        <ConfirmDialog
+          aberto={confirmarDevolver}
+          onFechar={() => setConfirmarDevolver(false)}
+          onConfirmar={devolverRemovidos}
+          titulo={`Devolver ${removidosParaVoltar.length} lançamento(s)?`}
+          textoConfirmar="Devolver"
+          mensagem={`Eles voltam com o mesmo conteúdo e o mesmo id, na competência de origem — ${formatBRL(removidosParaVoltar.reduce((t, p) => t + (Number(p.valor) || 0), 0))} no total. O resto da importação fica como está.`}
         />
       )}
 
