@@ -390,6 +390,10 @@ export default function Custos() {
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(new Set());
   // Grupo com 2+ CPFs distintos por baixo = várias pessoas na mesma origem
   // genérica; vincular o grupo inteiro a alguém seria erro na certa.
+  // Grupos que o RH fechou À MÃO — os que abrem sozinhos (origem sem nome de
+  // pessoa) precisam poder ser fechados, e fechar não pode reabrir no próximo render.
+  const [gruposFechados, setGruposFechados] = useState<Set<string>>(new Set());
+
   const ehGrupoDeVarios = (n: NaoCasado) => {
     const docs = new Set(
       (n.titulos ?? [])
@@ -2902,7 +2906,7 @@ export default function Custos() {
                   </p>
                   <p className="mb-2 text-[11px] text-red-700/80">
                     {folhaPrev.mubi
-                      ? "Escolha a pessoa ao lado do nome — o sistema lembra, e do mês seguinte em diante casa pelo CPF. Quem ficar sem escolha NÃO entra."
+                      ? "Escolha a pessoa ao lado do nome — o sistema lembra, e do mês seguinte em diante casa pelo CPF. Quando o título vem SEM o nome de quem recebeu (\"Sem credor\", \"Colaboradores\"), a escolha é linha a linha, na tabela que já abre. Quem ficar sem escolha NÃO entra."
                       : "Não entram nesta importação."}
                   </p>
                   {folhaPrev.mubi ? (
@@ -2910,7 +2914,15 @@ export default function Custos() {
                       {naoCasados.map((n) => {
                         const sug = sugestoesVinculo.get(n.nome);
                         const escolhido = config.vinculosMubi?.[normNome(n.nome)] ?? "";
-                        const aberto = gruposAbertos.has(n.nome);
+                        /* ORIGEM QUE NÃO É PESSOA ("Sem credor", "Colaboradores").
+                           A tela oferecia o "Vincular a…" do grupo e o sistema
+                           depois RECUSAVA — o Léo travou aqui em 08/09/2026
+                           procurando as duas faxinas. Agora o caminho certo é o
+                           único oferecido: título a título, já aberto. */
+                        const semNome = ehOrigemGenerica(n.nome);
+                        const umPorUm = semNome || ehGrupoDeVarios(n);
+                        const aberto = gruposAbertos.has(n.nome) || (umPorUm && !gruposFechados.has(n.nome));
+                        const apontados = (n.titulos ?? []).filter((t) => config.vinculosMubiTitulo?.[t.idMubi]).length;
                         return (
                           <div key={n.nome} className="rounded-lg bg-white/80 px-2.5 py-1.5">
                           <div className="flex flex-wrap items-center gap-2">
@@ -2920,6 +2932,12 @@ export default function Custos() {
                                 {n.linhas} lançamento(s) · {formatBRL(n.total)} · {[...n.tipos].join(", ")}
                                 {n.cpf ? ` · CPF ${n.cpf}` : " · sem CPF no título"}
                               </span>
+                              {semNome && (
+                                <span className="mt-1 block rounded-lg bg-amber-50 px-2 py-1 text-[11px] leading-snug text-amber-900 ring-1 ring-amber-200">
+                                  <strong className="font-semibold">Isto não é um nome de pessoa.</strong> O Mubisys mandou {n.linhas === 1 ? "este título" : `estes ${n.linhas} títulos`} sem o favorecido, então não dá para dizer de quem é pelo nome — apontar o grupo inteiro jogaria tudo numa pessoa só.
+                                  {" "}Escolha a pessoa em cada linha abaixo{apontados > 0 ? ` — ${apontados} de ${n.linhas} já apontado(s)` : ""}. Para não repetir todo mês, preencha o favorecido do título no Mubisys.
+                                </span>
+                              )}
                               {/* O ID que o ERP mandou (6 primeiros dígitos do CPF do título). Se está
                                   aqui, nenhuma ficha tem esse ID: ou o CPF do ERP está errado, ou o do cadastro. */}
                               {idPessoa(n.cpf) && (
@@ -2931,7 +2949,7 @@ export default function Custos() {
                             {/* A pergunta: um candidato único e plausível vira botão
                                 de confirmar — inclusive (principalmente) inativo.
                                 Só aparece enquanto o RH não escolheu ninguém. */}
-                            {sug && !escolhido && (
+                            {sug && !escolhido && !umPorUm && (
                               <button
                                 type="button"
                                 onClick={() => vincularMubi(n.nome, sug.id)}
@@ -2946,7 +2964,7 @@ export default function Custos() {
                                 44 títulos). Vincular o grupo a alguém mandaria
                                 título de gente diferente para uma pessoa — o
                                 seletor de grupo some e sobra o título a título. */}
-                            {!ehGrupoDeVarios(n) ? (
+                            {!umPorUm ? (
                               <Select
                                 className="min-w-[190px] text-xs"
                                 value={escolhido}
@@ -2967,13 +2985,23 @@ export default function Custos() {
                                 )}
                               </Select>
                             ) : (
-                              <span className="text-[11px] font-medium text-red-700">várias pessoas — vincule título a título ↓</span>
+                              <span className="text-[11px] font-medium text-red-700">
+                                {semNome ? "aponte cada título ↓" : "várias pessoas — vincule título a título ↓"}
+                              </span>
                             )}
                             {(n.titulos ?? []).length > 0 && (
                               <button
                                 type="button"
                                 className="btn-outline h-7 px-2 text-[11px]"
-                                onClick={() => setGruposAbertos((s) => { const x = new Set(s); if (x.has(n.nome)) x.delete(n.nome); else x.add(n.nome); return x; })}
+                                onClick={() => {
+                                  if (aberto) {
+                                    setGruposAbertos((s) => { const x = new Set(s); x.delete(n.nome); return x; });
+                                    setGruposFechados((s) => new Set(s).add(n.nome));
+                                  } else {
+                                    setGruposFechados((s) => { const x = new Set(s); x.delete(n.nome); return x; });
+                                    setGruposAbertos((s) => new Set(s).add(n.nome));
+                                  }
+                                }}
                               >
                                 {aberto ? "Fechar" : `Conferir os ${(n.titulos ?? []).length} título(s)`}
                               </button>
@@ -2990,8 +3018,8 @@ export default function Custos() {
                                     <th className="px-2 py-1 text-left">Venc.</th>
                                     <th className="px-2 py-1 text-left">Tipo</th>
                                     <th className="px-2 py-1 text-right">Valor</th>
-                                    <th className="px-2 py-1 text-left">Descrição (é aqui que está o nome)</th>
-                                    <th className="px-2 py-1 text-left">Vincular este título a…</th>
+                                    <th className="px-2 py-1 text-left">Descrição do título no ERP</th>
+                                    <th className="px-2 py-1 text-left">De quem é este título?</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-red-50">
