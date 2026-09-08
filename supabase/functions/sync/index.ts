@@ -206,8 +206,11 @@ Deno.serve(async (req) => {
        apontou essas contas ao sócio à mão — `config.vinculosSocioConta`, com a
        chave "codigo|nome". A porta só conhecia o literal e entregava
        R$ 157.314,37 a qualquer ADMIN_RH. Agora ela consulta o apontamento. */
-    const chave = `${String(r?.codigo ?? "").trim()}|${normalizarNome(r?.nome)}`;
-    const dono = vinculosSocioConta[chave];
+    const codigo = String(r?.codigo ?? "").trim();
+    // Duas formas da chave convivem na config real: a antiga só com o código e
+    // a nova com código|nome (o contador reaproveita número, e o nome desempata).
+    // A porta aceita as duas — o que existe em produção tem de ser respeitado.
+    const dono = vinculosSocioConta[`${codigo}|${normalizarNome(r?.nome)}`] ?? vinculosSocioConta[codigo];
     return !!dono && dono !== "nenhum";
   };
   /* A CHAVE do apontamento é código+nome, e o nome vem normalizado (o contador

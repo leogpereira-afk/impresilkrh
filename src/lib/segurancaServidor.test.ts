@@ -92,11 +92,13 @@ describe("vazamentos fechados em 07/09/2026", () => {
     // apontamento que a porta passa a consultar (auditoria de 08/09/2026:
     // R$ 157.314,37 saíam para qualquer ADMIN_RH).
     const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [
-      { id: true, config: { vinculosSocioConta: { "2.11.2.2|leonardo": "leonardo-goncalves", "2.7.2|consultoria": "nenhum" } } },
+      { id: true, config: { vinculosSocioConta: { "2.11.2.2|leonardo": "leonardo-goncalves", "2.11.1.2": "pedro-ramos", "2.7.2|consultoria": "nenhum" } } },
       linha("planoContas", "pc_2026-08_2.11.2.2", { codigo: "2.11.2.2", nome: "Leonardo", valor: 30641.92, competencia: "2026-08" }),
+      linha("planoContas", "pc_2026-08_2.11.1.2", { codigo: "2.11.1.2", nome: "Pedro Ramos Pereira", valor: 8329.9, competencia: "2026-08" }),
       linha("planoContas", "pc_2026-08_2.7.2", { codigo: "2.7.2", nome: "Consultoria", valor: 5600, competencia: "2026-08" }),
     ] });
     const r = await s.call({ action: "list", colecoes: ["planoContas"] });
+    // A chave antiga (só o código) também vale: é o que existe na config real.
     expect(r.body.registros.map((x: any) => x.registro.codigo)).toEqual(["2.7.2"]);
   });
   it("lançamento societário (arrendamento/retirada) não sai para ADMIN_RH que não é o master", async () => {
