@@ -165,6 +165,30 @@ export function planoSemIndividual(plano: ContaPlano[], m: Map<string, ClasseCus
 /** Valor de `vinculosSocioConta` que significa "esta conta não é de sócio nenhum". */
 export const NAO_E_DE_SOCIO = "nenhum";
 
+/**
+ * A chave de um vínculo de conta a sócio: CÓDIGO + NOME, nunca o código só.
+ *
+ * Eu tinha gravado só pelo código, e isso repete um erro que já custei a achar
+ * hoje de manhã em contaQueParou: o contador REAPROVEITA número com outro
+ * significado. Nos dados reais são 25+ códigos com dois nomes diferentes em
+ * meses diferentes — e um deles vive dentro do próprio card do sócio:
+ * `2.14.2.1` é "Contas Pagas" em junho e "LGP" em janeiro.
+ *
+ * Com o código sozinho, clicar "não é daqui" no 2.14.2.1 de junho apagaria
+ * também o de janeiro, que é outra conta e tem valor. E apontar uma conta em
+ * julho puxaria para o sócio o que aquele mesmo número significa em maio.
+ *
+ * Com código+nome, o apontamento continua valendo em todos os meses — que é o
+ * que faz ele sobreviver à renumeração — mas só onde a conta é a MESMA conta.
+ */
+export const chaveContaSocio = (codigo: string, nome: string): string =>
+  `${String(codigo ?? "").trim()}|${String(nome ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()}`;
+
 // Cards confidenciais: agrupa folhas por prefixo de código.
 export function confidencialDoMes(
   plano: ContaPlano[],
@@ -198,7 +222,7 @@ export function confidencialDoMes(
      de qualquer outro. Sem a segunda metade, uma conta vinculada continuaria
      também no card do prefixo antigo e o dinheiro apareceria duas vezes. */
   const doCard = (p: ContaPlano, card: { id: string; prefixos: string[] }) => {
-    const escolhido = vinculos[p.codigo];
+    const escolhido = vinculos[chaveContaSocio(p.codigo, p.nome)];
     // QUALQUER valor apontado desliga o prefixo. É o que dá o terceiro estado:
     // NAO_E_DE_SOCIO ("nenhum") não é id de card nenhum, então a conta sai de
     // TODOS — é o "remover" da tela. Não escrevi um `!== NAO_E_DE_SOCIO` aqui:

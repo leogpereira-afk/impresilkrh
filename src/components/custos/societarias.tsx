@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { formatBRL } from "@/lib/format";
 import { Pessoa } from "@/components/ui/pessoa";
-import { compLabelLongo, competenciasPlano, confidencialDoMes, folhasDoMes, NAO_E_DE_SOCIO } from "@/lib/custos";
+import { chaveContaSocio, compLabelLongo, competenciasPlano, confidencialDoMes, folhasDoMes, NAO_E_DE_SOCIO } from "@/lib/custos";
 import { corDoTipo } from "@/lib/folha";
 import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
 import { CARD_POR_PESSOA, rotuloDoSocio } from "@/lib/societario";
@@ -22,6 +22,8 @@ interface Entrada {
   manual?: boolean;
   /** Conta do plano por trás da linha, quando há: é ela que o "remover" tira. */
   codigo?: string;
+  /** O nome da conta NAQUELE mês. A chave do vínculo é código+nome. */
+  nomeConta?: string;
 }
 
 export type LancamentoSocio = NonNullable<Config["lancamentosSocio"]>[number];
@@ -76,7 +78,7 @@ export function entradasDoSocio(
 
   if (card && card.itens.length > 0) {
     const entradas = [
-      ...card.itens.map((c) => ({ chave: c.codigo, rotulo: c.nome, detalhe: c.codigo, valor: c.valor, cor: "#475569", codigo: c.codigo })),
+      ...card.itens.map((c) => ({ chave: c.codigo, rotulo: c.nome, detalhe: c.codigo, valor: c.valor, cor: "#475569", codigo: c.codigo, nomeConta: c.nome })),
       ...aMao,
     ];
     return {
@@ -193,7 +195,8 @@ export function Societarias({
   onEscolherMes: (c: string) => void;
   /** Conta do plano → id do card. O que o Léo apontou à mão. */
   vinculos?: Record<string, string>;
-  onVincular?: (codigo: string, cardId: string) => void;
+  /** Recebe a CHAVE (código+nome), não o código — o número sozinho não identifica a conta. */
+  onVincular?: (chave: string, cardId: string) => void;
   /** Traz o plano deste mês do Mubisys — a sincronização só desta parte. */
   onSincronizar?: (comp: string) => void;
   sincronizando?: string | null;
@@ -432,7 +435,7 @@ export function Societarias({
                       ) : e.codigo && onVincular ? (
                         <button
                           type="button"
-                          onClick={() => onVincular(e.codigo!, NAO_E_DE_SOCIO)}
+                          onClick={() => onVincular(chaveContaSocio(e.codigo!, e.nomeConta ?? ""), NAO_E_DE_SOCIO)}
                           className="text-xs text-slate-400 underline-offset-2 transition hover:text-rose-600 hover:underline"
                           title="Tira esta conta do card, em todos os meses"
                         >
@@ -476,8 +479,8 @@ export function Societarias({
                       <td className="td w-52">
                         <select
                           className="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                          value={vinculos[c.codigo] ?? ""}
-                          onChange={(ev) => onVincular(c.codigo, ev.target.value)}
+                          value={vinculos[chaveContaSocio(c.codigo, c.nome)] ?? ""}
+                          onChange={(ev) => onVincular(chaveContaSocio(c.codigo, c.nome), ev.target.value)}
                         >
                           <option value="">Não é de sócio</option>
                           {ordenados.map((s) => (

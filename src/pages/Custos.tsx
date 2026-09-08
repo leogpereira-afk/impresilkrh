@@ -734,13 +734,13 @@ export default function Custos() {
    * Vale para TODOS os meses: o contador renumera, mas a conta continua sendo
    * do mesmo sócio. Escolher "Não é de sócio" apaga o apontamento.
    */
-  const vincularContaSocio = (codigo: string, cardId: string) => {
+  const vincularContaSocio = (chave: string, cardId: string) => {
     const v = { ...(config.vinculosSocioConta ?? {}) };
-    if (cardId) v[codigo] = cardId;
-    else delete v[codigo];
+    if (cardId) v[chave] = cardId;
+    else delete v[chave];
     salvarCfg({ vinculosSocioConta: v });
     registrarAcaoManual(
-      cardId ? `Apontou a conta ${codigo} como do card "${cardId}"` : `Tirou a conta ${codigo} dos cards de sócio`,
+      cardId ? `Apontou a conta ${chave} como do card "${cardId}"` : `Tirou a conta ${chave} dos cards de sócio`,
       "Societárias",
     );
   };

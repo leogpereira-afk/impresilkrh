@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contasCandidatas, entradasDoSocio, sociosComMovimento } from "./societarias";
-import { NAO_E_DE_SOCIO } from "@/lib/custos";
+import { chaveContaSocio, NAO_E_DE_SOCIO } from "@/lib/custos";
 import type { Colaborador, ContaPlano, Pagamento } from "@/data/types";
 
 const pedro = { id: "pedro-ramos", nome: "Pedro Ramos", ehDirecao: true, statusId: "direcao" } as Colaborador;
@@ -138,7 +138,7 @@ describe("vínculo à mão de conta do plano ao sócio", () => {
   });
 
   it("com o vínculo, julho aparece", () => {
-    const r = entradasDoSocio(leo, [], [conta("2026-07", "2.11.2.2", 28105.64)], "2026-07", { "2.11.2.2": "leonardo" });
+    const r = entradasDoSocio(leo, [], [conta("2026-07", "2.11.2.2", 28105.64)], "2026-07", { [chaveContaSocio("2.11.2.2", "2.11.2.2")]: "leonardo" });
     expect(r.fonte).toBe("plano");
     expect(r.total).toBeCloseTo(28105.64, 2);
   });
@@ -146,13 +146,13 @@ describe("vínculo à mão de conta do plano ao sócio", () => {
   it("o vínculo TIRA a conta do outro card — senão o dinheiro apareceria duas vezes", () => {
     // 2.14.1.2 é do Pedro pelo prefixo; mandada à mão para o Leonardo, some do Pedro.
     const plano = [conta("2026-04", "2.14.1.2", 10539.3)];
-    const v = { "2.14.1.2": "leonardo" };
+    const v = { [chaveContaSocio("2.14.1.2", "2.14.1.2")]: "leonardo" };
     expect(entradasDoSocio(pedro, [], plano, "2026-04", v).total).toBe(0);
     expect(entradasDoSocio(leo, [], plano, "2026-04", v).total).toBeCloseTo(10539.3, 2);
   });
 
   it("conta vinculada entra no histórico e a pessoa volta a aparecer na lista", () => {
-    const r = sociosComMovimento([leo], [], [conta("2026-07", "2.11.2.2", 28105.64)], { "2.11.2.2": "leonardo" });
+    const r = sociosComMovimento([leo], [], [conta("2026-07", "2.11.2.2", 28105.64)], { [chaveContaSocio("2.11.2.2", "2.11.2.2")]: "leonardo" });
     expect(r.visiveis.map((s) => s.id)).toEqual(["leonardo-goncalves"]);
   });
 });
@@ -175,7 +175,7 @@ describe("contasCandidatas", () => {
 
   it("some da lista assim que é vinculada — a decisão não volta a ser pedida", () => {
     const plano = [cJul("2.11.2.2", "Leonardo", 28105.64), cJul("2.13.5.1", "Leonardo", 10000)];
-    const r = contasCandidatas(plano, "2026-07", [leo], { "2.11.2.2": "leonardo" });
+    const r = contasCandidatas(plano, "2026-07", [leo], { [chaveContaSocio("2.11.2.2", "Leonardo")]: "leonardo" });
     expect(r.map((c) => c.codigo)).toEqual(["2.13.5.1"]);
   });
 
@@ -209,7 +209,7 @@ describe("remover uma conta do card", () => {
     // Sem o terceiro estado, tirar do Pedro jogava no Leonardo (ou vice-versa).
     // A conta tem de sair dos DOIS.
     const plano = [conta("2026-04", "2.14.1.2", 10539.3)];
-    const v = { "2.14.1.2": NAO_E_DE_SOCIO };
+    const v = { [chaveContaSocio("2.14.1.2", "2.14.1.2")]: NAO_E_DE_SOCIO };
     expect(entradasDoSocio(pedro, [], plano, "2026-04", v).total).toBe(0);
     expect(entradasDoSocio(leo, [], plano, "2026-04", v).total).toBe(0);
   });
@@ -255,5 +255,51 @@ describe("lançamento à mão", () => {
   it("a linha à mão vem marcada — quem lê precisa saber que não veio de sistema", () => {
     const r = entradasDoSocio(pedro, [], [], "2026-04", {}, [manual("2026-04", 500)]);
     expect(r.entradas[0].manual).toBe(true);
+  });
+});
+
+/* O NÚMERO SOZINHO NÃO IDENTIFICA A CONTA (08/09/2026).
+ *
+ * Achado da revisão adversarial dos meus próprios consertos. Eu tinha gravado o
+ * vínculo do sócio só pelo CÓDIGO, valendo em todos os meses — repetindo o erro
+ * que eu mesmo consertei horas antes em contaQueParou.ts.
+ *
+ * Nos dados reais são 25+ códigos com dois nomes diferentes em meses
+ * diferentes, e um deles vive dentro do próprio card do sócio: 2.14.2.1 é
+ * "Contas Pagas" em junho e "LGP" em janeiro.
+ *
+ * Começa pelo caso ruim: o clique num mês estragar outro mês.
+ */
+describe("o vínculo é da CONTA, não do número", () => {
+  const leo = { id: "leonardo-goncalves", nome: "Leonardo Gonçalves", ehDirecao: true, statusId: "direcao" } as Colaborador;
+  const c = (competencia: string, codigo: string, nome: string, valor: number): ContaPlano =>
+    ({ id: `pc_${competencia}_${codigo}`, competencia, codigo, nome, valor, folha: true });
+
+  it("O CASO RUIM: 'não é daqui' num mês não pode apagar outra conta de mesmo número", () => {
+    // 2.14.2.1 = "Contas Pagas" em junho (R$ 0) e "LGP" em janeiro (R$ 328).
+    // Tirar a de junho não pode levar a de janeiro junto.
+    const plano = [c("2026-06", "2.14.2.1", "Contas Pagas", 0), c("2026-01", "2.14.2.1", "LGP", 328)];
+    const v = { [chaveContaSocio("2.14.2.1", "Contas Pagas")]: NAO_E_DE_SOCIO };
+    expect(entradasDoSocio(leo, [], plano, "2026-01", v).total).toBe(328);
+  });
+
+  it("apontar em julho não puxa o mesmo número de outro mês", () => {
+    const plano = [c("2026-07", "2.11.2.2", "Leonardo", 28105.64), c("2026-05", "2.11.2.2", "Munk / Guindaste", 1820)];
+    const v = { [chaveContaSocio("2.11.2.2", "Leonardo")]: "leonardo" };
+    expect(entradasDoSocio(leo, [], plano, "2026-07", v).total).toBeCloseTo(28105.64, 2);
+    expect(entradasDoSocio(leo, [], plano, "2026-05", v).total).toBe(0);
+  });
+
+  it("mas continua valendo em TODOS os meses em que a conta é a mesma", () => {
+    // É isto que faz o apontamento sobreviver à renumeração — o ponto todo dele.
+    const plano = [c("2026-07", "2.11.2.2", "Leonardo", 28105.64), c("2026-08", "2.11.2.2", "Leonardo", 30641.92)];
+    const v = { [chaveContaSocio("2.11.2.2", "Leonardo")]: "leonardo" };
+    expect(entradasDoSocio(leo, [], plano, "2026-08", v).total).toBeCloseTo(30641.92, 2);
+  });
+
+  it("acento e caixa não separam a mesma conta", () => {
+    const plano = [c("2026-07", "2.9.9", "Combustível", 100)];
+    const v = { [chaveContaSocio("2.9.9", "COMBUSTIVEL")]: "leonardo" };
+    expect(entradasDoSocio(leo, [], plano, "2026-07", v).total).toBe(100);
   });
 });

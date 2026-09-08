@@ -147,10 +147,15 @@ export default function PainelControle() {
 // ---------------- Confidencial (Diretoria — só o gestor master) ----------------
 function ConfidencialSecao() {
   const { items: plano } = useColecao("planoContas");
+  const config = useConfig();
   const comps = competenciasPlano(plano);
   const [comp, setComp] = useState<string>("");
   const compSel = comp || comps[comps.length - 1] || "";
-  const cards = confidencialDoMes(plano, compSel, CARDS_CONFIDENCIAIS);
+  /* Os vínculos à mão TAMBÉM aqui: sem eles, a mesma conta era retirada de
+     sócio na tela de Societárias e continuava fora do card aqui — duas telas
+     mostrando o dinheiro do dono de dois jeitos, e esta é a que o master abre
+     para conferir. Achado da revisão adversarial (08/09/2026). */
+  const cards = confidencialDoMes(plano, compSel, CARDS_CONFIDENCIAIS, config.vinculosSocioConta ?? {});
   const totalGeral = cards.reduce((s, c) => s + c.total, 0);
   return (
     <div className="space-y-4">
