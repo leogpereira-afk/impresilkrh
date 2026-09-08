@@ -33,6 +33,7 @@ import { Societarias } from "@/components/custos/societarias";
 import { PreviaFolha, type CoberturaBusca } from "@/components/custos/previa-folha";
 import { TotalEquipe } from "@/components/custos/total-equipe";
 import { EncargosEstimados } from "@/components/custos/encargos-estimados";
+import { VinculosSalvos } from "@/components/custos/vinculos-salvos";
 import { resumoDaEquipe, pesoDaPessoa, porPessoaNoMes, type PessoaNoMes } from "@/lib/provisaoEquipe";
 import { mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
@@ -2268,6 +2269,24 @@ export default function Custos() {
                     ))}
                   </div>
                 )}
+
+                {/* ---------- Vínculos guardados ----------
+                    Um vínculo errado era invisível: só reaparecia se o mesmo
+                    nome voltasse numa importação, e enquanto isso mandava
+                    dinheiro para a ficha errada calado. Achado do Léo em
+                    07/09/2026 ("esse pedro henrique santos oliveira não
+                    existe"). Aqui todos ficam à vista, com o ID da pessoa. */}
+                <VinculosSalvos
+                  vinculos={config.vinculosMubi ?? {}}
+                  colaboradores={d.colaboradores as Colaborador[]}
+                  podeEditar={podeGerir(sessao)}
+                  onRemover={(chave) => {
+                    const vinc = { ...(config.vinculosMubi ?? {}) };
+                    delete vinc[chave];
+                    salvarCfg({ vinculosMubi: vinc });
+                    toast(`Vínculo "${chave}" apagado. Os títulos com este nome voltam a ser casados por CPF, ID ou nome.`);
+                  }}
+                />
 
       {/* ---------- Atualização de dados ----------
           Os dois quadros de carga (plano do contador + folha do ERP) moram na
