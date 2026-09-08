@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Info, UserSearch, Wand2 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Pessoa } from "@/components/ui/pessoa";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { formatBRL } from "@/lib/format";
 import { compLabel } from "@/lib/custos";
@@ -98,7 +99,8 @@ export function AuditoriaLancamentos({
     return [...m.entries()];
   }, [visiveis]);
   const limpo = achados.length === 0;
-  const nome = (id: string) => colaboradores.find((c) => c.id === id)?.nome ?? id;
+  const fichaDe = (id: string) => colaboradores.find((c) => c.id === id);
+  const nome = (id: string) => fichaDe(id)?.nome ?? id;
 
   return (
     <Card idPersistencia="custos:auditoria-lancamentos">
@@ -196,7 +198,7 @@ export function AuditoriaLancamentos({
                 <ul className="space-y-1.5 border-t border-black/5 px-3 py-2">
                   {lista.slice(0, MOSTRAR).map((a, i) => (
                     <li key={`${a.regra}:${a.colaboradorId}:${a.pagamentoIds[0] ?? i}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-                      <span className="font-medium text-brand-ink">{nome(a.colaboradorId)}</span>
+                      <Pessoa colaboradorId={a.colaboradorId} nome={nome(a.colaboradorId)} cpf={fichaDe(a.colaboradorId)?.cpf} />
                       <span className="text-slate-600">{a.detalhe}</span>
                       {a.valor > 0 && <span className="tabular-nums text-slate-500">{formatBRL(a.valor)}</span>}
                       {onVerPessoa && (

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { CheckCircle2, AlertTriangle, ListChecks, Wand2 } from "lucide-react";
+import { Pessoa } from "@/components/ui/pessoa";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { formatBRL } from "@/lib/format";
@@ -96,7 +97,7 @@ export function ConferenciaTipos({
                   {r.divergencias.slice(0, MOSTRAR).map((d) => (
                     <tr key={d.id}>
                       <td className="td tabular-nums text-slate-600">{compLabel(d.competencia)}</td>
-                      <td className="td font-medium text-slate-800">{nomeDe(d.colaboradorId)}</td>
+                      <td className="td font-medium text-slate-800"><Pessoa nome={nomeDe(d.colaboradorId)} colaboradorId={d.colaboradorId} /></td>
                       <td className="td text-slate-500 line-through decoration-slate-300">{d.de}</td>
                       <td className="td font-medium text-brand-ink">{d.para}</td>
                       <td className="td font-mono text-xs text-slate-500">{d.plano}</td>

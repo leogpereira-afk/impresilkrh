@@ -4,6 +4,7 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/misc";
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { formatBRL } from "@/lib/format";
+import { Pessoa } from "@/components/ui/pessoa";
 import { compLabelLongo, competenciasPlano, confidencialDoMes } from "@/lib/custos";
 import { corDoTipo } from "@/lib/folha";
 import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
@@ -116,7 +117,7 @@ export function Societarias({
 
       {/* O que entra. */}
       <Card idPersistencia={`custos:soc:${socio.id}:entra`}>
-        <CardHeader title="O que entra" subtitle={`${socio.nome} em ${compLabelLongo(compAtiva)}`} icon={<Landmark className="h-5 w-5" />} />
+        <CardHeader title="O que entra" subtitle={<>{<Pessoa nome={socio.nome} cpf={socio.cpf} />} em {compLabelLongo(compAtiva)}</>} icon={<Landmark className="h-5 w-5" />} />
         <CardBody>
           {mes.entradas.length === 0 ? (
             <p className="text-sm text-slate-400">Nada gravado em {compLabelLongo(compAtiva)}.</p>

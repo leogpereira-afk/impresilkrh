@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { AlertTriangle, ShieldAlert, Info, Coins, Lock } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { Pessoa } from "@/components/ui/pessoa";
 import { formatBRL } from "@/lib/format";
 import { compLabel, compLabelLongo } from "@/lib/custos";
 import { corDoTipo } from "@/lib/folha";
@@ -247,7 +248,7 @@ export function PreviaFolha({
               <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
                 {[...resumo.novos].sort((a, b) => a.competencia.localeCompare(b.competencia) || nomeDe(a.colaboradorId).localeCompare(nomeDe(b.colaboradorId), "pt-BR")).map((n) => (
                   <tr key={n.id} className={idsForaDoQuadro.has(n.id) ? "bg-amber-50/40" : undefined}>
-                    <td className="td font-medium text-slate-700">{nomeDe(n.colaboradorId)}{idsForaDoQuadro.has(n.id) && <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] text-amber-800">fora do quadro</span>}</td>
+                    <td className="td font-medium text-slate-700"><Pessoa nome={nomeDe(n.colaboradorId)} colaboradorId={n.colaboradorId} />{idsForaDoQuadro.has(n.id) && <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] text-amber-800">fora do quadro</span>}</td>
                     <td className="td text-slate-500">
                       <span className="flex flex-wrap items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: corDoTipo(n.tipo) }} />
@@ -358,7 +359,7 @@ function GrupoDeMudanca({ grupo, nomeDe, onExcluir, onExcluirBloco }: {
                   aria-label={`Aplicar a alteração de ${nomeDe(novo.colaboradorId)}`}
                 />
               </td>
-              <td className={cn("td font-medium text-slate-700", fora && "line-through")}>{nomeDe(novo.colaboradorId)}</td>
+              <td className={cn("td font-medium text-slate-700", fora && "line-through")}><Pessoa nome={nomeDe(novo.colaboradorId)} colaboradorId={novo.colaboradorId} /></td>
               <td className="td text-slate-500">{compLabel(novo.competencia)} · {novo.tipo} · {formatBRL(novo.valor)}</td>
               <td className="td">
                 <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
@@ -399,7 +400,7 @@ function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar,
           {[...itens].sort((a, b) => a.competencia.localeCompare(b.competencia) || nomeDe(a.colaboradorId).localeCompare(nomeDe(b.colaboradorId), "pt-BR")).map((a) => (
             <tr key={a.id} className={marcados?.has(a.id) ? "bg-red-50/50" : undefined}>
               {onMarcar && <td className="td w-8"><input type="checkbox" checked={marcados?.has(a.id) ?? false} onChange={(e) => onMarcar(a.id, e.target.checked)} aria-label={`Remover ${nomeDe(a.colaboradorId)} ${compLabel(a.competencia)} ${a.tipo}`} /></td>}
-              <td className="td text-slate-600">{nomeDe(a.colaboradorId)}</td>
+              <td className="td text-slate-600"><Pessoa nome={nomeDe(a.colaboradorId)} colaboradorId={a.colaboradorId} /></td>
               <td className="td text-slate-500">{compLabel(a.competencia)} · {a.tipo}{a.descricao && <span className="text-[11px] text-slate-400"> · {a.descricao}</span>}</td>
               <td className="td text-right tabular-nums text-slate-500">{formatBRL(a.valor)}</td>
             </tr>
