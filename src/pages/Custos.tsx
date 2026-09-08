@@ -728,6 +728,23 @@ export default function Custos() {
     recomputarPrevia(config.vinculosMubi ?? {}, vinculosTitulo);
   };
 
+  /**
+   * De quem é uma conta do plano, dito à mão na tela de Societárias.
+   *
+   * Vale para TODOS os meses: o contador renumera, mas a conta continua sendo
+   * do mesmo sócio. Escolher "Não é de sócio" apaga o apontamento.
+   */
+  const vincularContaSocio = (codigo: string, cardId: string) => {
+    const v = { ...(config.vinculosSocioConta ?? {}) };
+    if (cardId) v[codigo] = cardId;
+    else delete v[codigo];
+    salvarCfg({ vinculosSocioConta: v });
+    registrarAcaoManual(
+      cardId ? `Apontou a conta ${codigo} como do card "${cardId}"` : `Tirou a conta ${codigo} dos cards de sócio`,
+      "Societárias",
+    );
+  };
+
   // Lê a planilha e monta a PRÉVIA de conciliação (não aplica nada ainda). Subir a
   // mesma planilha de novo mostra o que é igual, o que mudou e o que é novo.
   // Aplica a prévia: mexe SÓ no que mudou (corrige valores, insere novos, atualiza
@@ -2310,6 +2327,10 @@ export default function Custos() {
                 socios={d.colaboradores.filter((c: Colaborador) => ehSocio(c))}
                 pagamentos={pagamentos as Pagamento[]}
                 plano={planoContas as ContaPlano[]}
+                vinculos={config.vinculosSocioConta ?? {}}
+                onVincular={vincularContaSocio}
+                onSincronizar={(comp) => { void puxarPlanoDoErpEmSilencio(comp); }}
+                sincronizando={buscandoPlano}
                 compAtiva={compAtiva}
                 onEscolherMes={setComp}
               />

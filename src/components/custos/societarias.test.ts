@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entradasDoSocio, sociosComMovimento } from "./societarias";
+import { contasCandidatas, entradasDoSocio, sociosComMovimento } from "./societarias";
 import type { Colaborador, ContaPlano, Pagamento } from "@/data/types";
 
 const pedro = { id: "pedro-ramos", nome: "Pedro Ramos", ehDirecao: true, statusId: "direcao" } as Colaborador;
@@ -9,13 +9,37 @@ const conta = (competencia: string, codigo: string, valor: number): ContaPlano =
   ({ id: `pc_${competencia}_${codigo}`, competencia, codigo, nome: codigo, valor, folha: true });
 
 describe("entradasDoSocio — um valor, uma fonte", () => {
-  it("com lançamento gravado para a pessoa, a fonte é o Contas a Pagar", () => {
-    const r = entradasDoSocio(pedro, [pg("2026-08", 6000), pg("2026-08", 5250)], [conta("2026-08", "2.14.1.2", 999)], "2026-08");
+  /* A PRIORIDADE MUDOU EM 08/09/2026, e os dados reais mandaram.
+   *
+   * Era: qualquer lançamento no Contas a Pagar ganhava do plano. Em maio o
+   * Leonardo tem UM título lá — "AMIL LEONARDO", R$ 3.146,27, plano de saúde —
+   * e esse único título ganhou do plano do contador, que fecha o mês em
+   * R$ 15.961,02. A tela mostrava 3.146,27, escondia R$ 12.814,75 e desenhava
+   * uma queda de 93% que nunca existiu.
+   *
+   * As fontes não são equivalentes: o plano é o mês FECHADO; o Contas a Pagar
+   * traz só os títulos que casaram com a pessoa pelo nome. */
+  it("O CASO RUIM: um título solto não pode ganhar do mês fechado do contador", () => {
+    const r = entradasDoSocio(
+      pedro,
+      [pg("2026-05", 3146.27, "Plano de Saúde")],
+      [conta("2026-05", "2.14.1.2", 15961.02)],
+      "2026-05",
+    );
+    expect(r.fonte).toBe("plano");
+    expect(r.total).toBeCloseTo(15961.02, 2);
+    // E o que ficou de fora é DECLARADO, não sumido.
+    expect(r.outraFonte).toEqual({ fonte: "contas-a-pagar", total: 3146.27, linhas: 1 });
+  });
+
+  it("sem plano no mês, o Contas a Pagar entra", () => {
+    const r = entradasDoSocio(pedro, [pg("2026-08", 6000), pg("2026-08", 5250)], [], "2026-08");
     expect(r.fonte).toBe("contas-a-pagar");
     expect(r.total).toBe(11250);
     expect(r.entradas.map((e) => e.valor)).toEqual([6000, 5250]);
+    expect(r.outraFonte).toBeUndefined();
   });
-  it("sem lançamento, cai no plano do contador (2.14 do sócio) — nunca soma os dois", () => {
+  it("nunca soma as duas fontes — seria o mesmo dinheiro duas vezes", () => {
     const r = entradasDoSocio(pedro, [pg("2026-08", 6000)], [conta("2026-04", "2.14.1.2", 10539.3), conta("2026-04", "2.14.1", 500), conta("2026-04", "2.14.2.2", 777)], "2026-04");
     expect(r.fonte).toBe("plano");
     expect(r.total).toBe(11039.3);
@@ -86,5 +110,81 @@ describe("sociosComMovimento", () => {
       pgDe("maria-ines", "2026-06", 10), pgDe("leonardo-goncalves", "2026-06", 10), pgDe("pedro-ramos", "2026-06", 10),
     ], []);
     expect(r.visiveis.map((s) => s.id)).toEqual(["pedro-ramos", "leonardo-goncalves", "maria-ines"]);
+  });
+});
+
+/* O VÍNCULO À MÃO, que sobrevive à renumeração (08/09/2026).
+ *
+ * Em julho o contador moveu as retiradas do Leonardo de 2.14.2.2 para 2.11.2.2
+ * e a equivalência automática NÃO resolveu: "Leonardo" aparece sob três pais
+ * diferentes no plano — retirada num, antecipação de recebíveis noutro — então
+ * o nome sozinho não identifica. R$ 28.105,64 de julho, R$ 30.641,92 de agosto
+ * e R$ 60.745,30 de setembro ficaram fora da tela sem nada avisar.
+ *
+ * Adivinhar pelo nome seria pior que não achar: juntaria a antecipação de
+ * recebíveis à retirada. Quando a máquina não sabe, quem sabe é o dono.
+ *
+ * Começa pelo caso ruim: o palpite que junta o que não é do mesmo bolso.
+ */
+describe("vínculo à mão de conta do plano ao sócio", () => {
+  const leo = { id: "leonardo-goncalves", nome: "Leonardo Gonçalves", ehDirecao: true, statusId: "direcao" } as Colaborador;
+
+  it("O CASO RUIM: sem o vínculo, a conta renumerada NÃO é adivinhada", () => {
+    // 2.11.2.2 "Leonardo" não casa com o prefixo 2.14.2. e não tem equivaleA.
+    const r = entradasDoSocio(leo, [], [conta("2026-07", "2.11.2.2", 28105.64)], "2026-07");
+    expect(r.total).toBe(0);
+    expect(r.fonte).toBeNull();
+  });
+
+  it("com o vínculo, julho aparece", () => {
+    const r = entradasDoSocio(leo, [], [conta("2026-07", "2.11.2.2", 28105.64)], "2026-07", { "2.11.2.2": "leonardo" });
+    expect(r.fonte).toBe("plano");
+    expect(r.total).toBeCloseTo(28105.64, 2);
+  });
+
+  it("o vínculo TIRA a conta do outro card — senão o dinheiro apareceria duas vezes", () => {
+    // 2.14.1.2 é do Pedro pelo prefixo; mandada à mão para o Leonardo, some do Pedro.
+    const plano = [conta("2026-04", "2.14.1.2", 10539.3)];
+    const v = { "2.14.1.2": "leonardo" };
+    expect(entradasDoSocio(pedro, [], plano, "2026-04", v).total).toBe(0);
+    expect(entradasDoSocio(leo, [], plano, "2026-04", v).total).toBeCloseTo(10539.3, 2);
+  });
+
+  it("conta vinculada entra no histórico e a pessoa volta a aparecer na lista", () => {
+    const r = sociosComMovimento([leo], [], [conta("2026-07", "2.11.2.2", 28105.64)], { "2.11.2.2": "leonardo" });
+    expect(r.visiveis.map((s) => s.id)).toEqual(["leonardo-goncalves"]);
+  });
+});
+
+/* AS CANDIDATAS: o que a máquina mostra em vez de adivinhar (08/09/2026). */
+describe("contasCandidatas", () => {
+  const leo = { id: "leonardo-goncalves", nome: "Leonardo Gonçalves", ehDirecao: true, statusId: "direcao" } as Colaborador;
+  const cJul = (codigo: string, nome: string, valor: number): ContaPlano =>
+    ({ id: `pc_2026-07_${codigo}`, competencia: "2026-07", codigo, nome, valor, folha: true });
+
+  it("O CASO RUIM: não junta os dois 'Leonardo' — mostra os dois para escolher", () => {
+    // 2.11.2.2 é retirada; 2.13.5.1 é antecipação de recebíveis. Mesmo nome,
+    // bolsos diferentes. Somar seria inventar dinheiro na conta do sócio.
+    const r = contasCandidatas(
+      [cJul("2.11.2.2", "Leonardo", 28105.64), cJul("2.13.5.1", "Leonardo", 10000)],
+      "2026-07", [leo],
+    );
+    expect(r.map((c) => c.codigo)).toEqual(["2.11.2.2", "2.13.5.1"]);
+  });
+
+  it("some da lista assim que é vinculada — a decisão não volta a ser pedida", () => {
+    const plano = [cJul("2.11.2.2", "Leonardo", 28105.64), cJul("2.13.5.1", "Leonardo", 10000)];
+    const r = contasCandidatas(plano, "2026-07", [leo], { "2.11.2.2": "leonardo" });
+    expect(r.map((c) => c.codigo)).toEqual(["2.13.5.1"]);
+  });
+
+  it("conta que não nomeia sócio nenhum não polui a lista", () => {
+    const r = contasCandidatas([cJul("2.6.1", "Energia Elétrica", 9000)], "2026-07", [leo]);
+    expect(r).toEqual([]);
+  });
+
+  it("linha zerada não é decisão a tomar", () => {
+    const r = contasCandidatas([cJul("2.11.2.2", "Leonardo", 0)], "2026-07", [leo]);
+    expect(r).toEqual([]);
   });
 });

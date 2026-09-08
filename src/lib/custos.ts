@@ -167,6 +167,22 @@ export function confidencialDoMes(
   plano: ContaPlano[],
   comp: string,
   cards: { id: string; titulo: string; prefixos: string[] }[],
+  /**
+   * Conta do plano → card, dito À MÃO pelo Léo. É o que sobrevive à
+   * renumeração do contador.
+   *
+   * Por que é preciso (08/09/2026): em julho o contador moveu as retiradas do
+   * Leonardo de 2.14.2.2 para 2.11.2.2 e a equivalência automática NÃO
+   * resolveu — "Leonardo" aparece sob três pais diferentes no plano (retirada
+   * num, antecipação de recebíveis noutro), então o nome sozinho não
+   * identifica. R$ 28.105,64 de julho, R$ 30.641,92 de agosto e R$ 60.745,30
+   * de setembro ficaram fora da tela sem nada avisar.
+   *
+   * Adivinhar pelo nome seria pior: juntaria a antecipação de recebíveis à
+   * retirada. Quando a máquina não sabe, quem sabe é o dono — e a resposta
+   * dele fica gravada.
+   */
+  vinculos: Record<string, string> = {},
 ) {
   const folhas = folhasDoMes(plano, comp);
   // O prefixo vem com ponto no fim ("2.14.2.") e a conta-pai não tem ponto
@@ -175,10 +191,16 @@ export function confidencialDoMes(
   const casa = (codigo: string, pre: string) => codigo === pre.replace(/\.$/, "") || codigo.startsWith(pre);
   // Conta renumerada pelo contador entra pelo código de referência (equivaleA).
   const casaConta = (p: ContaPlano, pre: string) => casa(p.codigo, pre) || (!!p.equivaleA && casa(p.equivaleA, pre));
+  /* O vínculo à mão MANDA nos dois sentidos: puxa para o card escolhido e tira
+     de qualquer outro. Sem a segunda metade, uma conta vinculada continuaria
+     também no card do prefixo antigo e o dinheiro apareceria duas vezes. */
+  const doCard = (p: ContaPlano, card: { id: string; prefixos: string[] }) => {
+    const escolhido = vinculos[p.codigo];
+    if (escolhido) return escolhido === card.id;
+    return card.prefixos.some((pre) => casaConta(p, pre));
+  };
   return cards.map((card) => {
-    const itens = folhas
-      .filter((p) => card.prefixos.some((pre) => casaConta(p, pre)))
-      .sort((a, b) => b.valor - a.valor);
+    const itens = folhas.filter((p) => doCard(p, card)).sort((a, b) => b.valor - a.valor);
     return { ...card, itens, total: itens.reduce((s, p) => s + p.valor, 0) };
   });
 }

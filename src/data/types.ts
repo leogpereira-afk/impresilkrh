@@ -567,6 +567,16 @@ export interface Config {
    */
   vinculosMubiTitulo?: Record<string, string>;
   /**
+   * Conta do plano de contas → card confidencial do sócio, apontado À MÃO.
+   *
+   * O contador renumera o plano (as retiradas do Leonardo saíram de 2.14.2.2
+   * para 2.11.2.2 em jul/2026) e a equivalência automática nem sempre resolve:
+   * "Leonardo" aparece sob três pais diferentes, retirada num e antecipação de
+   * recebíveis noutro. Adivinhar juntaria bolsos diferentes. Isto guarda a
+   * resposta de quem sabe, e ela vale para todos os meses.
+   */
+  vinculosSocioConta?: Record<string, string>;
+  /**
    * Vínculos que o RH OLHOU e disse "está certo" — chave do ERP → o
    * colaboradorId que foi conferido.
    *
