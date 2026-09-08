@@ -1,6 +1,6 @@
 import { equivalenciasDeContas } from "./renumeracao";
 import { describe, expect, it } from "vitest";
-import { compararPlano, competenciaEhDoContador, ehContaPessoal, juntarContas, mesclarPlano, montarPlanoDoErp, type ContaMubi } from "./mubiPlano";
+import { compararPlano, competenciaEhDoContador, ehContaPessoal, juntarContas, mesclarPlano, montarPlanoDoErp, type ContaMubi, puxadaPerdeuAFolha } from "./mubiPlano";
 import type { ClasseCusto, ContaPlano } from "@/data/types";
 
 const c = (codigo: string, valor: number, nome = codigo, quantos = 1): ContaMubi => ({ codigo, nome, valor, quantos });
@@ -193,5 +193,35 @@ describe("montarPlanoDoErp com a equivalência de contas (renumeração de jul/2
     expect(sem.renumeradas).toBe(0);
     expect(sem.semPar).toEqual([]);
     expect(sem.contas.some((c) => c.codigo === "2.11.2.2")).toBe(true); // é exatamente o furo que a equivalência fecha
+  });
+});
+
+describe("puxada que perdeu a folha", () => {
+  const cp = (competencia: string, codigo: string): ContaPlano =>
+    ({ id: `pc_${competencia}_${codigo}`, competencia, codigo, nome: codigo, valor: 100, folha: true, origem: "erp" }) as ContaPlano;
+  const classe = (p: { codigo: string }) => (p.codigo === "2.1.1" ? "individual" : "rateio");
+
+  it("mês que tinha folha e puxada nova sem nenhuma conta individual é recusada", () => {
+    const atual = [cp("2026-07", "2.1.1"), cp("2026-07", "2.1.14")];
+    const novo = [cp("2026-07", "2.1.14"), cp("2026-07", "2.9.1")];
+    expect(puxadaPerdeuAFolha(atual, novo, "2026-07", classe)).toBe(true);
+  });
+
+  it("puxada que traz a folha passa", () => {
+    const atual = [cp("2026-07", "2.1.1")];
+    const novo = [cp("2026-07", "2.1.1"), cp("2026-07", "2.1.14")];
+    expect(puxadaPerdeuAFolha(atual, novo, "2026-07", classe)).toBe(false);
+  });
+
+  it("mês que nunca teve folha não bloqueia (é o caso de jul-set/2026 hoje)", () => {
+    const atual = [cp("2026-07", "2.1.14")];
+    const novo = [cp("2026-07", "2.9.1")];
+    expect(puxadaPerdeuAFolha(atual, novo, "2026-07", classe)).toBe(false);
+  });
+
+  it("folha de OUTRO mês não conta", () => {
+    const atual = [cp("2026-06", "2.1.1")];
+    const novo = [cp("2026-07", "2.1.14")];
+    expect(puxadaPerdeuAFolha(atual, novo, "2026-07", classe)).toBe(false);
   });
 });

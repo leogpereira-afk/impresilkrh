@@ -232,6 +232,28 @@ export const competenciaEhDoContador = (plano: ContaPlano[], competencia: string
  * ERP não trouxe fica como está. Substituir a competência inteira — como a
  * planilha faz — era o que fazia "377 contas sumirem" na prévia.
  */
+/**
+ * A puxada nova PERDEU a folha que o mês já tinha?
+ *
+ * `mesclarPlano` apaga as linhas de origem "erp" que a puxada nova não trouxe —
+ * é assim que a renumeração do contador não deixa lixo para trás. O preço é
+ * que uma puxada PARCIAL (página que veio curta, ERP fora do ar no meio)
+ * apagaria calada a folha de um mês que estava certo. Aqui a gente detecta o
+ * caso: o mês tinha conta de custo individual e a puxada nova não traz
+ * nenhuma. Não é prova de que a puxada quebrou — é prova suficiente para não
+ * apagar sem perguntar.
+ */
+export function puxadaPerdeuAFolha(
+  atual: ContaPlano[],
+  novo: ContaPlano[],
+  competencia: string,
+  classe: (p: { codigo: string; equivaleA?: string }) => string,
+): boolean {
+  const tinha = atual.some((p) => p.competencia === competencia && classe(p) === "individual");
+  if (!tinha) return false;
+  return !novo.some((p) => classe(p) === "individual");
+}
+
 export function mesclarPlano(atual: ContaPlano[], novo: ContaPlano[], competencia: string): ContaPlano[] {
   const trazidos = new Map(novo.map((c) => [c.codigo, c]));
   // O que é do CONTADOR fica. O que veio do ERP numa puxada anterior e não

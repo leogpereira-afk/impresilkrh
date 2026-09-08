@@ -16,6 +16,7 @@
 //  - é lento: 25-40s por requisição.
 // ============================================================================
 import { json, preflight } from "../_shared/cors.ts";
+import { decidirPaginacao } from "../_shared/paginacao.ts";
 import { codigoDeReferencia, ehConfidencialEquivalente, equivalenciasDeContas, serializar, type ContaRef } from "../_shared/renumeracao.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -329,9 +330,27 @@ Deno.serve(async (req) => {
     // — o alerta de busca incompleta nunca dispararia. Sem nenhum dos dois, o
     // sinal é a página ter vindo cheia.
     const pag = primeira?.pagination ?? primeira?.meta ?? {};
-    const totalPaginas = Number(
-      pag.last_page ?? pag.total_pages ?? (itens.length >= PER_PAGE ? paginaPedida + 1 : Math.max(1, paginaPedida)),
-    ) || 1;
+    /* PÁGINA CURTA NÃO PROVA QUE ACABOU (08/09/2026).
+     *
+     * A régua antiga era "veio menos que per_page ⇒ era a última". Quando o
+     * Mubisys não manda paginação (e ele não manda em toda rota), qualquer
+     * página curta encerrava a varredura — e o que ficou para trás sumia em
+     * SILÊNCIO, com "truncado: false" na resposta.
+     *
+     * O estrago apareceu no plano de contas: julho, agosto e setembro/2026
+     * vieram com 120, 120 e 80 contas e NENHUMA conta de folha, enquanto os
+     * mesmos meses tinham ~110 títulos de salário, hora extra e diária
+     * vencendo. A tela então mostrava "Individual R$ 0,00" como se a folha
+     * daquele mês não tivesse custado nada.
+     *
+     * Agora, sem paginação declarada, só uma página VAZIA encerra: o cliente
+     * pede a seguinte enquanto vier item, até o teto dele. `paginacaoInferida`
+     * conta para a tela que o total é palpite, não informação do ERP. */
+    const { totalPaginas, paginacaoInferida } = decidirPaginacao({
+      itens: itens.length,
+      totalDeclarado: Number(pag.last_page ?? pag.total_pages ?? 0) || 0,
+      pagina: paginaPedida,
+    });
 
     if (!umaPagina) {
       // Modo antigo: varre até a 4ª página aqui dentro.
@@ -382,7 +401,8 @@ Deno.serve(async (req) => {
         paginas: totalPaginas,
         truncado: umaPagina ? false : totalPaginas > 4,
         pagina: umaPagina ? paginaPedida : 1,
-        temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
+        paginacaoInferida,
+        temMais: umaPagina ? (paginacaoInferida ? itens.length > 0 : paginaPedida < totalPaginas) : totalPaginas > 4,
         contas: [...contas.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })),
         societariasOmitidas: { contas: societarias.contas.size, titulos: societarias.titulos },
       });
@@ -499,7 +519,9 @@ Deno.serve(async (req) => {
       contasForaOmitidas,
       idsForaDaFolha,
       pagina: umaPagina ? paginaPedida : 1,
-      temMais: umaPagina ? paginaPedida < totalPaginas : totalPaginas > 4,
+      paginacaoInferida,
+      // Mesma régua do plano: sem paginação declarada, só página vazia encerra.
+      temMais: umaPagina ? (paginacaoInferida ? itens.length > 0 : paginaPedida < totalPaginas) : totalPaginas > 4,
       linhas,
     });
   } catch (e) {

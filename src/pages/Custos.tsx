@@ -80,7 +80,7 @@ import {
 } from "@/lib/custos";
 import { lerPlanilha } from "@/lib/xlsx-lite";
 import { CARDS_CONFIDENCIAIS } from "@/data/classificacaoContas";
-import { buscarPlanoCompleto, compararPlano, competenciaEhDoContador, mesclarPlano, montarPlanoDoErp, type ComparacaoPlano, type ContaMubi } from "@/lib/mubiPlano";
+import { buscarPlanoCompleto, compararPlano, competenciaEhDoContador, mesclarPlano, montarPlanoDoErp, type ComparacaoPlano, type ContaMubi, puxadaPerdeuAFolha } from "@/lib/mubiPlano";
 import { enviarColecao, apagarRegistrosNuvem, enviarConfigNuvem } from "@/lib/sync";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import { idPessoa } from "@/lib/identidade";
@@ -496,8 +496,19 @@ export default function Custos() {
   const aplicarPlanoDoErp = () => {
     if (!planoPrev || planoPrev.somenteConferencia) return;
     const { competencia, contas } = planoPrev;
+    /* PUXADA QUE PERDEU A FOLHA NÃO É APLICADA. `mesclarPlano` apaga as linhas
+       do ERP que não vieram nesta puxada — de propósito, para a renumeração do
+       contador não deixar lixo. Só que uma puxada parcial apagaria a folha de
+       um mês que estava certo, e ninguém veria. */
+    if (puxadaPerdeuAFolha(planoContas as ContaPlano[], contas, competencia, (p) => classeDaConta(p, mapaClasse))) {
+      toast(
+        `Esta puxada de ${compLabel(competencia)} não trouxe nenhuma conta de folha, e o mês já tem. Aplicar apagaria a folha que está gravada — puxe de novo.`,
+        "erro",
+      );
+      return;
+    }
     // MESCLA, não substitui: o que o ERP trouxe entra; o que já existia e ele
-    // não trouxe fica. Nada é apagado na nuvem.
+    // não trouxe fica — exceto linha do ERP que a puxada nova não repetiu.
     planoColecao.definir(mesclarPlano(planoContas as ContaPlano[], contas, competencia));
     void enviarColecao("planoContas");
     setComp(competencia);
