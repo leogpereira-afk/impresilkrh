@@ -56,6 +56,24 @@ export function planoDaDescricao(descricao: unknown): string {
 }
 
 const codigoDe = (plano: string) => plano.split("-")[0].trim();
+const nomeDoPlano = (plano: string) => {
+  const i = plano.indexOf("-");
+  return i < 0 ? "" : plano.slice(i + 1).trim();
+};
+
+/**
+ * O nome da conta, reduzido ao que dá para comparar entre plano velho e novo.
+ *
+ * Sem acento, sem caixa, sem pontuação — e sem o "s" do plural, porque o
+ * contador escreveu "Horas Extras" no plano velho e "Hora Extra" no novo. Sem
+ * tolerar o plural, a conta de R$ 44.904 aparecia como parada.
+ */
+export function nomeComparavel(nome: string): string {
+  return String(nome ?? "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
+    .split(" ").map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w)).join(" ");
+}
 const arred = (v: number) => Math.round(v * 100) / 100;
 const ehComp = (c: unknown) => /^\d{4}-\d{2}$/.test(String(c ?? ""));
 
@@ -76,15 +94,26 @@ export function distanciaEmMeses(de: string, ate: string): number {
 export function contasQuePararam(
   pagamentos: Pick<Pagamento, "competencia" | "descricao" | "valor" | "colaboradorId">[],
   ate: string,
-  nomeDe: (colaboradorId: string) => string,
+  nomeDaPessoa: (colaboradorId: string) => string,
   mesesDeHabito = MESES_PARA_VIRAR_HABITO,
 ): ContaParada[] {
   if (!ehComp(ate)) return [];
 
+  /* Agrupa por CÓDIGO + NOME, não só por código.
+     O contador reaproveitou dois números com outro significado: `2.1.11.1` era
+     "Diária" até junho e virou "Comissão interna" em julho; `2.1.11.4` era
+     "Hora Extra" e virou "Empreita". Agrupar só pelo número somaria a diária de
+     junho com a comissão de julho e chamaria isso de uma conta só. */
   const porConta = new Map<string, {
-    rotulo: string; comps: Set<string>; total: number;
+    codigo: string; nome: string; rotulo: string; comps: Set<string>; total: number;
     ultimoPorPessoa: Map<string, string>;
   }>();
+  /* Onde cada nome apareceu, sob que código. É com isto que se distingue "a
+     conta parou" de "a conta mudou de número". */
+  const ondeApareceu = new Map<string, { codigo: string; comp: string }[]>();
+  /* Última competência com movimento, por código — para ver se um FILHO passou
+     a receber quando o pai parou (detalhamento, não sumiço). */
+  const movimentoPorCodigo = new Map<string, string>();
 
   for (const p of pagamentos) {
     const comp = String(p.competencia ?? "");
@@ -92,30 +121,60 @@ export function contasQuePararam(
     const plano = planoDaDescricao(p.descricao);
     const codigo = codigoDe(plano);
     if (!codigo) continue;
-    const x = porConta.get(codigo) ?? { rotulo: plano, comps: new Set<string>(), total: 0, ultimoPorPessoa: new Map<string, string>() };
+    const nome = nomeComparavel(nomeDoPlano(plano));
+    const chave = codigo + "|" + nome;
+
+    const x = porConta.get(chave) ?? {
+      codigo, nome, rotulo: plano, comps: new Set<string>(), total: 0, ultimoPorPessoa: new Map<string, string>(),
+    };
+    const eraUltima = x.comps.size ? [...x.comps].sort().slice(-1)[0] : "";
     x.comps.add(comp);
     x.total = arred(x.total + (Number(p.valor) || 0));
     // Guarda o rótulo mais recente: o contador renomeia, e o nome novo ajuda
     // mais a reconhecer a conta do que o antigo.
-    if (comp >= [...x.comps].sort().slice(-1)[0]) x.rotulo = plano;
+    if (comp >= eraUltima) x.rotulo = plano;
     const id = String(p.colaboradorId ?? "");
     if (id) {
       const antes = x.ultimoPorPessoa.get(id);
       if (!antes || comp > antes) x.ultimoPorPessoa.set(id, comp);
     }
-    porConta.set(codigo, x);
+    porConta.set(chave, x);
+
+    if (nome) {
+      const lista = ondeApareceu.get(nome) ?? [];
+      lista.push({ codigo, comp });
+      ondeApareceu.set(nome, lista);
+    }
+    const antesCod = movimentoPorCodigo.get(codigo);
+    if (!antesCod || comp > antesCod) movimentoPorCodigo.set(codigo, comp);
   }
 
+  /** O mesmo nome voltou depois, sob OUTRO código? Então foi renumeração. */
+  const renumerou = (nome: string, codigo: string, ultima: string) =>
+    (ondeApareceu.get(nome) ?? []).some((v) => v.codigo !== codigo && v.comp > ultima);
+
+  /** Um filho passou a receber depois que o pai parou? Então virou detalhe. */
+  const virouDetalhe = (codigo: string, ultima: string) => {
+    for (const [outro, comp] of movimentoPorCodigo) {
+      if (outro !== codigo && outro.startsWith(codigo + ".") && comp > ultima) return true;
+    }
+    return false;
+  };
+
   const out: ContaParada[] = [];
-  for (const [codigo, x] of porConta) {
+  for (const x of porConta.values()) {
     const comps = [...x.comps].sort();
     if (comps.length < mesesDeHabito) continue; // veio pouco: sumir não é notícia
     const ultima = comps[comps.length - 1];
     const parada = distanciaEmMeses(ultima, ate);
     if (parada < 1) continue; // ainda está vindo
+    // O dinheiro não parou — mudou de número. Acusar isso enche a tela de
+    // alarme falso e enterra o achado que importa. Foram 4 dos 9 no caso real.
+    if (x.nome && renumerou(x.nome, x.codigo, ultima)) continue;
+    if (virouDetalhe(x.codigo, ultima)) continue;
     out.push({
-      codigo,
-      rotulo: x.rotulo || codigo,
+      codigo: x.codigo,
+      rotulo: x.rotulo || x.codigo,
       meses: comps.length,
       primeiraComp: comps[0],
       ultimaComp: ultima,
@@ -124,7 +183,7 @@ export function contasQuePararam(
       mediaMensal: arred(x.total / comps.length),
       pessoas: [...x.ultimoPorPessoa.entries()]
         .sort((a, b) => b[1].localeCompare(a[1]))
-        .map(([id]) => nomeDe(id))
+        .map(([id]) => nomeDaPessoa(id))
         .filter(Boolean),
     });
   }

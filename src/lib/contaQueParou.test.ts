@@ -10,7 +10,7 @@
  * que dispara à toa é alarme que ninguém lê.
  */
 import { describe, it, expect } from "vitest";
-import { contasQuePararam, planoDaDescricao, distanciaEmMeses } from "./contaQueParou";
+import { contasQuePararam, planoDaDescricao, distanciaEmMeses, nomeComparavel } from "./contaQueParou";
 import type { Pagamento } from "@/data/types";
 
 const p = (competencia: string, descricao: string, valor: number, colaboradorId = "barbara") =>
@@ -119,5 +119,105 @@ describe("as peças soltas", () => {
     expect(distanciaEmMeses("2025-11", "2026-02")).toBe(3);
     expect(distanciaEmMeses("2026-06", "2026-08")).toBe(2);
     expect(distanciaEmMeses("2026-08", "2026-08")).toBe(0);
+  });
+});
+
+/* A RENUMERAÇÃO (07/09/2026). O contador trocou os números do plano em julho, e
+ * a regra agrupando por CÓDIGO passou a acusar 9 contas paradas — 4 delas só
+ * tinham mudado de número. A limpeza, que é o achado de verdade, ficava em
+ * ÚLTIMO na lista por ser a menor. Alarme que enterra o achado é pior que
+ * alarme nenhum.
+ *
+ * Os casos abaixo são os dados reais do banco, não inventados. */
+describe("mudou de número não é parou", () => {
+  const tresMeses = (plano: string, valor: number) =>
+    ["2026-04", "2026-05", "2026-06"].map((c) => p(c, `x · ${plano}`, valor));
+
+  it("o mesmo nome sob código novo: a conta velha NÃO é acusada", () => {
+    // 2.1.12-Comissão Interna (até jun) virou 2.1.11.1-Comissão interna (jul).
+    const pags = [
+      ...tresMeses("2.1.12-Comissão Interna", 4000),
+      p("2026-07", "x · 2.1.11.1-Comissão interna", 1593.62),
+      p("2026-08", "x · 2.1.11.1-Comissão interna", 12314.95),
+    ];
+    expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
+  });
+
+  it("o caso real da hora extra: 2.1.11 → 2.1.11.6 não é acusado", () => {
+    // 2.1.11-Horas Extras (R$ 44.904 no ano) → 2.1.11.6-Hora Extra. Aqui DUAS
+    // guardas cobrem: o plural e o pai/filho. Por isso o teste abaixo isola o
+    // plural — senão eu estaria provando uma regra com a outra.
+    const pags = [
+      ...tresMeses("2.1.11-Horas Extras", 7000),
+      p("2026-07", "x · 2.1.11.6-Hora Extra", 1598.55),
+    ];
+    expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
+  });
+
+  it("só o plural, sem parentesco de código, já segura o alarme", () => {
+    // Código de outro galho de propósito: se o plural falhar, nada mais salva.
+    const pags = [
+      ...tresMeses("2.1.11-Horas Extras", 7000),
+      p("2026-07", "x · 2.4.9-Hora Extra", 1598.55),
+    ];
+    expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
+  });
+
+  it("conta que virou pai de subcontas não é conta parada", () => {
+    // 2.11.1-Freelancer parou em abril; 2.11.1.1 e 2.11.1.2 começaram depois.
+    const pags = [
+      ...["2026-02", "2026-03", "2026-04"].map((c) => p(c, "x · 2.11.1-Freelancer", 1300)),
+      p("2026-07", "x · 2.11.1.2-Pedro Ramos Pereira", 6704.25),
+    ];
+    expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
+  });
+
+  it("o mesmo NÚMERO com outro significado não vira uma conta só", () => {
+    // 2.1.11.1 era "Diária" até junho e virou "Comissão interna" em julho.
+    // Somar os dois daria uma conta de R$ 15.264 que nunca existiu.
+    const pags = [
+      ...tresMeses("2.1.11.1-Diária", 450),
+      p("2026-07", "x · 2.1.11.1-Comissão interna", 1593.62),
+      p("2026-08", "x · 2.1.11.1-Comissão interna", 12314.95),
+    ];
+    const r = contasQuePararam(pags, "2026-08", nomeDe);
+    // A Diária parou de verdade (o nome não reapareceu em lugar nenhum) e é
+    // acusada com o SEU total, sem a comissão junto.
+    expect(r.map((c) => c.rotulo)).toEqual(["2.1.11.1-Diária"]);
+    expect(r[0].total).toBeCloseTo(1350, 2);
+  });
+
+  it("a limpeza continua sendo achado — ela não reapareceu em lugar nenhum", () => {
+    const pags = [
+      ...tresMeses("2.3.2.1-Limpeza Escritório", 350),
+      ...tresMeses("2.1.12-Comissão Interna", 4000),
+      p("2026-07", "x · 2.1.11.1-Comissão interna", 1593.62),
+      p("2026-07", "x · 2.1.1-Salário", 33186.84),
+    ];
+    // Das duas que sumiram do plano velho, só a limpeza é notícia.
+    expect(contasQuePararam(pags, "2026-08", nomeDe).map((c) => c.codigo)).toEqual(["2.3.2.1"]);
+  });
+});
+
+describe("nomeComparavel", () => {
+  it("iguala o que o contador escreveu diferente", () => {
+    expect(nomeComparavel("Comissão Interna")).toBe(nomeComparavel("Comissão interna"));
+    expect(nomeComparavel("Horas Extras")).toBe(nomeComparavel("Hora Extra"));
+    expect(nomeComparavel("Incentivo de Viagens")).toBe(nomeComparavel("incentivo de viagens"));
+  });
+
+  it("não iguala o que é diferente de verdade", () => {
+    expect(nomeComparavel("Diária")).not.toBe(nomeComparavel("Comissão interna"));
+    expect(nomeComparavel("Hora Extra")).not.toBe(nomeComparavel("Empreita"));
+    // "Bônus" não é plural, mas termina em s e perde o s como qualquer outra.
+    // Não atrapalha: o corte é simétrico, então ela continua casando consigo
+    // mesma escrita de qualquer jeito — que é para o que a régua serve.
+    expect(nomeComparavel("Bônus")).toBe(nomeComparavel("BONUS"));
+    expect(nomeComparavel("Bônus")).not.toBe(nomeComparavel("Diária"));
+    // O corte só vale para palavra com MAIS de 3 letras — sigla curta fica
+    // inteira. Acima disso ela cai no corte igual às outras ("Fgts" → "fgt"),
+    // e tudo bem: o corte é simétrico e nenhuma outra conta da casa vira "fgt".
+    expect(nomeComparavel("Gps")).toBe("gps");
+    expect(nomeComparavel("Fgts")).toBe(nomeComparavel("FGTS"));
   });
 });
