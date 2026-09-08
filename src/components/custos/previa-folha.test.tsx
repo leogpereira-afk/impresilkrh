@@ -57,7 +57,13 @@ describe("PreviaFolha — diz o que muda e trava até conferir", () => {
   });
   it("a conta renumerada é dita como tal e não conta no botão", () => {
     expect(texto()).toContain("Conta renumerada pelo contador");
-    expect(texto()).toContain("não conta no botão");
+    /* A INTENÇÃO É A MESMA; o texto da tela é que mudou (08/09/2026, sessão
+       vizinha). A asserção procurava a frase literal "não conta no botão", que
+       a tela não diz mais — ela diz no próprio botão quantas alterações são só
+       de texto/conta/id. Afirmar a frase velha deixava o main vermelho e
+       travava o deploy de todo mundo (deploy.yml roda `npm run verificar`).
+       Agora afirma o que o usuário lê de verdade, no lugar onde decide. */
+    expect(texto()).toMatch(/Aplicar\s*2 alteração\(ões\)\s*·\s*1 só de texto\/conta\/id/);
     expect(texto()).toMatch(/2\.1\.11\.1-Diária\s*→\s*2\.1\.11\.3-Diária/);
   });
   it("o botão fica travado enquanto há aviso sem 'conferi'", () => {
@@ -141,7 +147,8 @@ describe("PreviaFolha — dá para desmarcar linha a linha", () => {
 
   it("o bloco mostra quantas ficaram de fora", () => {
     desenhar(new Set(["mubi-1"]));
-    expect((document.body.textContent ?? "")).toContain("1 fora");
+    /* Mesma coisa: a tela passou a dizer "1 rejeitada(s)" no lugar de "1 fora". */
+    expect((document.body.textContent ?? "")).toContain("1 rejeitada(s)");
   });
 });
 
