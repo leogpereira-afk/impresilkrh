@@ -30,6 +30,7 @@ import { competenciaPagto } from "./custos";
 import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio, tipoSocietario } from "./societario";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
+import { contasQuePararam } from "./contaQueParou";
 
 export type RegraAuditoria =
   | "classificacao"
@@ -42,7 +43,8 @@ export type RegraAuditoria =
   | "cadastro"
   | "sem-lancamento"
   | "sem-salario"
-  | "casado-pelo-nome";
+  | "casado-pelo-nome"
+  | "conta-parou";
 
 export type Gravidade = "erro" | "atencao" | "aviso";
 
@@ -225,6 +227,26 @@ export function auditarLancamentos(
       detalhe: `${c?.nome ?? id}: ${ms.join(", ")}. Normal em mês que ainda não fechou; suspeito num mês antigo.`, valor: 0 });
   }
 
+  /* CONTA QUE PAGAVA GENTE E PAROU.
+     O Léo em 07/09/2026: "os últimos custos de limpeza não estão na ficha dos
+     funcionários". A faxina parou em junho e nada ficou vermelho — a pessoa
+     continua na folha (o salário dela chega), o mês fecha, o total só é um
+     pouco menor. "Não teve faxina" e "a faxina não chegou" tinham exatamente a
+     mesma cara na tela. Ver lib/contaQueParou. */
+  {
+    const comps = [...new Set(pags.map((p) => p.competencia).filter((c) => /^\d{4}-\d{2}$/.test(String(c))))].sort();
+    const ate = comps[comps.length - 1] ?? "";
+    for (const c of contasQuePararam(pags, ate, nomeDe)) {
+      add({
+        regra: "conta-parou", gravidade: c.mesesParada >= 2 ? "erro" : "atencao",
+        colaboradorId: "", pagamentoIds: [], competencias: [c.primeiraComp, c.ultimaComp],
+        titulo: `${c.rotulo} parou de vir`,
+        detalhe: `Vinha em ${c.meses} mês(es), última vez em ${c.ultimaComp} — ${c.mesesParada} mês(es) atrás. Média de ${c.mediaMensal.toFixed(2)} por mês${c.pessoas.length ? `, para ${c.pessoas.slice(0, 3).join(", ")}` : ""}. Ou a casa parou de pagar, ou o contador renumerou a conta e ela saiu da lista da folha.`,
+        valor: c.mediaMensal,
+      });
+    }
+  }
+
   // Os que pesam mais primeiro; dentro da mesma gravidade, o de maior valor.
   const peso: Record<Gravidade, number> = { erro: 0, atencao: 1, aviso: 2 };
   achados.sort((a, b) => peso[a.gravidade] - peso[b.gravidade] || b.valor - a.valor);
@@ -256,6 +278,7 @@ export const ROTULO_REGRA: Record<RegraAuditoria, string> = {
   "sem-lancamento": "Mês no quadro sem lançamento",
   "sem-salario": "Mês sem salário",
   "casado-pelo-nome": "Ligado pelo nome, não pelo ID",
+  "conta-parou": "Conta que pagava gente e parou",
 };
 
 // ---------------------------------------------------------------------------
@@ -365,6 +388,15 @@ export const COMO_CORRIGIR: Record<RegraAuditoria, ComoCorrigir> = {
     passos: [
       "No mês corrente isso é normal: o salário da competência vence no início do mês seguinte.",
       "Em mês antigo, falta folha: use “Puxar histórico” e confira se o título não está no ERP com outro nome ou outro CPF.",
+    ],
+  },
+  "conta-parou": {
+    causa: "Uma conta do ERP que trazia pagamento de gente todos os meses deixou de aparecer. Some dinheiro sem nada ficar vermelho: a pessoa continua na folha porque o salário dela chega.",
+    onde: "erp",
+    passos: [
+      "Confira no Mubisys se o pagamento continua sendo lançado — pode ser que a casa tenha simplesmente parado de pagar aquilo.",
+      "Se continua sendo lançado, o contador renumerou a conta: procure o código novo em “Contas fora da folha”, na prévia da busca.",
+      "Enquanto o código novo não for reconhecido, esse dinheiro não entra na ficha de ninguém — nem como custo do mês.",
     ],
   },
   "casado-pelo-nome": {

@@ -112,7 +112,10 @@ export interface InventarioDaPessoa {
 /** Coleções cujos registros têm valor em dinheiro. */
 const COM_DINHEIRO = new Set(["pagamentos", "lancamentos", "fechamentos", "viagens"]);
 
-type Registro = { colaboradorId?: string | null; ativo?: boolean };
+/* `id` faz parte: quem apaga precisa dele para remover o registro, e o teste
+   das contas de login passa `{ id, colaboradorId, ativo }`. Sem ele no tipo, o
+   `tsc` recusava o teste e o build inteiro parava. */
+type Registro = { id?: string; colaboradorId?: string | null; ativo?: boolean };
 type Pessoa = { id: string; nome: string; gestorId?: string | null; padrinhoId?: string | null };
 
 /**
