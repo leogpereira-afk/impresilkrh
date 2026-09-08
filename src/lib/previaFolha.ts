@@ -22,6 +22,30 @@ export type Natureza = CampoMudado | "renumeracao";
 /** Do mais grave ao mais inofensivo. Renumeração é a conta que só trocou de código. */
 export const ORDEM_NATUREZAS: Natureza[] = [...ORDEM_CAMPOS.filter((c) => c !== "conta"), "conta", "renumeracao"];
 /** O que NÃO conta no botão: nada de dinheiro, pessoa, mês, tipo ou data muda. */
+/**
+ * O diff REDUZIDO ao que foi marcado — é ele que deve ser gravado.
+ *
+ * O filtro existia só dentro de `resumoDaPrevia`, para a CONTA da tela. A
+ * gravação (`aplicarFolhaAgora`) partia do diff cru, então desmarcar não
+ * rejeitava nada: o botão dizia "Aplicar 57" e o clique gravava as 156. Com a
+ * seleção invertida para opt-in (nada marcado por padrão), o estrago virou o
+ * caso normal — marcar uma linha e gravar todas.
+ *
+ * Mora aqui, e não na tela, para os dois lados usarem a MESMA régua: o que o
+ * botão promete é o que a gravação faz. O teste amarra os dois.
+ *
+ * `iguais` e `ausentes` passam intactos: os iguais só adotam descrição/idMubi
+ * e não têm caixa; as remoções têm régua própria (`ausentesMarcados`).
+ */
+export function diffAplicavel(diff: DiffPagamentos, excluidos?: Set<string>): DiffPagamentos {
+  if (!excluidos || excluidos.size === 0) return diff;
+  return {
+    ...diff,
+    alterados: diff.alterados.filter((x) => !excluidos.has(x.antigo.id)),
+    novos: diff.novos.filter((n) => !excluidos.has(n.id)),
+  };
+}
+
 export const NATUREZAS_SILENCIOSAS = new Set<Natureza>(["texto", "conta", "renumeracao", "adocao", "status"]);
 
 export interface ItemAlterado {
@@ -173,11 +197,10 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   // Tira o que a pessoa desmarcou ANTES de qualquer conta. Filtrar só no fim
   // faria a tela prometer um número e aplicar outro.
   const fora = e.excluidos ?? new Set<string>();
-  const diff: DiffPagamentos = fora.size === 0 ? e.diff : {
-    ...e.diff,
-    alterados: e.diff.alterados.filter((x) => !fora.has(x.antigo.id)),
-    novos: e.diff.novos.filter((n) => !fora.has(n.id)),
-  };
+  // A MESMA régua da gravação. Duas cópias divergiriam — e foi por não haver
+  // régua nenhuma do lado da escrita que a tela prometia um número e gravava
+  // outro.
+  const diff: DiffPagamentos = diffAplicavel(e.diff, fora);
 
   // As CONTAS saem do diff filtrado; a LISTA mostra tudo, com o desmarcado
   // riscado. Sumir com a linha ao desmarcar tiraria da pessoa a chance de

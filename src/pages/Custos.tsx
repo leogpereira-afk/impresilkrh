@@ -35,7 +35,7 @@ import { TotalEquipe } from "@/components/custos/total-equipe";
 import { EncargosEstimados } from "@/components/custos/encargos-estimados";
 import { VinculosSalvos } from "@/components/custos/vinculos-salvos";
 import { resumoDaEquipe, pesoDaPessoa, porPessoaNoMes, type PessoaNoMes } from "@/lib/provisaoEquipe";
-import { mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
+import { diffAplicavel, mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -802,7 +802,14 @@ export default function Custos() {
   const aplicarFolhaAgora = () => {
     if (!folhaPrev || !resumoPrev) return;
     setConfirmarAplicacao(false);
-    const { diff } = folhaPrev;
+    /* SÓ O QUE ESTÁ MARCADO É GRAVADO.
+       Isto aqui pegava o diff CRU, sem filtro. O corte por desmarcados existia
+       só dentro de `resumoDaPrevia`, que é a conta da TELA: o botão dizia
+       "Aplicar 57" e o clique gravava as 156, inclusive as recusadas. Com a
+       seleção em opt-in, virou o caso normal — marcar uma e gravar todas.
+       Filtrando AQUI, tudo abaixo vê só o aprovado: a faixa de competências, a
+       conferência de "mexeram embaixo", o retrato do desfazer e as escritas. */
+    const diff = diffAplicavel(folhaPrev.diff, excluidos);
     const removidos = diff.ausentes.filter((a) => ausentesMarcados.has(a.id));
     const comps = new Set<string>();
     for (const x of diff.alterados) { comps.add(x.antigo.competencia); comps.add(x.novo.competencia); }

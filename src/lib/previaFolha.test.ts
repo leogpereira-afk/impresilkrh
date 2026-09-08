@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chaveDoAlarme, classificarAlterados, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo, patchDeAplicacao } from "./previaFolha";
+import { chaveDoAlarme, classificarAlterados, diffAplicavel, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo, patchDeAplicacao } from "./previaFolha";
 import { chefeDasMudancas, mudancas, type DiffPagamentos } from "./custos";
 import type { Colaborador, Pagamento } from "@/data/types";
 
@@ -403,5 +403,41 @@ describe("tipo travado na tela", () => {
     const patch = patchDeAplicacao(doErp({ tipo: "Salário" }), doErp({ tipo: "Outros" }));
     expect(patch.tipo).toBe("Salário");
     expect(patch.tipoTravado).toBeUndefined();
+  });
+});
+
+describe("o que o botão promete é o que a gravação faz", () => {
+  /* O filtro por desmarcados existia SÓ em `resumoDaPrevia` — a conta da TELA.
+     A gravação partia do diff CRU: o botão dizia "Aplicar 57" e o clique
+     gravava as 156, inclusive as recusadas. Nenhum teste pegou porque a
+     cobertura de `excluidos` parava na regra e no desenho, nunca na escrita. */
+  const p1 = { id: "a1", colaboradorId: "ana", competencia: "2026-07", tipo: "Salário", valor: 100 } as never;
+  const p2 = { id: "a2", colaboradorId: "ana", competencia: "2026-07", tipo: "Salário", valor: 200 } as never;
+  const n1 = { id: "n1", colaboradorId: "ana", competencia: "2026-07", tipo: "Diária", valor: 50 } as never;
+  const n2 = { id: "n2", colaboradorId: "ana", competencia: "2026-07", tipo: "Diária", valor: 60 } as never;
+  const cru = { iguais: [], alterados: [{ antigo: p1, novo: p1 }, { antigo: p2, novo: p2 }], novos: [n1, n2], ausentes: [] };
+
+  it("sem nada desmarcado devolve o diff inteiro, na mesma referência", () => {
+    expect(diffAplicavel(cru, new Set())).toBe(cru);
+    expect(diffAplicavel(cru, undefined)).toBe(cru);
+  });
+
+  it("o desmarcado NÃO entra: nem alteração, nem novo", () => {
+    const r = diffAplicavel(cru, new Set(["a1", "n2"]));
+    expect(r.alterados.map((x) => x.antigo.id)).toEqual(["a2"]);
+    expect(r.novos.map((n) => n.id)).toEqual(["n1"]);
+  });
+
+  it("com tudo desmarcado não sobra nada para gravar", () => {
+    const r = diffAplicavel(cru, new Set(["a1", "a2", "n1", "n2"]));
+    expect(r.alterados).toEqual([]);
+    expect(r.novos).toEqual([]);
+  });
+
+  it("iguais e ausentes passam intactos — têm régua própria", () => {
+    const c = { ...cru, iguais: [{ antigo: p1, novo: p1 }], ausentes: [p2] };
+    const r = diffAplicavel(c, new Set(["a1", "a2", "n1", "n2"]));
+    expect(r.iguais).toHaveLength(1);
+    expect(r.ausentes).toHaveLength(1);
   });
 });
