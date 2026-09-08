@@ -211,3 +211,59 @@ describe("cadastro × pagamentos: o acerto de quem saiu não é contradição", 
     expect(achado(auditarLancamentos(pags, [semData]), "cadastro")).toEqual([]);
   });
 });
+
+describe("mês que ainda não fechou não tem falta", () => {
+  // 07/09/2026: a competência 2026-08 só fecha em 15/09, e a de setembro só
+  // começa a receber no dia 20. Sem esta régua, a tela acusava 27 pessoas "no
+  // quadro sem lançamento" em setembro e dizia que o salário "parou de vir".
+  const HOJE = new Date(2026, 8, 7);
+  const bia = col({ id: "bia", nome: "Bia", dataAdmissao: "2020-01-01" });
+
+  it("não acusa quem está no quadro e ainda não recebeu no mês aberto", () => {
+    const p = pg({ id: "p1", colaboradorId: "ana", competencia: "2026-09", tipo: "Bônus", dataPagamento: "2026-09-20" });
+    const r = auditarLancamentos([p], [ana, bia], { hoje: HOJE });
+    expect(achado(r, "sem-lancamento")).toHaveLength(0);
+    expect(achado(r, "sem-salario")).toHaveLength(0);
+  });
+
+  it("continua acusando o mês que já fechou", () => {
+    const p = pg({ id: "p2", colaboradorId: "ana", competencia: "2026-06", tipo: "Diária", dataPagamento: "2026-06-20" });
+    const r = auditarLancamentos([p], [ana, bia], { hoje: HOJE });
+    expect(achado(r, "sem-salario")[0].competencias).toEqual(["2026-06"]);
+    expect(achado(r, "sem-lancamento")[0].colaboradorId).toBe("bia");
+  });
+});
+
+describe("títulos gêmeos", () => {
+  it("mesmo valor e mesmo dia com descrições diferentes NÃO é duplicata", () => {
+    // Três plantões de agosto (dias 15, 22 e 29) pagos juntos em 04/09.
+    const base = { colaboradorId: "ana", competencia: "2026-08", tipo: "Diária", valor: 63.25, dataPagamento: "2026-09-04" };
+    const ps = [
+      pg({ ...base, id: "d1", idMubi: "63647", descricao: "Plantão 15/agosto · 2.1.11.3-Diária" }),
+      pg({ ...base, id: "d2", idMubi: "63655", descricao: "Plantão 22/agosto · 2.1.11.3-Diária" }),
+      pg({ ...base, id: "d3", idMubi: "63670", descricao: "Plantão 29/agosto · 2.1.11.3-Diária" }),
+    ];
+    expect(achado(auditarLancamentos(ps, [ana], { hoje: new Date(2026, 8, 7) }), "possivel-duplicata")).toHaveLength(0);
+  });
+
+  it("mesma descrição, mesmo valor e mesmo dia continua sendo suspeita", () => {
+    const base = { colaboradorId: "ana", competencia: "2026-08", tipo: "Diária", valor: 63.25, dataPagamento: "2026-09-04", descricao: "Plantão 15/agosto · 2.1.11.3-Diária" };
+    const ps = [pg({ ...base, id: "d1", idMubi: "1" }), pg({ ...base, id: "d2", idMubi: "2" })];
+    expect(achado(auditarLancamentos(ps, [ana], { hoje: new Date(2026, 8, 7) }), "possivel-duplicata")).toHaveLength(1);
+  });
+});
+
+describe("datas trocadas no cadastro", () => {
+  it("desligamento anterior à admissão é erro — some do quadro sem explicação", () => {
+    const samuel = col({ id: "sam", nome: "Samuel", dataAdmissao: "2026-08-12", dataDesligamento: "2026-08-06", statusId: "inativo" });
+    const p = pg({ id: "s1", colaboradorId: "sam", competencia: "2026-08", tipo: "Diária", valor: 393.57, dataPagamento: "2026-08-21" });
+    const a = achado(auditarLancamentos([p], [samuel], { hoje: new Date(2026, 8, 7) }), "cadastro")[0];
+    expect(a.detalhe).toContain("datas trocadas");
+  });
+
+  it("datas na ordem certa não viram achado", () => {
+    const ok = col({ id: "ok", nome: "OK", dataAdmissao: "2026-01-10", dataDesligamento: "2026-08-06", statusId: "inativo" });
+    const p = pg({ id: "o1", colaboradorId: "ok", competencia: "2026-07", tipo: "Salário", dataPagamento: "2026-08-05" });
+    expect(achado(auditarLancamentos([p], [ok], { hoje: new Date(2026, 8, 7) }), "cadastro")).toHaveLength(0);
+  });
+});

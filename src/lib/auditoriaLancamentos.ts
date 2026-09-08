@@ -26,7 +26,7 @@
 // (lib/tipoDoPlano), tipoSocietario (lib/societario), competenciaPagto
 // (lib/custos), noQuadroEm (lib/quadroNoMes).
 import type { Colaborador, Pagamento } from "@/data/types";
-import { competenciaPagto } from "./custos";
+import { competenciaPagto, fimDaCompetencia } from "./custos";
 import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio, tipoSocietario } from "./societario";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
@@ -93,9 +93,17 @@ const ehManualSemErp = (p: Pagamento) => !p.idMubi;
 export function auditarLancamentos(
   pagamentos: Pagamento[],
   colaboradores: Colaborador[],
-  opcoes: { de?: string; ate?: string } = {},
+  opcoes: { de?: string; ate?: string; hoje?: Date } = {},
 ): { achados: AchadoAuditoria[]; resumo: ResumoAuditoria } {
   const porId = new Map(colaboradores.map((c) => [c.id, c]));
+  /* A ÚLTIMA COMPETÊNCIA FECHADA — a régua de tudo que é ausência.
+     A auditoria acusava 27 pessoas "no quadro sem lançamento" em set/2026 no
+     dia 7: a competência de setembro só começa a receber no dia 20 (a janela é
+     16→15). Do mesmo jeito, "salário parou de vir" apontava o mês corrente, e
+     "mês sem salário" apontava agosto antes de agosto fechar. Ausência em mês
+     que ainda não fechou não é falta: é cedo. */
+  const hoje = opcoes.hoje ?? new Date();
+  const fechada = (comp: string) => { const f = fimDaCompetencia(comp); return !!f && hoje > f; };
   const dentro = (c: string) => (!opcoes.de || c >= opcoes.de) && (!opcoes.ate || c <= opcoes.ate);
   const pags = pagamentos.filter((p) => dentro(p.competencia));
   const achados: AchadoAuditoria[] = [];
@@ -150,7 +158,13 @@ export function auditarLancamentos(
     }
 
     if (p.idMubi) porMubi.set(String(p.idMubi), [...(porMubi.get(String(p.idMubi)) ?? []), p]);
-    const ass = `${p.colaboradorId}|${p.competencia}|${p.tipo}|${num(p.valor).toFixed(2)}|${venc}`;
+    /* A DESCRIÇÃO ENTRA NA ASSINATURA. Sem ela, três plantões de dias
+       diferentes (15, 22 e 29 de agosto), de mesmo valor e pagos na mesma
+       data, viravam "títulos gêmeos" — nove achados falsos em agosto/2026. O
+       texto antes do "·" é o que o ERP escreveu, e é ele que separa dois
+       serviços iguais em dias diferentes de um lançamento em dobro. */
+    const texto = String(p.descricao ?? "").split("·")[0].trim().toLowerCase();
+    const ass = `${p.colaboradorId}|${p.competencia}|${p.tipo}|${num(p.valor).toFixed(2)}|${venc}|${texto}`;
     porAssinatura.set(ass, [...(porAssinatura.get(ass) ?? []), p]);
   }
 
@@ -186,6 +200,15 @@ export function auditarLancamentos(
     if (trabalhadas.length && des && ultima > des) problemas.push(`pago até ${ultima}, mas o cadastro diz desligado em ${des}`);
     if (trabalhadas.length && !des && c.statusId === "inativo") problemas.push(`inativo sem data de desligamento (pago até ${ultima})`);
     if (c.statusId === "ativo" && des) problemas.push(`marcado ativo, mas com data de desligamento (${des})`);
+    /* DATAS TROCADAS. O Samuel Alefe tem admissão em 12/08/2026 e desligamento
+       em 06/08/2026 — saiu seis dias antes de entrar. Nenhuma das outras
+       conferências pega isso (o status bate com a data, e o último pagamento
+       não passa do desligamento), e o efeito é silencioso: pela régua do
+       quadro, quem tem desligamento anterior à admissão nunca esteve no quadro
+       de mês nenhum, então some de todos os meses sem uma linha explicando. */
+    // Compara as DATAS INTEIRAS, não o mês: entrar dia 12 e sair dia 6 do
+    // mesmo mês é o caso real, e `mes()` deixaria os dois iguais.
+    if (c.dataAdmissao && c.dataDesligamento && String(c.dataDesligamento) < String(c.dataAdmissao)) problemas.push(`desligamento (${c.dataDesligamento}) anterior à admissão (${c.dataAdmissao}) — datas trocadas`);
     if (!adm && dela.length) problemas.push("sem data de admissão");
     if (dela.length && adm && primeira < adm) {
       // Só é anomalia se o PAGAMENTO aconteceu antes de admitir. Vencimento no
@@ -205,6 +228,7 @@ export function auditarLancamentos(
   const semNada = new Map<string, string[]>();
   const semSalario = new Map<string, string[]>();
   for (const comp of comps) {
+    if (!fechada(comp)) continue; // mês que ainda não fechou não tem falta
     const doMes = pags.filter((p) => p.competencia === comp);
     const comAlgo = new Set(doMes.map((p) => p.colaboradorId));
     const comFechamento = new Set(doMes.filter((p) => TIPOS_DE_MES_FECHADO.has(p.tipo)).map((p) => p.colaboradorId));
@@ -235,7 +259,9 @@ export function auditarLancamentos(
      mesma cara na tela. Ver lib/contaQueParou. */
   {
     const comps = [...new Set(pags.map((p) => p.competencia).filter((c) => /^\d{4}-\d{2}$/.test(String(c))))].sort();
-    const ate = comps[comps.length - 1] ?? "";
+    // A última FECHADA, não a última com dado: senão "salário parou de vir"
+    // aponta o mês corrente, que ainda vai receber.
+    const ate = [...comps].reverse().find((c) => fechada(c)) ?? "";
     for (const c of contasQuePararam(pags, ate, nomeDe)) {
       add({
         regra: "conta-parou", gravidade: c.mesesParada >= 2 ? "erro" : "atencao",
