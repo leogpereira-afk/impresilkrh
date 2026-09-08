@@ -489,6 +489,12 @@ export interface RegistroPendurado {
   colaboradorId?: string | null;
   /** Só para as coleções cujo id embute o mês. */
   competencia?: string | null;
+  /**
+   * Só para `usuarios`: conta desativada não conta como impedimento. Estava
+   * declarado só por cast lá embaixo, e o `tsc` recusava o teste que passa o
+   * campo num literal — build inteiro parado por um campo que o código já lia.
+   */
+  ativo?: boolean;
 }
 
 export interface MudancaDeDono {
@@ -821,7 +827,7 @@ export function contarPorFicha(
         // "desative a conta antes" virava beco sem saída: desativar marca
         // `ativo: false` e NÃO apaga a linha, então a ficha nunca mais podia
         // ser apagada, por mais que a pessoa fizesse o que o aviso mandava.
-        if (campo === "contas" && (r as { ativo?: boolean }).ativo === false) continue;
+        if (campo === "contas" && r.ativo === false) continue;
         const alvo = r.colaboradorId ? mapa.get(r.colaboradorId) : undefined;
         if (alvo) alvo[campo] += 1;
       }
