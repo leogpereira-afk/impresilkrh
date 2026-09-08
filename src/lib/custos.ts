@@ -139,8 +139,27 @@ export function serieCustos(plano: ContaPlano[], m: Map<string, ClasseCusto>, nC
   return competenciasPlano(plano).map((comp) => {
     const n = nColabDe(comp);
     const t = totaisDoMes(plano, m, comp, n);
-    return { competencia: comp, nome: compLabel(comp), individual: t.individual, rateio: t.rateio, rateioPorColab: t.rateioPorColab, nColab: n, medioIndividual: n > 0 ? t.individual / n : 0 };
+    return {
+      competencia: comp, nome: compLabel(comp), individual: t.individual, rateio: t.rateio,
+      rateioPorColab: t.rateioPorColab, nColab: n, medioIndividual: n > 0 ? t.individual / n : 0,
+      semIndividual: planoSemIndividual(plano, m, comp),
+    };
   });
+}
+
+/**
+ * O mês TEM plano, mas nenhuma conta cai no custo individual das pessoas.
+ *
+ * Não é custo zero: é plano que veio sem a folha. Aconteceu de jul/2026 em
+ * diante — o plano desses meses veio do ERP e não trouxe nenhuma conta de
+ * salário ou adiantamento (o contador só fechou a planilha até junho). A tela
+ * mostrava "R$ 0,00" na coluna Individual, do mesmo jeito que mostraria um mês
+ * em que ninguém custou nada. Zero não é resultado.
+ */
+export function planoSemIndividual(plano: ContaPlano[], m: Map<string, ClasseCusto>, comp: string): boolean {
+  const doMes = plano.filter((p) => p.competencia === comp);
+  if (doMes.length === 0) return false;
+  return !doMes.some((p) => classeDaConta(p, m) === "individual");
 }
 
 // Cards confidenciais: agrupa folhas por prefixo de código.

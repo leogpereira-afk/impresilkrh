@@ -1087,6 +1087,9 @@ export default function Custos() {
     () => serieCustos(planoContas, mapaClasse, (c) => quantosNoQuadro(d.colaboradores, c, pagamentos as Pagamento[])),
     [planoContas, mapaClasse, d.colaboradores, pagamentos],
   );
+  // Meses cujo plano existe mas não traz nenhuma conta de folha: a coluna
+  // Individual mostra "—" e o quadro amarelo explica.
+  const mesesSemFolhaNoPlano = useMemo(() => serie.filter((x) => x.semIndividual).map((x) => x.competencia), [serie]);
 
   // ---------- Editor de classificação ----------
   // Contas societárias confidenciais (2.14.*) NUNCA aparecem no editor de
@@ -2187,8 +2190,21 @@ export default function Custos() {
                 title="Custo da folha por mês"
                 subtitle="Individual + rateio do plano de contas em cada competência, com o custo médio por colaborador ativo. Clique num mês para abri-lo."
                 icon={<TrendingUp className="h-5 w-5" />}
+                action={mesesSemFolhaNoPlano.length > 0 ? <Badge variant="warning">{mesesSemFolhaNoPlano.length} mês(es) sem folha no plano</Badge> : undefined}
               />
               <CardBody>
+                {/* O PLANO DESTES MESES NÃO TEM FOLHA — e "—" sozinho não
+                    explica por quê. O plano do contador vai até junho/2026; de
+                    julho em diante o que existe veio do ERP e não trouxe conta
+                    de salário nem de adiantamento. */}
+                {mesesSemFolhaNoPlano.length > 0 && (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+                    <p className="font-semibold">O plano de {mesesSemFolhaNoPlano.map(compLabel).join(", ")} veio sem a folha.</p>
+                    <p className="mt-1 text-xs text-amber-800">
+                      Esses meses têm plano de contas, mas nenhuma conta de salário ou adiantamento — por isso a coluna Individual mostra “—”, e não R$ 0,00. O que aparece em Rateio é só o que veio. A folha real por pessoa está na aba “Custos de Colaboradores”, que lê os pagamentos e não o plano. Para fechar o Custo Global, traga a planilha do contador do mês ou puxe o plano de novo em Sincronização.
+                    </p>
+                  </div>
+                )}
                 <HistoricoMensal
                   pontos={serie.map((x) => ({ competencia: x.competencia, valor: x.individual + x.rateio }))}
                   selecionada={compAtiva}
@@ -2197,9 +2213,11 @@ export default function Custos() {
                   rotuloTotal="Custo do período"
                   altura={280}
                   colunas={[
-                    { rotulo: "Individual", valorDe: (c) => serie.find((x) => x.competencia === c)?.individual ?? null },
+                    // Mês cujo plano veio sem folha mostra "—", não R$ 0,00: o
+                    // custo individual não é zero, é desconhecido.
+                    { rotulo: "Individual", valorDe: (c) => { const x = serie.find((y) => y.competencia === c); return !x || x.semIndividual ? null : x.individual; } },
                     { rotulo: "Rateio", valorDe: (c) => serie.find((x) => x.competencia === c)?.rateio ?? null },
-                    { rotulo: "Médio / colab.", valorDe: (c) => serie.find((x) => x.competencia === c)?.medioIndividual ?? null, destaque: true },
+                    { rotulo: "Médio / colab.", valorDe: (c) => { const x = serie.find((y) => y.competencia === c); return !x || x.semIndividual ? null : x.medioIndividual; }, destaque: true },
                   ]}
                   vazio={<EmptyState title="Sem histórico" description="Importe mais competências do plano de contas para ver a evolução." />}
                 />

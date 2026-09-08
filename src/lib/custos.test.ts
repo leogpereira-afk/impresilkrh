@@ -2,8 +2,8 @@
 // (R$ 62.576,49) quando a mesma planilha subiu duas vezes. A regra de subir de
 // novo sem duplicar fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes, classeDaConta, contaEhConfidencial} from "./custos";
-import type { ContaPlano, Pagamento } from "@/data/types";
+import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes, classeDaConta, contaEhConfidencial, planoSemIndividual, serieCustos, classeMap } from "./custos";
+import type { ClassificacaoConta, ContaPlano, Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> = {}): Pagamento =>
   ({
@@ -285,5 +285,37 @@ describe("classeDaConta — a classe vem do código de referência quando o cont
     expect(classeDaConta({ codigo: "2.11.2.2", equivaleA: "2.14.2.2" }, m)).toBe("confidencial");
     expect(contaEhConfidencial({ codigo: "2.14.1.2" })).toBe(true);
     expect(contaEhConfidencial({ codigo: "2.11.2.2" })).toBe(false);
+  });
+});
+
+describe("plano sem folha", () => {
+  const m = classeMap([
+    { codigo: "2.1.1", classe: "individual" } as ClassificacaoConta,
+    { codigo: "2.1.14", classe: "rateio" } as ClassificacaoConta,
+  ]);
+  const conta = (competencia: string, codigo: string, valor: number): ContaPlano =>
+    ({ id: `pc_${competencia}_${codigo}`, competencia, codigo, nome: codigo, valor, folha: true, origem: "erp" }) as ContaPlano;
+
+  it("mês com plano e sem nenhuma conta individual é 'sem folha', não zero", () => {
+    // Julho/2026 real: o plano veio do ERP com contribuição sindical e FGTS,
+    // e nenhuma conta de salário.
+    const plano = [conta("2026-07", "2.1.14", 2526.42), conta("2026-07", "2.9.1.1.3", 18744.67)];
+    expect(planoSemIndividual(plano, m, "2026-07")).toBe(true);
+  });
+
+  it("mês com conta individual não é sem folha", () => {
+    const plano = [conta("2026-06", "2.1.1", 60000), conta("2026-06", "2.1.14", 3000)];
+    expect(planoSemIndividual(plano, m, "2026-06")).toBe(false);
+  });
+
+  it("mês sem plano nenhum não é 'sem folha' — é mês que não existe na série", () => {
+    expect(planoSemIndividual([], m, "2026-07")).toBe(false);
+  });
+
+  it("a série marca o mês, e o individual dele continua sendo zero na conta", () => {
+    const plano = [conta("2026-06", "2.1.1", 100), conta("2026-07", "2.1.14", 50)];
+    const s = serieCustos(plano, m, () => 10);
+    expect(s.map((x) => x.semIndividual)).toEqual([false, true]);
+    expect(s[1].individual).toBe(0);
   });
 });
