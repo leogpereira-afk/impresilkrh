@@ -64,7 +64,9 @@ export function HistoricoMensal({
 
   const ultimoVsMedia = r.ultimoVsMedia;
   const anos = new Set(r.linhas.map((l) => l.ano));
-  const dados = r.linhas.map((l) => ({ nome: compLabel(l.competencia), valor: l.valor }));
+  // O gráfico só desenha o que a conta considera: mês incompleto some da
+  // barra (a lista continua mostrando a linha, com a marca).
+  const dados = r.linhas.filter((l) => !l.incompleto).map((l) => ({ nome: compLabel(l.competencia), valor: l.valor }));
 
   return (
     <div className="space-y-5">
@@ -128,6 +130,11 @@ export function HistoricoMensal({
                             <CalendarDays className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
                             <span className="sr-only">mês anterior sem lançamento</span>
                           </>
+                        )}
+                        {l.incompleto && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" title="O que existe deste mês é um pedaço: ele fica fora do total, da média e do gráfico.">
+                            incompleto
+                          </span>
                         )}
                       </Celula>
                     </td>

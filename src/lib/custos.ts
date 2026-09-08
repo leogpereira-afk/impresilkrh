@@ -631,6 +631,22 @@ export function fimDaCompetencia(comp: string): Date | null {
   return new Date(ano, mes, 15);
 }
 
+/**
+ * A competência já FECHOU?
+ *
+ * Comparação por DIA, no fuso local: `fimDaCompetencia` devolve a meia-noite do
+ * dia 15, e o dia 15 INTEIRO ainda recebe — `competenciaPagto("2026-10-15")` é
+ * "2026-09". Comparar com a hora corrente fazia o mês fechar no meio do próprio
+ * dia 15: às 09h a auditoria acusava falta enquanto o chip da mesma tela dizia
+ * "aguardando". Uma régua só, para os dois lerem a mesma coisa.
+ */
+export function competenciaFechada(comp: string, hoje: Date = new Date()): boolean {
+  const fim = fimDaCompetencia(comp);
+  if (!fim) return false;
+  const dia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).getTime();
+  return dia > fim.getTime();
+}
+
 /** Quando o salário desta competência costuma cair (início do mês seguinte). */
 export function previsaoDoSalario(comp: string): Date | null {
   const [ano, mes] = comp.split("-").map(Number);
@@ -654,10 +670,8 @@ export function conferirCompetencia(
   const doMes = pagamentos.filter((p) => p.competencia === comp);
   if (doMes.length === 0) return nada; // o "sem pagamentos neste mês" da tela já fala por si
 
-  // Comparação por DIA, no fuso local: usar a hora corrente faria a competência
-  // "fechar" no meio do próprio dia 15.
-  const hojeDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).getTime();
-  const janelaAberta = hojeDia <= fim.getTime();
+  // A MESMA régua da auditoria (competenciaFechada): comparação por dia.
+  const janelaAberta = !competenciaFechada(comp, hoje);
 
   const comSalario = new Set(doMes.filter((p) => CONTA_COMO_SALARIO.includes(p.tipo)).map((p) => p.colaboradorId));
   const comAdiantamento = new Set(doMes.filter((p) => p.tipo === "Adiantamento").map((p) => p.colaboradorId));

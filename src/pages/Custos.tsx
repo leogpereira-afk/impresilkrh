@@ -2244,12 +2244,14 @@ export default function Custos() {
                   <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
                     <p className="font-semibold">O plano de {mesesSemFolhaNoPlano.map(compLabel).join(", ")} veio sem a folha.</p>
                     <p className="mt-1 text-xs text-amber-800">
-                      Esses meses têm plano de contas, mas nenhuma conta de salário ou adiantamento — por isso a coluna Individual mostra “—”, e não R$ 0,00. O que aparece em Rateio é só o que veio. A folha real por pessoa está na aba “Custos de Colaboradores”, que lê os pagamentos e não o plano. Para fechar o Custo Global, traga a planilha do contador do mês ou puxe o plano de novo em Sincronização.
+                      Esses meses têm plano de contas, mas nenhuma conta cai no custo individual das pessoas — por isso a coluna mostra “—”, e não R$ 0,00, e o mês fica fora do total, da média e do gráfico. Duas causas possíveis: a busca do ERP não trouxe as contas de folha, ou trouxe e elas ainda não têm classe (Classificação, na aba Sincronização). A folha real por pessoa não depende disto: ela está na aba “Custos de Colaboradores”, que lê os pagamentos.
                     </p>
                   </div>
                 )}
                 <HistoricoMensal
-                  pontos={serie.map((x) => ({ competencia: x.competencia, valor: x.individual + x.rateio }))}
+                  // Mês cujo plano veio sem a folha entra na lista com a marca
+                  // e fica fora do total, da média e do gráfico.
+                  pontos={serie.map((x) => ({ competencia: x.competencia, valor: x.individual + x.rateio, incompleto: x.semIndividual }))}
                   selecionada={compAtiva}
                   onSelecionar={setComp}
                   rotuloValor="Custo do mês"

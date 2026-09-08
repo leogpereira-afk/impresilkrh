@@ -267,3 +267,32 @@ describe("datas trocadas no cadastro", () => {
     expect(achado(auditarLancamentos([p], [ok], { hoje: new Date(2026, 8, 7) }), "cadastro")).toHaveLength(0);
   });
 });
+
+describe("a régua do dia 15", () => {
+  // A competência 2026-09 recebe até 15/10 (competenciaPagto("2026-10-15") = "2026-09").
+  // O dia 15 INTEIRO é janela aberta; só a partir do dia 16 é falta.
+  const bia = col({ id: "bia", nome: "Bia", dataAdmissao: "2020-01-01" });
+  const p = pg({ id: "s1", colaboradorId: "ana", competencia: "2026-09", tipo: "Bônus", dataPagamento: "2026-09-20" });
+
+  it("no dia 15, às 9 da manhã, ainda não acusa falta", () => {
+    const r = auditarLancamentos([p], [ana, bia], { hoje: new Date(2026, 9, 15, 9, 0) });
+    expect(achado(r, "sem-lancamento")).toHaveLength(0);
+    expect(achado(r, "sem-salario")).toHaveLength(0);
+  });
+
+  it("no dia 16 acusa", () => {
+    const r = auditarLancamentos([p], [ana, bia], { hoje: new Date(2026, 9, 16, 0, 1) });
+    expect(achado(r, "sem-lancamento")).toHaveLength(1);
+  });
+});
+
+describe("conta que já voltou não está parada", () => {
+  it("conta com lançamento no mês aberto não vira 'parou de vir'", () => {
+    const faxina = (comp: string, dia: string) => pg({ id: `f${comp}`, competencia: comp, tipo: "Limpeza/Faxina", valor: 500, dataPagamento: dia, descricao: "Faxina · 2.3.2.1-Limpeza Escritório", idMubi: `m${comp}` });
+    const ps = [faxina("2026-05", "2026-06-05"), faxina("2026-06", "2026-07-05"), faxina("2026-07", "2026-08-05"), faxina("2026-09", "2026-10-05")];
+    // Em 07/10 o último mês fechado é agosto; a faxina não veio em agosto, mas
+    // voltou em setembro — dizer "parou" seria mandar procurar o que já chegou.
+    const r = auditarLancamentos(ps, [ana], { hoje: new Date(2026, 9, 7) });
+    expect(achado(r, "conta-parou")).toHaveLength(0);
+  });
+});

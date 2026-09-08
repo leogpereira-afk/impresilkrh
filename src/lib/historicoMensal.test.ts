@@ -69,9 +69,9 @@ describe("resumirHistorico", () => {
       { competencia: "2026-07", valor: 300 },
       { competencia: "2026-08", valor: 200 },
     ]);
-    expect(r.maior).toEqual({ competencia: "2026-07", valor: 300 });
-    expect(r.menor).toEqual({ competencia: "2026-06", valor: 100 });
-    expect(r.ultimo).toEqual({ competencia: "2026-08", valor: 200 });
+    expect(r.maior).toMatchObject({ competencia: "2026-07", valor: 300 });
+    expect(r.menor).toMatchObject({ competencia: "2026-06", valor: 100 });
+    expect(r.ultimo).toMatchObject({ competencia: "2026-08", valor: 200 });
     expect(r.media).toBe(200);
     expect(r.ultimoVsMedia).toBe(0);
     expect(r.linhas.map((l) => l.parcela)).toEqual([1 / 3, 1, 2 / 3]);
@@ -130,5 +130,47 @@ describe("mesAnterior", () => {
   it("entrada inválida devolve vazio", () => {
     expect(mesAnterior("")).toBe("");
     expect(mesAnterior("abc")).toBe("");
+  });
+});
+
+describe("mês incompleto fica na lista e fora das contas", () => {
+  // Custo Global: jul/2026 em diante veio sem a folha. O mês existe, mas o
+  // valor é um pedaço — somá-lo no total é dizer "não sei" e "R$ X" juntos.
+  const pontos = [
+    { competencia: "2026-05", valor: 80000 },
+    { competencia: "2026-06", valor: 90000 },
+    { competencia: "2026-07", valor: 2615, incompleto: true },
+  ];
+
+  it("o total e a média ignoram o mês incompleto", () => {
+    const r = resumirHistorico(pontos);
+    expect(r.total).toBe(170000);
+    expect(r.media).toBe(85000);
+    expect(r.mesesIncompletos).toBe(1);
+    expect(r.meses).toBe(3);
+  });
+
+  it("maior, menor e último também o ignoram", () => {
+    const r = resumirHistorico(pontos);
+    expect(r.maior?.competencia).toBe("2026-06");
+    expect(r.menor?.competencia).toBe("2026-05");
+    expect(r.ultimo?.competencia).toBe("2026-06");
+  });
+
+  it("a linha continua na lista, com a marca e sem barra", () => {
+    const r = resumirHistorico(pontos);
+    const jul = r.linhas.find((l) => l.competencia === "2026-07");
+    expect(jul?.incompleto).toBe(true);
+    expect(jul?.parcela).toBe(0);
+    expect(r.linhas).toHaveLength(3);
+  });
+
+  it("série inteira incompleta não quebra nem inventa média", () => {
+    const r = resumirHistorico([{ competencia: "2026-07", valor: 10, incompleto: true }]);
+    expect(r.total).toBe(0);
+    expect(r.media).toBe(0);
+    expect(r.maior).toBeNull();
+    expect(r.ultimo).toBeNull();
+    expect(r.ultimoVsMedia).toBeNull();
   });
 });

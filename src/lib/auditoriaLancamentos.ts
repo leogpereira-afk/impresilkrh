@@ -26,7 +26,7 @@
 // (lib/tipoDoPlano), tipoSocietario (lib/societario), competenciaPagto
 // (lib/custos), noQuadroEm (lib/quadroNoMes).
 import type { Colaborador, Pagamento } from "@/data/types";
-import { competenciaPagto, fimDaCompetencia } from "./custos";
+import { competenciaFechada, competenciaPagto } from "./custos";
 import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio, tipoSocietario } from "./societario";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
@@ -103,7 +103,7 @@ export function auditarLancamentos(
      "mês sem salário" apontava agosto antes de agosto fechar. Ausência em mês
      que ainda não fechou não é falta: é cedo. */
   const hoje = opcoes.hoje ?? new Date();
-  const fechada = (comp: string) => { const f = fimDaCompetencia(comp); return !!f && hoje > f; };
+  const fechada = (comp: string) => competenciaFechada(comp, hoje);
   const dentro = (c: string) => (!opcoes.de || c >= opcoes.de) && (!opcoes.ate || c <= opcoes.ate);
   const pags = pagamentos.filter((p) => dentro(p.competencia));
   const achados: AchadoAuditoria[] = [];
@@ -163,7 +163,13 @@ export function auditarLancamentos(
        data, viravam "títulos gêmeos" — nove achados falsos em agosto/2026. O
        texto antes do "·" é o que o ERP escreveu, e é ele que separa dois
        serviços iguais em dias diferentes de um lançamento em dobro. */
-    const texto = String(p.descricao ?? "").split("·")[0].trim().toLowerCase();
+    /* Normaliza de verdade: sem acento, sem pontuação, espaços colapsados. Só
+       trim+minúscula deixava "Plantão 15/agosto" e "Plantao 15 agosto" (ou um
+       espaço a mais) passarem por textos diferentes — e a duplicata de verdade
+       voltava a escapar. */
+    const texto = String(p.descricao ?? "").split("·")[0]
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const ass = `${p.colaboradorId}|${p.competencia}|${p.tipo}|${num(p.valor).toFixed(2)}|${venc}|${texto}`;
     porAssinatura.set(ass, [...(porAssinatura.get(ass) ?? []), p]);
   }
@@ -262,7 +268,23 @@ export function auditarLancamentos(
     // A última FECHADA, não a última com dado: senão "salário parou de vir"
     // aponta o mês corrente, que ainda vai receber.
     const ate = [...comps].reverse().find((c) => fechada(c)) ?? "";
+    /* CONTA QUE JÁ VOLTOU NÃO ESTÁ PARADA. A régua olha só até o último mês
+       fechado — e é isso que impede o mês corrente de virar "parou". O preço
+       era afirmar "última vez em julho" sobre uma conta que tem lançamento em
+       setembro: a tela mentia justamente no que o dono usaria para procurar.
+       Aqui a conta que apareceu DEPOIS do corte sai da lista. */
+    const ultimaDeVerdade = new Map<string, string>();
+    for (const p of pags) {
+      const plano = planoDaDescricao(p.descricao);
+      const comp = String(p.competencia ?? "");
+      if (!plano || !/^\d{4}-\d{2}$/.test(comp)) continue;
+      const chave = plano.split("-")[0].trim();
+      if (!chave) continue;
+      const antes = ultimaDeVerdade.get(chave);
+      if (!antes || comp > antes) ultimaDeVerdade.set(chave, comp);
+    }
     for (const c of contasQuePararam(pags, ate, nomeDe)) {
+      if ((ultimaDeVerdade.get(c.codigo) ?? "") > c.ultimaComp) continue;
       add({
         regra: "conta-parou", gravidade: c.mesesParada >= 2 ? "erro" : "atencao",
         colaboradorId: "", pagamentoIds: [], competencias: [c.primeiraComp, c.ultimaComp],
