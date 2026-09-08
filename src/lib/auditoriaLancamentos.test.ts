@@ -171,7 +171,11 @@ describe("ligado pelo nome, não pelo ID", () => {
     const porCpf = pg({ id: "n3", casadoPor: "cpf", idMubi: "3" });
     const semMarca = pg({ id: "n4", idMubi: "4" });
     const r = achado(auditarLancamentos([porNome, porDesc, porCpf, semMarca], [ana]), "casado-pelo-nome");
-    expect(r.map((a) => a.pagamentoIds[0]).sort()).toEqual(["n1", "n2"]);
+    // Um achado só, com os dois dentro: o Mubisys não manda CPF em título
+    // nenhum, e uma linha por lançamento afogaria a tela.
+    expect(r).toHaveLength(1);
+    expect(r[0].pagamentoIds.sort()).toEqual(["n1", "n2"]);
+    expect(r[0].valor).toBe(2000);
     expect(r.every((a) => a.gravidade === "aviso")).toBe(true);
     expect(ROTULO_REGRA["casado-pelo-nome"]).toBeTruthy();
   });

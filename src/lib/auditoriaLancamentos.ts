@@ -107,6 +107,8 @@ export function auditarLancamentos(
   const dentro = (c: string) => (!opcoes.de || c >= opcoes.de) && (!opcoes.ate || c <= opcoes.ate);
   const pags = pagamentos.filter((p) => dentro(p.competencia));
   const achados: AchadoAuditoria[] = [];
+  /** Lançamentos que acharam a pessoa pelo texto, não pela chave (CPF/ID). */
+  const porTexto: Pagamento[] = [];
   const add = (a: AchadoAuditoria) => achados.push(a);
   const nomeDe = (id: string) => porId.get(id)?.nome ?? `(sem cadastro: ${id})`;
 
@@ -146,12 +148,11 @@ export function auditarLancamentos(
       add({ regra: "orfao", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
         titulo: "Lançamento de alguém que não está no cadastro", detalhe: `colaboradorId "${p.colaboradorId}" não existe`, valor: num(p.valor) });
     }
-    // Casou por texto (nome da origem ou nome na descrição), não pelo ID:
-    // é palpite, e palpite erra em silêncio. Vale só para o que já traz a marca.
-    if (p.casadoPor === "nome" || p.casadoPor === "descricao") {
-      add({ regra: "casado-pelo-nome", gravidade: "aviso", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
-        titulo: "Ligado à pessoa pelo nome, não pelo ID", detalhe: `${nomeDe(p.colaboradorId)} · ${p.tipo} · casou por ${p.casadoPor === "nome" ? "nome da origem" : "nome na descrição"}. Preencha o CPF (ou escreva "ID 000000") no título do ERP para casar pela chave.`, valor: num(p.valor) });
-    }
+    // Casou por texto, não pela chave. Um achado POR LANÇAMENTO afogaria a
+    // tela: o Mubisys não manda o CPF em título nenhum, então isto é a regra e
+    // não a exceção — 197 lançamentos na base real. Vira um achado só, somado
+    // depois do laço, com as pessoas dentro.
+    if (p.casadoPor === "nome" || p.casadoPor === "descricao") porTexto.push(p);
     if (!(num(p.valor) > 0)) {
       add({ regra: "valor", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
         titulo: "Valor zerado ou negativo", detalhe: `${nomeDe(p.colaboradorId)} · ${p.tipo} · ${p.valor}`, valor: num(p.valor) });
@@ -255,6 +256,27 @@ export function auditarLancamentos(
     add({ regra: "sem-salario", gravidade: "aviso", colaboradorId: id, pagamentoIds: [], competencias: ms,
       titulo: `${ms.length} mês(es) sem salário, só outras verbas`,
       detalhe: `${c?.nome ?? id}: ${ms.join(", ")}. Normal em mês que ainda não fechou; suspeito num mês antigo.`, valor: 0 });
+  }
+
+  /* LIGADOS PELO NOME, NÃO PELA CHAVE — um achado só, com todo mundo dentro.
+     O que se faz com isso é uma coisa só (pedir o CPF do favorecido no
+     Mubisys), então uma linha por lançamento seria 197 vezes o mesmo pedido. */
+  if (porTexto.length) {
+    const pessoas = [...new Set(porTexto.map((p) => p.colaboradorId))];
+    const total = porTexto.reduce((t, p) => t + num(p.valor), 0);
+    const maiores = pessoas
+      .map((id) => ({ id, valor: porTexto.filter((p) => p.colaboradorId === id).reduce((t, p) => t + num(p.valor), 0) }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 3)
+      .map((x) => `${nomeDe(x.id)} (${x.valor.toFixed(2)})`);
+    add({
+      regra: "casado-pelo-nome", gravidade: "aviso", colaboradorId: "",
+      pagamentoIds: porTexto.map((p) => p.id),
+      competencias: [...new Set(porTexto.map((p) => p.competencia))].sort(),
+      titulo: `${porTexto.length} lançamento(s) ligados pelo nome, não pela chave`,
+      detalhe: `${pessoas.length} pessoa(s), ${total.toFixed(2)} no total — maiores: ${maiores.join(", ")}. O título do ERP veio sem CPF, então a pessoa foi achada pelo texto: nome do favorecido ou nome dentro da descrição. Nome repete e vem cortado em 30 letras; a chave (CPF, ou "ID 000000" na descrição) não. Peça no Mubisys o preenchimento do favorecido com CPF.`,
+      valor: total,
+    });
   }
 
   /* CONTA QUE PAGAVA GENTE E PAROU.
