@@ -51,6 +51,25 @@ const NEUTRAS = new Set([
   "setembro", "outubro", "novembro", "dezembro",
 ]);
 
+/**
+ * Marcadores de RAZÃO SOCIAL. Nome de gente não tem nenhum deles.
+ *
+ * Conferido contra os 93 colaboradores do cadastro em 07/09/2026: zero
+ * batidas. É o controle que torna esta régua segura — sem ele, seria palpite.
+ */
+const EMPRESA_FORTE = new Set([
+  "ltda", "eireli", "epp", "mei", "cooperativa", "associacao", "sociedade",
+  "comercio", "industria", "industrias", "servicos", "distribuidora",
+  "distribuicao", "transportes", "engenharia", "construtora", "telecom",
+  "energia", "saneamento", "banco", "seguradora", "operadora", "editora",
+  "supermercado", "atacado", "farmacia", "posto", "oficina",
+]);
+/**
+ * Marcadores fracos: só valem no FIM do nome, que é onde a forma jurídica fica
+ * ("… S/A", "… ME"). No meio, "me" e "sa" podem ser pedaço de outra coisa.
+ */
+const EMPRESA_NO_FIM = new Set(["sa", "me", "cia"]);
+
 const semAcento = (s: string) =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -79,12 +98,29 @@ export function sobrasDoTexto(nome: string | null | undefined, descricao: string
 }
 
 /**
- * É custo da empresa (guia, DARF), e não de uma pessoa?
+ * O nome é de uma EMPRESA (razão social), não de uma pessoa?
+ *
+ * Pedido do Léo em 07/09/2026, olhando "CEMIG DISTRIBUICAO S/A" na lista que
+ * pede vínculo: "isso é custo de empresa". Fornecedor sem CNPJ no título caía
+ * na fila de "vincular a…" e não há a quem vincular — a conta de luz não é de
+ * ninguém da equipe.
+ */
+export function ehRazaoSocial(nome: string | null | undefined): boolean {
+  const t = semAcento(String(nome ?? "")).replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
+  if (!t.length) return false;
+  if (t.some((x) => EMPRESA_FORTE.has(x))) return true;
+  return EMPRESA_NO_FIM.has(t[t.length - 1]);
+}
+
+/**
+ * É custo da empresa (guia, DARF, fornecedor), e não de uma pessoa?
  *
  * Só é chamada para títulos que NÃO casaram com ninguém — quem casou já tem
  * dono e continua individual, seja qual for o texto.
  */
 export function ehCustoDaEmpresa(nome: string | null | undefined, descricao: string | null | undefined): boolean {
+  // Razão social resolve na hora: "CEMIG DISTRIBUICAO S/A" não é gente.
+  if (ehRazaoSocial(nome) || ehRazaoSocial(descricao)) return true;
   const texto = semAcento(textoUtil(nome, descricao)).replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
   // Precisa NOMEAR um documento de recolhimento…
   if (!texto.some((t) => DOCUMENTOS.has(t))) return false;
