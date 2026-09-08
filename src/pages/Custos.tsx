@@ -821,19 +821,23 @@ export default function Custos() {
 
   const desfazerUltimaAplicacao = () => {
     if (!ultimoRetrato || !planoDesfazer) return;
-    const { restaurar, apagar, pulados, semVolta } = planoDesfazer;
+    const { restaurar, apagar, pulados, recriar } = planoDesfazer;
     emLote(`Desfez a aplicação da folha do ERP de ${ultimoRetrato.competencias.map(compLabel).join(", ")}`, () => {
       for (const p of restaurar) pagamentosColecao.atualizar(p.id, patchDeDesfazer(p));
       for (const id of apagar) pagamentosColecao.remover(id);
+      // O removido VOLTA com o mesmo id: gravar como novo ocupa a lápide do
+      // servidor (migração 202609070001). Sem isto o dinheiro removido ficava
+      // sem saída — só o banco devolvia.
+      for (const p of recriar) pagamentosColecao.criar(p as Partial<Pagamento>);
     });
     recuperacoesColecao.atualizar(ultimoRetrato.id, { usado: true });
     const partes = [
       restaurar.length ? `${restaurar.length} restaurado(s)` : "",
+      recriar.length ? `${recriar.length} removido(s) devolvido(s)` : "",
       apagar.length ? `${apagar.length} novo(s) apagado(s)` : "",
       pulados.length ? `${pulados.length} pulado(s) (editados depois)` : "",
-      semVolta.length ? `${semVolta.length} removido(s) não voltam por aqui` : "",
     ].filter(Boolean).join(" · ");
-    toast(`Aplicação desfeita: ${partes || "nada a desfazer"}.`, pulados.length || semVolta.length ? "info" : "sucesso");
+    toast(`Aplicação desfeita: ${partes || "nada a desfazer"}.`, pulados.length ? "info" : "sucesso");
     setConfirmarDesfazer(false);
   };
 
@@ -3156,7 +3160,7 @@ export default function Custos() {
             planoDesfazer.restaurar.length ? `${planoDesfazer.restaurar.length} registro(s) voltam ao que eram.` : "",
             planoDesfazer.apagar.length ? `${planoDesfazer.apagar.length} novo(s) serão apagados.` : "",
             planoDesfazer.pulados.length ? `${planoDesfazer.pulados.length} ficam como estão (editados depois ou já desfeitos).` : "",
-            planoDesfazer.semVolta.length ? `${planoDesfazer.semVolta.length} removido(s) na aplicação NÃO voltam por aqui — peça restauração.` : "",
+            planoDesfazer.recriar.length ? `${planoDesfazer.recriar.length} removido(s) na aplicação voltam com o mesmo conteúdo.` : "",
           ].filter(Boolean).join(" ")}
         />
       )}

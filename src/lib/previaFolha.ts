@@ -441,17 +441,27 @@ export function mudouSobAPrevia(diff: DiffPagamentos, ausentesMarcados: Set<stri
 export interface PlanoDeDesfazer {
   restaurar: Pagamento[];
   apagar: string[];
-  /** Removidos pela importação: não voltam por aqui (lápide no servidor). */
-  semVolta: Pagamento[];
+  /**
+   * Removidos pela importação — e que VOLTAM: o retrato guardou o conteúdo
+   * inteiro, e gravar de novo com o mesmo id (versão 0) ocupa a lápide do
+   * servidor. É para isso que existe a migração 202609070001.
+   *
+   * Antes eles saíam como "não voltam por aqui" e o dono ficava sem saída:
+   * em 08/09/2026 uma aplicação removeu 19 lançamentos de planilha —
+   * R$ 11.824,55, entre eles o adiantamento de junho do Pedro Henrique e as
+   * faxinas antigas da Marcella e da Barbara — e o Desfazer não os devolvia.
+   */
+  recriar: Pagamento[];
   pulados: { id: string; motivo: "editado depois" | "já desfeito" | "sumiu depois" }[];
 }
 
 export function planoDeDesfazer(retrato: RetratoFolha, atuais: Pagamento[]): PlanoDeDesfazer {
   const porId = new Map(atuais.map((p) => [p.id, p]));
-  const plano: PlanoDeDesfazer = { restaurar: [], apagar: [], semVolta: [], pulados: [] };
+  const plano: PlanoDeDesfazer = { restaurar: [], apagar: [], recriar: [], pulados: [] };
   for (const t of retrato.tocados) {
     const atual = porId.get(t.id) ?? null;
-    if (t.antes && !t.depois) { plano.semVolta.push(t.antes); continue; } // removido: lápide
+    // Removido: volta com o mesmo id. Se já voltou (alguém reimportou), pula.
+    if (t.antes && !t.depois) { (atual ? plano.pulados : plano.recriar).push(atual ? { id: t.id, motivo: "já desfeito" } as never : t.antes as never); continue; }
     if (t.antes && t.depois) {
       if (!atual) { plano.pulados.push({ id: t.id, motivo: "sumiu depois" }); continue; }
       if (mesmoConteudo(atual, t.antes)) { plano.pulados.push({ id: t.id, motivo: "já desfeito" }); continue; }

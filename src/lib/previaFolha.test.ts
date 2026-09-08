@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chaveDoAlarme, classificarAlterados, diffAplicavel, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo, patchDeAplicacao } from "./previaFolha";
 import { chefeDasMudancas, mudancas, type DiffPagamentos } from "./custos";
-import type { Colaborador, Pagamento } from "@/data/types";
+import type { Colaborador, Pagamento, RetratoFolha } from "@/data/types";
 
 const HOJE = new Date(2026, 8, 7); // 07/09/2026: até jul/2026 está fechado, ago fecha em 15/09
 const pg = (over: Partial<Pagamento> & { id: string }): Pagamento =>
@@ -180,13 +180,16 @@ describe("retrato e desfazer", () => {
   it("remoção não marcada fica fora do retrato", () => {
     expect(retratoAntesDeAplicar(diff, new Set(), "x").tocados.some((t) => t.id === "pg_up_1")).toBe(false);
   });
-  it("base intacta depois de aplicar: restaura o alterado, apaga o novo, e o removido não volta por aqui", () => {
+  it("base intacta depois de aplicar: restaura o alterado, apaga o novo e devolve o removido", () => {
     const r = retratoAntesDeAplicar(diff, new Set(["pg_up_1"]), "x");
     const atuais = [{ ...novo, atualizadoEm: "2026-09-07T12:00:01Z" } as Pagamento, { ...criado, _rhRev: 3 } as unknown as Pagamento];
     const p = planoDeDesfazer(r, atuais);
     expect(p.restaurar.map((x) => x.valor)).toEqual([400]);
     expect(p.apagar).toEqual(["mubi-2"]);
-    expect(p.semVolta.map((x) => x.id)).toEqual(["pg_up_1"]);
+    // O removido VOLTA: o retrato tem o conteúdo e o id, e gravar de novo
+    // ocupa a lápide do servidor (migração 202609070001).
+    expect(p.recriar.map((x: Pagamento) => x.id)).toEqual(["pg_up_1"]);
+    expect(p.recriar[0].valor).toBe(1000);
     expect(p.pulados).toEqual([]);
   });
   it("editado depois da importação: pula e diz por quê; já desfeito também", () => {
@@ -439,5 +442,29 @@ describe("o que o botão promete é o que a gravação faz", () => {
     const r = diffAplicavel(c, new Set(["a1", "a2", "n1", "n2"]));
     expect(r.iguais).toHaveLength(1);
     expect(r.ausentes).toHaveLength(1);
+  });
+});
+
+describe("o removido volta", () => {
+  const removido = (id: string, valor: number): Pagamento =>
+    ({ id, colaboradorId: "ana", competencia: "2026-06", tipo: "Adiantamento", valor, dataPagamento: "2026-06-22", descricao: "adiantamento colaborador" }) as Pagamento;
+
+  it("devolve o que a importação removeu, com o mesmo id e o mesmo valor", () => {
+    // O caso real de 08/09/2026: o adiantamento de junho do Pedro Henrique
+    // (R$ 770,40, vindo de planilha) foi removido e o Desfazer não o trazia.
+    const r = { id: "r1", em: "2026-09-08T10:00:00Z", rotulo: "x", competencias: ["2026-06"], usado: false,
+      tocados: [{ id: "pg_up_1", antes: removido("pg_up_1", 770.4), depois: null }] } as unknown as RetratoFolha;
+    const p = planoDeDesfazer(r, []);
+    expect(p.recriar).toHaveLength(1);
+    expect(p.recriar[0]).toMatchObject({ id: "pg_up_1", valor: 770.4, tipo: "Adiantamento" });
+    expect(p.restaurar).toHaveLength(0);
+  });
+
+  it("se ele já voltou por outro caminho, não duplica", () => {
+    const r = { id: "r2", em: "2026-09-08T10:00:00Z", rotulo: "x", competencias: ["2026-06"], usado: false,
+      tocados: [{ id: "pg_up_1", antes: removido("pg_up_1", 770.4), depois: null }] } as unknown as RetratoFolha;
+    const p = planoDeDesfazer(r, [removido("pg_up_1", 770.4)]);
+    expect(p.recriar).toHaveLength(0);
+    expect(p.pulados).toEqual([{ id: "pg_up_1", motivo: "já desfeito" }]);
   });
 });
