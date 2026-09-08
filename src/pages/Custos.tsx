@@ -2210,7 +2210,16 @@ export default function Custos() {
                 nomeDe={(id) => d.nomeColab(id)}
                 compAtiva={compAtiva}
                 quadroDe={quadroDoMesDe}
-                onVerPessoa={(id) => { setColabId(id); setMostrarInativos(true); setAba("custos"); }}
+                onVerPessoa={(id) => {
+                  // Lançamento cujo cadastro sumiu: a tela abria a ficha de
+                  // OUTRA pessoa (o seletor cai no primeiro visível) sem dizer
+                  // nada. Melhor não abrir e falar.
+                  if (!d.colaboradores.some((c: Colaborador) => c.id === id)) {
+                    toast("Este lançamento está sem cadastro — conserte em Auditoria de lançamentos.", "erro");
+                    return;
+                  }
+                  setColabId(id); setMostrarInativos(true); setAba("custos");
+                }}
                 onEscolherMes={setComp}
               />
             ),

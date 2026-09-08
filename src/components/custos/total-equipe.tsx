@@ -86,7 +86,7 @@ export function TotalEquipe({
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               <StatCard label="Pago à equipe" value={formatBRL(resumo.pago)} icon={<Users className="h-4 w-4" />} accent="blue" onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
-              <StatCard label="Provisões" value={formatBRL(resumo.provisoes)} icon={<PiggyBank className="h-4 w-4" />} accent="gold" hint={`sobre ${formatBRL(resumo.base)}`} />
+              <StatCard label="Provisões" value={formatBRL(resumo.provisoes)} icon={<PiggyBank className="h-4 w-4" />} accent="gold" hint={`sobre ${formatBRL(resumo.base)}`} title="Provisão do mês: FGTS, 13º e férias sobre a base, mais o FGTS lançado de verdade. Quanto SEPARAR por mês para os acertos está na aba Encargos estimados — lá o mês pela metade vale pela média, então os dois números não são o mesmo." />
               <StatCard label="Média por pessoa" value={formatBRL(resumo.mediaPorPessoa)} icon={<TrendingUp className="h-4 w-4" />} accent="brand" hint={`${resumo.pessoas} pessoa(s)`} onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
             </div>
             {pessoaNome && pessoaPeso !== null && (

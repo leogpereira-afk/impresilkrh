@@ -68,6 +68,12 @@ export function EncargosEstimados({
   const olhandoOutroAno = ano !== anoDaComp;
 
   const reserva = useMemo(() => reservaDoAno(pagamentos, ano, { incluirFgts, quadroDe }), [pagamentos, ano, incluirFgts, quadroDe]);
+  // A mesma média pela outra régua: o dono decide com os dois números à vista,
+  // em vez de descobrir a diferença só depois de trocar o botão.
+  const outraMedia = useMemo(
+    () => reservaDoAno(pagamentos, ano, { incluirFgts: !incluirFgts, quadroDe }).mediaMensal,
+    [pagamentos, ano, incluirFgts, quadroDe],
+  );
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const alternar = (comp: string) => setAbertos((s) => { const n = new Set(s); if (n.has(comp)) n.delete(comp); else n.add(comp); return n; });
 
@@ -87,6 +93,16 @@ export function EncargosEstimados({
     { base: 0, fgts: 0, d13: 0, fer: 0, dep: 0 },
   );
   const origensPresentes = [...new Set(reserva.meses.map((m) => m.origem))];
+  // Quais meses da faixa da média ficaram de fora — a frase "média de 7 meses,
+  // de jan a ago" sozinha faz a faixa parecer contínua.
+  const foraDaMedia = useMemo(() => {
+    const { de, ate } = reserva.baseDaMedia;
+    if (!de || !ate) return [] as string[];
+    const dentro = new Set(reserva.meses.filter((m) => m.origem === "folha").map((m) => m.competencia));
+    return reserva.meses
+      .filter((m) => m.competencia > de && m.competencia < ate && !dentro.has(m.competencia))
+      .map((m) => compLabel(m.competencia));
+  }, [reserva]);
 
   return (
     <div className="space-y-6">
@@ -144,7 +160,7 @@ export function EncargosEstimados({
               hint={reserva.baseDaMedia.meses > 0
                 ? `média de ${reserva.baseDaMedia.meses} mês(es) completo(s), de ${compLabel(reserva.baseDaMedia.de!)} a ${compLabel(reserva.baseDaMedia.ate!)}${reserva.baseDaMedia.furos ? ` · ${reserva.baseDaMedia.furos} mês(es) da faixa ficaram de fora` : ""}`
                 : "sem mês completo para tirar média"}
-              title="Depósito fixo sugerido: a média dos até 12 últimos meses com folha completa. Mês pela metade e mês sem folha ficam fora da média. Use este valor para a ordem automática no banco; o card ao lado é o do mês, que varia com a folha."
+              title={`Depósito fixo sugerido: a média dos até 12 últimos meses com folha completa. Mês pela metade e mês sem folha ficam fora da média${foraDaMedia.length ? ` (fora: ${foraDaMedia.join(", ")})` : ""}. Use este valor para a ordem automática no banco; o card ao lado é o do mês, que varia com a folha.${outraMedia > 0 ? ` ${incluirFgts ? "Sem o FGTS" : "Com o FGTS"} seria ${formatBRL(outraMedia)}.` : ""}`}
             />
             <StatCard
               label={`Regra anual · ${ano}`}
@@ -172,7 +188,8 @@ export function EncargosEstimados({
             />
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Composição: {composicao}. Hora extra, comissão, diária e demais verbas entram no que a pessoa recebe, mas não geram encargo. Não é o custo patronal completo: INSS patronal e multa do FGTS ficam fora, e o INSS lançado por pessoa não entra em nenhuma das duas colunas de acerto.
+            <strong className="font-semibold text-slate-600">Qual número levar ao banco:</strong> a <em>regra mensal</em> é a ordem fixa que você programa uma vez; o card do mês é quanto aquele mês pediu de verdade, e serve para conferir depois. No fim do ano, a diferença aparece na regra anual.{outraMedia > 0 && ` ${incluirFgts ? "Sem o FGTS" : "Com o FGTS"}, a regra mensal seria ${formatBRL(outraMedia)}.`}
+            {" "}Composição: {composicao}. Hora extra, comissão, diária e demais verbas entram no que a pessoa recebe, mas não geram encargo. Não é o custo patronal completo: INSS patronal e multa do FGTS ficam fora, e o INSS lançado por pessoa não entra em nenhuma das duas colunas de acerto.
           </p>
         </CardBody>
       </Card>
@@ -195,7 +212,7 @@ export function EncargosEstimados({
                   <th className={cn("th px-2 text-right", !incluirFgts && "text-slate-400")} title="8% sobre a base">FGTS</th>
                   <th className="th px-2 text-right" title="1/12 da base">13º</th>
                   <th className="th px-2 text-right" title="1/12 da base × 1,3333 (o terço constitucional)">Férias</th>
-                  <th className="th px-2 text-right" title={incluirFgts ? "O que levar ao banco: FGTS + 13º + férias (nos meses pela metade, a média)" : "O que levar ao banco: 13º + férias (nos meses pela metade, a média)"}>Depositar</th>
+                  <th className="th px-2 text-right" title={`O que levar ao banco: ${incluirFgts ? "FGTS + 13º + férias" : "13º + férias"} (nos meses pela metade, a média — ou o próprio valor do mês, se já passou dela)`}>Depositar</th>
                   <th className="th px-2 text-right" title="13º e férias pagos no mês. Rescisão e FGTS rescisório aparecem em cinza, logo abaixo.">Acertos</th>
                 </tr>
               </thead>
@@ -277,7 +294,7 @@ export function EncargosEstimados({
                   <td className={cn("td px-2 text-right text-xs tabular-nums", !incluirFgts && "text-slate-400")}>{formatBRL(tot.fgts)}</td>
                   <td className="td px-2 text-right text-xs tabular-nums">{formatBRL(tot.d13)}</td>
                   <td className="td px-2 text-right text-xs tabular-nums">{formatBRL(tot.fer)}</td>
-                  <td className="td px-2 text-right tabular-nums" title="Folha completa + os meses pela metade (pela média) + os estimados.">{formatBRL(tot.dep)}</td>
+                  <td className="td px-2 text-right tabular-nums" title="Folha completa + os meses pela metade (a média, ou o próprio valor quando maior) + os estimados.">{formatBRL(tot.dep)}</td>
                   <td className="td px-2 text-right text-xs tabular-nums text-amber-700">
                     {reserva.acertosDaReserva > 0 ? formatBRL(reserva.acertosDaReserva) : <span className="text-slate-300">—</span>}
                     {reserva.acertosFora > 0 && <span className="block text-[10px] font-normal text-slate-400">+ {formatBRL(reserva.acertosFora)} fora</span>}
