@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { AlertTriangle, ShieldAlert, Info, Coins, Lock } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { Select } from "@/components/ui/form";
 import { Pessoa } from "@/components/ui/pessoa";
 import { formatBRL } from "@/lib/format";
 import { compLabel, compLabelLongo } from "@/lib/custos";
@@ -56,6 +57,7 @@ export function PreviaFolha({
   excluidos,
   onExcluir,
   onExcluirBloco,
+  vincular,
   onAplicar,
   onCancelar,
 }: {
@@ -78,6 +80,12 @@ export function PreviaFolha({
   excluidos: Set<string>;
   onExcluir: (id: string, fora: boolean) => void;
   onExcluirBloco: (ids: string[], fora: boolean) => void;
+  /** Vincular a pessoa na própria linha, no bloco "sem pessoa nesta busca". */
+  vincular?: {
+    nomeErpDe: (p: Pagamento) => string | null;
+    pessoas: { id: string; nome: string }[];
+    onVincular: (nomeErp: string, colaboradorId: string) => void;
+  };
   onAplicar: () => void;
   onCancelar: () => void;
 }) {
@@ -336,8 +344,9 @@ export function PreviaFolha({
         {/* Não vieram: três motivos, remoção só por linha */}
         <BlocoAusentes
           titulo="No ERP, mas sem pessoa nesta busca"
-          porque="O título existe no Mubisys; só não casou com ninguém desta vez. Vincule a pessoa em “Não encontrados” — não remova."
+          porque="O título existe no Mubisys; só não casou com ninguém desta vez. Escolha a pessoa aqui na linha — não remova."
           itens={resumo.ausentes.semDono} nomeDe={nomeDe} tom="border-sky-200 bg-sky-50/40 text-sky-900"
+          vincular={vincular}
         />
         <BlocoAusentes
           titulo="No ERP, mas a conta saiu da lista de folha"
@@ -451,9 +460,26 @@ function GrupoDeMudanca({ grupo, nomeDe, onExcluir, onExcluirBloco }: {
   );
 }
 
-function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar, onMarcarTodos }: {
+function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar, onMarcarTodos, vincular }: {
   titulo: string; porque: string; itens: Pagamento[]; nomeDe: (id: string) => string; tom: string;
   marcados?: Set<string>; onMarcar?: (id: string, ok: boolean) => void; onMarcarTodos?: (ids: string[], ok: boolean) => void;
+  /**
+   * VINCULAR NA PRÓPRIA LINHA.
+   *
+   * Este bloco dizia "Vincule a pessoa em «Não encontrados»" e não oferecia
+   * nada: o seletor estava no fim do mesmo modal, depois de outros quatro
+   * blocos, e nada ligava o aviso à ação. Quem lia a instrução não tinha como
+   * segui-la sem sair procurando.
+   *
+   * `nomeErpDe` devolve o nome que o ERP mandou para aquele título (achado
+   * pelo idMubi do lançamento). É esse nome — e não o do lançamento gravado —
+   * que vira a chave do vínculo, porque é ele que vai voltar no mês que vem.
+   */
+  vincular?: {
+    nomeErpDe: (p: Pagamento) => string | null;
+    pessoas: { id: string; nome: string }[];
+    onVincular: (nomeErp: string, colaboradorId: string) => void;
+  };
 }) {
   if (itens.length === 0) return null;
   const total = itens.reduce((s, p) => s + (Number(p.valor) || 0), 0);
@@ -475,6 +501,29 @@ function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar,
               <td className="td text-slate-600"><Pessoa nome={nomeDe(a.colaboradorId)} colaboradorId={a.colaboradorId} /></td>
               <td className="td text-slate-500">{compLabel(a.competencia)} · {a.tipo}{a.descricao && <span className="text-[11px] text-slate-400"> · {a.descricao}</span>}</td>
               <td className="td text-right tabular-nums text-slate-500">{formatBRL(a.valor)}</td>
+              {vincular && (() => {
+                const nomeErp = vincular.nomeErpDe(a);
+                return (
+                  <td className="td w-56">
+                    {nomeErp ? (
+                      <Select
+                        value=""
+                        onChange={(e) => { if (e.target.value) vincular.onVincular(nomeErp, e.target.value); }}
+                        className="h-7 w-full py-0 text-xs"
+                        aria-label={`Vincular "${nomeErp}" a uma pessoa`}
+                        title={`O ERP mandou este título como "${nomeErp}". Escolha de quem é.`}
+                      >
+                        <option value="">vincular “{nomeErp}”…</option>
+                        {vincular.pessoas.map((c) => (
+                          <option key={c.id} value={c.id}>{c.nome}</option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">—</span>
+                    )}
+                  </td>
+                );
+              })()}
             </tr>
           ))}
         </tbody></table>

@@ -2799,6 +2799,15 @@ export default function Custos() {
         // "Busca cortada" vale para o bloco de não encontrados, que fala de completude.
         const buscaIncompleta = !!folhaPrev.mubi?.truncado || !!folhaPrev.mubi?.busca?.truncado || (folhaPrev.mubi?.busca?.falhas.length ?? 0) > 0;
         void buscaIncompleta;
+        /* DE QUAL NOME DO ERP VEIO ESTE LANÇAMENTO.
+           O bloco "sem pessoa nesta busca" mandava vincular em "Não
+           encontrados" — que fica no fim do mesmo modal, depois de outros
+           blocos, sem nada ligando o aviso à ação. Com este mapa (idMubi → o
+           nome que o ERP mandou) o vínculo passa a caber na própria linha,
+           reusando o `vincularMubi` que já existia. A chave é o nome do ERP,
+           não o do lançamento gravado: é ele que volta no mês que vem. */
+        const nomeErpPorTitulo = new Map<string, string>();
+        for (const n of naoCasados) for (const t of n.titulos ?? []) nomeErpPorTitulo.set(String(t.idMubi), n.nome);
         return (
           <PreviaFolha
             resumo={resumoPrev}
@@ -2811,6 +2820,11 @@ export default function Custos() {
             onExcluirBloco={(ids, fora) => setExcluidos((s2) => { const n = new Set(s2); for (const i of ids) { if (fora) n.add(i); else n.delete(i); } return n; })}
             onMarcarAusente={(id, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
             onMarcarBloco={(ids, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); for (const id of ids) { if (ok) n.add(id); else n.delete(id); } return n; })}
+            vincular={folhaPrev.mubi ? {
+              nomeErpDe: (p) => (p.idMubi ? nomeErpPorTitulo.get(String(p.idMubi)) ?? null : null),
+              pessoas: [...d.colaboradores].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((c) => ({ id: c.id, nome: c.nome })),
+              onVincular: vincularMubi,
+            } : undefined}
             confirmados={confirmados}
             onConfirmar={(chave, ok) => setConfirmados((atual) => { const n = new Set(atual); if (ok) n.add(chave); else n.delete(chave); return n; })}
             salarios={folhaPrev.mubi ? salarios : []}
