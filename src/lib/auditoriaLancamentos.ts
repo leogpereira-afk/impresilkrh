@@ -241,7 +241,7 @@ export function auditarLancamentos(
         regra: "conta-parou", gravidade: c.mesesParada >= 2 ? "erro" : "atencao",
         colaboradorId: "", pagamentoIds: [], competencias: [c.primeiraComp, c.ultimaComp],
         titulo: `${c.rotulo} parou de vir`,
-        detalhe: `Vinha em ${c.meses} mês(es), última vez em ${c.ultimaComp} — ${c.mesesParada} mês(es) atrás. Média de ${c.mediaMensal.toFixed(2)} por mês${c.pessoas.length ? `, para ${c.pessoas.slice(0, 3).join(", ")}` : ""}. Ou a casa parou de pagar, ou o contador renumerou a conta e ela saiu da lista da folha.`,
+        detalhe: `Vinha em ${c.meses} mês(es), última vez em ${c.ultimaComp} — ${c.mesesParada} mês(es) atrás. Média de ${c.mediaMensal.toFixed(2)} por mês${c.pessoas.length ? `, para ${c.pessoas.slice(0, 3).join(", ")}` : ""}. A conta não voltou sob outro número com o mesmo nome — se voltou, foi com nome trocado também, ou a casa parou de pagar.`,
         valor: c.mediaMensal,
       });
     }
@@ -395,7 +395,8 @@ export const COMO_CORRIGIR: Record<RegraAuditoria, ComoCorrigir> = {
     onde: "erp",
     passos: [
       "Confira no Mubisys se o pagamento continua sendo lançado — pode ser que a casa tenha simplesmente parado de pagar aquilo.",
-      "Se continua sendo lançado, o contador renumerou a conta: procure o código novo em “Contas fora da folha”, na prévia da busca.",
+      "Se continua sendo lançado, veja “Contas fora da folha” na prévia da busca: ela lista TODAS as contas que o filtro recusou no mês, com as que têm cara de nome de pessoa em cima.",
+      "Achou o código novo? Avise — ele precisa entrar na lista de contas de folha. A tradução automática só reconhece conta renumerada DENTRO do mesmo grupo; conta que mudou de grupo (2.3.x virando 2.7.x, por exemplo) tem de ser dita à mão.",
       "Enquanto o código novo não for reconhecido, esse dinheiro não entra na ficha de ninguém — nem como custo do mês.",
     ],
   },
