@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { cn } from "@/lib/cn";
+import { CAMPOS_FICHA, completudeDaFicha, preenchido, type Completude } from "@/lib/completudeCadastro";
 import { UserMinus, Trash2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
@@ -171,6 +173,19 @@ export function ColaboradorForm({
     onFechar();
   };
 
+  /* A COMPLETUDE AO VIVO. A regra é a mesma da ficha e da lista
+     (lib/completudeCadastro, com peso por campo) — aqui ela só é recalculada a
+     cada tecla, sobre o formulário aberto, e não sobre o que está gravado. */
+  const completude = useMemo(() => completudeDaFicha(form as unknown as Record<string, unknown>), [form]);
+  const estadoDe = (chave: string): "ok" | "falta" | "neutro" => {
+    const def = CAMPOS_FICHA.find((c) => c.chave === chave);
+    if (!def || (def.soSe && !def.soSe(form as unknown as Record<string, unknown>))) return "neutro";
+    if (preenchido((form as unknown as Record<string, unknown>)[chave])) return "ok";
+    // Vermelho só no que TRAVA (essencial). Pintar de vermelho o que é
+    // desejável faria a ficha inteira parecer errada, e a cor pararia de valer.
+    return def.peso === "essencial" ? "falta" : "neutro";
+  };
+
   const salvar = () => {
     if (!form.nome?.trim()) {
       toast("Informe o nome do colaborador.", "erro");
@@ -307,27 +322,58 @@ export function ColaboradorForm({
         </>
       }
     >
+      {/* QUANTO FALTA, ENQUANTO SE DIGITA. A ficha e a lista já mostram a
+          porcentagem (components/colaboradores/completude); aqui ela é ao vivo,
+          e cada campo se pinta: verde claro quando preenchido, vermelho quando
+          falta e o cadastro precisa. Pedido do Leonardo, 08/09/2026. */}
+      <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-slate-600">Cadastro preenchido</span>
+          <span className={cn("text-sm font-semibold tabular-nums", completude.faltamEssenciais > 0 ? "text-red-700" : completude.pct >= 90 ? "text-emerald-700" : "text-amber-700")}>
+            {completude.pct}%
+          </span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/70">
+          <div
+            className={cn("h-full rounded-full transition-all", completude.faltamEssenciais > 0 ? "bg-red-500" : completude.pct >= 90 ? "bg-emerald-500" : "bg-amber-500")}
+            style={{ width: `${completude.pct}%` }}
+          />
+        </div>
+        <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
+          {completude.faltam.length === 0
+            ? "Nada falta nesta ficha."
+            : <>
+                {completude.faltamEssenciais > 0 && (
+                  <span className="font-semibold text-red-700">
+                    Falta o obrigatório: {completude.faltam.filter((f: Completude["faltam"][number]) => f.peso === "essencial").map((f) => f.rotulo).join(", ")}.{" "}
+                  </span>
+                )}
+                <span>Falta ainda: {completude.faltam.filter((f: Completude["faltam"][number]) => f.peso !== "essencial").map((f) => f.rotulo).join(", ") || "nada"}.</span>
+              </>}
+        </p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
-        <Campo label="Nome completo" obrigatorio className="sm:col-span-2">
+        <Campo label="Nome completo" obrigatorio className="sm:col-span-2" estado={estadoDe("nome")}>
           <Input value={form.nome ?? ""} onChange={(e) => set({ nome: e.target.value })} />
         </Campo>
-        <Campo label="CPF"><Input value={form.cpf ?? ""} onChange={(e) => set({ cpf: e.target.value })} placeholder="Somente números" /></Campo>
-        <Campo label="E-mail"><Input value={form.email ?? ""} onChange={(e) => set({ email: e.target.value })} /></Campo>
-        <Campo label="Telefone"><Input value={form.telefone ?? ""} onChange={(e) => set({ telefone: e.target.value })} /></Campo>
-        <Campo label="Nascimento"><Input type="date" value={(form.dataNascimento ?? "").slice(0, 10)} onChange={(e) => set({ dataNascimento: e.target.value })} /></Campo>
+        <Campo label="CPF" estado={estadoDe("cpf")}><Input value={form.cpf ?? ""} onChange={(e) => set({ cpf: e.target.value })} placeholder="Somente números" /></Campo>
+        <Campo label="E-mail" estado={estadoDe("email")}><Input value={form.email ?? ""} onChange={(e) => set({ email: e.target.value })} /></Campo>
+        <Campo label="Telefone" estado={estadoDe("telefone")}><Input value={form.telefone ?? ""} onChange={(e) => set({ telefone: e.target.value })} /></Campo>
+        <Campo label="Nascimento" estado={estadoDe("dataNascimento")}><Input type="date" value={(form.dataNascimento ?? "").slice(0, 10)} onChange={(e) => set({ dataNascimento: e.target.value })} /></Campo>
 
-        <Campo label="Área">
+        <Campo label="Área" estado={estadoDe("areaId")}>
           <Select value={form.areaId ?? ""} onChange={(e) => set({ areaId: e.target.value, cargoId: null })}>
             {d.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
           </Select>
         </Campo>
-        <Campo label="Cargo">
+        <Campo label="Cargo" estado={estadoDe("cargoId")}>
           <Select value={form.cargoId ?? ""} onChange={(e) => set({ cargoId: e.target.value })}>
             <option value="">— selecione —</option>
             {cargosArea.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
           </Select>
         </Campo>
-        <Campo label="Nível">
+        <Campo label="Nível" estado={estadoDe("nivelId")}>
           <Select value={form.nivelId ?? ""} onChange={(e) => set({ nivelId: e.target.value })}>
             {d.niveis.map((n) => <option key={n.id} value={n.id}>{n.codigo} · {n.nome}</option>)}
           </Select>
@@ -339,12 +385,12 @@ export function ColaboradorForm({
             o valor é lido no formato brasileiro (valorDigitado) e o que a pessoa
             digitou continua na tela. De quebra, a roda do mouse para de alterar
             o valor com o campo focado. */}
-        <Campo label="Salário (R$)" hint="Ex.: 2.500,38">
+        <Campo label="Salário (R$)" hint="Ex.: 2.500,38" estado={estadoDe("salario")}>
           <Input inputMode="decimal" value={salarioTxt} onChange={(e) => setSalarioTxt(e.target.value)} placeholder="0,00" />
         </Campo>
-        <Campo label="Admissão"><Input type="date" value={(form.dataAdmissao ?? "").slice(0, 10)} onChange={(e) => set({ dataAdmissao: e.target.value })} /></Campo>
+        <Campo label="Admissão" estado={estadoDe("dataAdmissao")}><Input type="date" value={(form.dataAdmissao ?? "").slice(0, 10)} onChange={(e) => set({ dataAdmissao: e.target.value })} /></Campo>
 
-        <Campo label="Gestor (reporta-se a)">
+        <Campo label="Gestor (reporta-se a)" estado={estadoDe("gestorId")}>
           <Select value={form.gestorId ?? ""} onChange={(e) => set({ gestorId: e.target.value || null })}>
             <option value="">— nenhum (topo) —</option>
             {gestoresPossiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
@@ -415,15 +461,15 @@ export function ColaboradorForm({
           </Campo>
         </div>
 
-        <Campo label="Endereço (rua)"><Input value={form.enderecoRua ?? ""} onChange={(e) => set({ enderecoRua: e.target.value })} /></Campo>
+        <Campo label="Endereço (rua)" estado={estadoDe("enderecoRua")}><Input value={form.enderecoRua ?? ""} onChange={(e) => set({ enderecoRua: e.target.value })} /></Campo>
         <Campo label="Número"><Input value={form.enderecoNumero ?? ""} onChange={(e) => set({ enderecoNumero: e.target.value })} placeholder="nº" /></Campo>
         <Campo label="Complemento"><Input value={form.enderecoComplemento ?? ""} onChange={(e) => set({ enderecoComplemento: e.target.value })} placeholder="Apto, bloco…" /></Campo>
-        <Campo label="Bairro"><Input value={form.enderecoBairro ?? ""} onChange={(e) => set({ enderecoBairro: e.target.value })} /></Campo>
-        <Campo label="CEP"><Input value={form.enderecoCep ?? ""} onChange={(e) => set({ enderecoCep: e.target.value })} /></Campo>
+        <Campo label="Bairro" estado={estadoDe("enderecoBairro")}><Input value={form.enderecoBairro ?? ""} onChange={(e) => set({ enderecoBairro: e.target.value })} /></Campo>
+        <Campo label="CEP" estado={estadoDe("enderecoCep")}><Input value={form.enderecoCep ?? ""} onChange={(e) => set({ enderecoCep: e.target.value })} /></Campo>
         <Campo label="Cidade"><Input value={form.cidade ?? ""} onChange={(e) => set({ cidade: e.target.value })} /></Campo>
-        <Campo label="Cônjuge"><Input value={form.conjugeNome ?? ""} onChange={(e) => set({ conjugeNome: e.target.value })} /></Campo>
+        <Campo label="Cônjuge" estado={estadoDe("conjugeNome")}><Input value={form.conjugeNome ?? ""} onChange={(e) => set({ conjugeNome: e.target.value })} /></Campo>
         <Campo label="Telefone do cônjuge"><Input value={form.conjugeTelefone ?? ""} onChange={(e) => set({ conjugeTelefone: e.target.value })} placeholder="(00) 00000-0000" /></Campo>
-        <Campo label="Matrícula eSocial"><Input value={form.matriculaEsocial ?? ""} onChange={(e) => set({ matriculaEsocial: e.target.value })} /></Campo>
+        <Campo label="Matrícula eSocial" estado={estadoDe("matriculaEsocial")}><Input value={form.matriculaEsocial ?? ""} onChange={(e) => set({ matriculaEsocial: e.target.value })} /></Campo>
         <Campo label="Vale-transporte">
           <label className="flex h-[42px] items-center gap-2 text-sm text-slate-600">
             <input type="checkbox" checked={form.valeTransporte ?? false} onChange={(e) => set({ valeTransporte: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />

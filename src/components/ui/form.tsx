@@ -6,18 +6,33 @@ export function Campo({
   hint,
   className,
   obrigatorio,
+  estado,
 }: {
   label?: React.ReactNode;
   children: React.ReactNode;
   hint?: React.ReactNode;
   className?: string;
   obrigatorio?: boolean;
+  /**
+   * Pinta o campo pelo preenchimento (pedido do Leonardo, 08/09/2026): verde
+   * claro quando está preenchido, vermelho quando falta e o cadastro precisa.
+   * "neutro" mantém o mesmo espaçamento dos outros, sem cor — senão os campos
+   * pintados ficariam maiores que os demais e a grade dançaria.
+   */
+  estado?: "ok" | "falta" | "neutro";
 }) {
   return (
-    <label className={cn("block", className)}>
+    <label className={cn(
+      "block",
+      estado && "rounded-lg p-2 transition-colors",
+      estado === "ok" && "bg-green-50/70",
+      estado === "falta" && "bg-red-50 ring-1 ring-red-200",
+      className,
+    )}>
       {label && (
         <span className="label">
           {label} {obrigatorio && <span className="text-red-500">*</span>}
+          {estado === "falta" && <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-red-600">falta</span>}
         </span>
       )}
       {children}
