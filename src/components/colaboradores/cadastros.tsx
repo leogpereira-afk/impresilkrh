@@ -6,15 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/misc";
 import { Input, Select } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
-import { useColecao, obterDinamico, atualizarEm, removerEm, ehNomeColecao } from "@/lib/store";
+import { useColecao, atualizarEm, removerEm, ehNomeColecao } from "@/lib/store";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
+import { retratoDaPessoa } from "@/lib/retratoDaPessoa";
 import { formatCPF, formatDate } from "@/lib/format";
 import { idPessoa } from "@/lib/identidade";
 import {
   aproximarCadastros, quemFica, avaliarExclusao, planoDeTransferencia, planoDeExclusao,
-  orfaosDeCadastro, nomeNormalizado,
-  COLECOES_DA_PESSOA, COLECOES_TRILHA, COLECOES_CONTA, COLECAO_LANCAMENTOS, CONTAGEM_VAZIA,
-  type ContagemFicha, type FichaResumo, type AvaliacaoExclusao,
+  orfaosDeCadastro, referenciasAPessoa, contarPorFicha, nomeNormalizado,
+  CONTAGEM_VAZIA,
+  type ContagemFicha, type FichaResumo, type AvaliacaoExclusao, type Referencia,
 } from "@/lib/cadastrosDuplicados";
 import type { ColecaoMap, NomeColecao } from "@/data";
 import type { Colaborador } from "@/data/types";
@@ -45,44 +46,6 @@ type PatchDono = Partial<ColecaoMap[NomeColecao]>;
 type Pendurado = { id: string; colaboradorId?: string | null; competencia?: string | null };
 
 const foraDoQuadro = (c: FichaResumo) => c.statusId === "inativo" || !!c.dataDesligamento;
-
-/** Lê de uma vez tudo que está pendurado em cada pessoa. */
-function contarTudo(colaboradores: Colaborador[]): Map<string, ContagemFicha> {
-  const mapa = new Map<string, ContagemFicha>(colaboradores.map((c) => [c.id, { ...CONTAGEM_VAZIA }]));
-  const somar = (colecoes: readonly string[], campo: "lancamentos" | "dados" | "trilha" | "contas") => {
-    for (const nome of colecoes) {
-      for (const r of obterDinamico(nome)) {
-        const reg = r as { colaboradorId?: string | null; ativo?: boolean };
-        // CONTA DESATIVADA NÃO SEGURA A EXCLUSÃO. Contando todas, o aviso
-        // "desative a conta antes" virava beco sem saída: desativar marca
-        // `ativo: false` e NÃO apaga a linha, então a ficha nunca mais podia
-        // ser apagada, por mais que a pessoa fizesse o que o aviso mandava.
-        if (campo === "contas" && reg.ativo === false) continue;
-        const dono = reg.colaboradorId;
-        const alvo = dono ? mapa.get(dono) : undefined;
-        if (alvo) alvo[campo] += 1;
-      }
-    }
-  };
-  somar([COLECAO_LANCAMENTOS], "lancamentos");
-  somar(COLECOES_DA_PESSOA.filter((c) => c !== COLECAO_LANCAMENTOS), "dados");
-  somar(COLECOES_TRILHA, "trilha");
-  somar(COLECOES_CONTA, "contas");
-  for (const c of colaboradores) {
-    if (c.gestorId) { const g = mapa.get(c.gestorId); if (g) g.subordinados += 1; }
-    if (c.padrinhoId) { const p = mapa.get(c.padrinhoId); if (p) p.afilhados += 1; }
-  }
-  return mapa;
-}
-
-/** O retrato do que está pendurado, no formato que o plano de transferência lê. */
-function lerPendurados(): Record<string, Pendurado[]> {
-  const r: Record<string, Pendurado[]> = {};
-  for (const nome of [...COLECOES_DA_PESSOA, ...COLECOES_TRILHA, ...COLECOES_CONTA]) {
-    r[nome] = obterDinamico(nome) as unknown as Pendurado[];
-  }
-  return r;
-}
 
 function Numero({ valor, forte }: { valor: number; forte?: boolean }) {
   if (valor === 0) return <span className="tabular-nums text-slate-300">0</span>;
@@ -171,7 +134,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
 
   const [busca, setBusca] = useState("");
   const [versao, setVersao] = useState(0);
-  const [apagando, setApagando] = useState<{ ficha: FichaResumo; contagem: ContagemFicha; avaliacao: AvaliacaoExclusao; destino: FichaResumo | null } | null>(null);
+  const [apagando, setApagando] = useState<{ ficha: FichaResumo; contagem: ContagemFicha; avaliacao: AvaliacaoExclusao; destino: FichaResumo | null; referencias: Referencia[] } | null>(null);
   const [digitado, setDigitado] = useState("");
   const [conferido, setConferido] = useState(false);
   const [transferindo, setTransferindo] = useState<{ de: FichaResumo; para: FichaResumo } | null>(null);
@@ -179,7 +142,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
   const nomeStatus = (id?: string | null) => status.find((s) => s.id === id)?.nome ?? (id || "—");
 
   const contagens = useMemo(
-    () => contarTudo(colaboradores as Colaborador[]),
+    () => contarPorFicha(colaboradores as Colaborador[], retratoDaPessoa()),
     // `pagamentos` e `versao` entram para a contagem refazer quando o dinheiro
     // muda e quando esta tela grava; as outras coleções são lidas direto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,10 +184,10 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
   const abrirExclusao = (ficha: FichaResumo, destino: FichaResumo | null) => {
     // Reconta AGORA: a lista pode ter sido montada há minutos, e o que decide
     // se apagar é barato ou caro é o estado do momento da decisão.
-    const c = contarTudo(colaboradores as Colaborador[]).get(ficha.id) ?? { ...CONTAGEM_VAZIA };
+    const c = contarPorFicha(colaboradores as Colaborador[], retratoDaPessoa()).get(ficha.id) ?? { ...CONTAGEM_VAZIA };
     setDigitado("");
     setConferido(false);
-    setApagando({ ficha, contagem: c, avaliacao: avaliarExclusao(c, !!destino), destino });
+    setApagando({ ficha, contagem: c, avaliacao: avaliarExclusao(c, !!destino), destino, referencias: referenciasAPessoa(ficha.id, retratoDaPessoa()) });
   };
 
   const confirmarExclusao = () => {
@@ -240,13 +203,13 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
       toast("Esta ficha já não existe mais — nada foi apagado.", "info");
       return;
     }
-    const agora = contarTudo(colaboradores as Colaborador[]).get(ficha.id) ?? { ...CONTAGEM_VAZIA };
+    const agora = contarPorFicha(colaboradores as Colaborador[], retratoDaPessoa()).get(ficha.id) ?? { ...CONTAGEM_VAZIA };
     const avaliacao = avaliarExclusao(agora, !!destino);
     const cresceu = agora.lancamentos > contagem.lancamentos || agora.dados > contagem.dados
       || agora.contas > contagem.contas || agora.subordinados > contagem.subordinados
       || agora.afilhados > contagem.afilhados;
     if (cresceu || avaliacao.bloqueios.length > 0) {
-      setApagando({ ficha, contagem: agora, avaliacao, destino });
+      setApagando({ ficha, contagem: agora, avaliacao, destino, referencias: referenciasAPessoa(ficha.id, retratoDaPessoa()) });
       setDigitado("");
       setConferido(false);
       toast("A ficha mudou desde que este aviso abriu. Confira os números de novo.", "erro");
@@ -259,14 +222,44 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
        invisíveis em toda tela (todas buscam o nome pelo id) e ainda somando no
        custo do mês. O pior dos dois mundos — parece apagado e continua
        contando. Agora o clique cumpre a frase. */
-    const plano = planoDeExclusao(ficha.id, lerPendurados());
-    emLote(`Apagou a ficha ${ficha.id} e ${plano.total} registro(s) dela`, () => {
-      for (const grupo of plano.apagar) {
-        if (!ehNomeColecao(grupo.colecao)) continue;
-        for (const id of grupo.ids) removerEm(grupo.colecao, id);
-      }
-      remover(ficha.id);
-    });
+    const pendurados = retratoDaPessoa();
+    const plano = planoDeExclusao(ficha.id, pendurados);
+    // Quem APONTA para ela com outro nome de campo (quem ela avaliou, os
+    // feedbacks que escreveu, os contratos sob responsabilidade dela) não some
+    // — mas o campo precisa ser esvaziado, senão fica com um id que não existe
+    // e o <select> da tela passa a exibir a primeira opção da lista enquanto o
+    // dado gravado continua o id apagado.
+    const referencias = referenciasAPessoa(ficha.id, pendurados);
+    /* SE PARAR NO MEIO, A PESSOA TEM DE SABER ONDE PAROU.
+       Cada escrita grava a coleção inteira no armazém, e os sete sistemas
+       dividem os mesmos 5 MB da origem: com o armazém cheio, `removerEm`
+       lança. Sem isto o laço morria calado — parte dos pagamentos apagados,
+       a ficha ainda viva, nenhum aviso e o modal aberto como se nada tivesse
+       acontecido. A ficha sai por ÚLTIMO de propósito: enquanto ela existir,
+       o que sobrou continua tendo dono e aparece na tela. */
+    let apagados = 0;
+    try {
+      emLote(`Apagou a ficha ${ficha.id} e ${plano.total} registro(s) dela`, () => {
+        for (const grupo of plano.apagar) {
+          if (!ehNomeColecao(grupo.colecao)) continue;
+          for (const id of grupo.ids) { removerEm(grupo.colecao, id); apagados += 1; }
+        }
+        for (const ref of referencias) {
+          if (!ehNomeColecao(ref.colecao)) continue;
+          for (const id of ref.ids) atualizarEm(ref.colecao, id, { [ref.campo]: null } as PatchDono);
+        }
+        remover(ficha.id);
+      });
+    } catch (e) {
+      setVersao((v) => v + 1);
+      setApagando(null);
+      toast(
+        `Parou no meio: ${apagados} de ${plano.total} registro(s) foram apagados e a ficha ${ficha.id} CONTINUA no cadastro. ` +
+        `${e instanceof Error ? e.message : "Erro ao gravar."} Libere espaço e repita — o que sobrou ainda está com ela.`,
+        "erro",
+      );
+      return;
+    }
     registrarAcaoManual(
       `Apagou a ficha ${ficha.id} e ${plano.total} registro(s)${agora.trilha > 0 ? ` (${agora.trilha} linha(s) de trilha ficaram)` : ""}`,
       ficha.nome,
@@ -295,7 +288,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
       toast("Uma das fichas já não existe mais — nada foi transferido.", "erro");
       return;
     }
-    const plano = planoDeTransferencia(de.id, para.id, lerPendurados());
+    const plano = planoDeTransferencia(de.id, para.id, retratoDaPessoa());
     if (plano.total === 0) {
       setTransferindo(null);
       toast("Não havia nada para transferir.", "info");
@@ -318,7 +311,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
     );
   };
 
-  const planoPrevisto = transferindo ? planoDeTransferencia(transferindo.de.id, transferindo.para.id, lerPendurados()) : null;
+  const planoPrevisto = transferindo ? planoDeTransferencia(transferindo.de.id, transferindo.para.id, retratoDaPessoa()) : null;
 
   /* ÓRFÃOS: registro pendurado num id que não é ficha de ninguém.
      É a outra metade do "conferir órfãos antes de apagar". A tela acima
@@ -326,7 +319,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
      em 29/07/2026 eram 102 registros, dos quais 16 eram dado real de gente da
      casa com o id levemente errado. Reconectar vem antes de apagar. */
   const orfaos = useMemo(
-    () => orfaosDeCadastro(lerPendurados(), colaboradores as FichaResumo[]),
+    () => orfaosDeCadastro(retratoDaPessoa(), colaboradores as FichaResumo[]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [colaboradores, pagamentos, versao],
   );
@@ -337,9 +330,19 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
     const { dono, para } = reconectando;
     const destino = (colaboradores as FichaResumo[]).find((c) => c.id === para);
     if (!destino) { setReconectando(null); toast("Escolha para qual ficha os registros vão.", "erro"); return; }
+    // FREIO: lê antes de escrever, como a exclusão e a transferência ao lado.
+    // Se o id "órfão" voltou a ser ficha viva entre desenhar o cartão e clicar
+    // (um pull do sync traz cadastros de volta), reconectar arrancaria TODOS os
+    // registros de uma pessoa viva e entregaria a outra — folha inclusive.
+    if ((colaboradores as FichaResumo[]).some((c) => c.id === dono)) {
+      setReconectando(null);
+      setVersao((v) => v + 1);
+      toast(`A ficha ${dono} voltou a existir — os registros já têm dono e nada foi movido.`, "erro");
+      return;
+    }
     // O mesmo plano da transferência: ele já sabe o que move, o que não muda
     // de dono e o que criaria mês em dobro.
-    const plano = planoDeTransferencia(dono, para, lerPendurados());
+    const plano = planoDeTransferencia(dono, para, retratoDaPessoa());
     if (plano.total === 0) { setReconectando(null); toast("Não havia nada para reconectar.", "info"); return; }
     emLote(`Reconectou ${plano.total} registro(s) de ${dono} para ${para}`, () => {
       for (const m of plano.mover) {
@@ -642,6 +645,20 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
               </ul>
             )}
 
+            {apagando.referencias.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-700">Não somem, mas perdem o vínculo com ela:</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                  {apagando.referencias.map((r) => (
+                    <li key={`${r.colecao}:${r.campo}`}>{r.ids.length} {r.rotulo}</li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  O campo fica vazio em vez de apontar para um id apagado — senão a tela mostraria outra pessoa no lugar.
+                </p>
+              </div>
+            )}
+
             <p className="text-xs text-slate-500">
               Apagar não tem volta: o id fica marcado como excluído na nuvem e não volta a ser usado.
             </p>
@@ -659,14 +676,22 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
                   Esta ficha tem dinheiro lançado. Para apagar, digite o id dela — é o id, e não o nome, que distingue
                   uma ficha da outra quando o nome se repete.
                 </p>
-                <code className="mt-1.5 block select-all rounded bg-white px-2 py-1 text-xs text-slate-700">{apagando.ficha.id}</code>
+                {/* O id NÃO fica selecionável aqui de propósito. Ele já
+                    aparece no cabeçalho deste aviso e na linha da tabela;
+                    repeti-lo em `select-all` ao lado do campo transformava a
+                    exigência num copiar-colar — atrito de mentira, que não
+                    prova que alguém conferiu coisa alguma. Para digitar, a
+                    pessoa tem de LER o id da ficha certa. */}
                 <Input
                   value={digitado}
                   onChange={(e) => setDigitado(e.target.value)}
-                  placeholder="digite o id acima"
+                  placeholder="digite o id que está no topo deste aviso"
                   className="mt-2 h-9 py-0 text-sm"
                   aria-label="Confirme o id da ficha"
                 />
+                {digitado.trim() !== "" && digitado.trim() !== apagando.ficha.id && (
+                  <p className="mt-1 text-[11px] text-red-800">Não é o id desta ficha.</p>
+                )}
               </div>
             )}
           </div>
@@ -732,7 +757,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
         </Modal>
       )}
       {reconectando && (() => {
-        const plano = reconectando.para ? planoDeTransferencia(reconectando.dono, reconectando.para, lerPendurados()) : null;
+        const plano = reconectando.para ? planoDeTransferencia(reconectando.dono, reconectando.para, retratoDaPessoa()) : null;
         const alvo = orfaos.find((o) => o.dono === reconectando.dono);
         return (
           <Modal

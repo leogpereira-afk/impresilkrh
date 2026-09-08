@@ -253,7 +253,14 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
             // cujo id ainda carrega o dono antigo. Gravar num id novo criaria o
             // mês em dobro.
             const existente = fechamentos.find((f) => f.colaboradorId === aberto.id && f.competencia === competencia);
-            const id = existente?.id ?? `${competencia}::${aberto.id}`;
+            // O id NOMINAL ("<mês>::<pessoa>") pode já pertencer a OUTRA ficha:
+            // transferir e reconectar mudam o dono do registro e nunca o id.
+            // `criarEm` recusa id repetido (store.ts), então cair no id nominal
+            // sem olhar estouraria "Já existe" e quebraria o botão. Nesse caso
+            // o registro ganha um id próprio — quem manda é o dono, não o id.
+            const nominal = `${competencia}::${aberto.id}`;
+            const ocupado = !existente && fechamentos.some((f) => f.id === nominal);
+            const id = existente?.id ?? (ocupado ? `${nominal}::${Date.now().toString(36)}` : nominal);
             const agora = new Date().toISOString();
             const base = { id, colaboradorId: aberto.id, competencia, aprovado: aprovar, aprovadoPor: sessao?.colaboradorId, aprovadoEm: aprovar ? agora : null, atualizadoEm: agora };
             if (existente) atualizarFech(id, base); else criarFech(base);

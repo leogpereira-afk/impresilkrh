@@ -12,6 +12,7 @@ import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import { desligamentoDeHoje, avisoDoDesligamento, podeDesligar } from "@/lib/desligamento";
 import { inventarioDaPessoa, resumoDoQueSome, exigeDigitarProva, provaConfere, impedimentoParaApagar, COLECOES_DA_PESSOA } from "@/lib/apagarColaborador";
 import { apagarRegistrosNuvem, enviarColecao } from "@/lib/sync";
+import { retratoDaPessoa } from "@/lib/retratoDaPessoa";
 import { registrarAcaoManual, emLote } from "@/lib/auditoria";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
 
@@ -126,7 +127,10 @@ export function ColaboradorForm({
       ? inventarioDaPessoa(
           editar.id,
           editar.nome,
-          Object.fromEntries(COLECOES_DA_PESSOA.map((c) => [c, obterDinamico(c) as { colaboradorId?: string | null }[]])),
+          // O retrato COMPLETO (inclui usuarios e a trilha). Montar só com
+          // COLECOES_DA_PESSOA fazia `contas` e `trilha` saírem sempre vazios
+          // e o impedimento "esta ficha tem conta de acesso" nascer morto.
+          retratoDaPessoa(),
           d.colaboradores,
         )
       : null),

@@ -79,6 +79,16 @@ export const COLECOES_CONTA = ["usuarios"] as const;
  */
 export const COLECOES_POR_COMPETENCIA = ["pontos", "fechamentos"] as const;
 
+/*
+ * E os PAGAMENTOS, que também têm competência?
+ *
+ * Não entram: a mesma pessoa recebe VÁRIAS vezes no mesmo mês (salário,
+ * adiantamento, vale, hora extra), e o id vem do título do ERP, não do par
+ * mês+pessoa. Dois pagamentos do mesmo mês na mesma ficha é o normal, não é
+ * duplicidade — quem confere pagamento repetido é a auditoria dos lançamentos,
+ * pelo título do ERP.
+ */
+
 /** A folha: é o que o Léo chama de "lançamento" e o que decide qual ficha fica. */
 export const COLECAO_LANCAMENTOS = "pagamentos";
 
@@ -225,8 +235,17 @@ export function lacoEntre(a: FichaResumo, b: FichaResumo): Laco | null {
 
   // "José Adilando" dentro de "José Adilando Pereira". Duas palavras é o
   // mínimo: com uma só, todo "Thiago" viraria parente de todo "Thiago Alves".
+  //
+  // COM BURACO NO MEIO É OUTRA COISA. "Jose Silva" cabe dentro de "Jose ANTONIO
+  // Silva" — e isso tanto pode ser a mesma pessoa escrita curta quanto duas
+  // pessoas. O que dá certeza é o nome ser um PREFIXO: quem cadastrou de novo
+  // digitou o começo e parou ("José Adilando" para "José Adilando Pereira").
+  // Nome do meio faltando vira "confira", não afirmação.
   if (curto.length >= 2 && curto.length < longo.length && cabeDentro(curto, longo)) {
-    return { tipo: "nome-contido", certeza: "alta", explicacao: `“${curto.join(" ")}” cabe dentro de “${longo.join(" ")}”` };
+    const prefixo = curto.every((t, i) => t === longo[i]);
+    return prefixo
+      ? { tipo: "nome-contido", certeza: "alta", explicacao: `“${curto.join(" ")}” é o começo de “${longo.join(" ")}”` }
+      : { tipo: "nome-contido", certeza: "media", explicacao: `“${curto.join(" ")}” cabe dentro de “${longo.join(" ")}”, mas faltando nome do meio` };
   }
 
   if (ta.length === tb.length) {
@@ -379,6 +398,11 @@ export function quemFica(fichas: FichaResumo[], contar: (id: string) => Contagem
     return (
       cb.lancamentos - ca.lancamentos ||
       cb.dados - ca.dados ||
+      // O APELIDO É O LOGIN DA PESSOA NOS SETE SISTEMAS (ver o comentário em
+      // data/types.ts). Entre duas fichas igualmente vazias, fica a que já
+      // virou a porta de entrada dela — apagar essa quebraria o login no
+      // Painel, no PCP, no Brief, no Compras e no POPs de uma vez.
+      Number(!!b.apelido) - Number(!!a.apelido) ||
       Number(noQuadro(b)) - Number(noQuadro(a)) ||
       String(a.dataAdmissao ?? "9999").localeCompare(String(b.dataAdmissao ?? "9999")) ||
       a.id.localeCompare(b.id)
@@ -704,4 +728,112 @@ export function sugerirDono(idOrfao: string, fichas: FichaResumo[]): DonoSugerid
   if (notas.length > 1 && notas[1].laco.certeza === notas[0].laco.certeza) return null;
   const { ficha, laco } = notas[0];
   return { id: ficha.id, nome: ficha.nome, certeza: laco.certeza, motivo: laco.explicacao };
+}
+
+// ---------------------------------------------------------------------------
+// Quem APONTA para a pessoa com outro nome de campo
+// ---------------------------------------------------------------------------
+
+/**
+ * Nem toda referência a uma pessoa se chama `colaboradorId`.
+ *
+ * As listas de cima cobrem o que é DELA (a folha, os documentos). Falta o
+ * contrário: registros de OUTROS que apontam para ela — quem avaliou, quem
+ * escreveu o feedback, quem responde pelo contrato de freelancer. Apagar a
+ * ficha deixa esses campos com um id que não existe, e o efeito é o mesmo do
+ * `gestorId` morto que já é tratado: o `<select>` da tela passa a exibir a
+ * PRIMEIRA opção da lista enquanto o dado gravado continua o id apagado — a
+ * tela mostrando um avaliador e o registro guardando outro.
+ *
+ * `gestorId` e `padrinhoId` não entram aqui porque já são tratados à parte
+ * (viram `subordinados` e `afilhados`, e a tela reaponta ou avisa). E
+ * `usuarioColaboradorId` de `acessos`/`alteracoes` também não: é trilha —
+ * quem fez a ação continua sendo quem fez, mesmo tendo saído.
+ */
+export const REFERENCIAS_A_PESSOA: { colecao: string; campo: string; rotulo: string }[] = [
+  { colecao: "avaliacoes", campo: "avaliadorId", rotulo: "avaliação(ões) feita(s) por ela" },
+  { colecao: "feedbacks", campo: "autorId", rotulo: "feedback(s) escrito(s) por ela" },
+  { colecao: "candidatos", campo: "testeAvaliadorId", rotulo: "teste(s) de candidato acompanhado(s) por ela" },
+  { colecao: "freelancers", campo: "exColaboradorId", rotulo: "contrato(s) de freelancer que vieram da ficha dela" },
+  { colecao: "freelancers", campo: "responsavelId", rotulo: "contrato(s) de freelancer sob responsabilidade dela" },
+];
+
+/**
+ * TODA coleção que estas regras precisam ler — a única lista que a tela deve
+ * usar para montar o retrato.
+ *
+ * Existe porque eu já errei aqui: `referenciasAPessoa` procura contratos em
+ * `freelancers`, que NÃO tem `colaboradorId` e por isso não está em nenhuma
+ * das três listas de cima. A tela lia só aquelas três e o resultado era
+ * silencioso — nenhum contrato de freelancer era achado, nunca. Somando aqui,
+ * quem lê não tem como esquecer.
+ */
+export const COLECOES_CONSULTADAS: readonly string[] = [
+  ...new Set<string>([
+    ...COLECOES_DA_PESSOA,
+    ...COLECOES_TRILHA,
+    ...COLECOES_CONTA,
+    ...REFERENCIAS_A_PESSOA.map((r) => r.colecao),
+  ]),
+];
+
+export interface Referencia {
+  colecao: string;
+  campo: string;
+  rotulo: string;
+  ids: string[];
+}
+
+/**
+ * Registros de outros que apontam para esta pessoa por um campo que não é
+ * `colaboradorId`. Não somem com ela: o campo é que precisa ser esvaziado,
+ * senão fica apontando para um id apagado.
+ */
+export function referenciasAPessoa(id: string, registros: Record<string, RegistroPendurado[]>): Referencia[] {
+  if (!id) return [];
+  const achadas: Referencia[] = [];
+  for (const { colecao, campo, rotulo } of REFERENCIAS_A_PESSOA) {
+    const ids = (registros[colecao] ?? [])
+      .filter((r) => (r as unknown as Record<string, unknown>)[campo] === id)
+      .map((r) => r.id);
+    if (ids.length) achadas.push({ colecao, campo, rotulo, ids });
+  }
+  return achadas;
+}
+
+/**
+ * A contagem que decide TUDO nesta tela: quem fica, quanto custa apagar e o
+ * que segura a exclusão.
+ *
+ * Morava dentro do componente e por isso não tinha teste nenhum — justo ela,
+ * de quem sai o "manter", o "31 lançamentos" do aviso e os impedimentos.
+ * `registros` é o retrato do momento (coleção → registros).
+ */
+export function contarPorFicha(
+  fichas: { id: string; gestorId?: string | null; padrinhoId?: string | null }[],
+  registros: Record<string, RegistroPendurado[]>,
+): Map<string, ContagemFicha> {
+  const mapa = new Map<string, ContagemFicha>(fichas.map((f) => [f.id, { ...CONTAGEM_VAZIA }]));
+  const somar = (colecoes: readonly string[], campo: "lancamentos" | "dados" | "trilha" | "contas") => {
+    for (const nome of colecoes) {
+      for (const r of registros[nome] ?? []) {
+        // CONTA DESATIVADA NÃO SEGURA A EXCLUSÃO. Contando todas, o aviso
+        // "desative a conta antes" virava beco sem saída: desativar marca
+        // `ativo: false` e NÃO apaga a linha, então a ficha nunca mais podia
+        // ser apagada, por mais que a pessoa fizesse o que o aviso mandava.
+        if (campo === "contas" && (r as { ativo?: boolean }).ativo === false) continue;
+        const alvo = r.colaboradorId ? mapa.get(r.colaboradorId) : undefined;
+        if (alvo) alvo[campo] += 1;
+      }
+    }
+  };
+  somar([COLECAO_LANCAMENTOS], "lancamentos");
+  somar(COLECOES_DA_PESSOA.filter((c) => c !== COLECAO_LANCAMENTOS), "dados");
+  somar(COLECOES_TRILHA, "trilha");
+  somar(COLECOES_CONTA, "contas");
+  for (const f of fichas) {
+    if (f.gestorId) { const g = mapa.get(f.gestorId); if (g) g.subordinados += 1; }
+    if (f.padrinhoId) { const p = mapa.get(f.padrinhoId); if (p) p.afilhados += 1; }
+  }
+  return mapa;
 }

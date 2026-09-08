@@ -13,7 +13,8 @@ import fs from "node:fs";
 import {
   tokensDoNome, nomeNormalizado, semelhanca, erroDeDigitacao, lacoEntre,
   aproximarCadastros, quemFica, avaliarExclusao, planoDeTransferencia,
-  planoDeExclusao, orfaosDeCadastro, sugerirDono,
+  planoDeExclusao, orfaosDeCadastro, sugerirDono, referenciasAPessoa, REFERENCIAS_A_PESSOA,
+  contarPorFicha, COLECOES_CONSULTADAS,
   COLECOES_DA_PESSOA, COLECOES_TRILHA, COLECOES_CONTA, CONTAGEM_VAZIA,
   type FichaResumo, type ContagemFicha,
 } from "./cadastrosDuplicados";
@@ -515,7 +516,7 @@ describe("órfão: registro cujo dono não existe mais", () => {
     const s = sugerirDono("douglas-thiago-silva", FICHAS)!;
     expect(s.id).toBe("douglas-thiago-silva-siqueira");
     expect(s.certeza).toBe("alta");
-    expect(s.motivo).toContain("cabe dentro");
+    expect(s.motivo).toContain("é o começo de");
   });
 
   it("id gerado a partir de nome incompleto também: “jose-adilando”", () => {
@@ -620,6 +621,178 @@ describe("as três listas de coleções são a MESMA lista", () => {
   it("e ninguém lista `agendamentos` como coleção de pessoa — ela não tem colaboradorId", () => {
     for (const arquivo of ["src/lib/cadastrosDuplicados.ts", "src/lib/apagarColaborador.ts", "src/lib/vinculos.ts"]) {
       expect(leia(arquivo).includes('"agendamentos"'), arquivo).toBe(false);
+    }
+  });
+});
+
+describe("prefixo é certeza; nome do meio faltando é pergunta", () => {
+  /* `cabeDentro` é subsequência: "Jose Silva" cabe dentro de "Jose ANTONIO
+     Silva". Isso tanto pode ser a mesma pessoa escrita curta quanto duas
+     pessoas diferentes — e estava saindo com certeza ALTA, que é afirmação. */
+  it("começo igual e o resto a mais: alta (é o caso do José Adilando)", () => {
+    const l = lacoEntre(ficha("a", "José Adilando"), ficha("b", "José Adilando Pereira"))!;
+    expect(l.certeza).toBe("alta");
+    expect(l.explicacao).toContain("é o começo de");
+  });
+
+  it("nome do meio faltando: média, e a tela pergunta em vez de afirmar", () => {
+    for (const [curto, longo] of [
+      ["Jose Silva", "Jose Antonio Silva"],
+      ["Maria Souza", "Maria Aparecida de Souza"],
+      ["Adriano Araujo", "Adriano Nunes Araujo"],
+    ]) {
+      const l = lacoEntre(ficha("a", curto), ficha("b", longo))!;
+      expect(l.certeza, `${curto} × ${longo}`).toBe("media");
+      expect(l.explicacao).toContain("faltando nome do meio");
+    }
+  });
+
+  it("e o sobrenome truncado continua alto — é prefixo", () => {
+    expect(lacoEntre(ficha("a", "Douglas Thiago Silva"), ficha("b", "Douglas Thiago Silva Siqueira"))!.certeza).toBe("alta");
+  });
+});
+
+describe("o apelido é o login nos sete sistemas e pesa no desempate", () => {
+  const contarCom = (mapa: Record<string, Partial<ContagemFicha>>) => (id: string): ContagemFicha => ({ ...CONTAGEM_VAZIA, ...(mapa[id] ?? {}) });
+
+  it("entre duas fichas vazias, fica a que já é a porta de entrada da pessoa", () => {
+    // Apagar a ficha do apelido quebraria o login no Painel, no PCP, no Brief,
+    // no Compras e no POPs de uma vez.
+    const semApelido = ficha("x-sem", "Fulano de Tal", { statusId: "ativo" });
+    const comApelido = ficha("x-com", "Fulano de Tal", { apelido: "fulano", statusId: "inativo" });
+    expect(quemFica([semApelido, comApelido], contarCom({}))!.id).toBe("x-com");
+  });
+
+  it("mas dinheiro ganha do apelido: quem tem lançamento fica", () => {
+    const comApelido = ficha("x-com", "Fulano de Tal", { apelido: "fulano" });
+    const comDinheiro = ficha("x-din", "Fulano de Tal");
+    expect(quemFica([comApelido, comDinheiro], contarCom({ "x-din": { lancamentos: 3 } }))!.id).toBe("x-din");
+  });
+});
+
+describe("quem aponta para a pessoa com outro nome de campo", () => {
+  /* As listas de coleções cobrem o que é DELA. Faltava o contrário: registros
+     de OUTROS que apontam para ela — quem avaliou, quem escreveu o feedback,
+     quem responde pelo contrato. Apagar deixava esses campos com id morto, e o
+     <select> da tela passa a exibir a primeira opção enquanto o dado gravado
+     continua o id apagado. */
+  const registros = {
+    avaliacoes: [
+      { id: "av1", colaboradorId: "outra", avaliadorId: "chefe" },
+      { id: "av2", colaboradorId: "outra2", avaliadorId: "chefe" },
+      { id: "av3", colaboradorId: "chefe", avaliadorId: "diretor" },
+    ],
+    feedbacks: [{ id: "f1", colaboradorId: "outra", autorId: "chefe" }],
+    freelancers: [{ id: "fr1", responsavelId: "chefe" }, { id: "fr2", exColaboradorId: "chefe" }],
+  } as unknown as Record<string, Parameters<typeof referenciasAPessoa>[1][string]>;
+
+  it("acha as avaliações e feedbacks que ELA fez, não os que fizeram sobre ela", () => {
+    const r = referenciasAPessoa("chefe", registros);
+    expect(r.find((x) => x.campo === "avaliadorId")!.ids).toEqual(["av1", "av2"]);
+    expect(r.find((x) => x.campo === "autorId")!.ids).toEqual(["f1"]);
+  });
+
+  it("acha os dois campos de freelancer, separados", () => {
+    const r = referenciasAPessoa("chefe", registros);
+    expect(r.find((x) => x.campo === "responsavelId")!.ids).toEqual(["fr1"]);
+    expect(r.find((x) => x.campo === "exColaboradorId")!.ids).toEqual(["fr2"]);
+  });
+
+  it("quem não é apontado por ninguém devolve lista vazia", () => {
+    expect(referenciasAPessoa("diretor", { feedbacks: [] })).toEqual([]);
+    expect(referenciasAPessoa("", registros)).toEqual([]);
+  });
+
+  it("trilha e gestor/padrinho ficam de fora — são tratados à parte", () => {
+    const campos = REFERENCIAS_A_PESSOA.map((r) => r.campo);
+    for (const fora of ["usuarioColaboradorId", "gestorId", "padrinhoId", "colaboradorId"]) {
+      expect(campos, `${fora} não devia estar aqui`).not.toContain(fora);
+    }
+  });
+
+  it("todo campo listado existe no modelo de dados", () => {
+    const tipos = fs.readFileSync("src/data/types.ts", "utf8");
+    for (const { campo } of REFERENCIAS_A_PESSOA) {
+      expect(new RegExp(`^\\s*${campo}\\??\\s*:`, "m").test(tipos), `campo "${campo}" não existe em types.ts`).toBe(true);
+    }
+  });
+});
+
+describe("a contagem que decide tudo", () => {
+  /* Morava dentro do componente e por isso não tinha teste nenhum — justo
+     ela, de quem saem o selo "manter", o "31 lançamentos" do aviso e os
+     impedimentos. */
+  const fichas = [{ id: "a" }, { id: "b", gestorId: "a" }, { id: "c", padrinhoId: "a" }];
+  const registros = {
+    pagamentos: [{ id: "p1", colaboradorId: "a" }, { id: "p2", colaboradorId: "a" }, { id: "p3", colaboradorId: "b" }],
+    documentos: [{ id: "d1", colaboradorId: "a" }],
+    ferias: [{ id: "f1", colaboradorId: "a" }],
+    acessos: [{ id: "ac1", colaboradorId: "a" }, { id: "ac2", colaboradorId: "a" }],
+    alteracoes: [{ id: "h1", colaboradorId: "a" }],
+    usuarios: [{ id: "u1", colaboradorId: "a", ativo: true }],
+  };
+
+  it("separa lançamento, dado, trilha e conta — não é um número só", () => {
+    const c = contarPorFicha(fichas, registros).get("a")!;
+    expect(c.lancamentos).toBe(2);
+    expect(c.dados).toBe(2);   // documento + férias; o pagamento não conta duas vezes
+    expect(c.trilha).toBe(3);  // 2 acessos + 1 alteração
+    expect(c.contas).toBe(1);
+  });
+
+  it("conta desativada NÃO entra — senão o aviso vira beco sem saída", () => {
+    const c = contarPorFicha(fichas, { usuarios: [{ id: "u1", colaboradorId: "a", ativo: false }] }).get("a")!;
+    expect(c.contas).toBe(0);
+  });
+
+  it("conta sem o campo `ativo` (dado antigo) conta como ativa", () => {
+    const c = contarPorFicha(fichas, { usuarios: [{ id: "u1", colaboradorId: "a" }] }).get("a")!;
+    expect(c.contas).toBe(1);
+  });
+
+  it("subordinado e afilhado saem do próprio cadastro", () => {
+    const c = contarPorFicha(fichas, registros).get("a")!;
+    expect(c.subordinados).toBe(1);
+    expect(c.afilhados).toBe(1);
+  });
+
+  it("registro de gente que não está na lista não estoura nem soma em ninguém", () => {
+    const m = contarPorFicha([{ id: "a" }], { pagamentos: [{ id: "p9", colaboradorId: "fantasma" }] });
+    expect(m.get("a")).toEqual(CONTAGEM_VAZIA);
+    expect(m.has("fantasma")).toBe(false);
+  });
+
+  it("ficha sem nada volta zerada, não indefinida", () => {
+    expect(contarPorFicha([{ id: "z" }], {}).get("z")).toEqual(CONTAGEM_VAZIA);
+  });
+});
+
+describe("a lista de leitura cobre TUDO que as regras consultam", () => {
+  /* O defeito que motivou esta lista: a ficha montava o retrato só com
+     COLECOES_DA_PESSOA, então `usuarios` chegava `undefined` e o impedimento
+     "esta ficha tem conta de acesso" — escrito no mesmo dia — nascia morto.
+     Não foi a lista que falhou: foi quem a leu. */
+  it("inclui as três listas e as coleções das referências", () => {
+    for (const c of [...COLECOES_DA_PESSOA, ...COLECOES_TRILHA, ...COLECOES_CONTA]) {
+      expect(COLECOES_CONSULTADAS, `${c} fora da lista de leitura`).toContain(c);
+    }
+    for (const { colecao } of REFERENCIAS_A_PESSOA) {
+      expect(COLECOES_CONSULTADAS, `${colecao} (referência) fora da lista de leitura`).toContain(colecao);
+    }
+    // `freelancers` é o caso que escapava: não tem colaboradorId, então não
+    // está em nenhuma das três listas — e mesmo assim precisa ser lida.
+    expect(COLECOES_CONSULTADAS).toContain("freelancers");
+  });
+
+  it("não repete coleção", () => {
+    expect(new Set(COLECOES_CONSULTADAS).size).toBe(COLECOES_CONSULTADAS.length);
+  });
+
+  it("quem monta o retrato usa esta lista, e não uma cópia", () => {
+    const src = fs.readFileSync("src/lib/retratoDaPessoa.ts", "utf8");
+    expect(src).toContain("COLECOES_CONSULTADAS");
+    for (const tela of ["src/components/colaboradores/cadastros.tsx", "src/components/colaboradores/colaborador-form.tsx"]) {
+      expect(fs.readFileSync(tela, "utf8"), `${tela} devia montar o retrato pela função única`).toContain("retratoDaPessoa()");
     }
   });
 });
