@@ -6,7 +6,7 @@
  * não está" só por não constar de uma lista de presenças escrita à mão.
  */
 import { describe, it, expect } from "vitest";
-import { quadroPorSituacao, presenteHoje, STATUS_AUSENTE_HOJE } from "./quadroPorSituacao";
+import { quadroPorSituacao, presenteHoje, ausenciasDe, STATUS_AUSENTE_HOJE } from "./quadroPorSituacao";
 import type { Colaborador, StatusColaborador } from "@/data/types";
 
 const p = (o: Partial<Colaborador> & { id: string }) => o as Colaborador;
@@ -148,10 +148,70 @@ describe("presenteHoje — o filtro da lista concorda com os cards", () => {
   });
 
   it("bate pessoa a pessoa com a conta dos cards — as duas réguas não podem divergir", () => {
+    // Comparar só totais deixava passar um erro simétrico (um a mais aqui, um
+    // a menos ali). Agora é card por card: o clique tem de listar EXATAMENTE
+    // quem o número contou.
     const ferias = new Set(["a0", "osmane"]);
+    const ausencias = ausenciasDe(STATUS);
     const r = quadroPorSituacao(CADASTRO, STATUS, ferias);
-    const contadosNoCard = r.presentes.reduce((t, g) => t + g.quantidade, 0);
-    const contadosUmAUm = CADASTRO.filter((c) => !c.ehDirecao && presenteHoje(c, ferias)).length;
-    expect(contadosUmAUm).toBe(contadosNoCard);
+    for (const g of r.presentes) {
+      const listados = CADASTRO.filter((c) => !c.ehDirecao && presenteHoje(c, ferias, ausencias) && c.statusId === g.statusId);
+      expect(listados.length, `card ${g.statusId}`).toBe(g.quantidade);
+    }
+    const indisponiveisListados = CADASTRO.filter((c) => !c.ehDirecao && !c.dataDesligamento && c.statusId !== "inativo" && !presenteHoje(c, ferias, ausencias));
+    expect(indisponiveisListados.length).toBe(r.indisponiveis);
+  });
+});
+
+describe("a lista de ausências é decisão consciente", () => {
+  it("é exatamente esta — tirar ou pôr um id aqui é mudar quem conta como presente", () => {
+    // Prende a lista literal. A revisão de 08/09 mostrou que tirar "abandono"
+    // dela (edição plausível: o status conta no headcount) passava em todos
+    // os testes e mandava quem parou de vir para um card de PRESENÇA.
+    expect([...STATUS_AUSENTE_HOJE].sort()).toEqual(["abandono", "afastado", "atestado-medico", "aviso", "externo"]);
+  });
+});
+
+describe("ausenteHoje — o campo do status manda, a lista é só o fallback", () => {
+  it("status novo criado pela tela com ausenteHoje vira ausência sem mexer em código", () => {
+    // O caso da lacuna: "Licença maternidade" criada no Painel de Controle.
+    const status = [...STATUS, { ...s("licenca-maternidade", "Licença maternidade", 10), ausenteHoje: true }];
+    const r = quadroPorSituacao([...CADASTRO, p({ id: "lic", statusId: "licenca-maternidade" })], status);
+    expect(r.presentes.some((g) => g.statusId === "licenca-maternidade")).toBe(false);
+    expect(r.indisponiveis).toBe(2); // Nailton + a licença
+    expect(r.naEmpresa).toBe(31);    // continua sendo gente da casa
+  });
+
+  it("sem o campo, o status novo é PRESENÇA — o padrão continua sendo aparecer", () => {
+    const status = [...STATUS, s("estagio", "Estágio", 10)];
+    const r = quadroPorSituacao([...CADASTRO, p({ id: "e", statusId: "estagio" })], status);
+    expect(r.presentes.some((g) => g.statusId === "estagio")).toBe(true);
+  });
+
+  it("ausenteHoje:false tira da lista de fábrica — o Léo pode dizer que aviso prévio trabalha", () => {
+    const status = STATUS.map((x) => (x.id === "aviso" ? { ...x, ausenteHoje: false } : x));
+    const r = quadroPorSituacao([p({ id: "x", statusId: "aviso" })], status);
+    expect(r.presentes.map((g) => g.statusId)).toEqual(["aviso"]);
+    expect(r.indisponiveis).toBe(0);
+  });
+
+  it("ausenciasDe: true põe, false tira, ausente deixa a fábrica valer", () => {
+    const a = ausenciasDe([
+      { id: "licenca", ausenteHoje: true },
+      { id: "aviso", ausenteHoje: false },
+      { id: "afastado" },
+      { id: "ativo" },
+    ]);
+    expect(a.has("licenca")).toBe(true);
+    expect(a.has("aviso")).toBe(false);
+    expect(a.has("afastado")).toBe(true); // fábrica
+    expect(a.has("ativo")).toBe(false);
+  });
+
+  it("presenteHoje respeita as mesmas ausências que os cards", () => {
+    const ausencias = ausenciasDe([{ id: "licenca", ausenteHoje: true }, { id: "aviso", ausenteHoje: false }]);
+    expect(presenteHoje(p({ id: "1", statusId: "licenca" }), new Set(), ausencias)).toBe(false);
+    expect(presenteHoje(p({ id: "2", statusId: "aviso" }), new Set(), ausencias)).toBe(true);
+    expect(presenteHoje(p({ id: "3", statusId: "afastado" }), new Set(), ausencias)).toBe(false);
   });
 });

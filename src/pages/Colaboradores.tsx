@@ -11,7 +11,7 @@ import { MotivacaoRosto } from "@/components/ui/indicadores";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
-import { quadroPorSituacao, presenteHoje, chaveDeStatus } from "@/lib/quadroPorSituacao";
+import { quadroPorSituacao, presenteHoje, chaveDeStatus, ausenciasDe } from "@/lib/quadroPorSituacao";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
@@ -222,7 +222,8 @@ export default function Colaboradores() {
   /* Está trabalhando HOJE? A régua mora em lib/quadroPorSituacao, junto com a
      conta dos cards, para as duas não divergirem — e ela lista as AUSÊNCIAS, não
      as presenças, para um status novo não sumir dentro de "Indisponíveis". */
-  const presente = useCallback((c: Colaborador) => presenteHoje(c, emFerias), [emFerias]);
+  const ausencias = useMemo(() => ausenciasDe(d.status), [d.status]);
+  const presente = useCallback((c: Colaborador) => presenteHoje(c, emFerias, ausencias), [emFerias, ausencias]);
 
   /* Cards do quadro — sobre o escopo de acesso, sem a Direção (mesma base da lista).
    *
@@ -242,6 +243,14 @@ export default function Colaboradores() {
     () => quadroPorSituacao(escopo, d.status, emFerias),
     [escopo, d.status, emFerias],
   );
+  /* A palavra sai de UM lugar e vai para o cabeçalho recolhido e para a linha
+     do total: a revisão de 08/09 pegou "1 indisponíveis" numa e
+     "2 indisponíveleis" na outra — a mesma tela se contradizendo. */
+  const indisponiveisTxt = `${quadro.indisponiveis} indisponíve${quadro.indisponiveis === 1 ? "l" : "is"}`;
+  /* Os desligados só ganham número quando o Léo os chama para a lista pelo
+     "Incluir inativos" — ele não quer card deles, mas 49 linhas embaixo de
+     "30 na empresa" sem explicar os 19 é a tela mentindo por omissão. */
+  const desligadosTxt = mostrarInativos && quadro.desligados > 0 ? ` · +${quadro.desligados} desligado${quadro.desligados === 1 ? "" : "s"} na lista` : "";
 
   // Exporta a lista filtrada atual para CSV (Excel-friendly, separador ;).
   const exportarCsv = () => {
@@ -427,7 +436,7 @@ export default function Colaboradores() {
                 {aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
                 <span className="font-semibold text-slate-800">Resumo do quadro</span>
                 <span className="truncate text-xs text-slate-500">
-                  {quadro.naEmpresa} na empresa · {quadro.indisponiveis} indisponíveis
+                  {quadro.naEmpresa} na empresa · {indisponiveisTxt}{desligadosTxt}
                 </span>
                 {emExperiencia.length > 0 && (
                   <span className={cn(
@@ -662,10 +671,11 @@ export default function Colaboradores() {
       <p className="mb-4 text-xs text-slate-500">
         <strong className="font-semibold text-slate-700">{quadro.naEmpresa}</strong>{" "}
         {quadro.naEmpresa === 1 ? "pessoa na empresa hoje" : "pessoas na empresa hoje"}
-        {quadro.presentes.length > 0 && (
-          <> · {quadro.presentes.map((g) => `${g.quantidade} ${g.nome.toLowerCase()}`).join(" · ")}</>
-        )}
-        {quadro.indisponiveis > 0 && <> · {quadro.indisponiveis} indisponível{quadro.indisponiveis > 1 ? "eis" : ""}</>}
+        {/* Sem repetir os cards logo acima: "21 ativo · 7 em experiência" não
+            flexiona (o nome do status é do Léo, pode ser qualquer palavra) e
+            era só eco. Fica o que os cards NÃO mostram. */}
+        {quadro.indisponiveis > 0 && <> · {indisponiveisTxt}</>}
+        {desligadosTxt}
       </p>
 
       {/* Chips de área (multi-seleção) */}

@@ -33,6 +33,22 @@ import type { Colaborador, StatusColaborador } from "@/data/types";
  */
 export const STATUS_AUSENTE_HOJE = new Set(["aviso", "afastado", "atestado-medico", "abandono", "externo"]);
 
+/**
+ * As ausências deste cadastro: a lista de fábrica acima, corrigida pelo campo
+ * `ausenteHoje` de cada status. O campo manda quando existe (true põe, false
+ * tira); quando não existe, vale a lista. É assim que um status criado pela
+ * tela ("Licença maternidade") vira ausência sem ninguém mexer em código —
+ * e que o Léo pode, se quiser, dizer que "Aviso prévio" conta como presença.
+ */
+export function ausenciasDe(status: Pick<StatusColaborador, "id" | "ausenteHoje">[]): Set<string> {
+  const out = new Set(STATUS_AUSENTE_HOJE);
+  for (const s of status) {
+    if (s.ausenteHoje === true) out.add(s.id);
+    else if (s.ausenteHoje === false) out.delete(s.id);
+  }
+  return out;
+}
+
 /** Um card de presença: um status do quadro que tem gente trabalhando hoje. */
 export interface GrupoPresente {
   statusId: string;
@@ -68,10 +84,11 @@ export const chaveDeStatus = (c: Pick<Colaborador, "statusId">) => String(c.stat
  */
 export function quadroPorSituacao(
   pessoas: Pick<Colaborador, "id" | "statusId" | "dataDesligamento" | "ehDirecao">[],
-  status: Pick<StatusColaborador, "id" | "nome" | "cor" | "ordem">[],
+  status: Pick<StatusColaborador, "id" | "nome" | "cor" | "ordem" | "ausenteHoje">[],
   emFerias: Set<string> = new Set(),
 ): QuadroPorSituacao {
   const catalogo = new Map(status.map((s) => [s.id, s]));
+  const ausencias = ausenciasDe(status);
   const base = pessoas.filter((p) => !p.ehDirecao);
   const dentro = base.filter((p) => noQuadro(p as Colaborador));
 
@@ -79,7 +96,7 @@ export function quadroPorSituacao(
   let indisponiveis = 0;
   for (const p of dentro) {
     const id = chaveDeStatus(p);
-    if (STATUS_AUSENTE_HOJE.has(id) || emFerias.has(p.id)) { indisponiveis++; continue; }
+    if (ausencias.has(id) || emFerias.has(p.id)) { indisponiveis++; continue; }
     porStatus.set(id, (porStatus.get(id) ?? 0) + 1);
   }
 
@@ -102,11 +119,16 @@ export function quadroPorSituacao(
   return { presentes, indisponiveis, naEmpresa: dentro.length, desligados: base.length - dentro.length };
 }
 
-/** Está trabalhando hoje? (o mesmo critério dos cards, para filtrar a lista) */
+/**
+ * Está trabalhando hoje? O MESMO critério dos cards, para a lista filtrada
+ * concordar com o número. `ausencias` vem de `ausenciasDe(status)` — passar a
+ * lista de fábrica é só para quem não tem o cadastro à mão.
+ */
 export function presenteHoje(
   c: Pick<Colaborador, "id" | "statusId" | "dataDesligamento">,
   emFerias: Set<string> = new Set(),
+  ausencias: Set<string> = STATUS_AUSENTE_HOJE,
 ): boolean {
   if (!noQuadro(c as Colaborador)) return false;
-  return !STATUS_AUSENTE_HOJE.has(String(c.statusId ?? "")) && !emFerias.has(c.id);
+  return !ausencias.has(chaveDeStatus(c)) && !emFerias.has(c.id);
 }

@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { formatBRL } from "@/lib/format";
 import { slug } from "@/data/_gen";
 import { statusPadraoFaltando } from "@/lib/statusPadrao";
+import { ausenciasDe } from "@/lib/quadroPorSituacao";
 import { MODULOS, PERFIL_LABEL } from "@/lib/constants";
 import { LinkFicha } from "@/components/ui/link-ficha";
 import { competenciasPlano, compLabelLongo, confidencialDoMes } from "@/lib/custos";
@@ -323,6 +324,9 @@ function StatusManager() {
      já usa — e o "Freelancer" pedido em 07/09/2026 simplesmente não existiria
      aqui. Continua sendo escrita pela tela, no clique. */
   const faltando = useMemo(() => statusPadraoFaltando(items), [items]);
+  // A resposta efetiva de "está trabalhando?" por status — campo quando há,
+  // lista de fábrica quando não há. É o que a tela de Colaboradores usa.
+  const ausencias = useMemo(() => ausenciasDe(items), [items]);
   const repor = () => {
     const falhou: string[] = [];
     let feitos = 0;
@@ -358,6 +362,7 @@ function StatusManager() {
             <div className="flex items-center gap-3">
               <DotBadge label={s.nome} cor={s.cor} />
               {s.contaComoAtivo ? <Badge variant="success">Conta no headcount</Badge> : <Badge variant="neutral">Fora do headcount</Badge>}
+              {ausencias.has(s.id) && <Badge variant="warning">Ausência</Badge>}
             </div>
             <div className="flex gap-1">
               <button className="btn-ghost p-1.5" onClick={() => abrir(s)}><Pencil className="h-4 w-4" /></button>
@@ -377,6 +382,19 @@ function StatusManager() {
             <Campo label="Nome"><Input value={form.nome ?? ""} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} /></Campo>
             <Campo label="Cor"><input type="color" className="h-10 w-20 rounded border border-slate-300" value={form.cor ?? "#64748b"} onChange={(e) => setForm((f) => ({ ...f, cor: e.target.value }))} /></Campo>
             <Toggle checked={form.contaComoAtivo ?? true} onChange={(v) => setForm((f) => ({ ...f, contaComoAtivo: v }))} label="Conta como ativo (headcount)" />
+            {/* A outra metade da pergunta. "Conta como ativo" diz se a pessoa é
+                da casa; isto diz se ela está TRABALHANDO hoje. Licença,
+                atestado e afastamento são da casa mas não estão — e sem este
+                botão um status novo desses nascia como presença, com card
+                próprio na tela de Colaboradores, sem como corrigir pela tela. */}
+            <Toggle
+              checked={form.ausenteHoje ?? ausencias.has(form.id ?? "")}
+              onChange={(v) => setForm((f) => ({ ...f, ausenteHoje: v }))}
+              label="É ausência: quem está assim não está trabalhando hoje"
+            />
+            <p className="text-[11px] text-slate-500">
+              Ausência ainda conta como gente da casa (se “conta como ativo” estiver ligado); só sai do card de quem está presente hoje.
+            </p>
           </div>
         </Modal>
       )}

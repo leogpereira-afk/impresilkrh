@@ -65,6 +65,18 @@ export interface StatusColaborador {
   cor: string;
   contaComoAtivo: boolean; // entra no headcount?
   ordem: number;
+  /**
+   * Quem está com este status NÃO está trabalhando hoje (licença, atestado,
+   * afastamento). Ausente de tudo o que pergunta "com quem eu conto hoje" —
+   * mas continua sendo gente da casa (é `contaComoAtivo` que decide isso).
+   *
+   * Opcional porque nasceu depois: os status de fábrica têm a resposta na
+   * lista `STATUS_AUSENTE_HOJE` (lib/quadroPorSituacao) e não precisam do
+   * campo. Um status criado pela tela precisa — sem ele, "Licença
+   * maternidade" nasceria como presença, com card próprio, e só código
+   * consertaria. A regra da casa é que a tela conserte.
+   */
+  ausenteHoje?: boolean;
 }
 
 export interface Colaborador {
