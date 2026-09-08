@@ -498,7 +498,19 @@ Deno.serve(async (req) => {
         cpfCnpj: String(i.origem_cnpj ?? "").trim() || null,
         planoContas: String(i.plano_contas ?? ""),
         tipo: tipoDoPlano(String(i.plano_contas ?? "")),
-        descricao: String(i.descricao ?? i.despesa ?? "").trim(),
+        // O NOME DA PESSOA PODE ESTAR EM QUALQUER UM DOS DOIS CAMPOS.
+        //
+        // Era `String(i.descricao ?? i.despesa ?? "")`, e o `??` só cai para
+        // `despesa` quando `descricao` é null/undefined: string VAZIA passa
+        // direto e o texto da despesa ia embora. O ERP mostra esse campo como
+        // "Despesa" na tela dele, e é lá que o Léo escreveu
+        // "Curso Marcella Laiara Rocha Farias" em 08/09/2026 para o curso cair
+        // na ficha dela — perder esse texto anulava a correção inteira.
+        //
+        // Junta os dois quando ambos têm conteúdo e são diferentes: é deste
+        // texto que sai o casamento com a pessoa (`casarPelaDescricao` e o id
+        // de 6 dígitos), então nada aqui pode ser descartado por engano.
+        descricao: [...new Set([i.descricao, i.despesa].map((v) => String(v ?? "").trim()).filter(Boolean))].join(" — "),
         valor: num(i.valor_pagamento) || num(i.valor_titulo),
         dataVencimento: String(i.data_vencimento ?? "").slice(0, 10),
         dataPagamento: String(i.data_pagamento ?? "").slice(0, 10) || null,

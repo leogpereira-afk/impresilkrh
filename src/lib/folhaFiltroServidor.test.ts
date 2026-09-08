@@ -77,3 +77,43 @@ describe("as contas de limpeza que o Léo achou no ERP (07/09/2026)", () => {
     expect(ehFolhaDoServidor("2.11.1-Freelancer")).toBe(true);
   });
 });
+
+/* O TEXTO DA DESPESA NÃO PODE SER JOGADO FORA (08/09/2026).
+ *
+ * O Léo corrigiu no ERP: pôs "Curso Marcella Laiara Rocha Farias" no campo que
+ * o Mubisys chama de "Despesa". A Edge Function montava a descrição com
+ * `String(i.descricao ?? i.despesa ?? "")` — e o `??` só cai para `despesa`
+ * quando `descricao` é null/undefined. String VAZIA passa direto, e o texto da
+ * despesa ia embora com o nome dentro. A correção dele seria anulada aqui.
+ *
+ * Achado da auditoria adversarial (index.ts:501). O teste extrai a expressão do
+ * arquivo do servidor e a exercita — é Deno, fora do alcance do vitest.
+ */
+describe("a descrição que sai da Edge Function", () => {
+  const montarDescricao = (i: { descricao?: unknown; despesa?: unknown }) => {
+    const m = fonte.match(/descricao: (\[\.\.\.new Set\(\[i\.descricao, i\.despesa\][^\n]*?)\,\n/);
+    if (!m) throw new Error("A montagem da descrição mudou de forma — reveja este teste.");
+    return new Function("i", `return ${m[1]};`)(i) as string;
+  };
+
+  it("O CASO RUIM: descrição vazia não pode engolir a despesa", () => {
+    expect(montarDescricao({ descricao: "", despesa: "Curso Marcella Laiara Rocha Farias" }))
+      .toBe("Curso Marcella Laiara Rocha Farias");
+    expect(montarDescricao({ descricao: "   ", despesa: "Despesa faxina" })).toBe("Despesa faxina");
+  });
+
+  it("os dois preenchidos: nada se perde", () => {
+    // O nome pode estar em qualquer um dos dois — descartar um é apostar.
+    expect(montarDescricao({ descricao: "Pix", despesa: "Curso Marcella Laiara Rocha Farias" }))
+      .toBe("Pix — Curso Marcella Laiara Rocha Farias");
+  });
+
+  it("iguais não viram texto repetido", () => {
+    expect(montarDescricao({ descricao: "FGTS", despesa: "FGTS" })).toBe("FGTS");
+  });
+
+  it("os dois vazios viram string vazia, não 'undefined'", () => {
+    expect(montarDescricao({})).toBe("");
+    expect(montarDescricao({ descricao: null, despesa: undefined })).toBe("");
+  });
+});
