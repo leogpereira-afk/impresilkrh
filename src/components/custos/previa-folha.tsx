@@ -129,6 +129,34 @@ export function PreviaFolha({
       descricao="Cada mês em reais, cada linha campo a campo. Nada é gravado até você aplicar — e o que for aplicado pode ser desfeito."
       largura="max-w-3xl"
       rodape={<>
+        {/* POR QUE O BOTÃO ESTÁ TRAVADO — onde o dedo está.
+            O aviso que pede conferência fica no TOPO do modal; quem marca
+            remoções lá embaixo não o vê nascer, e o botão só explicava no
+            title (que exige passar o mouse e esperar). O Léo travou aqui em
+            08/09/2026: marcou, e "ainda não é possível fazer a alteração". */}
+        {!podeAplicar && !nadaAFazer && (
+          <span className="mr-auto flex items-center gap-2 text-xs text-amber-800">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {bloqueios.length > 0 ? (
+              <span>Há um bloqueio acima — resolva antes de aplicar.</span>
+            ) : (
+              <>
+                <span>Falta conferir {faltaConfirmar.length} aviso(s) no topo.</span>
+                <button
+                  type="button"
+                  className="btn-ghost h-7 px-2 text-xs font-semibold text-amber-900 underline"
+                  onClick={() => {
+                    const alvo = document.getElementById(`aviso-${chaveDoAlarme(faltaConfirmar[0])}`);
+                    alvo?.scrollIntoView({ block: "center", behavior: "smooth" });
+                    (alvo?.querySelector("input") as HTMLInputElement | null)?.focus();
+                  }}
+                >
+                  Ver o aviso
+                </button>
+              </>
+            )}
+          </span>
+        )}
         <button className="btn-outline" onClick={onCancelar}>Cancelar</button>
         <button className="btn-primary" onClick={onAplicar} disabled={!podeAplicar} title={
           !resumo.podeAplicar ? "Há um bloqueio acima — resolva antes."
@@ -172,7 +200,7 @@ export function PreviaFolha({
           </div>
         ))}
         {resumo.precisaConfirmar.map((a) => (
-          <label key={a.id + a.titulo} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3", confirmados.has(chaveDoAlarme(a)) ? "border-amber-200 bg-amber-50/40" : "border-amber-300 bg-amber-50")}>
+          <label key={a.id + a.titulo} id={`aviso-${chaveDoAlarme(a)}`} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 scroll-mt-4", confirmados.has(chaveDoAlarme(a)) ? "border-amber-200 bg-amber-50/40" : "border-amber-300 bg-amber-50")}>
             <input type="checkbox" className="mt-0.5" checked={confirmados.has(chaveDoAlarme(a))} onChange={(e) => onConfirmar(chaveDoAlarme(a), e.target.checked)} aria-label={`Conferi: ${a.titulo}`} />
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2 text-xs font-semibold text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" /> {a.titulo}{a.valor ? <span className="font-normal text-amber-800/80">· {formatBRL(a.valor)}</span> : null}</span>
