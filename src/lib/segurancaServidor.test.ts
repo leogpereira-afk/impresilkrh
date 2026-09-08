@@ -86,6 +86,36 @@ describe("vazamentos fechados em 07/09/2026", () => {
     const r = await s.call({ action: "list", colecoes: ["planoContas"] });
     expect(r.body.registros).toHaveLength(1);
   });
+  it("conta apontada ao sócio à mão (código novo, sem 2.14) também não sai", async () => {
+    // O contador renumerou: as retiradas viraram 2.11.2.2 e o 2.14 sumiu do
+    // código E do equivaleA. O dono apontou a conta ao sócio na tela, e é esse
+    // apontamento que a porta passa a consultar (auditoria de 08/09/2026:
+    // R$ 157.314,37 saíam para qualquer ADMIN_RH).
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [
+      { id: true, config: { vinculosSocioConta: { "2.11.2.2|leonardo": "leonardo-goncalves", "2.7.2|consultoria": "nenhum" } } },
+      linha("planoContas", "pc_2026-08_2.11.2.2", { codigo: "2.11.2.2", nome: "Leonardo", valor: 30641.92, competencia: "2026-08" }),
+      linha("planoContas", "pc_2026-08_2.7.2", { codigo: "2.7.2", nome: "Consultoria", valor: 5600, competencia: "2026-08" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["planoContas"] });
+    expect(r.body.registros.map((x: any) => x.registro.codigo)).toEqual(["2.7.2"]);
+  });
+  it("lançamento societário (arrendamento/retirada) não sai para ADMIN_RH que não é o master", async () => {
+    // A societária virou LANÇAMENTO também, e a porta só olhava o plano.
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [
+      linha("pagamentos", "mubi-1", { tipo: "Arrendamento", valor: 5250, colaboradorId: "pedro-ramos", competencia: "2026-08" }),
+      linha("pagamentos", "mubi-2", { tipo: "Retirada", valor: 30641.92, colaboradorId: "leonardo-goncalves", competencia: "2026-08" }),
+      linha("pagamentos", "mubi-3", { tipo: "Salário", valor: 1955.43, colaboradorId: "ana", competencia: "2026-08" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["pagamentos"] });
+    expect(r.body.registros.map((x: any) => x.registro.tipo)).toEqual(["Salário"]);
+  });
+  it("o master continua vendo o lançamento societário", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "leonardo-goncalves", rows: [
+      linha("pagamentos", "mubi-1", { tipo: "Arrendamento", valor: 5250, colaboradorId: "pedro-ramos", competencia: "2026-08" }),
+    ] });
+    const r = await s.call({ action: "list", colecoes: ["pagamentos"] });
+    expect(r.body.registros).toHaveLength(1);
+  });
   it("ADMIN_RH que não é o master não grava conta societária", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [] });
     const r = await s.call({ action: "upsert", colecao: "planoContas", registro: { id: "pc_x", codigo: "2.14.2.2", valor: 1 }, baseVersao: 0, mutationId: "m9" });

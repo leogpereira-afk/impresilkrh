@@ -183,10 +183,46 @@ Deno.serve(async (req) => {
   // e ele saía pelo Exportar (auditoria de 07/09/2026). Agora corta aqui.
   const MASTER_COLAB_ID = Deno.env.get("RH_MASTER_COLAB_ID") || "leonardo-goncalves";
   const ehMaster = sessao.colaborador_id === MASTER_COLAB_ID;
+  /* O apontamento de conta ao sócio, feito à mão na tela de Societárias. Só é
+     lido para quem NÃO é master — quem é master vê tudo mesmo, e uma consulta
+     a menos por pedido. Falha na leitura não abre a porta: sem o mapa, vale o
+     literal 2.14 e o resto passa, então o erro é registrado e seguimos. */
+  let vinculosSocioConta: Record<string, string> = {};
+  if (!ehMaster) {
+    try {
+      const { data } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
+      const cfg = (data?.config ?? {}) as Record<string, unknown>;
+      const v = cfg.vinculosSocioConta;
+      if (v && typeof v === "object") vinculosSocioConta = v as Record<string, string>;
+    } catch (e) {
+      console.error("sync: não consegui ler vinculosSocioConta", e);
+    }
+  }
   const contaConfidencial = (r: any) => {
     const bate = (c: unknown) => typeof c === "string" && (c === "2.14" || c.startsWith("2.14."));
-    return bate(r?.codigo) || bate(r?.equivaleA);
+    if (bate(r?.codigo) || bate(r?.equivaleA)) return true;
+    /* O CONTADOR RENUMEROU E O 2.14 SUMIU (auditoria de fechamento, 08/09/2026).
+       As retiradas e o arrendamento passaram a viver em 2.11.x, e o dono
+       apontou essas contas ao sócio à mão — `config.vinculosSocioConta`, com a
+       chave "codigo|nome". A porta só conhecia o literal e entregava
+       R$ 157.314,37 a qualquer ADMIN_RH. Agora ela consulta o apontamento. */
+    const chave = `${String(r?.codigo ?? "").trim()}|${normalizarNome(r?.nome)}`;
+    const dono = vinculosSocioConta[chave];
+    return !!dono && dono !== "nenhum";
   };
+  /* A CHAVE do apontamento é código+nome, e o nome vem normalizado (o contador
+     escreve "Retiradas Leonardo" e "RETIRADAS  LEONARDO"). Cópia da régua de
+     src/lib/custos.ts (chaveContaSocio) — se uma mudar, a outra precisa mudar
+     junto, e é por isso que o teste do servidor cobre as duas. */
+  function normalizarNome(v: unknown): string {
+    return String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  /* Societária também virou LANÇAMENTO (tipo Arrendamento/Retirada), e a porta
+     só olhava o plano de contas: R$ 54.544,69 de retirada e arrendamento saíam
+     para qualquer ADMIN_RH pela coleção `pagamentos`. */
+  const TIPOS_SOCIETARIOS = ["Arrendamento", "Retirada"];
+  const lancamentoSocietario = (r: any) => TIPOS_SOCIETARIOS.includes(String(r?.tipo ?? ""));
   // Gestão = quem lidera equipe (gestor ou RH). Treinamento e feedback são
   // trabalho de gestão, não de colaborador comum.
   const ehGestao = ehAdmin || sessao.perfil === "GESTOR";
@@ -224,6 +260,7 @@ Deno.serve(async (req) => {
       } };
     }
     if (env.colecao === "planoContas" && !ehMaster && contaConfidencial(env.registro)) return null;
+    if (env.colecao === "pagamentos" && !ehMaster && lancamentoSocietario(env.registro)) return null;
     if (ehAdmin) return env;
     if (env.colecao === "usuarios") {
       if (env.registro?.colaboradorId !== meuId) return null;
