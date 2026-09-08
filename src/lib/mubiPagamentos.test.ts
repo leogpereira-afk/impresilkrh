@@ -2,7 +2,7 @@
 // pessoa errada (ou some do custo dela), então os casos são os REAIS que
 // apareceram na conferência de julho/2026 contra o Mubisys.
 import { describe, it, expect } from "vitest";
-import { casarColaborador, casarPelaDescricao, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi, normalizarLinhas, tituloEmAberto, tituloCancelado, ehOrigemGenerica } from "./mubiPagamentos";
+import { casarColaborador, casarPelaDescricao, separarNaoPagos, tituloPago, montarPagamento, competenciaDe, montarPrevia, sugerirSalarios, sugerirVinculo, paraRegistros, type LinhaMubi, normalizarLinhas, tituloEmAberto, tituloCancelado, ehOrigemGenerica } from "./mubiPagamentos";
 import { conciliarPagamentos } from "./custos";
 import type { Pagamento } from "@/data/types";
 import type { Colaborador } from "@/data/types";
@@ -525,14 +525,54 @@ describe("paraRegistros — origem genérica, CNPJ e guias", () => {
 });
 
 describe("estado do título no ERP", () => {
-  it("cancelado ou estornado nunca vira pagamento", () => {
+  /* SÓ O QUE FOI PAGO ENTRA (08/09/2026, ordem do Léo).
+   *
+   * Antes o título em aberto virava lançamento e só era descontado em algumas
+   * telas. Agora a régua é na porta. O "4" (ABERTO) deixou de passar — este
+   * teste guardava o comportamento antigo. */
+  it("cancelado, estornado e NÃO PAGO não viram pagamento", () => {
     const linhas = [
       { idMubi: "1", nome: "A", planoContas: "2.1.1-Salário", valor: 100, status: "PAGO" },
       { idMubi: "2", nome: "B", planoContas: "2.1.1-Salário", valor: 100, status: "Cancelado" },
       { idMubi: "3", nome: "C", planoContas: "2.1.1-Salário", valor: 100, status: "ESTORNADO" },
       { idMubi: "4", nome: "D", planoContas: "2.1.1-Salário", valor: 100, status: "ABERTO" },
+      { idMubi: "5", nome: "E", planoContas: "2.1.1-Salário", valor: 100, status: "PENDENTE" },
+      { idMubi: "6", nome: "F", planoContas: "2.1.1-Salário", valor: 100 },
     ] as unknown as Parameters<typeof normalizarLinhas>[0];
-    expect(normalizarLinhas(linhas).map((l) => l.idMubi)).toEqual(["1", "4"]);
+    // "6" não tem status: legado da planilha, sempre contou e continua contando.
+    expect(normalizarLinhas(linhas).map((l) => l.idMubi)).toEqual(["1", "6"]);
+    // E o que ficou retido volta identificado — cancelado NÃO é "não pago".
+    expect(separarNaoPagos(linhas).map((l) => l.idMubi)).toEqual(["4", "5"]);
+  });
+
+  it("O CASO RUIM: status que ninguém conhece não conta como pago", () => {
+    // A régua antiga listava o que é "em aberto" e tratava TODO o resto como
+    // pago. Com a ordem nova o ônus inverte: se o status não diz que pagou,
+    // não pagou. Um "AGENDADO" novo no ERP não pode entrar de carona.
+    expect(tituloPago("AGENDADO")).toBe(false);
+    expect(tituloPago("EM PROCESSAMENTO")).toBe(false);
+    expect(tituloPago("PARCIAL")).toBe(false);
+  });
+
+  it("as grafias de pago que o ERP pode usar", () => {
+    expect(tituloPago("PAGO")).toBe(true);
+    expect(tituloPago("pago")).toBe(true);
+    expect(tituloPago("QUITADO")).toBe(true);
+    expect(tituloPago("BAIXADO")).toBe(true);
+    expect(tituloPago("LIQUIDADO")).toBe(true);
+  });
+
+  it("\"A PAGAR\" tem \"PAG\" dentro e NÃO é pago", () => {
+    // A armadilha da régua por substring. Sem a segunda metade da condição,
+    // todo título a pagar entraria como pago.
+    expect(tituloPago("A PAGAR")).toBe(false);
+    expect(tituloPago("A Pagar")).toBe(false);
+  });
+
+  it("sem status é legado da planilha e conta como pago", () => {
+    expect(tituloPago("")).toBe(true);
+    expect(tituloPago(null)).toBe(true);
+    expect(tituloPago(undefined)).toBe(true);
   });
   it("em aberto é reconhecido nas grafias do ERP; ausente não é aberto", () => {
     expect(tituloEmAberto("ABERTO")).toBe(true);

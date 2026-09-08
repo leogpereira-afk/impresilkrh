@@ -115,6 +115,20 @@ export interface AusentesSeparados {
    * dinheiro que o ERP tem (revisão de 07/09/2026).
    */
   foraDaFolha: Pagamento[];
+  /**
+   * O título EXISTE no ERP e AINDA NÃO FOI PAGO.
+   *
+   * Pedido do Léo (08/09/2026): "os lançamentos dos funcionários só incluir o
+   * que já foi pago". Com a regra na porta, o título em aberto deixa de virar
+   * lançamento — e o que já estava gravado passa a não ter par na busca.
+   *
+   * Sem este balde ele cairia em `comIdErp`, que é o ÚNICO com caixa de marcar
+   * e "marcar todos deste bloco para remover", sob o texto "podem ter sido
+   * cancelados". Seriam 29 lançamentos e R$ 20.956,52 — cinco deles salário —
+   * apresentados como sumiço, com o botão de apagar ao lado. Ele não sumiu:
+   * está lá, com valor, esperando o ERP baixar.
+   */
+  emAberto: Pagamento[];
 }
 export interface ResumoDaPrevia {
   porMes: LinhaMes[];
@@ -166,6 +180,8 @@ export interface EntradaResumo {
   excluidos?: Set<string>;
   /** idMubi dos títulos que o ERP tem mas a conta ficou fora da lista de folha. */
   foraDaFolha?: Set<string>;
+  /** idMubi dos títulos que o ERP tem mas ainda não foram pagos. */
+  emAberto?: Set<string>;
   limites?: { pctFechada: number; pctAberta: number };
 }
 
@@ -218,11 +234,15 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   // ---- ausentes em três motivos ----
   const semDonoIds = e.semDono ?? new Set<string>();
   const foraDaFolhaIds = e.foraDaFolha ?? new Set<string>();
-  const ausentes: AusentesSeparados = { comIdErp: [], semId: [], semDono: [], foraDaFolha: [] };
+  const emAbertoIds = e.emAberto ?? new Set<string>();
+  const ausentes: AusentesSeparados = { comIdErp: [], semId: [], semDono: [], foraDaFolha: [], emAberto: [] };
+  // A ORDEM É A RÉGUA: `comIdErp` é o resto, e é o único balde que oferece
+  // remover. Todo motivo CONHECIDO tem de ser testado antes dele.
   for (const a of diff.ausentes) {
     const id = idMubiDe(a);
     if (id && semDonoIds.has(id)) ausentes.semDono.push(a);
     else if (id && foraDaFolhaIds.has(id)) ausentes.foraDaFolha.push(a);
+    else if (id && emAbertoIds.has(id)) ausentes.emAberto.push(a);
     else if (id) ausentes.comIdErp.push(a);
     else ausentes.semId.push(a);
   }
@@ -275,7 +295,11 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
       quantos: faltou.length + (e.busca!.truncado ? 1 : 0), valor: 0, ids: [],
     });
   }
-  const semDonoMarcados = removidos.filter((a) => ausentes.semDono.includes(a) || ausentes.foraDaFolha.includes(a));
+  // O em aberto entra aqui: o alarme é "bloqueia", e apagar um título que o ERP
+  // tem e vai pagar significa que o pagamento real nunca mais entra.
+  const semDonoMarcados = removidos.filter(
+    (a) => ausentes.semDono.includes(a) || ausentes.foraDaFolha.includes(a) || ausentes.emAberto.includes(a),
+  );
   if (semDonoMarcados.length) {
     alarmes.push({ id: "ausente-sem-dono", nivel: "bloqueia", titulo: "Marcado para remover, mas o título existe no ERP", detalhe: "Ou não casou com ninguém nesta busca, ou a conta dele saiu da lista de folha. Vincule ou ajuste a conta — não apague.", quantos: semDonoMarcados.length, valor: soma(semDonoMarcados), ids: semDonoMarcados.map((a) => a.id) });
   }

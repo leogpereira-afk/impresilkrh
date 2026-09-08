@@ -285,7 +285,7 @@ export default function Custos() {
     totalLinhas: number;
     // Presente só quando a origem foi o ERP (para mostrar as despesas coletivas
     // e permitir vincular quem não casou).
-    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; foraOmitidas?: number; idsForaDaFolha?: string[]; busca?: CoberturaBusca };
+    mubi?: { linhas: LinhaMubi[]; coletivas: LinhaMubi[]; truncado: boolean; foraDaFolha?: ContaForaDaFolha[]; foraOmitidas?: number; idsForaDaFolha?: string[]; naoPagas?: LinhaMubi[]; busca?: CoberturaBusca };
     /** Competências que a busca cobriu — o que pode ser dado como ausente. */
     janela: string[];
   } | null>(null);
@@ -548,7 +548,7 @@ export default function Custos() {
       diff: conciliarPagamentos(existentesDaComp, registros, comps),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       janela: [...comps].filter(Boolean).sort(),
-      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, foraOmitidas: r.contasForaOmitidas, idsForaDaFolha: r.idsForaDaFolha, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
+      mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, foraOmitidas: r.contasForaOmitidas, idsForaDaFolha: r.idsForaDaFolha, naoPagas: r.naoPagas, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
@@ -580,7 +580,15 @@ export default function Custos() {
       );
       const vinculos = config.vinculosMubi ?? {};
       if (r.linhas.length === 0) {
-        setErroMubi(`O Mubisys não devolveu lançamento de pessoal nos últimos ${mesesHistorico} meses.`);
+        // Zero não é resultado: num mês em que TUDO ainda está em aberto — o
+        // caso normal do mês corrente — dizer "não devolveu nada" seria falso.
+        const naoPagos = r.naoPagas ?? [];
+        const soma = naoPagos.reduce((s, l) => s + (Number(l.valor) || 0), 0);
+        setErroMubi(
+          naoPagos.length > 0
+            ? `O Mubisys tem ${naoPagos.length} título(s) de pessoal nos últimos ${mesesHistorico} meses, todos ainda em aberto (${formatBRL(soma)}). Nenhum entra na ficha até o ERP baixar.`
+            : `O Mubisys não devolveu lançamento de pessoal nos últimos ${mesesHistorico} meses.`,
+        );
         return;
       }
       previaDoMubi(
@@ -784,6 +792,12 @@ export default function Custos() {
     // Título que o ERP tem mas cuja conta ficou fora da lista de folha: existe,
     // e remover destrói registro de dinheiro real.
     const foraDaFolha = new Set((folhaPrev.mubi?.idsForaDaFolha ?? []).map(String));
+    /* Os títulos que o ERP tem e ainda NÃO foram pagos. Sem este Set, o
+       lançamento já gravado cairia no balde "não voltou desta busca", que é o
+       único com "marcar todos para remover" — 29 lançamentos e R$ 20.956,52,
+       cinco deles salário, apresentados como sumiço com o botão de apagar ao
+       lado. Ele não sumiu: está no ERP, esperando baixa. */
+    const emAberto = new Set<string>((folhaPrev?.mubi?.naoPagas ?? []).map((l) => String(l.idMubi)).filter(Boolean));
     return resumoDaPrevia({
       diff: folhaPrev.diff,
       gravados: pagamentos as Pagamento[],
@@ -795,6 +809,7 @@ export default function Custos() {
       busca: folhaPrev.mubi?.busca,
       semDono,
       foraDaFolha,
+      emAberto,
     });
   }, [folhaPrev, pagamentos, ausentesMarcados, excluidos, d.colabById]);
 

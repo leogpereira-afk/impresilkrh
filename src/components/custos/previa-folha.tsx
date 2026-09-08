@@ -245,8 +245,8 @@ export function PreviaFolha({
           <Placar n={resumo.grupos.reduce((s, g) => s + g.itens.length, 0)} rotulo="alteradas" tom="text-blue-700" borda="border-blue-200 bg-blue-50/60"
             sub={resumo.grupos.map((g) => `${g.itens.length} ${g.natureza === "renumeracao" ? "conta" : ROTULO_CAMPO[g.natureza as Mudanca["campo"]] ?? g.natureza}`).join(" · ")} />
           <Placar n={resumo.novos.length} rotulo="novas" tom="text-green-700" borda="border-green-200 bg-green-50/60" sub={formatBRL(resumo.novos.reduce((s, p) => s + (Number(p.valor) || 0), 0))} />
-          <Placar n={resumo.ausentes.comIdErp.length + resumo.ausentes.semId.length + resumo.ausentes.semDono.length + resumo.ausentes.foraDaFolha.length} rotulo="não vieram" tom="text-amber-700" borda="border-amber-200 bg-amber-50/60"
-            sub={[resumo.ausentes.comIdErp.length ? `${resumo.ausentes.comIdErp.length} do ERP` : "", resumo.ausentes.semId.length ? `${resumo.ausentes.semId.length} de planilha` : "", resumo.ausentes.semDono.length ? `${resumo.ausentes.semDono.length} sem dono` : "", resumo.ausentes.foraDaFolha.length ? `${resumo.ausentes.foraDaFolha.length} fora da lista` : ""].filter(Boolean).join(" · ")} />
+          <Placar n={resumo.ausentes.comIdErp.length + resumo.ausentes.semId.length + resumo.ausentes.semDono.length + resumo.ausentes.foraDaFolha.length + resumo.ausentes.emAberto.length} rotulo="não vieram" tom="text-amber-700" borda="border-amber-200 bg-amber-50/60"
+            sub={[resumo.ausentes.comIdErp.length ? `${resumo.ausentes.comIdErp.length} do ERP` : "", resumo.ausentes.semId.length ? `${resumo.ausentes.semId.length} de planilha` : "", resumo.ausentes.semDono.length ? `${resumo.ausentes.semDono.length} sem dono` : "", resumo.ausentes.foraDaFolha.length ? `${resumo.ausentes.foraDaFolha.length} fora da lista` : "", resumo.ausentes.emAberto.length ? `${resumo.ausentes.emAberto.length} não pago(s)` : ""].filter(Boolean).join(" · ")} />
         </div>
 
         {/* Salários */}
@@ -380,6 +380,13 @@ export function PreviaFolha({
           titulo="No ERP, mas a conta saiu da lista de folha"
           porque="O título existe no Mubisys; a conta dele é que não está na lista da folha (o contador renumerou, ou é conta nova). Ajuste a lista — não remova o lançamento."
           itens={resumo.ausentes.foraDaFolha} nomeDe={nomeDe} tom="border-violet-200 bg-violet-50/40 text-violet-900"
+        />
+        {/* SEM caixa de marcar, de propósito: o título existe no ERP e vai ser
+            pago. Apagar aqui faria o pagamento real nunca mais entrar. */}
+        <BlocoAusentes
+          titulo="No ERP, mas ainda não foi pago"
+          porque="O título existe no Mubisys e está em aberto. Não entrou na folha porque a regra é só o que já foi pago — ele volta sozinho quando o ERP baixar. Não remova."
+          itens={resumo.ausentes.emAberto} nomeDe={nomeDe} tom="border-teal-200 bg-teal-50/40 text-teal-900"
         />
         <BlocoAusentes
           titulo="Vieram do ERP e não voltaram nesta busca"

@@ -63,6 +63,13 @@ export interface RespostaMubi {
    */
   contasForaOmitidas?: number;
   /**
+   * Títulos que o ERP tem e ainda NÃO foram pagos. Não viram lançamento (a
+   * régua é só o que foi pago), mas voltam identificados: a tela precisa dizer
+   * que existem, e a prévia precisa saber que eles NÃO sumiram — senão o já
+   * gravado cai no balde que oferece remover.
+   */
+  naoPagas?: LinhaMubi[];
+  /**
    * Ids dos títulos que o filtro de folha recusou — só os ids.
    *
    * Serve a uma pergunta que a tela errava: "este lançamento gravado ainda
@@ -156,7 +163,8 @@ export async function buscarPagamentosMubi(competencia: string, page?: number): 
   const corpo = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(corpo?.erro || `Falha ao consultar o Mubisys (${r.status}).`);
   const resp = corpo as RespostaMubi;
-  return { ...resp, linhas: normalizarLinhas(resp.linhas ?? []) };
+  const cruas = resp.linhas ?? [];
+  return { ...resp, linhas: normalizarLinhas(cruas), naoPagas: separarNaoPagos(cruas) };
 }
 
 /**
@@ -174,6 +182,33 @@ export const tituloCancelado = (status: unknown): boolean => /CANCEL|ESTORN/i.te
  */
 export const tituloEmAberto = (status: unknown): boolean => /ABERT|PENDENT|VENCID|A ?PAGAR/i.test(String(status ?? ""));
 
+/**
+ * PAGO É PAGO; O RESTO NÃO ENTRA (08/09/2026).
+ *
+ * Ordem do Léo: "os lançamentos dos funcionários só incluir o que já foi pago;
+ * o que não foi, não entrar".
+ *
+ * A régua é o STATUS, nunca a data. Nos títulos pendentes o ERP preenche
+ * `data_pagamento` com a data PREVISTA — conferido no banco: pendentes de
+ * setembro com data 30/09, 06/10 e 10/10, com hoje em 08/09. Quem olhasse a
+ * data marcaria como pago o que ainda não saiu do caixa.
+ *
+ * O ÔNUS INVERTEU. Antes a régua listava o que é "em aberto" e tratava todo o
+ * resto como pago; com a ordem nova, status que ninguém conhece não pode contar
+ * como pago. Então: sem status = legado da planilha (conta, como sempre
+ * contou); com status = só conta se ele DIZ que foi pago.
+ */
+const PAGO = /PAG|QUITAD|BAIXAD|LIQUIDAD|COMPENSAD/i;
+export const tituloPago = (status: unknown): boolean => {
+  const t = String(status ?? "").trim();
+  if (!t) return true; // legado: nasceu sem status e sempre contou
+  return PAGO.test(t) && !tituloEmAberto(t); // "A PAGAR" tem "PAG" dentro
+};
+
+/** Os que a régua do pago reteve — para contar, dizer e proteger o já gravado. */
+export const separarNaoPagos = (linhas: LinhaMubi[]): LinhaMubi[] =>
+  linhas.filter((l) => !tituloCancelado(l.status) && !tituloPago(l.status));
+
 export const normalizarLinhas = (linhas: LinhaMubi[]): LinhaMubi[] =>
   linhas
     // Cancelado/estornado nunca vira pagamento: a busca pede status TODOS e o
@@ -181,6 +216,10 @@ export const normalizarLinhas = (linhas: LinhaMubi[]): LinhaMubi[] =>
     // de 07/09/2026). Quem já estava gravado e foi cancelado depois volta como
     // "não voltou" na prévia — e o RH decide.
     .filter((l) => !tituloCancelado(l.status))
+    // Não pago não vira lançamento. Quem ficou de fora volta em
+    // `separarNaoPagos` para a tela dizer — e para a prévia NÃO oferecer
+    // remover o que já estava gravado.
+    .filter((l) => tituloPago(l.status))
     // A reserva vale só quando o ERP NÃO mandou conta. Se mandou e nós não
     // reconhecemos, o certo é "Outros" — visível: aceitar o palpite da função
     // (que resolve 2.1.11.x pelo prefixo antigo) repetiria calado o erro de julho.
@@ -202,10 +241,11 @@ export async function buscarCompetenciaCompleta(
   competencia: string,
   aoProgredir?: (pagina: number, totalPaginas: number) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[]; contasForaOmitidas: number; idsForaDaFolha: string[] }> {
+): Promise<{ linhas: LinhaMubi[]; paginas: number; incompleta: boolean; contasForaDaFolha: ContaForaDaFolha[]; contasForaOmitidas: number; idsForaDaFolha: string[]; naoPagas: LinhaMubi[] }> {
   const TETO_PAGINAS = 40;
   const linhas: LinhaMubi[] = [];
   const fora: (ContaForaDaFolha[] | undefined)[] = [];
+  const naoPagas: LinhaMubi[] = [];
   let foraOmitidas = 0;
   const idsFora = new Set<string>();
   let pagina = 1;
@@ -217,6 +257,7 @@ export async function buscarCompetenciaCompleta(
     const r = await buscarPagamentosMubi(competencia, pagina);
     linhas.push(...r.linhas);
     fora.push(r.contasForaDaFolha);
+    naoPagas.push(...(r.naoPagas ?? []));
     foraOmitidas += Number(r.contasForaOmitidas) || 0;
     for (const id of r.idsForaDaFolha ?? []) idsFora.add(String(id));
     totalPaginas = r.paginas || 1;
@@ -227,7 +268,7 @@ export async function buscarCompetenciaCompleta(
     pagina++;
     if (pagina > TETO_PAGINAS) { incompleta = true; break; }
   }
-  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora), contasForaOmitidas: foraOmitidas, idsForaDaFolha: [...idsFora] };
+  return { linhas, paginas: totalPaginas, incompleta, contasForaDaFolha: juntarForaDaFolha(fora), contasForaOmitidas: foraOmitidas, idsForaDaFolha: [...idsFora], naoPagas };
 }
 
 /**
@@ -252,9 +293,10 @@ export async function buscarHistoricoMubi(
   competencias: string[],
   aoProgredir?: (feitos: number, total: number, competencia: string) => void,
   cancelado?: () => boolean,
-): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[]; contasForaOmitidas: number; idsForaDaFolha: string[] }> {
+): Promise<{ linhas: LinhaMubi[]; buscadoEm: string; truncado: boolean; falhas: { competencia: string; erro: string }[]; competenciasLidas: string[]; contasForaDaFolha: ContaForaDaFolha[]; contasForaOmitidas: number; idsForaDaFolha: string[]; naoPagas: LinhaMubi[] }> {
   const linhas: LinhaMubi[] = [];
   const fora: (ContaForaDaFolha[] | undefined)[] = [];
+  const naoPagas: LinhaMubi[] = [];
   let foraOmitidas = 0;
   const idsFora = new Set<string>();
   const falhas: { competencia: string; erro: string }[] = [];
@@ -277,6 +319,7 @@ export async function buscarHistoricoMubi(
       // dele seria pior. As falhas voltam listadas para o RH tentar de novo.
       linhas.push(...r.linhas);
       fora.push(r.contasForaDaFolha);
+      naoPagas.push(...(r.naoPagas ?? []));
       foraOmitidas += Number(r.contasForaOmitidas) || 0;
       for (const id of r.idsForaDaFolha) idsFora.add(id);
       competenciasLidas.push(comp);
@@ -298,7 +341,7 @@ export async function buscarHistoricoMubi(
     return true;
   });
 
-  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora), contasForaOmitidas: foraOmitidas, idsForaDaFolha: [...idsFora] };
+  return { linhas: unicas, buscadoEm: new Date().toISOString(), truncado, falhas, competenciasLidas, contasForaDaFolha: juntarForaDaFolha(fora), contasForaOmitidas: foraOmitidas, idsForaDaFolha: [...idsFora], naoPagas };
 }
 
 /** Lista de competências (AAAA-MM) de `meses` atrás até a atual, da mais nova para a mais antiga. */

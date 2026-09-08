@@ -253,6 +253,55 @@ describe("freios que não podem afrouxar", () => {
     expect(r.alarmes.find((x) => x.id === "ausente-sem-dono")?.nivel).toBe("bloqueia");
   });
 
+  /* SÓ O QUE FOI PAGO ENTRA (08/09/2026) — e o que já estava gravado não pode
+   * virar "sumiço" com botão de apagar ao lado.
+   *
+   * Com a regra na porta, o título em aberto deixa de vir do ERP. O lançamento
+   * gravado perde o par e, sem este balde, cairia em `comIdErp` — o ÚNICO com
+   * caixa por linha E "marcar todos deste bloco para remover", sob o texto
+   * "podem ter sido cancelados". No banco são 29 lançamentos, R$ 20.956,52,
+   * cinco deles salário. Um clique apagaria todos, e o alarme seria só
+   * "confirma", que não bloqueia.
+   *
+   * Começa pelo caso ruim: o balde errado. */
+  it("O CASO RUIM: em aberto NÃO pode cair no balde que oferece remover", () => {
+    const a = pg({ id: "mubi-96", idMubi: "96" });
+    const r = resumoDaPrevia(entrada({ ausentes: [a] }, [a], { emAberto: new Set(["96"]) }));
+    expect(r.ausentes.comIdErp).toHaveLength(0);
+    expect(r.ausentes.emAberto.map((x) => x.id)).toEqual(["mubi-96"]);
+  });
+
+  it("marcar um em aberto para remover BLOQUEIA a aplicação", () => {
+    // "confirma" não basta: é uma caixa de "conferi" e o botão libera. Apagar
+    // aqui faz o pagamento real nunca mais entrar.
+    const a = pg({ id: "mubi-96", idMubi: "96" });
+    const r = resumoDaPrevia(entrada({ ausentes: [a] }, [a], {
+      ausentesMarcados: new Set(["mubi-96"]),
+      emAberto: new Set(["96"]),
+    }));
+    expect(r.podeAplicar).toBe(false);
+    expect(r.alarmes.find((x) => x.id === "ausente-sem-dono")?.nivel).toBe("bloqueia");
+  });
+
+  it("a ordem dos baldes: sem dono e fora da folha continuam ganhando do em aberto", () => {
+    // Um título pode ser as duas coisas. O motivo mais específico manda, e
+    // nenhum dos três cai em comIdErp.
+    const a = pg({ id: "mubi-97", idMubi: "97" });
+    const r = resumoDaPrevia(entrada({ ausentes: [a] }, [a], {
+      semDono: new Set(["97"]), emAberto: new Set(["97"]),
+    }));
+    expect(r.ausentes.semDono.map((x) => x.id)).toEqual(["mubi-97"]);
+    expect(r.ausentes.emAberto).toHaveLength(0);
+    expect(r.ausentes.comIdErp).toHaveLength(0);
+  });
+
+  it("sem o Set, nada muda — o balde só existe quando a busca informa", () => {
+    const a = pg({ id: "mubi-98", idMubi: "98" });
+    const r = resumoDaPrevia(entrada({ ausentes: [a] }, [a], {}));
+    expect(r.ausentes.comIdErp.map((x) => x.id)).toEqual(["mubi-98"]);
+    expect(r.ausentes.emAberto).toHaveLength(0);
+  });
+
   it("mudouSobAPrevia acusa o registro que outro aparelho editou entre a busca e o clique", () => {
     const antigo = pg({ id: "mubi-95", valor: 1000 });
     const novo = pg({ id: "mubi-95", valor: 1100 });
