@@ -312,7 +312,7 @@ export default function Freelancers() {
           setApagando(null);
         }}
         titulo="Apagar este contrato?"
-        mensagem={`O registro de ${apagando?.nome ?? ""} some daqui. Se ele só parou de trabalhar, prefira marcar como "encerrado" — assim o histórico do combinado fica.`}
+        mensagem={`O registro de ${apagando?.nome ?? ""} some daqui, e com ele a data que fecha o acesso dele nos sistemas. Se ele só parou de trabalhar, prefira marcar como "encerrado": a porta fecha na hora e o histórico do combinado fica.`}
       />
     </div>
   );
