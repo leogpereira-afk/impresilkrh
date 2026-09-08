@@ -131,7 +131,12 @@ const tokens = (s: string) => norm(s).split(" ").filter((t) => t && !CONECTIVOS.
  * iria para o sócio e sumiria da folha da equipe. A leva casa pela DESCRIÇÃO,
  * título a título.
  */
-export const ORIGEM_GENERICA = /^(COLABORADOR(ES)?|FUNCIONARIO(S)?|FOLHA( DE PAGAMENTO)?|PESSOAL|DIVERSOS|EMPRESA|SALARIOS?)$/;
+/* Origens que NÃO são pessoa: leva do ERP ou ausência de credor.
+   "SEM CREDOR" entrou em 08/09/2026: é o que o Mubisys escreve no título sem
+   favorecido, e havia 23 deles em aberto somando R$ 12.972,80 — entre eles as
+   duas faxinas de R$ 375 que o Léo procurava. Um vínculo por NOME aqui mandaria
+   os 23 para uma pessoa só. O caminho certo é vincular título a título. */
+export const ORIGEM_GENERICA = /^(COLABORADOR(ES)?|FUNCIONARIO(S)?|FOLHA( DE PAGAMENTO)?|PESSOAL|DIVERSOS|EMPRESA|SALARIOS?|SEM CREDOR|SEM FORNECEDOR|NAO INFORMADO|N I)$/;
 export const ehOrigemGenerica = (nomeMubi: string): boolean => ORIGEM_GENERICA.test(norm(nomeMubi));
 
 const pedacoCasa = (a: string, b: string) => a === b || a.startsWith(b) || b.startsWith(a);

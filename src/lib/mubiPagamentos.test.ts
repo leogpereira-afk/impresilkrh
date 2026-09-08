@@ -679,3 +679,28 @@ describe("título sem origem: a descrição decide", () => {
     expect(r.coletivas).toHaveLength(1);
   });
 });
+
+describe("título sem credor não é pessoa", () => {
+  it('"Sem credor" é origem genérica: não casa por nome nem aceita vínculo', () => {
+    expect(ehOrigemGenerica("Sem credor")).toBe(true);
+    expect(ehOrigemGenerica("SEM CREDOR")).toBe(true);
+    expect(casarColaborador("Sem credor", CADASTRO, { "SEM CREDOR": "c1" })).toBeNull();
+    expect(sugerirVinculo("Sem credor", CADASTRO)).toBeNull();
+  });
+
+  it("as duas faxinas sem credor ficam na lista para vincular título a título", () => {
+    const faxina = (idMubi: string) => linha("Sem credor", { idMubi, valor: 375, planoContas: "2.2.7.2.1-Limpeza Escritório", tipo: "Limpeza/Faxina", descricao: "Limpeza escritorio", dataPagamento: "2026-09-04" });
+    const r = paraRegistros([faxina("63607"), faxina("63608")], CADASTRO, {});
+    expect(r.registros).toHaveLength(0);
+    expect(r.naoCasados).toHaveLength(1);
+    expect(r.naoCasados[0].titulos).toHaveLength(2);
+    expect(r.naoCasados[0].total).toBe(750);
+  });
+
+  it("vínculo por TÍTULO continua funcionando para eles", () => {
+    const faxina = (idMubi: string) => linha("Sem credor", { idMubi, valor: 375, planoContas: "2.2.7.2.1-Limpeza Escritório", tipo: "Limpeza/Faxina" });
+    const r = paraRegistros([faxina("63607"), faxina("63608")], CADASTRO, {}, { "63607": "c1", "63608": "c3" });
+    expect(r.registros.map((p) => p.colaboradorId).sort()).toEqual(["c1", "c3"]);
+    expect(r.registros[0].casadoPor).toBe("titulo");
+  });
+});
