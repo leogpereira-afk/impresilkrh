@@ -108,3 +108,36 @@ describe("conferir é uma AÇÃO, não só um aviso", () => {
     expect(conferirVinculos(vinculos, CADASTRO)).toEqual(conferirVinculos(vinculos, CADASTRO, {}));
   });
 });
+
+describe("fato não se cala com um “conferi”", () => {
+  /* Em 08/09/2026 o Léo marcou "COLABORADORES → Pedro Ramos" como conferido e
+     o aviso "não é uma pessoa" sumiu. Mas isso não é opinião sobre grafia:
+     "COLABORADORES" é a LEVA da folha no ERP, e apontada para o Fundador
+     mandaria o custo da equipe inteira para a ficha da direção. O vínculo
+     continuaria guardado, agora silencioso — o oposto do que o painel faz. */
+  it("origem genérica continua avisando mesmo depois de conferida", () => {
+    const conferidos = { COLABORADORES: "pedro-ramos" };
+    const v = conferirVinculos({ COLABORADORES: "pedro-ramos" }, CADASTRO, conferidos)[0];
+    expect(v.alerta).toBe("generico");
+    expect(v.podeConferir).toBe(false);
+  });
+
+  it("ficha inexistente também não se cala", () => {
+    const v = conferirVinculos({ FULANO: "ficha-apagada" }, CADASTRO, { FULANO: "ficha-apagada" })[0];
+    expect(v.alerta).toBe("sem-ficha");
+    expect(v.podeConferir).toBe(false);
+  });
+
+  it("“confira o nome” é juízo — esse sim se cala", () => {
+    const vinculos = { "PEDRO HENRIQUE SANTOS OLIVEIRA": "pedro-henrique" };
+    expect(conferirVinculos(vinculos, CADASTRO)[0].podeConferir).toBe(true);
+    expect(conferirVinculos(vinculos, CADASTRO, vinculos)[0].alerta).toBeNull();
+  });
+
+  it("vínculo sem aviso nenhum não oferece o botão", () => {
+    const semErro = [c("ph", "Pedro Henrique Gonçalves Pereira", "111.508.536-03")];
+    const v = conferirVinculos({ "PEDRO HENRIQUE GONCALVES PEREI": "ph" }, semErro)[0];
+    expect(v.alerta).toBeNull();
+    expect(v.podeConferir).toBe(false);
+  });
+});

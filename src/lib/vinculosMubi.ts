@@ -21,6 +21,12 @@ export interface VinculoSalvo {
   /** O RH olhou este par nome→ficha e disse que está certo. */
   conferido: boolean;
   /**
+   * Faz sentido oferecer o botão "Está certo"? Fato não se cala: ficha que não
+   * existe e origem que não é pessoa continuam avisando por mais que alguém
+   * olhe. Mora aqui para a tela não repetir a régua e as duas divergirem.
+   */
+  podeConferir: boolean;
+  /**
    * O que a régua automática APONTARIA para este nome hoje, se não houvesse
    * vínculo guardado. É a alternativa que a tela oferece quando o vínculo
    * parece errado — sem ela, a única saída era apagar e torcer.
@@ -40,6 +46,11 @@ export interface VinculoSalvo {
  *                     Golçalves Pereira (07/09/2026): o ERP corta o nome em 30
  *                     letras, e dois nomes diferentes começam igual.
  */
+/** Que avisos são JUÍZO (dá para dizer "está certo") e não fato consumado. */
+function podeSerConferido(alerta: VinculoSalvo["alerta"]): boolean {
+  return alerta === "nome-diferente";
+}
+
 export function conferirVinculos(
   vinculos: Record<string, string>,
   colaboradores: Colaborador[],
@@ -61,10 +72,27 @@ export function conferirVinculos(
       // "sem-ficha" não se cala com um "conferi": a ficha não existe, e isso é
       // fato, não opinião. Os outros dois são juízo sobre o nome — e aí quem
       // olhou decide.
-      const alerta = conferido && bruto !== "sem-ficha" ? null : bruto;
+      // FATO NÃO SE CALA COM UM "CONFERI".
+      //
+      // "ficha não existe" e "não é uma pessoa" são verificáveis: a ficha
+      // sumiu do cadastro, e "COLABORADORES" é uma leva do ERP, não gente.
+      // Nenhum vira certo porque alguém olhou. Só "confira o nome" é juízo —
+      // se quem olhou diz que aquele nome truncado é mesmo aquela ficha, ela
+      // sabe mais do que a régua.
+      //
+      // Estava frouxo: só "sem-ficha" resistia, e em 08/09/2026 o Léo marcou
+      // "COLABORADORES → Pedro Ramos" como conferido. O aviso sumiu e o
+      // vínculo — a LEVA da folha apontada para o Fundador — continuou
+      // guardado, sem ninguém mais lembrar dele. É o que este painel existe
+      // para impedir.
+      const alerta = conferido && podeSerConferido(bruto) ? null : bruto;
       // A alternativa: quem a régua automática acharia para este nome hoje.
       const sugestao = casarColaborador(chave, colaboradores, {}) ?? null;
-      return { chave, colaboradorId, ficha, alerta, conferido, sugestao: sugestao && sugestao.id !== colaboradorId ? sugestao : null };
+      return {
+        chave, colaboradorId, ficha, alerta, conferido,
+        sugestao: sugestao && sugestao.id !== colaboradorId ? sugestao : null,
+        podeConferir: !!alerta && podeSerConferido(alerta),
+      };
     })
     .sort((a, b) => (a.alerta === b.alerta ? a.chave.localeCompare(b.chave, "pt-BR") : a.alerta ? -1 : 1));
 }

@@ -116,7 +116,10 @@ export function VinculosSalvos({
                       </Select>
                     )}
 
-                    {onConferir && v.alerta && v.alerta !== "sem-ficha" && v.ficha && (
+                    {/* A régua de quem PODE ser conferido mora na lib
+                        (`podeConferir`). Repeti-la aqui era o começo de duas
+                        réguas divergentes sobre a mesma pergunta. */}
+                    {onConferir && v.podeConferir && v.ficha && (
                       <button
                         type="button"
                         className="btn-outline h-7 px-2 py-0 text-xs text-emerald-700"
