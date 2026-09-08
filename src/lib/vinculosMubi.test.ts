@@ -53,3 +53,58 @@ describe("conferir vínculos guardados", () => {
     expect(v.map((x: { chave: string }) => x.chave)).toEqual(["COLABORADORES", "LUCAS NATALINO"]);
   });
 });
+
+describe("conferir é uma AÇÃO, não só um aviso", () => {
+  /* O painel dizia "10 para conferir" e o único botão era "Apagar" — que é
+     destrutivo e nem resolve: o vínculo volta na importação seguinte. Quem
+     olhava um vínculo CERTO ("CANDIDA" → Candida Eliza David Barros) não tinha
+     como dizer que está certo, e o aviso ficava para sempre. */
+  it("o vínculo conferido para de acusar", () => {
+    const vinculos = { "PEDRO HENRIQUE GONCALVES PEREI": "pedro-henrique" };
+    expect(conferirVinculos(vinculos, CADASTRO)[0].alerta).toBe("nome-diferente");
+    const v = conferirVinculos(vinculos, CADASTRO, { "PEDRO HENRIQUE GONCALVES PEREI": "pedro-henrique" })[0];
+    expect(v.alerta).toBeNull();
+    expect(v.conferido).toBe(true);
+  });
+
+  it("conferir vale para o PAR nome→ficha: reapontar traz o aviso de volta", () => {
+    // Senão um "conferi" de hoje calaria para sempre um vínculo que amanhã
+    // aponta para outra pessoa — o defeito que este painel existe para pegar.
+    const conferidos = { "PEDRO HENRIQUE SANTOS OLIVEIRA": "pedro-henrique" };
+    expect(conferirVinculos({ "PEDRO HENRIQUE SANTOS OLIVEIRA": "pedro-henrique" }, CADASTRO, conferidos)[0].alerta).toBeNull();
+    // agora aponta para OUTRA ficha: o conferido não vale mais
+    const v = conferirVinculos({ "PEDRO HENRIQUE SANTOS OLIVEIRA": "lucas-natalino" }, CADASTRO, conferidos)[0];
+    expect(v.conferido).toBe(false);
+    expect(v.alerta).toBe("nome-diferente");
+  });
+
+  it("“ficha não existe” NÃO se cala com um conferi — é fato, não opinião", () => {
+    const conferidos = { "FULANO": "ficha-apagada" };
+    const v = conferirVinculos({ "FULANO": "ficha-apagada" }, CADASTRO, conferidos)[0];
+    expect(v.alerta).toBe("sem-ficha");
+    expect(v.conferido).toBe(false);
+  });
+
+  it("oferece a alternativa: quem a régua automática acharia para este nome", () => {
+    // É o que faltava para poder NEGAR sem apagar às cegas.
+    const v = conferirVinculos({ "LUCAS NATALINO FERREIRA SILVA": "pedro-ramos" }, CADASTRO)[0];
+    expect(v.alerta).toBe("nome-diferente");
+    expect(v.sugestao?.id).toBe("lucas-natalino");
+  });
+
+  it("quando a régua concorda com o vínculo, não há alternativa a oferecer", () => {
+    const v = conferirVinculos({ "LUCAS NATALINO FERREIRA SILVA": "lucas-natalino" }, CADASTRO)[0];
+    expect(v.alerta).toBeNull();
+    expect(v.sugestao).toBeNull();
+  });
+
+  it("nome que a régua não acha ninguém não inventa alternativa", () => {
+    const v = conferirVinculos({ "NINGUEM COM ESSE NOME AQUI": "pedro-ramos" }, CADASTRO)[0];
+    expect(v.sugestao).toBeNull();
+  });
+
+  it("sem o mapa de conferidos, nada muda (compatível com o que já estava salvo)", () => {
+    const vinculos = { "PEDRO HENRIQUE SANTOS OLIVEIRA": "pedro-henrique" };
+    expect(conferirVinculos(vinculos, CADASTRO)).toEqual(conferirVinculos(vinculos, CADASTRO, {}));
+  });
+});

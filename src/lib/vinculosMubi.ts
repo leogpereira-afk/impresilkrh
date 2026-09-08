@@ -16,8 +16,16 @@ export interface VinculoSalvo {
   chave: string;
   colaboradorId: string;
   ficha: Colaborador | null;
-  /** Por que este vínculo merece um olhar. */
+  /** Por que este vínculo merece um olhar. `null` = nada a dizer. */
   alerta: "generico" | "sem-ficha" | "nome-diferente" | null;
+  /** O RH olhou este par nome→ficha e disse que está certo. */
+  conferido: boolean;
+  /**
+   * O que a régua automática APONTARIA para este nome hoje, se não houvesse
+   * vínculo guardado. É a alternativa que a tela oferece quando o vínculo
+   * parece errado — sem ela, a única saída era apagar e torcer.
+   */
+  sugestao: Colaborador | null;
 }
 
 /**
@@ -32,17 +40,31 @@ export interface VinculoSalvo {
  *                     Golçalves Pereira (07/09/2026): o ERP corta o nome em 30
  *                     letras, e dois nomes diferentes começam igual.
  */
-export function conferirVinculos(vinculos: Record<string, string>, colaboradores: Colaborador[]): VinculoSalvo[] {
+export function conferirVinculos(
+  vinculos: Record<string, string>,
+  colaboradores: Colaborador[],
+  /** chave → colaboradorId já conferido pelo RH (config.vinculosMubiConferidos). */
+  conferidos: Record<string, string> = {},
+): VinculoSalvo[] {
   const porId = new Map(colaboradores.map((c) => [c.id, c]));
   return Object.entries(vinculos)
     .map(([chave, colaboradorId]) => {
       const ficha = porId.get(colaboradorId) ?? null;
-      const alerta: VinculoSalvo["alerta"] = ehOrigemGenerica(chave)
+      // Conferir vale para o PAR nome→ficha: reapontar para outra pessoa faz o
+      // aviso voltar sozinho.
+      const conferido = conferidos[chave] === colaboradorId && !!ficha;
+      const bruto: VinculoSalvo["alerta"] = ehOrigemGenerica(chave)
         ? "generico"
         : !ficha
           ? "sem-ficha"
           : casarColaborador(chave, [ficha], {}) ? null : "nome-diferente";
-      return { chave, colaboradorId, ficha, alerta };
+      // "sem-ficha" não se cala com um "conferi": a ficha não existe, e isso é
+      // fato, não opinião. Os outros dois são juízo sobre o nome — e aí quem
+      // olhou decide.
+      const alerta = conferido && bruto !== "sem-ficha" ? null : bruto;
+      // A alternativa: quem a régua automática acharia para este nome hoje.
+      const sugestao = casarColaborador(chave, colaboradores, {}) ?? null;
+      return { chave, colaboradorId, ficha, alerta, conferido, sugestao: sugestao && sugestao.id !== colaboradorId ? sugestao : null };
     })
     .sort((a, b) => (a.alerta === b.alerta ? a.chave.localeCompare(b.chave, "pt-BR") : a.alerta ? -1 : 1));
 }

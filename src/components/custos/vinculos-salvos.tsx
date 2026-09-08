@@ -1,7 +1,8 @@
 import { useMemo } from "react";
-import { Link2, Trash2, AlertTriangle } from "lucide-react";
+import { Link2, Trash2, AlertTriangle, Check, CheckCircle2, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Select } from "@/components/ui/form";
 import { idPessoa } from "@/lib/identidade";
 import { conferirVinculos, type VinculoSalvo } from "@/lib/vinculosMubi";
 import type { Colaborador } from "@/data/types";
@@ -23,16 +24,29 @@ const TEXTO: Record<NonNullable<VinculoSalvo["alerta"]>, { rotulo: string; expli
 export function VinculosSalvos({
   vinculos,
   colaboradores,
+  conferidos = {},
   onRemover,
+  onConferir,
+  onApontar,
   podeEditar,
 }: {
   vinculos: Record<string, string>;
   colaboradores: Colaborador[];
+  /** chave → colaboradorId já conferido (config.vinculosMubiConferidos). */
+  conferidos?: Record<string, string>;
   onRemover: (chave: string) => void;
+  /** "Está certo": o aviso deste par nome→ficha se cala. */
+  onConferir?: (chave: string, colaboradorId: string) => void;
+  /** "É outra pessoa": aponta o vínculo para a ficha certa. */
+  onApontar?: (chave: string, colaboradorId: string) => void;
   podeEditar: boolean;
 }) {
-  const lista = useMemo(() => conferirVinculos(vinculos, colaboradores), [vinculos, colaboradores]);
+  const lista = useMemo(() => conferirVinculos(vinculos, colaboradores, conferidos), [vinculos, colaboradores, conferidos]);
   const comAlerta = lista.filter((v) => v.alerta).length;
+  const porNome = useMemo(
+    () => [...colaboradores].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    [colaboradores],
+  );
 
   return (
     <Card idPersistencia="custos:vinculos-salvos">
@@ -63,21 +77,76 @@ export function VinculosSalvos({
                     <Badge variant={v.alerta === "sem-ficha" ? "danger" : "warning"}>{TEXTO[v.alerta].rotulo}</Badge>
                   </span>
                 )}
+                {v.conferido && (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-700" title="Alguém olhou este par nome → ficha e disse que está certo.">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> conferido
+                  </span>
+                )}
+
+                {/* AS TRÊS SAÍDAS. Antes só existia "Apagar" — e apagar é
+                    destrutivo e nem resolve: o vínculo volta na importação
+                    seguinte, porque o nome do ERP continua sem CPF. Quem olhava
+                    um vínculo CERTO não tinha como dizer que está certo, e o
+                    aviso ficava para sempre. */}
                 {podeEditar && (
-                  <button
-                    type="button"
-                    className="btn-ghost ml-auto h-7 px-2 text-xs text-slate-500 hover:text-red-600"
-                    onClick={() => onRemover(v.chave)}
-                    title="Apagar este vínculo. Os títulos com este nome voltam a ser casados por CPF, ID ou nome."
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Apagar
-                  </button>
+                  <span className="ml-auto flex flex-wrap items-center gap-1">
+                    {onApontar && v.sugestao && (
+                      <button
+                        type="button"
+                        className="btn-outline h-7 px-2 py-0 text-xs"
+                        onClick={() => onApontar(v.chave, v.sugestao!.id)}
+                        title={`Apontar este nome para ${v.sugestao.nome} — é quem o casamento automático acha para ele.`}
+                      >
+                        <ArrowRightLeft className="h-3.5 w-3.5" /> É {v.sugestao.nome.split(" ")[0]}
+                      </button>
+                    )}
+
+                    {onApontar && (
+                      <Select
+                        value=""
+                        onChange={(e) => { if (e.target.value) onApontar(v.chave, e.target.value); }}
+                        className="h-7 w-auto py-0 text-xs"
+                        aria-label={`Apontar "${v.chave}" para outra ficha`}
+                        title="Apontar este nome para outra ficha."
+                      >
+                        <option value="">é outra pessoa…</option>
+                        {porNome.map((c) => (
+                          <option key={c.id} value={c.id}>{c.nome}</option>
+                        ))}
+                      </Select>
+                    )}
+
+                    {onConferir && v.alerta && v.alerta !== "sem-ficha" && v.ficha && (
+                      <button
+                        type="button"
+                        className="btn-outline h-7 px-2 py-0 text-xs text-emerald-700"
+                        onClick={() => onConferir(v.chave, v.colaboradorId)}
+                        title="Está certo: o aviso deste par nome → ficha se cala. Se o vínculo for reapontado depois, o aviso volta sozinho."
+                      >
+                        <Check className="h-3.5 w-3.5" /> Está certo
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn-ghost h-7 px-2 text-xs text-slate-500 hover:text-red-600"
+                      onClick={() => onRemover(v.chave)}
+                      title="Apagar este vínculo. Os títulos com este nome voltam a ser casados por CPF, ID ou nome — e, sem CPF, voltam a cair em “não casados” na próxima importação."
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Apagar
+                    </button>
+                  </span>
                 )}
               </li>
             ))}
           </ul>
         )}
         <p className="mt-3 text-xs text-slate-500">
+          <strong className="font-semibold">Está certo</strong> cala o aviso deste par nome → ficha (e ele volta sozinho se
+          o vínculo for reapontado). <strong className="font-semibold">É outra pessoa</strong> troca a ficha sem perder o
+          vínculo. <strong className="font-semibold">Apagar</strong> é o último caso: o nome volta a não casar com ninguém.
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
           O vínculo só vale quando o título vem <strong className="font-semibold">sem CPF</strong>: com CPF (ou com o ID escrito na descrição), a chave manda e o vínculo é ignorado.
         </p>
       </CardBody>

@@ -2289,11 +2289,39 @@ export default function Custos() {
                   vinculos={config.vinculosMubi ?? {}}
                   colaboradores={d.colaboradores as Colaborador[]}
                   podeEditar={podeGerir(sessao)}
+                  conferidos={config.vinculosMubiConferidos ?? {}}
                   onRemover={(chave) => {
                     const vinc = { ...(config.vinculosMubi ?? {}) };
                     delete vinc[chave];
-                    salvarCfg({ vinculosMubi: vinc });
+                    // O "conferi" morre com o vínculo: guardado sozinho, ele
+                    // calaria o aviso de um vínculo futuro com a mesma chave.
+                    const conf = { ...(config.vinculosMubiConferidos ?? {}) };
+                    delete conf[chave];
+                    salvarCfg({ vinculosMubi: vinc, vinculosMubiConferidos: conf });
                     toast(`Vínculo "${chave}" apagado. Os títulos com este nome voltam a ser casados por CPF, ID ou nome.`);
+                  }}
+                  onConferir={(chave, colaboradorId) => {
+                    salvarCfg({ vinculosMubiConferidos: { ...(config.vinculosMubiConferidos ?? {}), [chave]: colaboradorId } });
+                    registrarAcaoManual(`Conferiu o vínculo do ERP "${chave}"`, d.nomeColab(colaboradorId), "config");
+                    toast(`"${chave}" conferido. O aviso volta se este vínculo for apontado para outra pessoa.`);
+                  }}
+                  onApontar={(chave, colaboradorId) => {
+                    const anterior = config.vinculosMubi?.[chave];
+                    if (anterior === colaboradorId) return;
+                    // Apontar para outra ficha DERRUBA o "conferi" anterior: o
+                    // que foi conferido era o par antigo, não este.
+                    const conf = { ...(config.vinculosMubiConferidos ?? {}) };
+                    delete conf[chave];
+                    salvarCfg({
+                      vinculosMubi: { ...(config.vinculosMubi ?? {}), [chave]: colaboradorId },
+                      vinculosMubiConferidos: conf,
+                    });
+                    registrarAcaoManual(
+                      `Apontou o vínculo do ERP "${chave}" para outra ficha (era ${anterior ?? "—"})`,
+                      d.nomeColab(colaboradorId),
+                      "config",
+                    );
+                    toast(`"${chave}" passa a apontar para ${d.nomeColab(colaboradorId)}. Vale da próxima importação em diante.`);
                   }}
                 />
 
@@ -2736,14 +2764,17 @@ export default function Custos() {
                   para de aparecer e o mês fecha menor sem ninguém notar. */}
               {(folhaPrev.mubi?.foraDaFolha?.length ?? 0) > 0 && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                  <p className="text-xs font-semibold text-amber-900">Contas de pessoal que ficaram de fora</p>
+                  <p className="text-xs font-semibold text-amber-900">
+                    Contas que ficaram de fora da folha
+                    {(() => { const n = folhaPrev.mubi!.foraDaFolha!.filter((c) => c.pareceGente).length;
+                      return n ? <span className="ml-1 font-normal">· {n} com cara de pagamento a pessoa</span> : null; })()}
+                  </p>
                   <p className="mt-1 text-[11px] text-amber-800/90">
-                    O ERP tem títulos nestas contas, o nome delas é de pagamento a pessoa, mas elas não estão na lista de contas de folha —
-                    então não entram na ficha de ninguém. Se alguma for de colaborador, me avise para incluí-la.
+                    O ERP tem títulos nestas contas e elas não estão na lista de folha — então não entram na ficha de ninguém. As destacadas têm nome de pagamento a pessoa. Procure aqui a conta que sumiu: quando o contador renomeia (a faxina fez isso), o nome novo pode não parecer de gente e mesmo assim ser.
                   </p>
                   <ul className="mt-2 space-y-0.5">
                     {folhaPrev.mubi!.foraDaFolha!.map((c) => (
-                      <li key={c.plano} className="flex items-baseline justify-between gap-3 text-[11px] text-amber-900">
+                      <li key={c.plano} className={"flex items-baseline justify-between gap-3 text-[11px] " + (c.pareceGente ? "font-semibold text-amber-900" : "text-amber-900/60")}>
                         <span className="font-mono">{c.plano}</span>
                         <span className="tabular-nums">{c.quantos} título(s) · {formatBRL(c.total)}</span>
                       </li>

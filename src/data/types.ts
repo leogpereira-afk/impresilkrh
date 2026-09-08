@@ -566,6 +566,17 @@ export interface Config {
    * título a título e o apontamento fica guardado.
    */
   vinculosMubiTitulo?: Record<string, string>;
+  /**
+   * Vínculos que o RH OLHOU e disse "está certo" — chave do ERP → o
+   * colaboradorId que foi conferido.
+   *
+   * Guarda o ID, e não um simples "true", de propósito: conferir vale para
+   * AQUELE par nome→ficha. Se o vínculo for reapontado para outra pessoa
+   * depois, o id não bate mais e o aviso volta sozinho — senão um "conferi"
+   * de hoje calaria para sempre um vínculo que amanhã aponta para outro
+   * lugar, que é justamente o defeito que este painel existe para pegar.
+   */
+  vinculosMubiConferidos?: Record<string, string>;
   ultimaBuscaMubi?: {
     competencia: string;
     em: string;
