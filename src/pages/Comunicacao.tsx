@@ -26,8 +26,8 @@ export default function Comunicacao() {
   return (
     <div>
       <PageHeader
-        title="Comunicação Interna"
-        description="Fluxos claros, menos ruído, mais resultado."
+        title="Comunicação interna"
+        description="Consulte os canais, prazos e orientações de comunicação da empresa."
       />
 
       {/* Modelo operacional */}
@@ -69,7 +69,7 @@ export default function Comunicacao() {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-100 text-gold-700">
               <Timer className="h-5 w-5" />
             </span>
-            <h3 className="text-sm font-semibold text-slate-800">SLAs</h3>
+            <h3 className="text-sm font-semibold text-slate-800">Prazos de resposta</h3>
           </div>
           <ul className="mt-3 space-y-1.5">
             {SLAS.map((s) => (

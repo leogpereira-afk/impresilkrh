@@ -44,22 +44,9 @@ import type { Tarefa } from "@/data/types";
 
 type TipoChecklist = "Admissão" | "Desligamento";
 
-// Prefixo que identifica uma tarefa de "Documentação de RH" dentro do onboarding.
-// Modeladas como tarefas tipo "Admissão" cujo título começa com "Doc: ".
-const PREFIXO_DOC = "Doc: ";
+import { PREFIXO_DOC, DOCS_RH_PADRAO, proporDocumentosAdmissao } from "@/lib/documentosAdmissao";
 const ehDoc = (t: Tarefa) => t.titulo.startsWith(PREFIXO_DOC);
 const rotuloDoc = (t: Tarefa) => t.titulo.slice(PREFIXO_DOC.length);
-
-// Documentação admissional padrão de RH (item 15 v3).
-const DOCS_RH_PADRAO = [
-  "Contrato assinado",
-  "RG/CPF/CTPS",
-  "Comprovante de residência",
-  "Dados bancários",
-  "ASO admissional",
-  "Foto 3x4",
-  "Termo do Código de Ética",
-];
 
 const variantePorcentagem = (
   pct: number,
@@ -90,6 +77,8 @@ export default function Integracao() {
 
   const gere = podeGerir(sessao);
   const [iniciar, setIniciar] = useState(false);
+  const [revisarDocs, setRevisarDocs] = useState(false);
+  const [docsSelecionados, setDocsSelecionados] = useState<Set<string>>(new Set());
 
   // Quem ainda está na casa. Régua canônica (noQuadro): a versão anterior
   // olhava só `statusId` e deixava passar quem tem data de desligamento com o
@@ -166,29 +155,29 @@ export default function Integracao() {
 
   const dadosJornada = useMemo(
     () => [
-      { nome: "Onboarding em andamento", valor: resumo.onAndamento, cor: "#16334f" },
-      { nome: "Onboarding concluído", valor: resumo.onConcluidos, cor: "#16a34a" },
-      { nome: "Offboarding", valor: resumo.offTotal, cor: "#d97706" },
+      { nome: "Admissão em andamento", valor: resumo.onAndamento, cor: "#16334f" },
+      { nome: "Admissão concluída", valor: resumo.onConcluidos, cor: "#16a34a" },
+      { nome: "Desligamento", valor: resumo.offTotal, cor: "#d97706" },
     ],
     [resumo],
   );
 
   const abrirJornada = (nome: string) => {
-    if (nome === "Onboarding em andamento")
+    if (nome === "Admissão em andamento")
       drill.abrir(
-        "Onboardings em andamento",
+        "Admissões em andamento",
         colabsDe(resumo.idsAndamento),
         "Admissões com itens pendentes",
       );
-    else if (nome === "Onboarding concluído")
+    else if (nome === "Admissão concluída")
       drill.abrir(
-        "Onboardings concluídos",
+        "Admissões concluídas",
         colabsDe(resumo.idsConcluidos),
         "Admissões com checklist 100% concluído",
       );
-    else if (nome === "Offboarding")
+    else if (nome === "Desligamento")
       drill.abrir(
-        "Offboardings",
+        "Desligamentos",
         colabsDe(resumo.idsOff),
         "Colaboradores em processo de desligamento",
       );
@@ -201,68 +190,26 @@ export default function Integracao() {
     });
   };
 
-  // Semeia a documentação de RH padrão para todo onboarding que ainda não a tem.
-  // Feito no nível da página (não dentro do card) para não depender de qual aba
-  // está ativa nem de o card estar montado — o seed deixa de ser efeito de render.
-  // Idempotente: só cria quando o colaborador tem checklist de Admissão e ainda
-  // não possui nenhuma tarefa "Doc: ".
-  useEffect(() => {
-    const porColab = new Map<string, { temDoc: boolean; maxOrdem: number }>();
-    for (const t of tarefas) {
-      if (t.tipo !== "Admissão" || !idsEscopo.has(t.colaboradorId)) continue;
-      const g = porColab.get(t.colaboradorId) ?? { temDoc: false, maxOrdem: -1 };
-      if (t.titulo.startsWith(PREFIXO_DOC)) g.temDoc = true;
-      else g.maxOrdem = Math.max(g.maxOrdem, t.ordem);
-      porColab.set(t.colaboradorId, g);
+  const propostaDocs = useMemo(() => proporDocumentosAdmissao(escopo, tarefas), [escopo, tarefas]);
+  const docsAplicaveis = propostaDocs.filter(p => docsSelecionados.has(p.colaboradorId));
+  const aplicarDocs = () => {
+    if (!ehRH(sessao) || !docsAplicaveis.length) return;
+    for (const p of docsAplicaveis) {
+      p.novas.forEach(t => criar(t));
+      atualizarColab(p.colaboradorId, { docsRhSemeadosEm: new Date().toISOString() });
     }
-    for (const [colaboradorId, g] of porColab) {
-      /* A GUARDA É O CARIMBO NA PESSOA, não a presença dos itens.
-
-         Inferir pela presença tinha um buraco no limite: enquanto sobrasse UM
-         documento nada acontecia, mas no instante em que o sétimo era apagado o
-         efeito disparava e recriava os sete — com ids novos e todos em aberto.
-         Ou seja, quem limpasse o bloco inteiro (que é justamente para o que a
-         lixeira existe: tirar documento que não se aplica) via tudo voltar, e a
-         marcação dos que tinha apagado antes sumia junto.
-
-         Com o carimbo, "já semeei para esta pessoa" é um fato gravado, não um
-         palpite a partir do que sobrou na tela. */
-      const colab = d.colabById.get(colaboradorId);
-      if (colab?.docsRhSemeadosEm || g.temDoc) {
-        // Registro antigo, semeado antes de existir o carimbo: carimba agora
-        // para não depender mais da presença dos itens.
-        if (g.temDoc && !colab?.docsRhSemeadosEm && colab) {
-          atualizarColab(colaboradorId, { docsRhSemeadosEm: new Date().toISOString() });
-        }
-        continue;
-      }
-      const baseOrdem = g.maxOrdem + 1;
-      DOCS_RH_PADRAO.forEach((nome, i) => {
-        criar({
-          /* ID DETERMINÍSTICO. Com id aleatório, dois navegadores que abrem a
-             tela ao mesmo tempo semeiam 7 cada um e o merge do pull entrega 14
-             documentos. Com o id derivado da pessoa e da posição, os dois
-             semeiam o MESMO registro e o merge resolve sozinho. */
-          id: `tar-doc-${colaboradorId}-${i}`,
-          colaboradorId,
-          tipo: "Admissão",
-          titulo: `${PREFIXO_DOC}${nome}`,
-          responsavel: "RH",
-          concluida: false,
-          concluidaEm: null,
-          ordem: baseOrdem + i,
-        });
-      });
-      atualizarColab(colaboradorId, { docsRhSemeadosEm: new Date().toISOString() });
-    }
-  }, [tarefas, idsEscopo, criar, d, atualizarColab]);
+    toast(`Documentação atualizada para ${docsAplicaveis.length} pessoa(s).`);
+    setRevisarDocs(false);
+    setDocsSelecionados(new Set());
+  };
 
   return (
     <div>
       <PageHeader
-        title="Onboarding e Offboarding"
+        title="Admissão e desligamento"
         description="A jornada de cada colaborador — da documentação à integração com a equipe — e o desligamento, passo a passo."
       >
+        {ehRH(sessao) && propostaDocs.length > 0 && <button className="btn-outline" onClick={() => { setDocsSelecionados(new Set()); setRevisarDocs(true); }}>Revisar documentos padrão ({propostaDocs.length})</button>}
         {gere && (
           <button className="btn-primary" onClick={() => setIniciar(true)}>
             <PlayCircle className="h-4 w-4" /> Iniciar jornada
@@ -278,28 +225,28 @@ export default function Integracao() {
           do gráfico para não haver dois caminhos com regras diferentes. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
-          label="Onboardings em andamento"
+          label="Admissões em andamento"
           value={resumo.onAndamento}
           icon={<ClipboardList className="h-5 w-5" />}
           accent="brand"
           hint="Admissões com itens pendentes"
-          onClick={() => abrirJornada("Onboarding em andamento")}
-          title="Ver quem está com o onboarding em andamento"
+          onClick={() => abrirJornada("Admissão em andamento")}
+          title="Ver quem está com o processo de admissão em andamento"
         />
         <StatCard
-          label="Onboardings concluídos"
+          label="Admissões concluídas"
           value={resumo.onConcluidos}
           icon={<CheckCircle2 className="h-5 w-5" />}
           accent="green"
-          onClick={() => abrirJornada("Onboarding concluído")}
-          title="Ver quem já concluiu o onboarding"
+          onClick={() => abrirJornada("Admissão concluída")}
+          title="Ver quem já concluiu o processo de admissão"
         />
         <StatCard
-          label="Offboardings"
+          label="Desligamentos"
           value={resumo.offTotal}
           icon={<UserMinus className="h-5 w-5" />}
           accent="amber"
-          onClick={() => abrirJornada("Offboarding")}
+          onClick={() => abrirJornada("Desligamento")}
           title="Ver quem está em processo de desligamento"
         />
       </div>
@@ -333,7 +280,7 @@ export default function Integracao() {
           abas={[
             {
               id: "admissao",
-              label: "Onboarding (Admissão)",
+              label: "Admissão",
               icon: <UserPlus className="h-4 w-4" />,
               conteudo: (
                 <PainelChecklist
@@ -358,7 +305,7 @@ export default function Integracao() {
             },
             {
               id: "desligamento",
-              label: "Offboarding (Desligamento)",
+              label: "Desligamento",
               icon: <UserMinus className="h-4 w-4" />,
               conteudo: (
                 <PainelChecklist
@@ -366,8 +313,8 @@ export default function Integracao() {
                   tipo="Desligamento"
                   tarefas={tarefasEscopo}
                   // Aqui o desligado É o assunto. Passar `idsEscopo` (que tira
-                  // inativo) esvaziava a aba: o cartão "Offboardings" contava N
-                  // e a lista abaixo dizia "Nenhum offboarding em aberto".
+                  // inativo) esvaziava a aba: o cartão "Desligamentos" contava N
+                  // e a lista abaixo dizia "Nenhum processo de desligamento em aberto".
                   escopoIds={idsComInativos}
                   onAlternar={alternar}
                 />
@@ -377,6 +324,15 @@ export default function Integracao() {
         />
       </div>
 
+      <Modal aberto={revisarDocs} onFechar={() => setRevisarDocs(false)} titulo="Revisar documentos de admissão"
+        descricao="Selecione as pessoas para as quais deseja preparar a documentação. Os itens serão criados como pendentes."
+        rodape={<><button className="btn-outline" onClick={() => setRevisarDocs(false)}>Cancelar</button><button className="btn-primary" disabled={!docsAplicaveis.length} onClick={aplicarDocs}>Aplicar para {docsAplicaveis.length} pessoa(s)</button></>}>
+        <p className="mb-3 text-sm text-slate-600">Documentos padrão: {DOCS_RH_PADRAO.join("; ")}.</p>
+        <div className="space-y-3">{propostaDocs.map(p => <label key={p.colaboradorId} className="flex gap-3 rounded-lg border p-3">
+          <input type="checkbox" checked={docsSelecionados.has(p.colaboradorId)} onChange={e => setDocsSelecionados(antes => { const depois = new Set(antes); if (e.target.checked) depois.add(p.colaboradorId); else depois.delete(p.colaboradorId); return depois; })} />
+          <span><strong className="block">{p.nome}</strong><span className="text-sm text-slate-500">{p.novas.length ? `${p.novas.length} documentos pendentes serão criados.` : `${p.existentes} documento(s) já existe(m). Apenas registrar que a preparação já foi feita, preservando os itens atuais.`}</span></span>
+        </label>)}</div>
+      </Modal>
       {iniciar && (
         <IniciarChecklistModal
           aberto={iniciar}
@@ -570,8 +526,8 @@ function PainelChecklist({
       <EmptyState
         title={
           tipo === "Admissão"
-            ? "Nenhum onboarding em aberto"
-            : "Nenhum offboarding em aberto"
+            ? "Nenhum processo de admissão em aberto"
+            : "Nenhum processo de desligamento em aberto"
         }
         description="Comece pelo modelo padrão — dá para ajustar os itens depois."
         icon={<ClipboardList className="h-8 w-8" />}
@@ -585,7 +541,7 @@ function PainelChecklist({
   if (naTela.length === 0) {
     return (
       <EmptyState
-        title={tipo === "Admissão" ? "Nenhuma integração em aberto" : "Nenhum offboarding em aberto"}
+        title={tipo === "Admissão" ? "Nenhuma integração em aberto" : "Nenhum processo de desligamento em aberto"}
         description={`${arquivados.length} ${arquivados.length === 1 ? "pessoa foi arquivada" : "pessoas foram arquivadas"} — a jornada delas terminou.`}
         icon={<Trophy className="h-8 w-8" />}
         acao={
@@ -948,7 +904,7 @@ function CardChecklist({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-              {tipo === "Admissão" ? "Jornada do onboarding" : "Progresso do offboarding"}
+              {tipo === "Admissão" ? "Etapas da admissão" : "Etapas do desligamento"}
               {tipo === "Admissão" && (
                 <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${nivel.classe}`}>
                   <Sparkles className="h-3 w-3" /> {nivel.rotulo}
@@ -1383,8 +1339,8 @@ function IniciarChecklistModal({
             value={tipo}
             onChange={(e) => setTipo(e.target.value as TipoChecklist)}
           >
-            <option value="Admissão">Onboarding (Admissão)</option>
-            <option value="Desligamento">Offboarding (Desligamento)</option>
+            <option value="Admissão">Admissão</option>
+            <option value="Desligamento">Desligamento</option>
           </Select>
         </Campo>
 

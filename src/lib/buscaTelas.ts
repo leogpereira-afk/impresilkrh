@@ -84,7 +84,7 @@ export function buscarTelas(telas: readonly TelaBuscavel[], termo: string): Tela
     const label = normalizar(tela.label);
     if (label.startsWith(t)) return 0;
     if (label.includes(t)) return 1;
-    const apelidos = (APELIDOS[tela.href] ?? []).map(normalizar);
+    const apelidos = (tela.apelidos ?? APELIDOS[tela.href.split("?")[0]] ?? []).map(normalizar);
     if (apelidos.some((a) => a.startsWith(t))) return 2;
     if (apelidos.some((a) => a.includes(t))) return 3;
     if (normalizar(tela.grupo).includes(t)) return 4;
@@ -96,4 +96,28 @@ export function buscarTelas(telas: readonly TelaBuscavel[], termo: string): Tela
     .filter((x) => x.p !== Infinity)
     .sort((a, b) => a.p - b.p || a.tela.label.localeCompare(b.tela.label, "pt-BR"))
     .map((x) => x.tela);
+}
+
+
+/** Só expande destinos de módulos já permitidos pelo menu da sessão. */
+export function destinosDaBusca(telas: readonly TelaBuscavel[], master = false): TelaBuscavel[] {
+  const destinos: TelaBuscavel[] = [];
+  for (const t of telas) {
+    destinos.push({ ...t, href: t.href === '/custos' ? '/custos?aba=global' : t.href === '/ponto' ? '/ponto?aba=ponto' : t.href });
+    const filhos: { aba: string; label: string; apelidos: string[] }[] = t.href === '/custos' ? [
+      {aba:'custos',label:'Pagamentos por pessoa',apelidos:['pessoa','recebimentos']},
+      {aba:'sync',label:'Importação e conferência',apelidos:['sincronizacao','importar','erp','mubisys']},
+      {aba:'relatorios',label:'Relatórios financeiros',apelidos:['financeiro','relatorio de pagamentos']},
+      {aba:'viagens',label:'Viagens e diárias',apelidos:['viagem','viagens','diarias']},
+      {aba:'encargos',label:'Reservas estimadas',apelidos:['encargos','provisoes']},
+      ...(master ? [{aba:'societarias',label:'Pagamentos societários',apelidos:['socios','societarias']}] : []),
+    ] : t.href === '/ponto' ? [
+      {aba:'advertencias',label:'Advertências',apelidos:['advertencia']},
+      {aba:'absenteismo',label:'Ausências',apelidos:['falta','absenteismo']},
+      {aba:'folha-variavel',label:'Verbas variáveis do mês',apelidos:['folha variavel','extras']},
+    ] : t.href === '/documentos' ? [{aba:'pops',label:'Procedimentos (POPs)',apelidos:['procedimento','pop']}] : [];
+    for (const f of filhos) destinos.push({href:`${t.href}?aba=${f.aba}`,label:f.label,grupo:t.label,apelidos:f.apelidos});
+    if (t.href === '/colaboradores') destinos.push({href:'/colaboradores?status=freelancer',label:'Freelancers no quadro',grupo:t.label,apelidos:['freelancer','freela']});
+  }
+  return destinos;
 }

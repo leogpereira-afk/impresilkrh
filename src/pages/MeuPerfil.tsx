@@ -62,7 +62,7 @@ export default function MeuPerfil() {
           <MinhaFoto c={c} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold text-brand-ink">{c.nome}</h1>
+              <h1 className="text-xl font-semibold text-brand-ink">Meu perfil · {c.nome}</h1>
               <DotBadge label={d.nomeStatus(c.statusId)} cor={d.corStatus(c.statusId)} />
             </div>
             <p className="mt-0.5 text-sm text-slate-500">

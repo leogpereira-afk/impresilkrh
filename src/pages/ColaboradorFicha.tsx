@@ -292,7 +292,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold text-brand-ink">{c.nome}</h1>
+              <h1 className="text-xl font-semibold text-brand-ink">Ficha · {c.nome}</h1>
               <DotBadge label={d.nomeStatus(c.statusId)} cor={d.corStatus(c.statusId)} />
               {/* O ID da pessoa (6 primeiros dígitos do CPF) — a chave pela qual o
                   ERP e os outros sistemas a reconhecem. Nome só exibe. */}
@@ -999,7 +999,7 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
                 to={`/comportamental?perfil=${encodeURIComponent(c.perfilComportamental)}`}
                 className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
               >
-                <Brain className="h-4 w-4" /> Como lidar com este perfil — abrir no Guia Comportamental
+                <Brain className="h-4 w-4" /> Como lidar com este perfil — abrir no Guia de gestão de pessoas
               </Link>
             </div>
           )}
@@ -2053,7 +2053,7 @@ function DesligarModal({ aberto, onFechar, c }: { aberto: boolean; onFechar: () 
         const r = await removerSenhaUsuario({ colaboradorId: c.id });
         if (!r.removido) toast("Cadastro desligado. Não havia conta no servidor para este colaborador — nada a revogar.", "info");
       } catch {
-        toast("Cadastro desligado, mas não deu para remover a senha no servidor agora. Refaça em Painel de Controle quando estiver online.", "erro");
+        toast("Cadastro desligado, mas não deu para remover a senha no servidor agora. Refaça em Configurações do RH quando estiver online.", "erro");
       }
     }
     toast(conta ? `${c.nome} foi desligado(a) e o acesso ao sistema foi revogado.` : `${c.nome} foi desligado(a).`);

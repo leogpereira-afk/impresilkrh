@@ -108,7 +108,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   if (!podeEditar) {
     return (
       <div>
-        {!embutido && <PageHeader title="Folha Variável" description="Verbas do mês por colaborador." />}
+        {!embutido && <PageHeader title="Verbas variáveis do mês" description="Verbas do mês por colaborador." />}
         <EmptyState icon={<Lock className="h-6 w-6" />} title="Sem permissão" description="A folha variável é restrita ao RH/gestão." />
       </div>
     );
@@ -121,7 +121,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
           que não existe — o RH acharia que o valor já está em algum total. */}
       {!embutido && (
         <PageHeader
-          title="Folha Variável"
+          title="Verbas variáveis do mês"
           description="Verbas do mês por colaborador — hora extra, empreita, diária, bônus, comissão e limpeza. Sai em PDF/Excel por pessoa para a contabilidade."
         />
       )}
@@ -680,7 +680,7 @@ async function exportarPdf(r: DadosRel) {
   doc.setFontSize(16); doc.setTextColor(...marinho);
   doc.text(r.config.empresaNome || "Impresilk", 14, 18);
   doc.setFontSize(12); doc.setTextColor(60);
-  doc.text(`Folha Variável — ${labelMes(r.competencia)}`, 14, 26);
+  doc.text(`Verbas variáveis do mês — ${labelMes(r.competencia)}`, 14, 26);
   doc.setFontSize(11); doc.setTextColor(20);
   doc.text(`${r.colaborador.nome}${r.cargoNome ? ` · ${r.cargoNome}` : ""}`, 14, 34);
 
@@ -707,7 +707,7 @@ function exportarExcel(r: DadosRel) {
   const linhas = r.lancamentos.map((l) => `<tr><td>${diaBR(l.data)}</td><td>${labelTipo(l.tipo)}</td><td>${descricaoExport(l).replace(/</g, "")}</td><td style="text-align:right">${l.valor.toFixed(2).replace(".", ",")}</td></tr>`).join("");
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>
 <table border="1">
-<tr><td colspan="4" style="font-weight:bold;font-size:14px">${r.config.empresaNome || "Impresilk"} — Folha Variável — ${labelMes(r.competencia)}</td></tr>
+<tr><td colspan="4" style="font-weight:bold;font-size:14px">${r.config.empresaNome || "Impresilk"} — Verbas variáveis do mês — ${labelMes(r.competencia)}</td></tr>
 <tr><td colspan="4">${r.colaborador.nome}${r.cargoNome ? " · " + r.cargoNome : ""}</td></tr>
 <tr></tr>
 <tr style="background:#16334f;color:#fff;font-weight:bold"><td>Dia</td><td>Tipo</td><td>Descrição</td><td>Valor (R$)</td></tr>

@@ -45,7 +45,7 @@ export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
         )
       ) : (
         <PageHeader
-          title="POPs e Procedimentos"
+          title="Procedimentos (POPs)"
           description="Procedimentos Operacionais Padrão."
         >
           {pops.length > 0 && (

@@ -1,5 +1,6 @@
+import { useSearchParams } from "react-router-dom";
 import { tituloPago } from "@/lib/mubiPagamentos";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -98,7 +99,9 @@ export default function Colaboradores() {
   const sessao = useSessao();
   const d = useDominio();
   const [busca, setBusca] = useState("");
-  const [fStatus, setFStatus] = useState("");
+  const [paramsStatus, setParamsStatus] = useSearchParams();
+  const fStatus = paramsStatus.get("status") ?? "";
+  const setFStatus = (status: string) => setParamsStatus(p => { const novo = new URLSearchParams(p); if (status) novo.set("status", status); else novo.delete("status"); return novo; }, { replace: true });
   const [mostrarInativos, setMostrarInativos] = useState(false); // padrão: só ativos
   const [novo, setNovo] = useState(false);
   const [verNomes, setVerNomes] = useState(false); // lista simples de nomes (A–Z)
@@ -113,6 +116,8 @@ export default function Colaboradores() {
   /* Card selecionado. Era uma união fechada de três nomes; agora há um card
      por status presente, então a chave de status vai embutida: "st:<id>". */
   const [foco, setFoco] = useState<string | null>(null);
+  // Um destino da busca pode trocar o status sem remontar a página.
+  useEffect(() => setFoco(null), [fStatus]);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
   const [chips, setChips] = useState<Set<string>>(() => new Set());
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
@@ -737,7 +742,7 @@ export default function Colaboradores() {
             <option value="">{chips.size > 1 ? `Várias áreas (${chips.size}) · limpar` : "Todas as áreas"}</option>
             {areasNav.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
           </Select>
-          <Select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="sm:w-44">
+          <Select aria-label="Situação no quadro" value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="sm:w-44">
             <option value="">Todos os status</option>
             {d.status.filter((s) => s.id !== "direcao" && s.id !== "externo").map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
           </Select>
@@ -758,7 +763,7 @@ export default function Colaboradores() {
               Só faz sentido na visão em lista — por setor são mini-cards. */}
           {visao === "lista" && (
             <>
-              <Select value={visaoLinha} onChange={(e) => setVisaoLinha(e.target.value as typeof visaoLinha)} className="sm:w-52" title="O que cada linha da lista mostra">
+              <Select aria-label="Informações da lista" value={visaoLinha} onChange={(e) => setVisaoLinha(e.target.value as typeof visaoLinha)} className="sm:w-52" title="O que cada linha da lista mostra">
                 <option value="cadastro">Ver: Cadastro</option>
                 <option value="custo">Ver: Custo do mês</option>
                 <option value="comportamental">Ver: Comportamental</option>
@@ -800,10 +805,27 @@ export default function Colaboradores() {
         </div>
       </Card>
 
+      {lista.length > 0 && visao === 'lista' && <div className="grid gap-3 sm:hidden" aria-label="Pessoas encontradas">
+        <div className="flex gap-2"><Select aria-label="Ordenar pessoas" value={ordem.campo} onChange={e => setOrdem({ ...ordem, campo: e.target.value as CampoOrdem })}>
+          <option value="nome">Nome</option><option value="status">Situação</option>
+          {visaoLinha === 'cadastro' && <><option value="area">Área</option><option value="nivel">Nível</option><option value="tempo">Tempo de casa</option><option value="enquadramento">Enquadramento</option></>}
+          {visaoLinha === 'custo' && <option value="custo">Custo do mês</option>}
+          {visaoLinha === 'comportamental' && <><option value="perfil">Perfil</option><option value="motivacao">Motivação</option></>}
+        </Select><button className="btn-outline shrink-0" aria-label="Inverter ordenação" onClick={() => setOrdem({ ...ordem, asc: !ordem.asc })}>{ordem.asc ? 'Crescente' : 'Decrescente'}</button></div>
+        {lista.map(c => <Link key={c.id} to={`/colaboradores/${c.id}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="break-words font-semibold text-slate-800">{c.nome}</p>
+          <p className="mt-1 text-sm text-slate-600">{d.nomeCargo(c)} · {d.statusById.get(c.statusId ?? "")?.nome ?? 'Situação não informada'}</p>
+          {visaoLinha === 'cadastro' && <p className="mt-2 text-xs text-slate-500">{d.nomeArea(c.areaId)} · {d.nomeNivel(c.nivelId)} · {d.enquadrarColab(c)}</p>}
+          {visaoLinha === 'custo' && <p className="mt-2 text-sm">{competenciaLabel(mesCusto)}: {custoPorColab.has(c.id) ? formatBRL(custoPorColab.get(c.id)!.total) : 'Sem lançamentos'} · {custoPorColab.get(c.id)?.n ?? 0} lançamento(s)</p>}
+          {visaoLinha === 'comportamental' && <p className="mt-2 text-sm">{c.perfilComportamental || 'Perfil não informado'}{podeVerGestao(sessao, c.id, d.colaboradores) && c.motivacao != null ? ` · Motivação: ${c.motivacao}` : ''}</p>}
+          <span className="mt-2 block text-sm font-medium text-brand">Abrir ficha →</span>
+        </Link>)}
+      </div>}
+
       {lista.length === 0 ? (
         <EmptyState title="Nenhum colaborador encontrado" description="Ajuste a busca ou os filtros." icon={<Users className="h-8 w-8" />} />
       ) : visao === "lista" ? (
-        <Card className="overflow-hidden">
+        <Card className="hidden overflow-hidden sm:block">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="border-b border-slate-100 bg-slate-50/50">

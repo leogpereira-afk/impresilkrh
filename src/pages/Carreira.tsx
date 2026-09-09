@@ -96,13 +96,13 @@ export default function Carreira() {
   // e recriar do zero.
   const [etapaEditando, setEtapaEditando] = useState<EtapaEvolucao | null>(null);
 
-  // LGPD: a área de Carreira e Salários é restrita ao RH / Gestor Principal.
+  // LGPD: a área de Carreira e salários é restrita ao RH / Gestor Principal.
   // (Todos os hooks acima já executaram antes deste retorno antecipado.)
   if (!ehRHFlag) {
     return (
       <EmptyState
         title="Acesso restrito"
-        description="A área de Carreira e Salários é restrita ao RH / Gestor Principal."
+        description="A área de Carreira e salários é restrita ao RH / Gestor Principal."
         icon={<Lock className="h-8 w-8" />}
       />
     );
@@ -189,7 +189,7 @@ export default function Carreira() {
 
   return (
     <div>
-      <PageHeader title="Carreira e Salários" description="Régua de senioridade, tabela salarial por cargo e simulador de progressão." />
+      <PageHeader title="Carreira e salários" description="Régua de senioridade, tabela salarial por cargo e simulador de progressão." />
 
       {/* Régua de senioridade — clicável: abre os ativos do nível (todos os cargos) */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

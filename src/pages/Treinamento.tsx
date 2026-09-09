@@ -189,7 +189,7 @@ export default function Treinamento() {
   return (
     <div>
       <PageHeader
-        title="Treinamento e Capacitação"
+        title="Treinamentos"
         description="Quem está em treinamento e o que cada colaborador ainda precisa treinar."
       >
         {podeEditar && (

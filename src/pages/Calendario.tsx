@@ -590,9 +590,9 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
           {/* Criar tipo saiu daqui. Um formulário de configuração no meio do
               cadastro de evento deixava a tela confusa e misturava dois
               trabalhos: lançar um aviso e definir as categorias da empresa.
-              Agora os tipos se cadastram no Painel de Controle, junto das outras
+              Agora os tipos se cadastram em Configurações do RH, junto das outras
               listas do sistema, e aqui só se escolhe. */}
-          <Campo label="Tipo" hint="Cadastre novos tipos no Painel de Controle">
+          <Campo label="Tipo" hint="Cadastre novos tipos em Configurações do RH">
             <Select value={form.tipo} onChange={(e) => set({ tipo: e.target.value })}>
               {opcoes.map((t) => <option key={t.nome} value={t.nome}>{t.nome}</option>)}
             </Select>

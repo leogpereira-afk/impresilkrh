@@ -311,17 +311,17 @@ export default function Relatorios() {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     const num = (v: number) => esc(v.toFixed(2).replace(".", ","));
     const linhas: string[] = [
-      esc(`Relatórios gerenciais · Impresilk · período: ${rotuloPeriodo}`),
+      esc(`Relatórios do RH · Impresilk · período: ${rotuloPeriodo}`),
       esc(`Gerado em ${new Date().toLocaleString("pt-BR")}`),
       "",
       ["Indicador", "Valor"].map(esc).join(";"),
-      ["Headcount ativo", indicadores.headcount].map(esc).join(";"),
-      `${esc("Folha total (R$)")};${num(indicadores.folha)}`,
-      `${esc("Custo médio (R$)")};${num(indicadores.custoMedio)}`,
+      ["Pessoas na empresa", indicadores.headcount].map(esc).join(";"),
+      `${esc("Salários cadastrados hoje (R$)")};${num(indicadores.folha)}`,
+      `${esc("Salário cadastral médio (R$)")};${num(indicadores.custoMedio)}`,
       ["Desligamentos (12 meses)", indicadores.desligamentos12m].map(esc).join(";"),
       `${esc("Turnover (%)")};${num(indicadores.turnover * 100)}`,
       "",
-      ["Área", "Headcount", "Folha (R$)", "Custo médio (R$)"].map(esc).join(";"),
+      ["Área", "Pessoas", "Salários cadastrados (R$)", "Salário cadastral médio (R$)"].map(esc).join(";"),
       ...porArea.map((a) => `${esc(a.nome)};${esc(a.headcount)};${num(a.folha)};${num(a.custoMedio)}`),
       "",
       ["Movimentação no período", "Quantidade"].map(esc).join(";"),
@@ -511,7 +511,7 @@ export default function Relatorios() {
         const baixo = colabs.filter((c) => c.riscoSaida === "Baixo").length;
         const medio = colabs.filter((c) => c.riscoSaida === "Médio").length;
         const alto = colabs.filter((c) => c.riscoSaida === "Alto").length;
-        return { id: a.id, nome: a.nome, total: colabs.length, baixo, medio, alto, score: alto * 2 + medio };
+        return { id: a.id, nome: a.nome, total: colabs.length, baixo, medio, alto, semInformacao: colabs.length - baixo - medio - alto, score: alto * 2 + medio };
       })
       .filter((x) => x.total > 0)
       .sort((a, b) => b.score - a.score || b.alto - a.alto); // mais risco primeiro
@@ -601,7 +601,7 @@ export default function Relatorios() {
     return (
       <div>
         <PageHeader
-          title="Relatórios gerenciais"
+          title="Relatórios do RH"
           description="Indicadores executivos do quadro de colaboradores."
         />
         <EmptyState
@@ -616,8 +616,8 @@ export default function Relatorios() {
   return (
     <div>
       <PageHeader
-        title="Relatórios gerenciais"
-        description="Visão executiva da Impresilk — folha, movimentação e enquadramento."
+        title="Relatórios do RH"
+        description="Quadro atual, salários cadastrados e movimentação no período selecionado."
       >
         {/* Levar o relatório para fora: planilha ou papel/PDF. Antes o número só
             existia na tela — para mostrar numa reunião, era anotar na mão. */}
@@ -654,7 +654,7 @@ export default function Relatorios() {
           botão agora que o próprio card é um <button>. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Headcount ativo"
+          label="Pessoas na empresa"
           value={indicadores.headcount}
           icon={<Users className="h-5 w-5" />}
           accent="brand"
@@ -662,29 +662,29 @@ export default function Relatorios() {
           title="Ver os colaboradores do quadro ativo"
           onClick={() =>
             drill.abrir(
-              "Headcount ativo",
+              "Pessoas na empresa",
               ativos,
               `${ativos.length} colaborador(es) no quadro`,
             )
           }
         />
         <StatCard
-          label="Folha total"
+          label="Salários cadastrados hoje"
           value={<span className="text-xl">{formatBRL(indicadores.folha)}</span>}
           icon={<Wallet className="h-5 w-5" />}
           accent="gold"
           hint="Soma dos salários ativos"
-          title="Ver quem entra na folha total"
+          title="Ver os salários cadastrados que compõem a soma"
           onClick={() =>
             drill.abrir(
-              "Folha total",
+              "Salários cadastrados hoje",
               ativos.filter((c) => typeof c.salario === "number"),
-              `${formatBRL(indicadores.folha)} em folha mensal`,
+              `${formatBRL(indicadores.folha)} em salários cadastrados`,
             )
           }
         />
         <StatCard
-          label="Custo médio"
+          label="Salário cadastral médio"
           value={
             <span className="text-xl">{formatBRL(indicadores.custoMedio)}</span>
           }
@@ -694,7 +694,7 @@ export default function Relatorios() {
           title="Ver os colaboradores que entram na média"
           onClick={() =>
             drill.abrir(
-              "Custo médio",
+              "Salário cadastral médio",
               ativos.filter((c) => typeof c.salario === "number"),
               `${formatBRL(indicadores.custoMedio)} por colaborador`,
             )
@@ -784,7 +784,7 @@ export default function Relatorios() {
             ) : (
               <EmptyState
                 title="Sem pagamentos enviados"
-                description="Suba a folha no módulo Custos de Colaboradores (espaço “Pagamentos”) para ver a folha real mês a mês."
+                description="Consulte Importação e conferência no Financeiro do RH para revisar e importar os pagamentos."
                 icon={<Wallet className="h-8 w-8" />}
               />
             )}
@@ -815,8 +815,8 @@ export default function Relatorios() {
 
         <Card>
           <CardHeader
-            title="Custo médio por área"
-            subtitle="Headcount, folha e custo médio"
+            title="Salários cadastrados por área"
+            subtitle="Quadro e salários do cadastro atual"
             icon={<Building2 className="h-[18px] w-[18px]" />}
           />
           <CardBody className="p-0">
@@ -826,9 +826,9 @@ export default function Relatorios() {
                   <thead className="border-b border-slate-100 bg-slate-50/50">
                     <tr>
                       <th className="th">Área</th>
-                      <th className="th text-right">HC</th>
-                      <th className="th text-right">Folha</th>
-                      <th className="th text-right">Custo médio</th>
+                      <th className="th text-right">Pessoas</th>
+                      <th className="th text-right">Salários</th>
+                      <th className="th text-right">Salário médio</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1003,11 +1003,12 @@ export default function Relatorios() {
                     key={l.id}
                     nome={l.nome}
                     foco={l.alto > 0 && l.id === riscoPorSetor.focoId}
-                    total={l.baixo + l.medio + l.alto}
+                    total={l.total}
                     segs={[
                       { label: "Baixo", valor: l.baixo, cor: COR_RISCO.Baixo },
                       { label: "Médio", valor: l.medio, cor: COR_RISCO.Médio },
                       { label: "Alto", valor: l.alto, cor: COR_RISCO.Alto },
+                      { label: "Não informado", valor: l.semInformacao, cor: "#94a3b8" },
                     ]}
                     onClick={() => drillSetorPred(l.id, l.nome, "risco alto", (c) => c.riscoSaida === "Alto")}
                   />
@@ -1100,7 +1101,7 @@ export default function Relatorios() {
                     { label: "Dias em campo", valor: dashViagens.dias },
                     { label: "Custo médio/viagem", valor: formatBRL(dashViagens.count ? dashViagens.total / dashViagens.count : 0) },
                   ].map((m) => (
-                    <Link key={m.label} to="/custos" title="Abrir Custos de Colaboradores para ver e corrigir as viagens" className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-center transition hover:border-brand-200 hover:bg-brand-50/40">
+                    <Link key={m.label} to="/custos?aba=viagens" title="Abrir Viagens e diárias" className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-center transition hover:border-brand-200 hover:bg-brand-50/40">
                       <p className="text-lg font-semibold text-slate-800 tabular-nums">{m.valor}</p>
                       <p className="text-xs text-slate-500">{m.label}</p>
                     </Link>

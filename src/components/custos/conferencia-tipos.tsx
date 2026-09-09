@@ -51,16 +51,16 @@ export function ConferenciaTipos({
         }
       />
       <CardBody className="space-y-4">
-        <div className={"flex items-start gap-3 rounded-xl border p-3 text-sm " + (tudoCerto ? "border-green-200 bg-green-50/60 text-green-800" : "border-amber-200 bg-amber-50/60 text-amber-800")}>
-          {tudoCerto ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+        <div className={"flex items-start gap-3 rounded-xl border p-3 text-sm " + (tudoCerto && r.conferiveis > 0 ? "border-green-200 bg-green-50/60 text-green-800" : "border-amber-200 bg-amber-50/60 text-amber-800")}>
+          {tudoCerto && r.conferiveis > 0 ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
           <div>
             <p className="font-semibold">
-              {tudoCerto
+              {r.conferiveis === 0 ? "Sem dados suficientes para conferir a classificação" : tudoCerto
                 ? `Todos os ${r.conferiveis} lançamentos conferíveis estão no tipo que a conta diz.`
                 : `${n} de ${r.conferiveis} lançamentos estão num tipo diferente do que a conta do contador diz.`}
             </p>
             <p className="mt-0.5 text-xs opacity-80">
-              {r.semConta > 0
+              {pagamentos.length === 0 ? "Nenhum lançamento disponível nesta base." : r.semConta > 0
                 ? `${r.semConta} sem conta na descrição (planilha antiga ou lançamento manual) ficam fora da conferência — não há como conferi-los sem o ERP.`
                 : "Todos os lançamentos têm a conta do ERP na descrição."}
             </p>

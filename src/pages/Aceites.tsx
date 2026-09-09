@@ -36,7 +36,7 @@ export default function Aceites() {
   return (
     <div>
       <PageHeader
-        title="Termos e Aceites"
+        title="Termos e confirmações"
         description="Aceite eletrônico do Código de Ética e ciência dos seus planos de desenvolvimento."
       />
 

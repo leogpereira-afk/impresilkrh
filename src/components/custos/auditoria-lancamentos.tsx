@@ -146,7 +146,7 @@ export function AuditoriaLancamentos({
           {limpo ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
           <p>
             {limpo
-              ? `Varreu ${resumo.linhas} lançamento(s) e não achou nada fora do lugar.`
+              ? (resumo.linhas ? `Sem alertas nas regras locais para ${resumo.linhas} lançamento(s). A completude ainda depende da comparação com o ERP.` : "Sem lançamentos para conferir neste período.")
               : `${resumo.porGravidade.erro} erro(s), ${resumo.porGravidade.atencao} de atenção e ${resumo.porGravidade.aviso} aviso(s) em ${resumo.linhas} lançamento(s).`}
             {consertaveis.length > 0 && " Tipo e competência têm conserto automático; cadastro e vínculo são decisão sua."}
           </p>

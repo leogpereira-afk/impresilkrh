@@ -59,7 +59,7 @@ const inputParaIso = (v: string) => (v ? v : null);
 const manterSeMesmoDia = (guardado: string | null | undefined, noCampo: string) =>
   isoParaInput(guardado) === noCampo ? (guardado ?? null) : inputParaIso(noCampo);
 
-// Paleta dos status de férias (alinhada às variantes de Badge / Quadro de Comando).
+// Paleta dos status de férias (alinhada às variantes de Badge / Situação dos períodos).
 const CORES_STATUS: Record<string, string> = {
   "Em andamento": "#16a34a",
   Agendada: "#2563eb",
@@ -123,7 +123,7 @@ export default function Ferias() {
   // ao mesmo tempo empurram a tabela para fora da tela.
   const [expandida, setExpandida] = useState<string | null>(null);
 
-  // CRUD — edição/exclusão de um registro de férias (Quadro de Comando).
+  // CRUD — edição/exclusão de um registro de férias (Situação dos períodos).
   const [editando, setEditando] = useState<TFerias | null>(null);
   const [edForm, setEdForm] = useState({
     aqInicio: "",
@@ -276,7 +276,7 @@ export default function Ferias() {
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }, [lista, d, foco, desdeHistorico]);
 
-  // ---- Quadro de Comando: distribuição por status (gráfico clicável) ----
+  // ---- Situação dos períodos: distribuição por status (gráfico clicável) ----
   const porStatus = useMemo(
     () =>
       STATUS_FERIAS.map((s) => ({
@@ -596,7 +596,7 @@ export default function Ferias() {
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
-            title="Quadro de Comando"
+            title="Situação dos períodos"
             subtitle="Distribuição por status"
             icon={<BarChart3 className="h-[18px] w-[18px]" />}
           />
@@ -760,7 +760,7 @@ export default function Ferias() {
         )}
       </Card>
 
-      {/* O log já existia, mas só no Painel de Controle. Quem erra um lançamento
+      {/* O log já existia, mas só em Configurações do RH. Quem erra um lançamento
           precisa do valor ANTERIOR para desfazer, e precisa dele aqui. */}
       {podeEditar && (
         <div className="mt-6">

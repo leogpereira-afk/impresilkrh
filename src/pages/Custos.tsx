@@ -1,3 +1,4 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { ConferenciaAno } from "@/components/custos/conferencia-ano";
 import { competenciasDoAno } from "@/lib/conferenciaSincronizacao";
 import { respostaDoHistorico } from "@/lib/historicoMubiPrevia";
@@ -25,7 +26,7 @@ import {
   RefreshCw,
   Clock, History, AlertTriangle, TrendingDown, Landmark, PiggyBank } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
-import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody, useAbertoPersistido } from "@/components/ui/card";
 import { RelatoriosFinanceiros } from "@/components/custos/relatorios-financeiros";
@@ -142,7 +143,7 @@ export default function Custos() {
   const config = useConfig(); // guarda o último mês buscado no ERP e os vínculos
   // salvarConfig só escreve no navegador. Os vínculos de nome do ERP são trabalho
   // manual do RH e precisam valer em qualquer computador — por isso todo salvar
-  // daqui sobe para a nuvem, igual ao Painel de Controle.
+  // daqui sobe para a nuvem, igual às Configurações do RH.
   const salvarCfg = (patch: Parameters<typeof salvarConfig>[0]) => { salvarConfig(patch); enviarConfigNuvem(); };
   const [decisaoForaRh, setDecisaoForaRh] = useState<{ id: string; desfazer: boolean; linha?: LinhaMubi; pagamento?: Pagamento } | null>(null);
   const planoColecao = useColecao("planoContas");
@@ -169,7 +170,7 @@ export default function Custos() {
   const [comp, setComp] = useState<string>(compPadrao);
   // Aba ativa controlada por fora: os chips de "está atualizado?" precisam
   // mandar abrir Sincronização ou Custo Global antes de rolar até o alvo.
-  const [aba, setAba] = useAbaAtiva("custos:aba", ABAS, "custos");
+  const [aba, setAba] = useAbaNaUrl("custos:aba", ABAS, "global");
   // Declarado aqui em cima porque o quadro do mês (ativosOrdenados) precisa dele.
   const compAtiva = comp && competencias.includes(comp) ? comp : compPadrao;
 
@@ -1005,7 +1006,7 @@ export default function Custos() {
     toast(
       mexeu === 0
         ? `Folha já estava igual — nada a alterar.${parteSalario}${avisoCpf}`
-        : `Folha aplicada (${faixa}): ${partes.join(", ")}.${parteSalario}${avisoCpf} Dá para desfazer em Sincronização.`,
+        : `Folha aplicada (${faixa}): ${partes.join(", ")}.${parteSalario}${avisoCpf} Dá para desfazer em Importação e conferência.`,
       "sucesso",
     );
     fecharPrevia();
@@ -1419,7 +1420,7 @@ export default function Custos() {
   return (
     <div>
       <PageHeader
-        title="Custos de Colaboradores"
+        title="Financeiro do RH"
         description="Quanto custa cada colaborador e a equipe — folha real, rateio e encargos, mês a mês."
       />
 
@@ -1428,7 +1429,7 @@ export default function Custos() {
           competência serve o individual, o global e a sincronização, e um
           seletor por aba obrigava a trocar o mês três vezes. Ao lado, o pior
           sinal do mês responde "está atualizado?" sem sair da aba — os quatro
-          chips completos moram em Sincronização. */}
+          chips completos moram em Importação e conferência. */}
       {/* Ano + chips de mês. A faixa não aparece em Viagens, que não usa
           competência — uma faixa sobre uma aba que a ignora confunde. */}
       {aba !== "viagens" && (
@@ -1458,385 +1459,15 @@ export default function Custos() {
         aoMudar={setAba}
         abas={[
           {
-            id: "custos",
-            label: "Custos de Colaboradores",
-            icon: <Coins className="h-4 w-4" />,
-            conteudo: semPlano ? (
-              <EmptyState
-                title="Nenhuma competência com dados"
-                description="Traga a folha do Mubisys ou o plano de contas do contador na aba Sincronização."
-                icon={<Wallet className="h-10 w-10" />}
-                acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Ir para Sincronização</button>}
-              />
-            ) : (
-              <div className="space-y-8">
-          {/* ===================== custo individual por colaborador =====================
-              A aba é só do colaborador (pedido de 06/09/2026): a ficha do mês e
-              o histórico dele. O que é de todos — folha geral, rateio, evolução
-              — mudou para a aba Custo Global. */}
-          <section>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <UserCircle2 className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Custo individual por colaborador</h2>
-              <div className="ml-auto">
-                <SegToggle
-                  opcoes={[{ v: false, label: `Quadro de ${compLabel(compAtiva)} (${ativosOrdenados.length})` }, { v: true, label: `Com quem saiu (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
-                  valor={mostrarInativos}
-                  onChange={(v) => {
-                    setMostrarInativos(v);
-                    // Escondeu os inativos com um inativo selecionado? Volta
-                    // para o primeiro do quadro — senão a tela mostra alguém
-                    // que o seletor diz não existir.
-                    if (!v && colabId && !ativosOrdenados.some((c) => c.id === colabId)) {
-                      setColabId(ativosOrdenados[0]?.id ?? "");
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-            <Card idPersistencia="custos:individual">
-              <CardHeader
-                // A tela DIZ quando a pessoa está fora do quadro (Inativo,
-                // Direção…) em vez de fingir que é ativa — pedido de 01/08.
-                title={
-                  colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id)
-                    ? `Colaborador · ${d.nomeStatus(colabSel.statusId)}`
-                    : "Colaborador ativo"
-                }
-                subtitle={`Folha real de ${compLabelLongo(compAtiva)}`}
-                icon={<Users className="h-5 w-5" />}
-                action={
-                  <div className="flex items-center gap-1.5">
-                    {/* A foto sai do cadastro (fotoDataUrl) — dá rosto ao número
-                        e denuncia na hora se o mês aberto é da pessoa errada. */}
-                    <Avatar nome={colabSel?.nome ?? "?"} foto={d.fotoColab(colabId)} size="sm" className="mr-1" />
-                    <button
-                      type="button"
-                      onClick={() => irColab(-1)}
-                      disabled={navegaveis.length < 2}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Colaborador anterior"
-                      title="Colaborador anterior"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <Select
-                      value={colabId}
-                      onChange={(e) => setColabId(e.target.value)}
-                      className="h-9 w-auto py-0 text-sm"
-                    >
-                      {navegaveis.length === 0 && <option value="">Sem colaboradores</option>}
-                      <optgroup label={`Quadro de ${compLabel(compAtiva)}`}>
-                        {ativosOrdenados.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.nome}
-                          </option>
-                        ))}
-                      </optgroup>
-                      {/* Quem saiu (ou está fora do quadro) mas tem folha: só
-                          aparece com o seletor "Com inativos" ligado — mas se a
-                          pessoa selecionada É inativa, a opção dela fica para o
-                          Select não apontar para o vazio. */}
-                      {mostrarInativos && foraDoQuadroComLanc.length > 0 && (
-                        <optgroup label="Fora do quadro (com lançamentos)">
-                          {foraDoQuadroComLanc.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.nome} · {d.nomeStatus(c.statusId)}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {!mostrarInativos && colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id) && (
-                        <option value={colabSel.id}>{colabSel.nome} · {d.nomeStatus(colabSel.statusId)}</option>
-                      )}
-                    </Select>
-                    <button
-                      type="button"
-                      onClick={() => irColab(1)}
-                      disabled={navegaveis.length < 2}
-                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
-                      aria-label="Próximo colaborador"
-                      title="Próximo colaborador"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                }
-              />
-              <CardBody>
-                {/* Controles */}
-                <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                  <SegToggle
-                    opcoes={[
-                      { v: true, label: "Salário + Adiantamento" },
-                      { v: false, label: "Só Salário" },
-                    ]}
-                    valor={comAdiantamento}
-                    onChange={setComAdiantamento}
-                  />
-                  <SegToggle
-                    opcoes={[
-                      { v: true, label: "Custo estimado (c/ provisões)" },
-                      { v: false, label: "Custo pago" },
-                    ]}
-                    valor={comEncargos}
-                    onChange={setComEncargos}
-                  />
-                  <button type="button" onClick={abrirNovoLanc} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
-                    <Plus className="h-4 w-4" /> Lançamento
-                  </button>
-                </div>
-
-                {pagsDoColab.length === 0 ? (
-                  <EmptyState
-                    title="Sem pagamentos nesta competência"
-                    description="Não há folha lançada para este colaborador no mês selecionado."
-                    icon={<Coins className="h-8 w-8" />}
-                  />
-                ) : (
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    {/* Tabela por tipo */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="border-b border-slate-100 bg-slate-50/50">
-                          <tr>
-                            <th className="th">Tipo de pagamento</th>
-                            <th className="th text-right">Valor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {linhasColab.map((l) => {
-                            const ehEncargo = TIPOS_ENCARGO.includes(l.tipo);
-                            const ignorado = (!comAdiantamento && l.tipo === "Adiantamento") || ehEncargo;
-                            return (
-                              <tr key={l.tipo} className={ignorado ? "opacity-40" : undefined}>
-                                <td className="td">
-                                  <span className="flex items-center gap-2">
-                                    <span
-                                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                      style={{ backgroundColor: corDoTipo(l.tipo) }}
-                                    />
-                                    {l.tipo}
-                                    {ehEncargo
-                                      ? <span className="text-xs text-slate-400">(encargo — entra no custo real)</span>
-                                      : ignorado && <span className="text-xs text-slate-400">(não somado)</span>}
-                                  </span>
-                                </td>
-                                <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
-                              </tr>
-                            );
-                          })}
-                          <tr className="bg-slate-50/60">
-                            <td className="td font-semibold text-brand-ink">Custo pago</td>
-                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(custoPago)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      {!comAdiantamento && (
-                        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                          Política 60% saldo + 40% adiantamento = 1 salário (a soma não duplica).
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Cálculo de custo real */}
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Os dois cards escolhem qual número o total do colaborador exibe (mesmo estado do toggle). */}
-                        <StatCard
-                          label="Custo pago"
-                          value={formatBRL(custoPago)}
-                          accent="blue"
-                          icon={<Coins className="h-4 w-4" />}
-                          hint={comAdiantamento ? "Salário + adiantamento" : "Só salário"}
-                          title="Usar o custo pago (sem encargos) no total do colaborador"
-                          ativo={!comEncargos}
-                          onClick={() => setComEncargos(false)}
-                        />
-                        {/* Era "Custo real". O nome era mais forte que a conta: a
-                            fórmula soma FGTS, 13º e férias ESTIMADOS sobre salário +
-                            adiantamento, e só isso — hora extra, comissão e diária
-                            ficam fora da provisão por decisão de 07/2026. Não é o
-                            custo patronal completo, e o rótulo agora diz o que é. */}
-                        <StatCard
-                          label="Custo estimado c/ provisões"
-                          value={formatBRL(custoReal)}
-                          accent="brand"
-                          icon={<Wallet className="h-4 w-4" />}
-                          hint="Pago + FGTS 8%, 13º e férias sobre salário + adiantamento"
-                          title="Estimativa: soma ao pago as provisões de FGTS, 13º e férias calculadas sobre salário + adiantamento. Hora extra, comissão, diária e demais verbas entram no pago, não na provisão. Não é o custo patronal completo."
-                          ativo={comEncargos}
-                          onClick={() => setComEncargos(true)}
-                        />
-                      </div>
-                      {/* O que a pessoa recebeu, por inteiro — e onde cada parte
-                          entra. Sem isto, ver "encargos sobre o bruto (R$ 20.418)"
-                          ao lado de um custo pago de R$ 25.788 não explicava os
-                          R$ 5.370 do meio, que são justamente faxina e empreita. */}
-                      <div className="rounded-xl border border-slate-200/70 bg-white p-4">
-                        <div className="flex items-baseline justify-between">
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total recebido no mês</p>
-                          <p className="text-lg font-semibold text-green-700 tabular-nums">{formatBRL(recebido.totalRecebido)}</p>
-                        </div>
-                        <dl className="mt-2 space-y-1.5 text-sm">
-                          <div className="flex justify-between text-slate-600">
-                            <dt>Base de encargo <span className="text-xs text-slate-400">(salário + adiantamento)</span></dt>
-                            <dd className="tabular-nums">{formatBRL(recebido.base)}</dd>
-                          </div>
-                          {recebido.linhasFora.map((l) => (
-                            <div key={l.tipo} className="flex justify-between text-slate-500">
-                              <dt className="flex items-center gap-2 pl-3">
-                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
-                                {l.tipo}
-                              </dt>
-                              <dd className="tabular-nums">{formatBRL(l.valor)}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                        {recebido.fora > 0 && (
-                          <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-relaxed text-slate-400">
-                            Os {formatBRL(recebido.fora)} acima da base entram no que a pessoa recebeu, mas <strong className="font-semibold text-slate-500">não geram FGTS, 13º nem férias</strong> — a provisão ao lado continua igual à que a empresa deve de fato.
-                          </p>
-                        )}
-                      </div>
-                      <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
-                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Encargos estimados sobre o bruto ({formatBRL(bruto)})
-                        </p>
-                        <dl className="space-y-1.5 text-sm">
-                          <LinhaEncargo label="FGTS (8%)" valor={fgts} />
-                          <LinhaEncargo label="Provisão 13º (1/12)" valor={prov13} />
-                          <LinhaEncargo label="Provisão Férias (1/12 × 1,3333)" valor={provFerias} />
-                          {fgtsLancado > 0 && <LinhaEncargo label="FGTS lançado (rescisão)" valor={fgtsLancado} />}
-                          <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-700">
-                            <dt>Total de encargos</dt>
-                            <dd>{formatBRL(encargos)}</dd>
-                          </div>
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Lançamentos individuais (editar / excluir registro a registro) */}
-                {pagsDoColab.length > 0 && (
-                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200/70">
-                    <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-2">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Lançamentos individuais</p>
-                    </div>
-                    <table className="w-full text-sm">
-                      <tbody className="divide-y divide-slate-100">
-                        {pagsDoColab.map((p) => (
-                          <tr key={p.id} className="transition hover:bg-slate-50/60">
-                            <td className="px-3 py-2">
-                              <span className="flex items-center gap-2">
-                                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(p.tipo) }} />
-                                <span className="text-slate-700">{p.tipo}</span>
-                                {p.descricao && p.descricao !== "Lançamento manual" && (
-                                  <span className="text-xs text-slate-400">· {p.descricao}</span>
-                                )}
-                                {/* Lançado à mão (dinheiro/acerto): a varredura do
-                                    ERP nunca oferece este registro para remoção. */}
-                                {ehManual(p) && (
-                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200" title="Lançado à mão pelo RH — não passa pelo ERP e a varredura não o remove">
-                                    manual
-                                  </span>
-                                )}
-                              </span>
-                            </td>
-                            {/* Régua de % também aqui (pedido do Léo, 07/09/2026):
-                                a parte de cada lançamento no mês da pessoa. */}
-                            <td className="w-44 px-3 py-2">
-                              <span className="flex items-center gap-2">
-                                <span className="h-1.5 flex-1 rounded-full bg-slate-100" aria-hidden="true">
-                                  <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(0, Math.min(100, totalLancColab > 0 ? ((Number(p.valor) || 0) / totalLancColab) * 100 : 0))}%`, backgroundColor: corDoTipo(p.tipo) }} />
-                                </span>
-                                <span className="w-11 text-right text-xs tabular-nums text-slate-500">{totalLancColab > 0 ? `${(((Number(p.valor) || 0) / totalLancColab) * 100).toFixed(1).replace(".", ",")}%` : "—"}</span>
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(p.valor)}</td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicaoLanc(p)} aria-label={`Editar lançamento ${p.tipo}`}>
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setPagExcluir(p.id)} aria-label={`Excluir lançamento ${p.tipo}`}>
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Destaque: custo total mensal do colaborador */}
-                <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-brand px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-white/70">
-                      Custo total mensal do colaborador
-                    </p>
-                    <p className="mt-0.5 text-sm text-white/80">
-                      {/* A aba inteira fala de uma pessoa e não tinha um único
-                          caminho para a ficha dela. */}
-                      {colabSel ? <Link to={`/colaboradores/${colabSel.id}`} className="font-medium underline decoration-white/40 underline-offset-2 hover:decoration-white">{colabSel.nome}</Link> : "—"} · {comEncargos ? "custo real (com encargos)" : "custo pago"}
-                    </p>
-                  </div>
-                  <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
-                </div>
-              </CardBody>
-            </Card>
-          </section>
-          {/* O total da equipe fica ABAIXO da ficha individual (pedido do
-              Leonardo, 07/09/2026): primeiro a pessoa aberta, depois quanto ela
-              pesa no mês inteiro e quanto separar para a conta dos acertos. */}
-          <TotalEquipe
-            resumo={totalEquipe}
-            pessoaNome={colabSel?.nome}
-            pessoaPeso={pesoDoColab}
-            comEncargos={comEncargos}
-            onAbrirMes={abrirDrillDoMes}
-          />
-
-          {/* ===================== histórico do colaborador — mês a mês ===================== */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-brand" />
-              <h2 className="text-base font-semibold text-brand-ink">Histórico de {colabSel?.nome ?? "colaborador"} mês a mês</h2>
-            </div>
-            <Card idPersistencia="custos:historico-colab">
-              <CardHeader
-                title="Quanto recebeu por mês"
-                subtitle="Total efetivamente pago em cada competência, a variação contra o mês anterior e o acumulado. Clique num mês para abri-lo."
-                icon={<TrendingUp className="h-5 w-5" />}
-              />
-              <CardBody>
-                <HistoricoMensal
-                  pontos={historicoColab}
-                  selecionada={compAtiva}
-                  onSelecionar={setComp}
-                  rotuloValor="Recebido"
-                  vazio={<EmptyState title="Sem pagamentos para este colaborador" icon={<Coins className="h-8 w-8" />} />}
-                />
-              </CardBody>
-            </Card>
-          </section>
-              </div>
-            ),
-          },
-          {
             id: "global",
-            label: "Custo Global",
+            label: "Visão geral",
             icon: <Layers className="h-4 w-4" />,
             conteudo: semPlano ? (
               <EmptyState
                 title="Nenhuma competência com dados"
-                description="Traga a folha do Mubisys ou o plano de contas do contador na aba Sincronização."
+                description="Traga a folha do Mubisys ou o plano de contas do contador na aba Importação e conferência."
                 icon={<Layers className="h-10 w-10" />}
-                acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Ir para Sincronização</button>}
+                acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Conferir importações</button>}
               />
             ) : (
               <div className="space-y-8">
@@ -1918,7 +1549,7 @@ export default function Custos() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Direção · despesa societária</p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador.{ehMaster(sessao) ? " O detalhe está na aba Societárias." : ""}
+                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador.{ehMaster(sessao) ? " O detalhe está na aba Pagamentos societários." : ""}
                   </p>
                 </div>
                 <p className="text-xl font-semibold tabular-nums text-slate-700">{formatBRL(totalSocietarioMes)}</p>
@@ -2197,13 +1828,13 @@ export default function Custos() {
               semPlanoNaComp ? (
                 /* Sem cartão vazio com botão (pedido do Léo, 07/09/2026): o
                    plano vem sozinho do Mubisys ao abrir o mês. Se não veio, a
-                   linha diz, e o chip lá em cima leva a Sincronização. */
+                   linha diz, e o chip lá em cima leva a Importação e conferência. */
                 <p className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   <RefreshCw className={"h-4 w-4 shrink-0 text-slate-400" + (buscandoPlano ? " animate-spin" : "")} />
                   <span>
                     {buscandoPlano
                       ? `${buscandoPlano} O rateio aparece assim que ele chegar.`
-                      : `Sem plano de contas em ${compLabelLongo(compAtiva)} ainda. Ele é trazido do Mubisys sozinho ao abrir o mês; se não veio, tente em Sincronização.`}
+                      : `Sem plano de contas em ${compLabelLongo(compAtiva)} ainda. Ele é trazido do Mubisys sozinho ao abrir o mês; se não veio, tente em Importação e conferência.`}
                   </span>
                 </p>
               ) : (
@@ -2348,7 +1979,7 @@ export default function Custos() {
                   <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
                     <p className="font-semibold">O plano de {mesesSemFolhaNoPlano.map(compLabel).join(", ")} veio sem a folha.</p>
                     <p className="mt-1 text-xs text-amber-800">
-                      Esses meses têm plano de contas, mas nenhuma conta cai no custo individual das pessoas — por isso a coluna mostra “—”, e não R$ 0,00, e o mês fica fora do total, da média e do gráfico. Duas causas possíveis: a busca do ERP não trouxe as contas de folha, ou trouxe e elas ainda não têm classe (Classificação, na aba Sincronização). A folha real por pessoa não depende disto: ela está na aba “Custos de Colaboradores”, que lê os pagamentos.
+                      Esses meses têm plano de contas, mas nenhuma conta cai no custo individual das pessoas — por isso a coluna mostra “—”, e não R$ 0,00, e o mês fica fora do total, da média e do gráfico. Duas causas possíveis: a busca do ERP não trouxe as contas de folha, ou trouxe e elas ainda não têm classe (Classificação, na aba Importação e conferência). A folha real por pessoa não depende disto: ela está na aba “Financeiro do RH”, que lê os pagamentos.
                     </p>
                   </div>
                 )}
@@ -2378,8 +2009,379 @@ export default function Custos() {
             ),
           },
           {
+            id: "custos",
+            label: "Por pessoa",
+            icon: <Coins className="h-4 w-4" />,
+            conteudo: semPlano ? (
+              <EmptyState
+                title="Nenhuma competência com dados"
+                description="Traga a folha do Mubisys ou o plano de contas do contador na aba Importação e conferência."
+                icon={<Wallet className="h-10 w-10" />}
+                acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Conferir importações</button>}
+              />
+            ) : (
+              <div className="space-y-8">
+          {/* ===================== custo individual por colaborador =====================
+              A aba é só do colaborador (pedido de 06/09/2026): a ficha do mês e
+              o histórico dele. O que é de todos — folha geral, rateio, evolução
+              — mudou para a aba Visão geral. */}
+          <section>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <UserCircle2 className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Custo individual por colaborador</h2>
+              <div className="ml-auto">
+                <SegToggle
+                  opcoes={[{ v: false, label: `Quadro de ${compLabel(compAtiva)} (${ativosOrdenados.length})` }, { v: true, label: `Com quem saiu (${ativosOrdenados.length + foraDoQuadroComLanc.length})` }]}
+                  valor={mostrarInativos}
+                  onChange={(v) => {
+                    setMostrarInativos(v);
+                    // Escondeu os inativos com um inativo selecionado? Volta
+                    // para o primeiro do quadro — senão a tela mostra alguém
+                    // que o seletor diz não existir.
+                    if (!v && colabId && !ativosOrdenados.some((c) => c.id === colabId)) {
+                      setColabId(ativosOrdenados[0]?.id ?? "");
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <Card idPersistencia="custos:individual">
+              <CardHeader
+                // A tela DIZ quando a pessoa está fora do quadro (Inativo,
+                // Direção…) em vez de fingir que é ativa — pedido de 01/08.
+                title={
+                  colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id)
+                    ? `Colaborador · ${d.nomeStatus(colabSel.statusId)}`
+                    : "Pessoa no período"
+                }
+                subtitle={`Folha real de ${compLabelLongo(compAtiva)}`}
+                icon={<Users className="h-5 w-5" />}
+                action={
+                  <div className="flex min-w-0 max-w-full items-center gap-1.5">
+                    {/* A foto sai do cadastro (fotoDataUrl) — dá rosto ao número
+                        e denuncia na hora se o mês aberto é da pessoa errada. */}
+                    <Avatar nome={colabSel?.nome ?? "?"} foto={d.fotoColab(colabId)} size="sm" className="mr-1" />
+                    <button
+                      type="button"
+                      onClick={() => irColab(-1)}
+                      disabled={navegaveis.length < 2}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Colaborador anterior"
+                      title="Colaborador anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <Select
+                      aria-label="Pessoa do demonstrativo"
+                      value={colabId}
+                      onChange={(e) => setColabId(e.target.value)}
+                      className="h-9 min-w-0 max-w-[18rem] py-0 text-sm"
+                    >
+                      {navegaveis.length === 0 && <option value="">Sem colaboradores</option>}
+                      <optgroup label={`Quadro de ${compLabel(compAtiva)}`}>
+                        {ativosOrdenados.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {/* Quem saiu (ou está fora do quadro) mas tem folha: só
+                          aparece com o seletor "Com inativos" ligado — mas se a
+                          pessoa selecionada É inativa, a opção dela fica para o
+                          Select não apontar para o vazio. */}
+                      {mostrarInativos && foraDoQuadroComLanc.length > 0 && (
+                        <optgroup label="Fora do quadro (com lançamentos)">
+                          {foraDoQuadroComLanc.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome} · {d.nomeStatus(c.statusId)}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {!mostrarInativos && colabSel && !ativosOrdenados.some((c) => c.id === colabSel.id) && (
+                        <option value={colabSel.id}>{colabSel.nome} · {d.nomeStatus(colabSel.statusId)}</option>
+                      )}
+                    </Select>
+                    <button
+                      type="button"
+                      onClick={() => irColab(1)}
+                      disabled={navegaveis.length < 2}
+                      className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+                      aria-label="Próximo colaborador"
+                      title="Próximo colaborador"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                }
+              />
+              <CardBody>
+                {/* Controles */}
+                <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <SegToggle
+                    opcoes={[
+                      { v: true, label: "Salário + Adiantamento" },
+                      { v: false, label: "Só Salário" },
+                    ]}
+                    valor={comAdiantamento}
+                    onChange={setComAdiantamento}
+                  />
+                  <SegToggle
+                    opcoes={[
+                      { v: true, label: "Custo estimado (c/ provisões)" },
+                      { v: false, label: "Custo pago" },
+                    ]}
+                    valor={comEncargos}
+                    onChange={setComEncargos}
+                  />
+                  <button type="button" onClick={abrirNovoLanc} className="btn-outline h-9 py-0 text-sm sm:ml-auto" title="Adicionar um pagamento que faltou na folha (ex.: comissão)">
+                    <Plus className="h-4 w-4" /> Lançamento
+                  </button>
+                </div>
+
+                {pagsDoColab.length === 0 ? (
+                  <EmptyState
+                    title="Sem pagamentos nesta competência"
+                    description="Não há folha lançada para este colaborador no mês selecionado."
+                    icon={<Coins className="h-8 w-8" />}
+                  />
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {/* Tabela por tipo */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="border-b border-slate-100 bg-slate-50/50">
+                          <tr>
+                            <th className="th">Tipo de pagamento</th>
+                            <th className="th text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {linhasColab.map((l) => {
+                            const ehEncargo = TIPOS_ENCARGO.includes(l.tipo);
+                            const ignorado = (!comAdiantamento && l.tipo === "Adiantamento") || ehEncargo;
+                            return (
+                              <tr key={l.tipo} className={ignorado ? "opacity-40" : undefined}>
+                                <td className="td">
+                                  <span className="flex items-center gap-2">
+                                    <span
+                                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                      style={{ backgroundColor: corDoTipo(l.tipo) }}
+                                    />
+                                    {l.tipo}
+                                    {ehEncargo
+                                      ? <span className="text-xs text-slate-400">(encargo — entra no custo real)</span>
+                                      : ignorado && <span className="text-xs text-slate-400">(não somado)</span>}
+                                  </span>
+                                </td>
+                                <td className="td text-right font-medium text-slate-800">{formatBRL(l.valor)}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="bg-slate-50/60">
+                            <td className="td font-semibold text-brand-ink">Custo pago</td>
+                            <td className="td text-right font-semibold text-brand-ink">{formatBRL(custoPago)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      {!comAdiantamento && (
+                        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                          Política 60% saldo + 40% adiantamento = 1 salário (a soma não duplica).
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Cálculo de custo real */}
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Os dois cards escolhem qual número o total do colaborador exibe (mesmo estado do toggle). */}
+                        <StatCard
+                          label="Custo pago"
+                          value={formatBRL(custoPago)}
+                          accent="blue"
+                          icon={<Coins className="h-4 w-4" />}
+                          hint={comAdiantamento ? "Salário + adiantamento" : "Só salário"}
+                          title="Usar o custo pago (sem encargos) no total do colaborador"
+                          ativo={!comEncargos}
+                          onClick={() => setComEncargos(false)}
+                        />
+                        {/* Era "Custo real". O nome era mais forte que a conta: a
+                            fórmula soma FGTS, 13º e férias ESTIMADOS sobre salário +
+                            adiantamento, e só isso — hora extra, comissão e diária
+                            ficam fora da provisão por decisão de 07/2026. Não é o
+                            custo patronal completo, e o rótulo agora diz o que é. */}
+                        <StatCard
+                          label="Custo estimado c/ provisões"
+                          value={formatBRL(custoReal)}
+                          accent="brand"
+                          icon={<Wallet className="h-4 w-4" />}
+                          hint="Pago + FGTS 8%, 13º e férias sobre salário + adiantamento"
+                          title="Estimativa: soma ao pago as provisões de FGTS, 13º e férias calculadas sobre salário + adiantamento. Hora extra, comissão, diária e demais verbas entram no pago, não na provisão. Não é o custo patronal completo."
+                          ativo={comEncargos}
+                          onClick={() => setComEncargos(true)}
+                        />
+                      </div>
+                      {/* O que a pessoa recebeu, por inteiro — e onde cada parte
+                          entra. Sem isto, ver "encargos sobre o bruto (R$ 20.418)"
+                          ao lado de um custo pago de R$ 25.788 não explicava os
+                          R$ 5.370 do meio, que são justamente faxina e empreita. */}
+                      <div className="rounded-xl border border-slate-200/70 bg-white p-4">
+                        <div className="flex items-baseline justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total recebido no mês</p>
+                          <p className="text-lg font-semibold text-green-700 tabular-nums">{formatBRL(recebido.totalRecebido)}</p>
+                        </div>
+                        <dl className="mt-2 space-y-1.5 text-sm">
+                          <div className="flex justify-between text-slate-600">
+                            <dt>Base de encargo <span className="text-xs text-slate-400">(salário + adiantamento)</span></dt>
+                            <dd className="tabular-nums">{formatBRL(recebido.base)}</dd>
+                          </div>
+                          {recebido.linhasFora.map((l) => (
+                            <div key={l.tipo} className="flex justify-between text-slate-500">
+                              <dt className="flex items-center gap-2 pl-3">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(l.tipo) }} />
+                                {l.tipo}
+                              </dt>
+                              <dd className="tabular-nums">{formatBRL(l.valor)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        {recebido.fora > 0 && (
+                          <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-relaxed text-slate-400">
+                            Os {formatBRL(recebido.fora)} acima da base entram no que a pessoa recebeu, mas <strong className="font-semibold text-slate-500">não geram FGTS, 13º nem férias</strong> — a provisão ao lado continua igual à que a empresa deve de fato.
+                          </p>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Encargos estimados sobre o bruto ({formatBRL(bruto)})
+                        </p>
+                        <dl className="space-y-1.5 text-sm">
+                          <LinhaEncargo label="FGTS (8%)" valor={fgts} />
+                          <LinhaEncargo label="Provisão 13º (1/12)" valor={prov13} />
+                          <LinhaEncargo label="Provisão Férias (1/12 × 1,3333)" valor={provFerias} />
+                          {fgtsLancado > 0 && <LinhaEncargo label="FGTS lançado (rescisão)" valor={fgtsLancado} />}
+                          <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-700">
+                            <dt>Total de encargos</dt>
+                            <dd>{formatBRL(encargos)}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Lançamentos individuais (editar / excluir registro a registro) */}
+                {pagsDoColab.length > 0 && (
+                  <div className="mt-6 overflow-hidden rounded-xl border border-slate-200/70">
+                    <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Lançamentos individuais</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {pagsDoColab.map((p) => (
+                          <tr key={p.id} className="transition hover:bg-slate-50/60">
+                            <td className="px-3 py-2">
+                              <span className="flex items-center gap-2">
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: corDoTipo(p.tipo) }} />
+                                <span className="text-slate-700">{p.tipo}</span>
+                                {p.descricao && p.descricao !== "Lançamento manual" && (
+                                  <span className="text-xs text-slate-400">· {p.descricao}</span>
+                                )}
+                                {/* Lançado à mão (dinheiro/acerto): a varredura do
+                                    ERP nunca oferece este registro para remoção. */}
+                                {ehManual(p) && (
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200" title="Lançado à mão pelo RH — não passa pelo ERP e a varredura não o remove">
+                                    manual
+                                  </span>
+                                )}
+                              </span>
+                            </td>
+                            {/* Régua de % também aqui (pedido do Léo, 07/09/2026):
+                                a parte de cada lançamento no mês da pessoa. */}
+                            <td className="w-44 px-3 py-2">
+                              <span className="flex items-center gap-2">
+                                <span className="h-1.5 flex-1 rounded-full bg-slate-100" aria-hidden="true">
+                                  <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(0, Math.min(100, totalLancColab > 0 ? ((Number(p.valor) || 0) / totalLancColab) * 100 : 0))}%`, backgroundColor: corDoTipo(p.tipo) }} />
+                                </span>
+                                <span className="w-11 text-right text-xs tabular-nums text-slate-500">{totalLancColab > 0 ? `${(((Number(p.valor) || 0) / totalLancColab) * 100).toFixed(1).replace(".", ",")}%` : "—"}</span>
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium text-slate-800">{formatBRL(p.valor)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicaoLanc(p)} aria-label={`Editar lançamento ${p.tipo}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setPagExcluir(p.id)} aria-label={`Excluir lançamento ${p.tipo}`}>
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Destaque: custo total mensal do colaborador */}
+                <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-brand px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-white/70">
+                      Custo mensal da pessoa
+                    </p>
+                    <p className="mt-0.5 text-sm text-white/80">
+                      {/* A aba inteira fala de uma pessoa e não tinha um único
+                          caminho para a ficha dela. */}
+                      {colabSel ? <Link to={`/colaboradores/${colabSel.id}`} className="font-medium underline decoration-white/40 underline-offset-2 hover:decoration-white">{colabSel.nome}</Link> : "—"} · {comEncargos ? "custo estimado (com reservas)" : "custo pago"}
+                    </p>
+                  </div>
+                  <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
+                </div>
+              </CardBody>
+            </Card>
+          </section>
+          {/* O total da equipe fica ABAIXO da ficha individual (pedido do
+              Leonardo, 07/09/2026): primeiro a pessoa aberta, depois quanto ela
+              pesa no mês inteiro e quanto separar para a conta dos acertos. */}
+          <TotalEquipe
+            resumo={totalEquipe}
+            pessoaNome={colabSel?.nome}
+            pessoaPeso={pesoDoColab}
+            comEncargos={comEncargos}
+            onAbrirMes={abrirDrillDoMes}
+          />
+
+          {/* ===================== histórico do colaborador — mês a mês ===================== */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-brand" />
+              <h2 className="text-base font-semibold text-brand-ink">Histórico de {colabSel?.nome ?? "colaborador"} mês a mês</h2>
+            </div>
+            <Card idPersistencia="custos:historico-colab">
+              <CardHeader
+                title="Quanto recebeu por mês"
+                subtitle="Total efetivamente pago em cada competência, a variação contra o mês anterior e o acumulado. Clique num mês para abri-lo."
+                icon={<TrendingUp className="h-5 w-5" />}
+              />
+              <CardBody>
+                <HistoricoMensal
+                  pontos={historicoColab}
+                  selecionada={compAtiva}
+                  onSelecionar={setComp}
+                  rotuloValor="Recebido"
+                  vazio={<EmptyState title="Sem pagamentos para este colaborador" icon={<Coins className="h-8 w-8" />} />}
+                />
+              </CardBody>
+            </Card>
+          </section>
+              </div>
+            ),
+          },
+          {
             id: "encargos",
-            label: "Encargos estimados",
+            label: "Reservas estimadas",
             icon: <PiggyBank className="h-4 w-4" />,
             conteudo: (
               <EncargosEstimados
@@ -2403,7 +2405,7 @@ export default function Custos() {
           },
           ...(ehMaster(sessao) ? [{
             id: "societarias",
-            label: "Societárias",
+            label: "Pagamentos societários",
             icon: <Landmark className="h-4 w-4" />,
             conteudo: (
               <Societarias
@@ -2424,31 +2426,19 @@ export default function Custos() {
           }] : []),
           {
             id: "relatorios",
-            label: "Relatórios",
+            label: "Relatórios financeiros",
             icon: <FileSpreadsheet className="h-4 w-4" />,
             conteudo: <RelatoriosFinanceiros pagamentos={pagamentosDaEquipe} colaboradores={d.colaboradores} areas={d.areas} comp={compAtiva} onComp={setComp} onSincronizar={() => setAba('sync')} />,
           },
           {
             id: "sync",
-            label: "Sincronização",
+            label: "Importação e conferência",
             icon: <RefreshCw className="h-4 w-4" />,
             conteudo: (
               <div className="space-y-6">
                 <p className="text-sm text-slate-500">
-                  Plano de contas do contador e folha do Mubisys — de onde vêm os números desta tela — e a conferência da classificação.
+                  Consulte o ERP, confira os títulos e escolha as alterações na prévia. Os indicadores abaixo se referem à competência selecionada no topo.
                 </p>
-                <ConferenciaAno pagamentos={pagamentos} pessoas={d.colaboradores} ocupado={buscandoMubi} onBuscarAno={ano => void buscarHistorico(competenciasDoAno(ano))} onBuscarMes={mes => void buscarHistorico([mes])} />
-                {(config.titulosForaRh ?? []).length > 0 && (
-                  <Card><CardHeader title="Não faz parte do RH" /><CardBody>
-                    <p className="mb-3 text-sm text-slate-500">Decisões por título do ERP. Lançamentos já gravados são preservados. Desfazer devolve o título à conferência na próxima busca ou na prévia aberta.</p>
-                    <ul className="space-y-2">{(config.titulosForaRh ?? []).map(id => (
-                      <li key={id} className="flex items-center justify-between gap-2 text-sm">
-                        <span>Título ERP {id}</span>
-                        <button type="button" className="btn-outline" onClick={() => setDecisaoForaRh({ id, desfazer: true })}>Desfazer</button>
-                      </li>
-                    ))}</ul>
-                  </CardBody></Card>
-                )}
                 {/* ---------- Está atualizado? ----------
                     Quatro chips com tom e uma linha de porquê. Clicar leva ao
                     lugar onde se resolve (rola até o quadro de carga, ou vai à
@@ -2472,9 +2462,21 @@ export default function Custos() {
                 )}
 
 
+                <ConferenciaAno pagamentos={pagamentos} pessoas={d.colaboradores} ocupado={buscandoMubi} onBuscarAno={ano => void buscarHistorico(competenciasDoAno(ano))} onBuscarMes={mes => void buscarHistorico([mes])} />
+                {(config.titulosForaRh ?? []).length > 0 && (
+                  <Card><CardHeader title="Não faz parte do RH" /><CardBody>
+                    <p className="mb-3 text-sm text-slate-500">Decisões por título do ERP. Lançamentos já gravados são preservados. Desfazer devolve o título à conferência na próxima busca ou na prévia aberta.</p>
+                    <ul className="space-y-2">{(config.titulosForaRh ?? []).map(id => (
+                      <li key={id} className="flex items-center justify-between gap-2 text-sm">
+                        <span>Título ERP {id}</span>
+                        <button type="button" className="btn-outline" onClick={() => setDecisaoForaRh({ id, desfazer: true })}>Desfazer</button>
+                      </li>
+                    ))}</ul>
+                  </CardBody></Card>
+                )}
       {/* ---------- Atualização de dados ----------
           Os dois quadros de carga (plano do contador + folha do ERP) moram na
-          aba Sincronização (pedido de 06/09/2026): as outras abas ficam só com
+          aba Importação e conferência (pedido de 06/09/2026): as outras abas ficam só com
           o que é do colaborador e só com o que é global. */}
       <div ref={atualizacaoRef} className="mb-6 scroll-mt-20">
       <div className="grid gap-4 lg:grid-cols-2">
@@ -2568,12 +2570,12 @@ export default function Custos() {
               {/* Último mês buscado: some a dúvida de "isso já está atualizado?" */}
               <p className="mt-1 text-[11px] text-slate-400">
                 {config.ultimaBuscaMubi
-                  ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s) vinculado(s) ao cadastro`
+                  ? `Última busca: ${compLabel(config.ultimaBuscaMubi.competencia)} · ${(Number.isFinite(Date.parse(config.ultimaBuscaMubi.em)) ? new Date(config.ultimaBuscaMubi.em).toLocaleString("pt-BR") : "data da consulta não informada")} · ${config.ultimaBuscaMubi.quantidade} lançamento(s) vinculado(s) ao cadastro`
                   : "Nenhuma busca no Mubisys ainda."}
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
-              <div className="flex items-end gap-2">
+              <div className="flex max-w-full flex-wrap items-end gap-2">
                 <label className="flex shrink-0 flex-col text-[11px] text-slate-500">
                   Mês
                   <input type="month" value={compMubi} onChange={(e) => setCompMubi(e.target.value)}
@@ -2586,7 +2588,7 @@ export default function Custos() {
               </div>
               {/* Histórico: o mês a mês só traz o mês pedido, e o que está mais
                   para trás no ERP nunca chegava. */}
-              <div className="flex items-end gap-2">
+              <div className="flex max-w-full flex-wrap items-end gap-2">
                 <label className="flex shrink-0 flex-col text-[11px] text-slate-500">
                   Histórico
                   <select
@@ -2808,7 +2810,7 @@ export default function Custos() {
           },
           {
             id: "viagens",
-            label: "Viagens e Diárias",
+            label: "Viagens e diárias",
             icon: <Plane className="h-4 w-4" />,
             conteudo: <ViagensPainel />,
           },
@@ -3236,7 +3238,7 @@ export default function Custos() {
           <strong>Título ERP {decisaoForaRh?.id}</strong>
           {decisaoForaRh?.linha && <span className="mt-2 block">{decisaoForaRh.linha.nome} · {decisaoForaRh.linha.descricao || "Sem descrição"} · {formatBRL(decisaoForaRh.linha.valor)} · vencimento {formatDate(decisaoForaRh.linha.dataVencimento)}</span>}
           {!decisaoForaRh?.linha && decisaoForaRh?.pagamento && <span className="mt-2 block">{decisaoForaRh.pagamento.descricao || decisaoForaRh.pagamento.tipo} · {formatBRL(decisaoForaRh.pagamento.valor)} · competência {compLabel(decisaoForaRh.pagamento.competencia)}</span>}
-          <span className="mt-2 block">{decisaoForaRh?.desfazer ? "Este título voltará a participar da conferência." : "Somente este título ficará fora da importação do RH, inclusive nas próximas buscas. Outros títulos da mesma pessoa ou grupo continuam na conferência."} Nenhum lançamento já gravado será apagado. Você pode desfazer pela lista na aba Sincronização.</span>
+          <span className="mt-2 block">{decisaoForaRh?.desfazer ? "Este título voltará a participar da conferência." : "Somente este título ficará fora da importação do RH, inclusive nas próximas buscas. Outros títulos da mesma pessoa ou grupo continuam na conferência."} Nenhum lançamento já gravado será apagado. Você pode desfazer pela lista na aba Importação e conferência.</span>
         </>}
         onConfirmar={() => {
           if (!decisaoForaRh || !podeGerir(sessao)) return;
@@ -3263,7 +3265,7 @@ export default function Custos() {
             resumoPrev.silenciosos ? `${resumoPrev.silenciosos} mudança(s) só de texto, conta ou id do ERP entram junto.` : "",
             ausentesMarcados.size ? `${ausentesMarcados.size} lançamento(s) serão removidos.` : "",
             salariosMarcados.size ? `${salariosMarcados.size} salário(s) do cadastro serão preenchidos.` : "",
-            "Um retrato do que muda fica guardado: dá para desfazer em Sincronização.",
+            "Um retrato do que muda fica guardado: dá para desfazer em Importação e conferência.",
           ].filter(Boolean).join(" ")}
         />
       )}
@@ -3706,7 +3708,7 @@ function CustoGlobalFuncionarios({
             </p>
           )}
           <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-            Esta é a visão <strong>contábil</strong> (plano de contas, grupo {PREFIXO_FUNCIONARIOS}*) — inclui os custos coletivos como alimentação, confraternização e o FGTS mensal. É a mesma base do DRE, então o total deve bater. A folha real <strong>por pessoa</strong> está na aba "Custos de Colaboradores"; a folha geral do mês, logo acima.
+            Esta é a visão <strong>contábil</strong> (plano de contas, grupo {PREFIXO_FUNCIONARIOS}*) — inclui os custos coletivos como alimentação, confraternização e o FGTS mensal. É a mesma base do DRE, então o total deve bater. A folha real <strong>por pessoa</strong> está na aba "Financeiro do RH"; a folha geral do mês, logo acima.
           </p>
         </CardBody>
       </Card>

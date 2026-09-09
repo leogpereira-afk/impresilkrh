@@ -93,7 +93,8 @@ export function HistoricoMensal({
         onItemClick={onSelecionar ? (nome) => { const l = r.linhas.find((x) => compLabel(x.competencia) === nome); if (l) onSelecionar(l.competencia); } : undefined}
       />
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200/70">
+      {/* A descrição sr-only deve ficar contida nesta rolagem, não posicionada no main. */}
+      <div className="relative max-w-full overflow-x-auto rounded-xl border border-slate-200/70">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 bg-slate-50/50">
             <tr>

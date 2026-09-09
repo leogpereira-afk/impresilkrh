@@ -81,3 +81,15 @@ describe("busca de telas", () => {
     }
   });
 });
+
+import { destinosDaBusca } from './buscaTelas';
+it('oferece destinos de abas e quadro somente para módulos permitidos', () => {
+  const destinos=destinosDaBusca(TELAS);
+  expect(buscarTelas(destinos,'sincronizacao').map(x=>x.href)).toContain('/custos?aba=sync');
+  expect(buscarTelas(destinos,'viagens')[0].href).toBe('/custos?aba=viagens');
+  expect(buscarTelas(destinos,'ponto')[0].href).toBe('/ponto?aba=ponto');
+  expect(buscarTelas(destinos,'freelancer').map(x=>x.href)).toContain('/colaboradores?status=freelancer');
+  expect(destinos.some(x=>x.href.includes('societarias'))).toBe(false);
+  expect(destinosDaBusca(TELAS,true).some(x=>x.href.includes('societarias'))).toBe(true);
+  expect(destinosDaBusca(TELAS.filter(t=>t.href!='/custos')).some(x=>x.href.startsWith('/custos'))).toBe(false);
+});

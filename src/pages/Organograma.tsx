@@ -337,7 +337,7 @@ export default function Organograma() {
       if (conta) {
         atualizarUsuario(conta.id, { ativo: false });
         try { await removerSenhaUsuario({ colaboradorId: c.id }); }
-        catch { toast("Saída registrada, mas não deu para revogar o acesso no servidor agora. Refaça em Painel de Controle quando estiver online.", "erro"); }
+        catch { toast("Saída registrada, mas não deu para revogar o acesso no servidor agora. Refaça em Configurações do RH quando estiver online.", "erro"); }
       }
       toast(`${c.nome} saiu do quadro. O histórico foi preservado.${reposicionados}`);
     } else {

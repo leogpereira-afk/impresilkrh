@@ -137,7 +137,7 @@ export default function Freelancers() {
     <div className="space-y-4">
       <PageHeader
         title="Contratos de freelancer"
-        description="Quem trabalha para a casa sem fazer parte do quadro — sem carteira, sem folha, sem ponto. A data de fim aqui é a que fecha o acesso nos sistemas."
+        description="Gerencie os contratos de freelancer. A participação no quadro é conferida no cadastro da pessoa em Colaboradores."
       >
         {podeEditar && (
           <button className="btn-primary" onClick={() => setForm({ ...VAZIO })}>

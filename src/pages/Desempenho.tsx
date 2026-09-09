@@ -1,3 +1,4 @@
+import { faixaDesempenho as bucketDesempenho, faixaPotencial as bucketPotencial } from "@/lib/qualidadeIndicadores";
 import { useMemo, useState } from "react";
 import {
   Grid3x3, ClipboardCheck, Target, GraduationCap, MessageSquare,
@@ -32,19 +33,6 @@ import type { Avaliacao, CicloAvaliacao, Colaborador, Feedback, Meta, PDI, Pesqu
 // ===================== Helpers de classificação (puros) =====================
 type Bucket = "Baixo" | "Médio" | "Alto";
 const NIVEIS: Bucket[] = ["Baixo", "Médio", "Alto"];
-
-// Bucket de desempenho a partir da nota final do gestor.
-function bucketDesempenho(nota: number | null | undefined): Bucket {
-  if (nota == null) return "Médio";
-  if (nota >= 85) return "Alto";
-  if (nota >= 70) return "Médio";
-  return "Baixo";
-}
-
-// Potencial declarado do colaborador (normalizado).
-function bucketPotencial(potencial?: string | null): Bucket {
-  return potencial === "Alto" ? "Alto" : potencial === "Baixo" ? "Baixo" : "Médio";
-}
 
 // Cor da nota/média (verde ≥80, âmbar ≥60, vermelho abaixo).
 const corNota = (n: number) => (n >= 80 ? "#16a34a" : n >= 60 ? "#d97706" : "#dc2626");
@@ -324,7 +312,7 @@ export default function Desempenho() {
   return (
     <div>
       <PageHeader
-        title="Desempenho, Retenção e Pesquisas"
+        title="Desempenho e desenvolvimento"
         description={`9-Box, avaliações, metas, PDI, feedbacks, pesquisas e dinâmicas — ${ciclo?.nome ?? "ciclo atual"}.`}
       />
 
@@ -445,10 +433,12 @@ function NoveBox({
     for (const c of escopo) {
       const des = bucketDesempenho(avalPorColab.get(c.id)?.notaFinal);
       const pot = bucketPotencial(c.potencial);
-      m[pot][des].push(c);
+      if (pot && des) m[pot][des].push(c);
     }
     return m;
   }, [escopo, avalPorColab]);
+
+  const semClassificacao = escopo.filter(c => !bucketDesempenho(avalPorColab.get(c.id)?.notaFinal) || !bucketPotencial(c.potencial));
 
   // Retenção: risco de saída alto OU motivação baixa. Estratégicos = também alto potencial/desempenho.
   const retencao = useMemo(() => {
@@ -482,6 +472,10 @@ function NoveBox({
         }
       />
       <CardBody>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+          <p>{escopo.length - semClassificacao.length} de {escopo.length} pessoas com avaliação e potencial informados neste ciclo.</p>
+          {semClassificacao.length > 0 && <button className="mt-2 text-brand underline" onClick={() => drill.abrir("Sem classificação na matriz", semClassificacao, "Falta avaliação do ciclo ou potencial informado. Nenhuma nota foi presumida.")}>Conferir {semClassificacao.length} pessoa(s) sem classificação</button>}
+        </div>
         <div className="flex gap-3">
           {/* Eixo Y vertical */}
           <div className="hidden w-6 shrink-0 items-center justify-center sm:flex">
@@ -575,7 +569,7 @@ function NoveBox({
             <LegendaItem cor="bg-amber-50 border-amber-200" texto="Mantenedores / desenvolver" />
             <LegendaItem cor="bg-red-50 border-red-200" texto="Risco — plano de ação" />
             <span className="text-xs text-slate-400">
-              Sem avaliação no ciclo → desempenho considerado “Médio”.
+              Sem avaliação ou potencial informado → fora da matriz até completar a informação.
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-4">

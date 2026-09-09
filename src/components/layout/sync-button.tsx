@@ -168,10 +168,11 @@ export function SyncButton() {
       <button
         onClick={() => setAberto(true)}
         className="relative inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:border-brand-200 hover:bg-brand-50 hover:text-brand active:scale-[0.97]"
-        title={`Sincronização: ${vis.rotulo}`}
+        title={`Salvamento na nuvem: ${vis.rotulo}`}
+        aria-label={`Salvamento na nuvem: ${vis.rotulo}`}
       >
         <vis.Icone className={`h-4 w-4 ${vis.cor} ${vis.girar ? "animate-spin" : ""}`} />
-        <span className="hidden sm:inline">Sincronizar</span>
+        <span className="hidden sm:inline">Nuvem</span>
         {ligado && (pendentes > 0 || conflitos.length > 0) && (
           <span className={`absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white ${conflitos.length ? "bg-red-500" : "bg-amber-500"}`}>
             {conflitos.length || pendentes}
@@ -185,7 +186,7 @@ export function SyncButton() {
       <Modal
         aberto={aberto}
         onFechar={() => setAberto(false)}
-        titulo="Sincronização"
+        titulo="Salvamento na nuvem"
         descricao="Automática: envia ao salvar e atualiza ao abrir ou focar a janela."
         largura="max-w-md"
       >

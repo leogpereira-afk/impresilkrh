@@ -75,7 +75,7 @@ export default function Mensagens() {
   return (
     <div>
       <PageHeader
-        title="Disparador de Mensagens em Massa"
+        title="Mensagens e agendamentos"
         description="Gerencie contatos e modelos e organize a fila de envios da comunicação interna."
       />
 

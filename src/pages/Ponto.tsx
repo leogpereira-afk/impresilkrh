@@ -1,3 +1,4 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ShieldAlert, MessageSquareWarning, FileWarning, Plus, Trash2, Pencil,
@@ -160,6 +161,7 @@ function resumoDias(dias: PontoDia[] | undefined) {
 }
 
 export default function Ponto() {
+  const [aba, mudarAba] = useAbaNaUrl("ponto:aba", ["advertencias", "absenteismo", "ponto", "folha-variavel", "comportamental"], "ponto");
   const sessao = useSessao();
   const d = useDominio();
   const drill = useDrill();
@@ -178,11 +180,11 @@ export default function Ponto() {
   return (
     <div>
       <PageHeader
-        title="Frequência e Advertências"
+        title="Ponto, ausências e advertências"
         description="Registro disciplinar e relatórios de absenteísmo da equipe."
       />
 
-      <Tabs
+      <Tabs ativa={aba} aoMudar={mudarAba}
         abas={[
           {
             id: "advertencias",
@@ -204,7 +206,7 @@ export default function Ponto() {
           },
           {
             id: "folha-variavel",
-            label: "Folha Variável",
+            label: "Verbas variáveis do mês",
             icon: <Coins className="h-4 w-4" />,
             conteudo: <FolhaVariavel embutido />,
           },

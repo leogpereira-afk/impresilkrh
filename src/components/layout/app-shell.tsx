@@ -1,3 +1,5 @@
+import { destinosDaBusca } from "@/lib/buscaTelas";
+import { Modal } from "@/components/ui/modal";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -5,7 +7,7 @@ import {
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays, MessageSquare,
   Sun, Moon, ChevronRight, Search,
-  Printer,
+  Printer, MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -17,7 +19,7 @@ import { useSessao } from "@/lib/session";
 import { logoutAuth } from "@/lib/auth";
 import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
-import { modulosLiberados, moduloAcessivel } from "@/lib/rbac";
+import { modulosLiberados, moduloAcessivel, ehMaster } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { SyncButton } from "./sync-button";
 import { BuscaTelas } from "./busca-telas";
@@ -43,39 +45,38 @@ const NAV: ItemNav[] = [
   // Pessoas — operações do quadro. Desempenho e Treinamento ficam aninhados
   // sob Colaboradores (subitens indentados).
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/desempenho", label: "Desempenho", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas", sub: true },
-  { href: "/feedback", label: "Feedback", icon: MessageSquare, perfis: GESTAO, grupo: "Pessoas", sub: true },
-  { href: "/treinamento", label: "Treinamento", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
-  { href: "/vagas", label: "Vagas em aberto", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
-  /* Freelancer NAO e do quadro: fica em "Pessoas" porque e gente, mas fora da
-     linha dos Colaboradores porque nao entra em headcount, folha nem organograma.
-     Icone de contrato, e nao de capacete: o capacete ja e o SST. */
+  { href: "/desempenho", label: "Desempenho e desenvolvimento", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas", sub: true },
+  { href: "/feedback", label: "Conversas e feedbacks", icon: MessageSquare, perfis: GESTAO, grupo: "Pessoas", sub: true },
+  { href: "/treinamento", label: "Treinamentos", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
+  { href: "/vagas", label: "Recrutamento e vagas", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
+  /* Contratos e participação no quadro são informações distintas. O status
+     Freelancer do cadastro continua contando no quadro conforme configuração. */
   { href: "/freelancers", label: "Contratos de freelancer", icon: FileSignature, perfis: RH, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
-  { href: "/ponto", label: "Frequência e Advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/ponto", label: "Ponto, ausências e advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/integracao", label: "Onboarding e Offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/sst", label: "Saúde e Segurança (SST)", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
-  // Cargos & Custos — estrutura e dinheiro. (A Folha Variável virou aba dentro de
-  // "Frequência e Advertências", junto do Ponto do mês.)
-  { href: "/cargos", label: "Descrição dos Cargos", icon: Briefcase, perfis: RH, grupo: "Cargos & Custos" },
-  { href: "/carreira", label: "Carreira e Salários", icon: GitBranch, perfis: RH, grupo: "Cargos & Custos" },
-  { href: "/custos", label: "Custos de Colaboradores", icon: Coins, perfis: RH, grupo: "Cargos & Custos" },
-  // Comunicação & Conteúdo — comunicação interna e material de referência
-  { href: "/comunicacao", label: "Comunicação Interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
-  { href: "/mensagens", label: "Disparo de Mensagens", icon: Send, perfis: GESTAO, grupo: "Comunicação & Conteúdo" },
-  { href: "/documentos", label: "Documentos Institucionais", icon: FileText, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
-  { href: "/comportamental", label: "Guia Comportamental", icon: Brain, perfis: TODOS, grupo: "Comunicação & Conteúdo" },
+  { href: "/integracao", label: "Admissão e desligamento", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/sst", label: "Saúde e segurança", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
+  // Estrutura e financeiro — estrutura e dinheiro. (A Folha Variável virou aba dentro de
+  // "Ponto, ausências e advertências", junto do Ponto do mês.)
+  { href: "/cargos", label: "Cargos e responsabilidades", icon: Briefcase, perfis: RH, grupo: "Estrutura e financeiro" },
+  { href: "/carreira", label: "Carreira e salários", icon: GitBranch, perfis: RH, grupo: "Estrutura e financeiro" },
+  { href: "/custos", label: "Financeiro do RH", icon: Coins, perfis: RH, grupo: "Estrutura e financeiro" },
+  // Comunicação e documentos — comunicação interna e material de referência
+  { href: "/comunicacao", label: "Comunicação interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação e documentos" },
+  { href: "/mensagens", label: "Mensagens e agendamentos", icon: Send, perfis: GESTAO, grupo: "Comunicação e documentos" },
+  { href: "/documentos", label: "Documentos e procedimentos", icon: FileText, perfis: TODOS, grupo: "Comunicação e documentos" },
+  { href: "/comportamental", label: "Guia de gestão de pessoas", icon: Brain, perfis: TODOS, grupo: "Comunicação e documentos" },
   // Administração — só RH
-  { href: "/relatorios", label: "Relatórios Gerenciais", icon: BarChart3, perfis: RH, grupo: "Administração" },
-  { href: "/aceites", label: "Termos e Aceites", icon: FileSignature, perfis: RH, grupo: "Administração" },
-  { href: "/painel-controle", label: "Painel de Controle", icon: SlidersHorizontal, perfis: RH, grupo: "Administração" },
-  { href: "/lgpd", label: "Registros de Acesso (LGPD)", icon: ShieldCheck, perfis: RH, grupo: "Administração" },
+  { href: "/relatorios", label: "Relatórios do RH", icon: BarChart3, perfis: RH, grupo: "Administração" },
+  { href: "/aceites", label: "Termos e confirmações", icon: FileSignature, perfis: RH, grupo: "Administração" },
+  { href: "/painel-controle", label: "Configurações do RH", icon: SlidersHorizontal, perfis: RH, grupo: "Administração" },
+  { href: "/lgpd", label: "Histórico de acessos", icon: ShieldCheck, perfis: RH, grupo: "Administração" },
   // Conta
   { href: "/meu-perfil", label: "Meu perfil", icon: UserCircle, perfis: TODOS, grupo: "Conta" },
 ];
 
-const GRUPOS = ["Visão geral", "Pessoas", "Cargos & Custos", "Comunicação & Conteúdo", "Administração", "Conta"];
+const GRUPOS = ["Visão geral", "Pessoas", "Estrutura e financeiro", "Comunicação e documentos", "Administração", "Conta"];
 const EMOJIS: Record<string, string> = {
   painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
 };
@@ -93,7 +94,7 @@ const EMOJIS: Record<string, string> = {
  * colaboradores/cargos/áreas/usuários (inclusive as que a sincronização traz em
  * segundo plano) e a cada grupo recolhido. O efeito para quem usa:
  *
- *  - rolava a barra até "Custos de Colaboradores" lá embaixo, clicava, e o menu
+ *  - rolava a barra até "Financeiro do RH" lá embaixo, clicava, e o menu
  *    pulava de volta para o topo — com outro item embaixo do cursor;
  *  - recolher um grupo, que é o recurso feito para encurtar o menu longo,
  *    também jogava a rolagem para o começo;
@@ -203,6 +204,7 @@ function Rodape({ user, aoSair }: {
 }
 
 export function AppShell() {
+  const [opcoes, setOpcoes] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const sessao = useSessao();
@@ -213,7 +215,7 @@ export function AppShell() {
   const [aberto, setAberto] = useState(false);
   /* IR PARA UMA TELA DIGITANDO O NOME (Ctrl+K / ⌘K).
      São 25 itens em 6 grupos no perfil do RH, e vários rótulos não são o nome
-     que a casa usa — ninguém procura "Frequência e Advertências", procura "o
+     que a casa usa — ninguém procura "Ponto, ausências e advertências", procura "o
      ponto". Sem busca, chegar numa tela era rolar a barra e reconhecer. */
   const [buscando, setBuscando] = useState(false);
 
@@ -247,7 +249,7 @@ export function AppShell() {
   useEffect(() => {
     const aviso = () =>
       toast(
-        "Armazenamento do navegador cheio: exporte um backup em Painel de Controle › Marca & Backup e remova arquivos grandes. As últimas alterações podem não ter sido salvas.",
+        "Armazenamento do navegador cheio: exporte um backup em Configurações do RH › Marca & Backup e remova arquivos grandes. As últimas alterações podem não ter sido salvas.",
         "erro",
       );
     window.addEventListener("impresilk:armazenamento-cheio", aviso);
@@ -273,7 +275,7 @@ export function AppShell() {
   if (!sessao) return null;
   const colab = colabById.get(sessao.colaboradorId);
   const user = { nome: colab?.nome ?? "Usuário", perfil: sessao.perfil, foto: colab?.fotoDataUrl ?? null };
-  // Permissões por módulo (Painel de Controle): além do perfil, respeita o que o
+  // Permissões por módulo (Configurações do RH): além do perfil, respeita o que o
   // RH liberou para cada usuário. null = sem restrição extra.
   const liberados = modulosLiberados(sessao, usuarios);
   const itensVisiveis = NAV.filter(
@@ -312,35 +314,35 @@ export function AppShell() {
       {/* Só as telas que este perfil enxerga: a busca não pode revelar a
           existência de uma tela que a pessoa não pode abrir. */}
       <BuscaTelas
-        telas={itensVisiveis.map((i) => ({ href: i.href, label: i.label, grupo: i.grupo }))}
+        telas={destinosDaBusca(itensVisiveis.map((i) => ({ href: i.href, label: i.label, grupo: i.grupo })), ehMaster(sessao))}
         aberto={buscando}
         onFechar={() => setBuscando(false)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-72">
         <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
-          <button onClick={() => setAberto(true)} className="btn-ghost p-1.5 lg:hidden" aria-label="Abrir menu">
+          <button onClick={() => setAberto(true)} className="btn-ghost min-h-11 min-w-11 p-1.5 lg:hidden" aria-label="Abrir menu">
             <Menu className="h-5 w-5" />
           </button>
           {/* A lupa fica ao lado do menu: no celular é o único jeito de chegar
               numa tela sem abrir a gaveta e rolar 25 itens. */}
           <button
             onClick={() => setBuscando(true)}
-            className="btn-ghost flex items-center gap-2 px-2 py-1.5 text-slate-500"
+            className="btn-ghost flex min-h-11 min-w-11 items-center gap-2 px-2 py-1.5 text-slate-500"
             aria-label="Ir para uma tela"
             title="Ir para uma tela (Ctrl+K)"
           >
             <Search className="h-[18px] w-[18px]" />
             <span className="hidden text-xs text-slate-400 sm:inline">Ctrl+K</span>
           </button>
-          <div className="flex flex-1 items-center justify-between">
-            <div className="lg:hidden">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            <div className="hidden md:block lg:hidden">
               <Logo variant="color" className="h-7" />
             </div>
             <div className="hidden lg:block" />
-            <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-medium text-slate-800">{user.nome}</p>
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <div className="hidden min-w-0 max-w-44 text-right sm:block">
+                <p className="truncate text-sm font-medium text-slate-800" title={user.nome}>{user.nome}</p>
                 <p className="text-xs text-slate-500">{PERFIL_LABEL[user.perfil]}</p>
               </div>
               <NotificacoesButton />
@@ -352,7 +354,7 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="no-print inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
+                className="no-print hidden sm:inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
                 title="Salvar esta tela em PDF (imprimir)"
                 aria-label="Salvar em PDF"
               >
@@ -361,31 +363,41 @@ export function AppShell() {
               </button>
               <button
                 onClick={alternarTema}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
+                className="hidden sm:inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.97]"
                 title={tema === "escuro" ? "Mudar para tema claro" : "Mudar para tema escuro"}
                 aria-label={tema === "escuro" ? "Tema claro" : "Tema escuro"}
               >
                 {tema === "escuro" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
               </button>
               {sessao.perfil === "ADMIN_RH" && <SyncButton />}
-              <Avatar nome={user.nome} foto={user.foto} size="sm" />
+              <span className="hidden sm:inline-flex"><Avatar nome={user.nome} foto={user.foto} size="sm" /></span>
               <button
                 onClick={() => { logoutAuth(); navigate("/login"); }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-[0.97]"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-[0.97]"
                 title="Sair do sistema"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">Sair</span>
               </button>
+              <button className="btn-ghost min-h-11 min-w-11 sm:hidden" aria-label="Mais opções" onClick={() => setOpcoes(true)}><MoreHorizontal className="h-5 w-5" /></button>
             </div>
           </div>
         </header>
+        <Modal aberto={opcoes} onFechar={() => setOpcoes(false)} titulo="Opções da conta" largura="max-w-sm">
+          <p className="mb-3 text-sm">{user.nome} · {PERFIL_LABEL[user.perfil]}</p>
+          <div className="grid gap-2">
+            <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); navigate('/meu-perfil'); }}>Meu perfil</button>
+            <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); setTimeout(() => window.print(), 0); }}>Salvar esta tela em PDF</button>
+            <button className="btn-outline min-h-11" onClick={alternarTema}>{tema === 'escuro' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
+            <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); logoutAuth(); navigate('/login'); }}>Sair do sistema</button>
+          </div>
+        </Modal>
 
         <main key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
           {rotaBloqueada ? (
             <EmptyState
               title="Acesso restrito"
-              description="Seu usuário não tem permissão para este módulo. Fale com o RH (Painel de Controle)."
+              description="Seu usuário não tem permissão para este módulo. Fale com o RH (Configurações do RH)."
               icon={<Lock className="h-8 w-8" />}
             />
           ) : (

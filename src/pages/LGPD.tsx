@@ -62,7 +62,7 @@ export default function LGPD() {
   return (
     <div>
       <PageHeader
-        title="Registros de Acesso (LGPD)"
+        title="Histórico de acessos"
         description="Trilha local de acessos a dados sensíveis."
       />
 

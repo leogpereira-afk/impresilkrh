@@ -318,7 +318,7 @@ export function ViagensPainel() {
 
       <Card className="mt-6">
         <CardHeader
-          title="Ranking de viagens"
+          title="Diárias por pessoa"
           subtitle="Quem mais se desloca: nº de viagens, dias e custo por colaborador"
           icon={<Trophy className="h-[18px] w-[18px]" />}
         />

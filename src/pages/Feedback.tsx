@@ -188,7 +188,7 @@ export default function Feedback() {
   return (
     <div>
       <PageHeader
-        title="Feedback"
+        title="Conversas e feedbacks"
         description={`Quem está esperando conversa, há quanto tempo, e como falar com cada um. A cada ${CADENCIA_FEEDBACK_DIAS} dias.`}
       />
 

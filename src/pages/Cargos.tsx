@@ -3,7 +3,7 @@
  * Os 21 cargos da Impresilk já estavam cadastrados COM descrição, competências
  * técnicas e comportamentais, indicadores e trilha — tudo preenchido, e sem
  * nenhuma tela que mostrasse isso junto. Quem precisava saber o que um cargo
- * faz abria o Painel de Controle, que é tela de configuração: entrava para
+ * faz abria Configurações do RH, que é tela de configuração: entrava para
  * consultar e saía com risco de editar.
  *
  * Esta tela serve para MONTAR PROPOSTA DE CONTRATAÇÃO. Por isso o número que
@@ -20,11 +20,11 @@
  * o RH sabe e digita, com a data em que conferiu.
  *
  * UM VALOR SÓ. A faixa por nível N1–N5 pertence ao plano de carreira e continua
- * no Painel de Controle: aqui ela criaria dois números concorrentes para a mesma
+ * em Configurações do RH: aqui ela criaria dois números concorrentes para a mesma
  * pergunta ("quanto pago neste cargo?"), e a proposta sairia do errado.
  *
  * O RH cria, edita e apaga cargo nesta tela — antes era preciso sair para o
- * Painel de Controle e achar o cargo de novo. Apagar é barrado quando há gente
+ * Configurações do RH e achar o cargo de novo. Apagar é barrado quando há gente
  * no cargo: as pessoas ficariam apontando para um cargo inexistente e perderiam
  * nome na lista, enquadramento e faixa de uma vez.
  */
@@ -108,7 +108,7 @@ export default function Cargos() {
   return (
     <div>
       <PageHeader
-        title="Descrição dos Cargos"
+        title="Cargos e responsabilidades"
         description="O que cada cargo faz, quem o ocupa hoje e o que se paga — para montar proposta."
       >
         {podeEditar && (
@@ -144,7 +144,7 @@ export default function Cargos() {
       {lista.length === 0 ? (
         <EmptyState
           title="Nenhum cargo encontrado"
-          description="Ajuste a busca ou o filtro de área. Os cargos são cadastrados no Painel de Controle."
+          description="Ajuste a busca ou o filtro de área. Os cargos são cadastrados em Configurações do RH."
           icon={<Briefcase className="h-8 w-8" />}
         />
       ) : (
@@ -229,7 +229,7 @@ export default function Cargos() {
                   <CardBody className="border-t border-slate-100 pt-4">
                     {preenchidos.length === 0 ? (
                       <p className="text-sm text-slate-500">
-                        Este cargo ainda não tem descrição cadastrada. Preencha no Painel de Controle → Cargos &amp; Faixas.
+                        Este cargo ainda não tem descrição cadastrada. Preencha em Configurações do RH → Cargos e faixas salariais.
                       </p>
                     ) : (
                       <div className="grid gap-4 sm:grid-cols-2">
@@ -317,7 +317,7 @@ export default function Cargos() {
           <p className="text-sm text-slate-600">
             Tudo aqui é leitura do cadastro de cargos — a mesma fonte da tabela salarial e do
             enquadramento de cada colaborador. Para alterar uma descrição ou uma faixa, use o
-            <strong className="font-medium text-slate-700"> Painel de Controle → Cargos &amp; Faixas</strong>;
+            <strong className="font-medium text-slate-700"> Configurações do RH → Cargos e faixas salariais</strong>;
             a mudança aparece nesta tela e no cálculo de enquadramento ao mesmo tempo.
           </p>
         </CardBody>
@@ -373,7 +373,7 @@ function OcupanteLinha({ colab, nivel, faixas }: {
   );
 }
 
-/* Edição do cargo aqui mesmo. Antes era só no Painel de Controle: quem estava
+/* Edição do cargo aqui mesmo. Antes era só em Configurações do RH: quem estava
    lendo a descrição e via um erro tinha de sair, achar o cargo de novo noutra
    tela e voltar. As FAIXAS entram junto porque descrição e faixa são o mesmo
    assunto — mudar o que o cargo faz sem poder ajustar o que ele paga deixaria a
@@ -396,11 +396,11 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
     if (!String(form.nome ?? "").trim()) return toast("O cargo precisa de um nome.", "erro");
     if (!String(form.areaId ?? "").trim()) return toast("Escolha a área do cargo.", "erro");
     /* Cargo novo nasce com a faixa zerada: ela pertence ao PLANO DE CARREIRA e
-       se ajusta no Painel de Controle. Aqui só existe um salário — dois números
+       se ajusta em Configurações do RH. Aqui só existe um salário — dois números
        para a mesma pergunta fariam a proposta sair do errado. */
     if (cargo) {
       // Só o que mudou em relação ao retrato de abertura — e nunca as faixas
-      // (elas são do Painel de Controle). Gravar a cópia inteira devolvia a
+      // (elas são de Configurações do RH). Gravar a cópia inteira devolvia a
       // faixa zerada e a descrição velha por cima do que chegou pelo sync.
       const patch = patchDoQueMudou(cargo, form, { nunca: ["faixas", "id"] });
       if (Object.keys(patch).length === 0) { toast("Nada mudou."); onFechar(); return; }
@@ -417,7 +417,7 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
       aberto
       onFechar={onFechar}
       titulo={cargo ? `Editar ${cargo.nome}` : "Novo cargo"}
-      descricao="A descrição e o salário valem para esta tela. A faixa por nível do plano de carreira fica no Painel de Controle."
+      descricao="A descrição e o salário valem para esta tela. A faixa por nível do plano de carreira fica em Configurações do RH."
       largura="max-w-2xl"
       rodape={<>
         <button className="btn-outline" onClick={onFechar}>Cancelar</button>

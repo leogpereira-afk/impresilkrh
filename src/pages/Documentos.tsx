@@ -1,3 +1,4 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -22,14 +23,15 @@ import { formatDate } from "@/lib/format";
 import type { DocumentoInstitucional, ArquivoRepositorio } from "@/data/types";
 
 export default function Documentos() {
+  const [aba, mudarAba] = useAbaNaUrl("documentos:aba", ["institucionais", "repositorio", "pops"], "institucionais");
   return (
     <div>
       <PageHeader
-        title="Documentos"
+        title="Documentos e procedimentos"
         description="Políticas, código de ética, materiais oficiais e repositório institucional."
       />
 
-      <Tabs
+      <Tabs ativa={aba} aoMudar={mudarAba}
         abas={[
           {
             id: "institucionais",
@@ -47,7 +49,7 @@ export default function Documentos() {
             // Os POPs tinham tela pronta, com conteúdo, e NENHUM link no
             // sistema chegava até ela — só digitando o endereço.
             id: "pops",
-            label: "POPs e Procedimentos",
+            label: "Procedimentos (POPs)",
             icon: <ListChecks className="h-4 w-4" />,
             conteudo: <Pops comoAba />,
           },

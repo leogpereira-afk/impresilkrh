@@ -1,3 +1,4 @@
+import { riscoInformado } from "@/lib/qualidadeIndicadores";
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -175,7 +176,7 @@ export default function Painel() {
     .sort((a, b) => diaDe(a.dataNascimento) - diaDe(b.dataNascimento));
 
   const risco = { Alto: 0, Médio: 0, Baixo: 0 } as Record<string, number>;
-  ativos.forEach((c) => (risco[c.riscoSaida ?? "Baixo"] = (risco[c.riscoSaida ?? "Baixo"] ?? 0) + 1));
+  ativos.forEach((c) => (risco[riscoInformado(c.riscoSaida)] = (risco[riscoInformado(c.riscoSaida)] ?? 0) + 1));
 
   // Advertências no escopo — colaboradores que possuem ao menos uma advertência
   const advertenciasEscopo = advertencias.filter((a) => ids.has(a.colaboradorId));
@@ -371,7 +372,7 @@ export default function Painel() {
   const colabsPorEnquadramento = (nome: string) => ativos.filter((c) => d.enquadrarColab(c) === nome);
   const colabsPorRisco = (rotulo: string) => {
     const chave = rotulo.replace("Risco ", "").replace(/^./, (s) => s.toUpperCase()); // "Risco alto" -> "Alto"
-    return ativos.filter((c) => (c.riscoSaida ?? "Baixo") === chave);
+    return ativos.filter((c) => (riscoInformado(c.riscoSaida)) === chave);
   };
   const colabsPorHumor = (nome: string) =>
     ativos.filter((c) => (c.humor && HUMORES.includes(c.humor as (typeof HUMORES)[number]) ? c.humor : "Não informado") === nome);
@@ -432,8 +433,15 @@ export default function Painel() {
         </label>
       </div>
 
+      <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+        <h2 className="font-semibold text-slate-800">Pendências para conferir</h2>
+        <p className="mt-1 text-sm text-slate-600">{avaliacoesPendentes.length} pessoa(s) sem avaliação no ciclo · {docsAlerta.length} documento(s) com prazo · {nrsAlerta.length} certificação(ões) com prazo.</p>
+        <div className="mt-3 flex flex-wrap gap-2"><Link className="btn-outline" to="/desempenho">Avaliações</Link><Link className="btn-outline" to="/sst">Saúde e segurança</Link>{sessao?.perfil === 'ADMIN_RH' && <Link className="btn-outline" to="/custos?aba=sync">Conferir pagamentos</Link>}</div>
+        <p className="mt-2 text-xs text-slate-500">Pendências do quadro atual. Ausência de registros não comprova regularidade.</p>
+      </div>
       {sessao?.perfil === "ADMIN_RH" && (
-        <div className="mb-6">
+        <details className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
+          <summary className="mb-4 cursor-pointer font-semibold">Pagamentos da equipe · {rotuloPeriodo}</summary>
           {pagsPeriodo.length === 0 ? (
             <Card>
               <CardHeader title={`Folha de pagamento · ${rotuloPeriodo}`} icon={<Wallet className="h-[18px] w-[18px]" />} />
@@ -548,14 +556,14 @@ export default function Painel() {
           </div>
           </>
           )}
-        </div>
+        </details>
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
-          label="Headcount ativo" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Colaboradores que contam no quadro"
+          label="Pessoas na empresa" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Quadro atual · inclui experiência e freelancer configurados como ativos"
           title="Ver quem está no quadro"
-          onClick={() => drill.abrir("Headcount ativo", ativos, "Colaboradores que contam no quadro")}
+          onClick={() => drill.abrir("Pessoas na empresa", ativos, "Colaboradores que contam no quadro")}
         />
         <StatCard
           label="Admissões no período" value={admissoesPeriodo} icon={<TrendingUp className="h-5 w-5" />} accent="green" hint={rotuloPeriodo}
@@ -691,7 +699,7 @@ export default function Painel() {
           <CardHeader title="O que precisa treinar" subtitle="Treinamentos pendentes por título" icon={<GraduationCap className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
             {topTreinos.length === 0 ? (
-              <EmptyState title="Nenhum treinamento pendente" description="Todo o time está em dia com a capacitação." icon={<ClipboardCheck className="h-8 w-8" />} />
+              <EmptyState title={treinosEscopo.length ? "Sem pendências registradas" : "Sem dados de treinamento"} description={treinosEscopo.length ? "Não há pendências entre os treinamentos registrados. Confira se todos os cursos necessários foram cadastrados." : "Não há treinamentos registrados para conferir a capacitação da equipe."} icon={<ClipboardCheck className="h-8 w-8" />} />
             ) : (
               /* "Integração de Segurança — 7 pendente(s)" e nenhum jeito de
                  saber quem são os 7 para montar a turma. */
@@ -843,7 +851,7 @@ export default function Painel() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Risco de saída × potencial" subtitle="Atenção à retenção de talentos" icon={<AlertTriangle className="h-[18px] w-[18px]" />} action={<Link to="/desempenho" className="text-xs font-medium text-brand hover:underline">Ver 9-Box →</Link>} />
+          <CardHeader title="Risco de saída informado" subtitle="Cadastro atual · ausência de informação aparece separadamente" icon={<AlertTriangle className="h-[18px] w-[18px]" />} action={<Link to="/desempenho" className="text-xs font-medium text-brand hover:underline">Ver 9-Box →</Link>} />
           <CardBody>
             <BarrasColoridas
               altura={200}
@@ -852,6 +860,7 @@ export default function Painel() {
                 { nome: "Risco alto", valor: risco.Alto ?? 0, cor: COR_RISCO.Alto },
                 { nome: "Risco médio", valor: risco.Médio ?? 0, cor: COR_RISCO.Médio },
                 { nome: "Risco baixo", valor: risco.Baixo ?? 0, cor: COR_RISCO.Baixo },
+                { nome: "Não informado", valor: risco["Não informado"] ?? 0, cor: "#94a3b8" },
               ]}
             />
           </CardBody>
@@ -939,7 +948,7 @@ function PainelPessoal() {
                     <p className="text-xs text-slate-500">Oportunidade de crescer dentro da Impresilk — veja o mural e candidate-se.</p>
                   </div>
                 </div>
-                <span className="text-sm font-medium text-amber-700">Ver Mural de Vagas →</span>
+                <span className="text-sm font-medium text-amber-700">Ver Vagas internas →</span>
               </CardBody>
             </Card>
           </Link>

@@ -141,7 +141,7 @@ export default function Vagas() {
 
   return (
     <div>
-      <PageHeader title="Vagas em aberto" description="Posições abertas e candidatos com nota para classificar e ranquear.">
+      <PageHeader title="Recrutamento e vagas" description="Posições abertas e candidatos com nota para classificar e ranquear.">
         <button className="btn-primary" onClick={() => setFormVaga("nova")}>
           <Plus className="h-4 w-4" /> Nova vaga
         </button>
@@ -194,7 +194,7 @@ export default function Vagas() {
                     </button>
                     <Badge variant={corStatus(v.status)}>{v.status}</Badge>
                     {v.divulgacaoInterna && (
-                      <Link to="/mural-vagas" className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100" title="Ver como esta vaga aparece no Mural de Vagas">
+                      <Link to="/mural-vagas" className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100" title="Ver como esta vaga aparece no Vagas internas">
                         <Trophy className="h-3.5 w-3.5" /> No mural
                       </Link>
                     )}
@@ -388,7 +388,7 @@ export default function Vagas() {
                   // Dia LOCAL: toISOString() às 21h (UTC-3) já devolve o dia
                   // seguinte, e a promoção entrava no histórico datada de amanhã.
                   data: diaLocalISO(new Date()),
-                  descricao: `Venceu a disputa interna da vaga "${vaga?.titulo ?? ""}" (Mural de Vagas).`,
+                  descricao: `Venceu a disputa interna da vaga "${vaga?.titulo ?? ""}" (Vagas internas).`,
                   cargoAnterior: colab ? d.nomeCargo(colab) : null,
                   cargoNovo: vaga?.cargoId ? d.cargoById.get(vaga.cargoId)?.nome ?? null : null,
                   registradoPor: "RH",
@@ -636,7 +636,7 @@ function VagaForm({ vaga, onFechar, onSalvar }: { vaga: Vaga | null; onFechar: (
         <Campo label="Descrição"><Textarea rows={2} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Resumo da vaga…" /></Campo>
         <Campo label="Requisitos"><Textarea rows={2} value={requisitos} onChange={(e) => setRequisitos(e.target.value)} placeholder="Requisitos e diferenciais…" /></Campo>
         <div className="rounded-lg bg-amber-50/60 p-3">
-          <Toggle checked={divulgacaoInterna} onChange={setDivulgacaoInterna} label="Divulgar no Mural de Vagas (disputa interna)" />
+          <Toggle checked={divulgacaoInterna} onChange={setDivulgacaoInterna} label="Divulgar no Vagas internas (disputa interna)" />
           <p className="mt-1 text-[11px] text-slate-500">Todos os colaboradores veem a vaga no mural e podem se candidatar. Enquanto a vaga estiver Aberta ou Em triagem.</p>
         </div>
       </div>

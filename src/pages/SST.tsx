@@ -450,8 +450,8 @@ export default function SST() {
   return (
     <div>
       <PageHeader
-        title="Saúde e Segurança (SST)"
-        description="ASO, exames ocupacionais, PGR e PCMSO."
+        title="Saúde e segurança"
+        description="Saúde e segurança do trabalho (SST): atestados de saúde ocupacional (ASO), exames e programas de prevenção."
       />
 
       {/* Exames ocupacionais é a PRIMEIRA aba e a que abre: é o trabalho diário

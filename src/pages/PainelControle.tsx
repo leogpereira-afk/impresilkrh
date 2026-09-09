@@ -116,7 +116,7 @@ export default function PainelControle() {
   const navegar = useNavigate();
   return (
     <div>
-      <PageHeader title="Painel de Controle" description="Gerencie todo o conteúdo do sistema sem mexer no código. Tudo é salvo no navegador." />
+      <PageHeader title="Configurações do RH" description="Gerencie cadastros e acessos. Confira o estado de salvamento na nuvem para saber se as alterações foram enviadas." />
       <Tabs
         abas={[
           { id: "estrutura", label: "Estrutura", icon: <Building2 className="h-4 w-4" />, conteudo: <Estrutura /> },
@@ -239,8 +239,8 @@ function AreasManager() {
           <div key={a.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
             <div><p className="text-sm font-medium text-slate-700">{a.nome}</p><p className="text-xs text-slate-400">{a.descricao}</p></div>
             <div className="flex gap-1">
-              <button className="btn-ghost p-1.5" onClick={() => setEdit(a)}><Pencil className="h-4 w-4" /></button>
-              <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(a)}><Trash2 className="h-4 w-4" /></button>
+              <button className="btn-ghost p-1.5" onClick={() => setEdit(a)} aria-label={`Editar ${a.nome}`}><Pencil className="h-4 w-4" /></button>
+              <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(a)} aria-label={`Excluir ${a.nome}`}><Trash2 className="h-4 w-4" /></button>
             </div>
           </div>
         ))}
@@ -289,7 +289,7 @@ function NiveisManager() {
               <Badge variant="gold">{n.codigo}</Badge>
               <div><p className="text-sm font-medium text-slate-700">{n.senioridade}</p><p className="text-xs text-slate-400 line-clamp-1 max-w-md">{n.descricao}</p></div>
             </div>
-            <button className="btn-ghost p-1.5" onClick={() => setEdit(n)}><Pencil className="h-4 w-4" /></button>
+            <button className="btn-ghost p-1.5" onClick={() => setEdit(n)} aria-label={`Editar ${n.senioridade}`}><Pencil className="h-4 w-4" /></button>
           </div>
         ))}
       </CardBody>
@@ -346,7 +346,7 @@ function StatusManager() {
 
   return (
     <Card>
-      <CardHeader title="Status do quadro" subtitle="Cada status tem cor e define o headcount" icon={<Tag className="h-[18px] w-[18px]" />}
+      <CardHeader title="Status do quadro" subtitle="Cada status define a participação no quadro e a disponibilidade" icon={<Tag className="h-[18px] w-[18px]" />}
         action={<button className="btn-outline" onClick={() => abrir(null)}><Plus className="h-4 w-4" /> Novo status</button>} />
       <CardBody className="space-y-2">
         {faltando.length > 0 && (
@@ -370,8 +370,8 @@ function StatusManager() {
               {ausencias.has(s.id) && <Badge variant="warning">Ausência</Badge>}
             </div>
             <div className="flex gap-1">
-              <button className="btn-ghost p-1.5" onClick={() => abrir(s)}><Pencil className="h-4 w-4" /></button>
-              <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(s)}><Trash2 className="h-4 w-4" /></button>
+              <button className="btn-ghost p-1.5" onClick={() => abrir(s)} aria-label={`Editar ${s.nome}`}><Pencil className="h-4 w-4" /></button>
+              <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(s)} aria-label={`Excluir ${s.nome}`}><Trash2 className="h-4 w-4" /></button>
             </div>
           </div>
         ))}
@@ -453,8 +453,8 @@ function CargosSecao() {
                 <td className="td text-slate-500">{d.nomeArea(c.areaId)}</td>
                 {c.faixas.map((v, i) => <td key={i} className="td text-right tabular-nums text-slate-600">{formatBRL(v)}</td>)}
                 <td className="td text-right">
-                  <button className="btn-ghost p-1.5" onClick={() => abrir(c)}><Pencil className="h-4 w-4" /></button>
-                  <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(c)}><Trash2 className="h-4 w-4" /></button>
+                  <button className="btn-ghost p-1.5" onClick={() => abrir(c)} aria-label={`Editar ${c.nome}`}><Pencil className="h-4 w-4" /></button>
+                  <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(c)} aria-label={`Excluir ${c.nome}`}><Trash2 className="h-4 w-4" /></button>
                 </td>
               </tr>
             ))}
@@ -509,7 +509,7 @@ function ConteudoSecao() {
   return (
     <div className="space-y-6">
       <TiposEventoSecao />
-      <ConteudoManager colecao="pops" titulo="POPs e Procedimentos" subtitulo="Procedimentos operacionais padrão (Apêndice E)" comSla />
+      <ConteudoManager colecao="pops" titulo="Procedimentos (POPs)" subtitulo="Procedimentos operacionais padrão (Apêndice E)" comSla />
       <ConteudoManager colecao="comunicacao" titulo="Guias de Comunicação" subtitulo="Comunicação interna (Apêndice D)" />
       <ConteudoManager colecao="institucionais" titulo="Documentos Institucionais & SST" subtitulo="Código de Ética, PGR, PCMSO, treinamentos" comCategoria />
     </div>
@@ -767,7 +767,7 @@ function MarcaSecao() {
       </Card>
 
       <Card>
-        <CardHeader title="Backup e portabilidade" subtitle="As edições ficam no navegador. Exporte para salvar ou transferir." icon={<Database className="h-[18px] w-[18px]" />} />
+        <CardHeader title="Backup e portabilidade" subtitle="Exporte uma cópia dos dados deste aparelho. O backup não substitui a conferência de salvamento na nuvem." icon={<Database className="h-[18px] w-[18px]" />} />
         <CardBody>
           <DadosControls />
           <p className="mt-3 text-xs text-slate-400">
@@ -957,8 +957,8 @@ function UsuariosSecao() {
                   </div>
                 </td>
                 <td className="td text-right">
-                  <button className="btn-ghost p-1.5" onClick={() => setEdit(u)}><Pencil className="h-4 w-4" /></button>
-                  <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(u)}><Trash2 className="h-4 w-4" /></button>
+                  <button className="btn-ghost p-1.5" onClick={() => setEdit(u)} aria-label={`Editar ${d.colabById.get(u.colaboradorId ?? "")?.nome ?? "usuário"}`}><Pencil className="h-4 w-4" /></button>
+                  <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(u)} aria-label={`Excluir ${d.colabById.get(u.colaboradorId ?? "")?.nome ?? "usuário"}`}><Trash2 className="h-4 w-4" /></button>
                 </td>
               </tr>
             ))}

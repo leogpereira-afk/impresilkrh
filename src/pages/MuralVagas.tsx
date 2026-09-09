@@ -74,7 +74,7 @@ export default function MuralVagas() {
   return (
     <div>
       <PageHeader
-        title="Mural de Vagas"
+        title="Vagas internas"
         description="Vagas em divulgação interna. Candidate-se e acompanhe a disputa — o número de participantes é público; os nomes, só o RH vê."
       />
 

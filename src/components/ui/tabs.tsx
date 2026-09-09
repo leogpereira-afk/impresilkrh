@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 
 const chaveDe = (id: string) => `tabs:${id}`;
@@ -46,10 +46,13 @@ export function Tabs({
   ativa?: string;
   aoMudar?: (id: string) => void;
 }) {
+  const uid = useId();
+  const botoes = useRef<(HTMLButtonElement | null)[]>([]);
   const chave = idPersistencia ? chaveDe(idPersistencia) : null;
   const controlado = ativaProp !== undefined;
   const [interna, setInterna] = useState(() => lerSalva(chave, abas.map((a) => a.id), inicial));
-  const ativa = controlado ? ativaProp : interna;
+  const candidata = controlado ? ativaProp : interna;
+  const ativa = abas.some(a => a.id === candidata) ? candidata : abas[0]?.id;
   const mudar = (id: string) => {
     if (controlado) { aoMudar?.(id); return; } // no modo controlado quem persiste é o hook
     setInterna(id);
@@ -60,12 +63,24 @@ export function Tabs({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200">
-        {abas.map((a) => {
+      <div role="tablist" aria-label="Seções desta tela" className="mb-4 flex flex-wrap gap-1 border-b border-slate-200">
+        {abas.map((a, indice) => {
           const ativo = a.id === ativa;
           return (
             <button
               key={a.id}
+              type="button"
+              role="tab"
+              id={`${uid}-aba-${a.id}`}
+              aria-selected={ativo}
+              aria-controls={`${uid}-painel-${a.id}`}
+              tabIndex={ativo ? 0 : -1}
+              ref={el => { botoes.current[indice] = el; }}
+              onKeyDown={e => {
+                const proximo = e.key === 'ArrowRight' ? (indice + 1) % abas.length : e.key === 'ArrowLeft' ? (indice + abas.length - 1) % abas.length : e.key === 'Home' ? 0 : e.key === 'End' ? abas.length - 1 : null;
+                if (proximo === null) return;
+                e.preventDefault(); mudar(abas[proximo].id); botoes.current[proximo]?.focus();
+              }}
               onClick={() => mudar(a.id)}
               className={cn(
                 "relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors",
@@ -83,7 +98,7 @@ export function Tabs({
           );
         })}
       </div>
-      <div>{atual?.conteudo}</div>
+      <div role="tabpanel" id={`${uid}-painel-${atual?.id}`} aria-labelledby={`${uid}-aba-${atual?.id}`} tabIndex={0} className="min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">{atual?.conteudo}</div>
     </div>
   );
 }

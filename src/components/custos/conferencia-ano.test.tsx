@@ -12,7 +12,7 @@ it('abre o ano exato, permite ver pagos sem alerta e mostra identificadores',()=
   act(()=>root.render(<MemoryRouter><ConferenciaAno pessoas={[{id:'ana',nome:'Ana Silva',statusId:'ativo'} as Colaborador]} pagamentos={[{id:'mubi-123',idMubi:'123',colaboradorId:'ana',tipo:'Salário',valor:10,competencia:`${ano}-01`,statusErp:'PAGO',dataPagamento:`${ano}-02-05`,pagoEm:`${ano}-02-05`} as Pagamento]} ocupado={false} onBuscarAno={onAno} onBuscarMes={onMes}/></MemoryRouter>));
   act(()=>Array.from(el.querySelectorAll('button')).find(b=>b.textContent?.includes('inteiro no ERP'))!.click());
   expect(onAno).toHaveBeenCalledWith(ano);
-  act(()=>(el.querySelector('input[type="checkbox"]') as HTMLInputElement).click());
+  act(()=>(el.querySelector('input[aria-label="Somente com pontos para conferir"]') as HTMLInputElement).click());
   expect(el.querySelectorAll('table')[1].textContent).toContain('ERP: 123');
   act(()=>el.querySelector<HTMLButtonElement>('[aria-label^="Conferir Jan/"]')!.click());
   expect(onMes).toHaveBeenCalledWith(`${ano}-01`);

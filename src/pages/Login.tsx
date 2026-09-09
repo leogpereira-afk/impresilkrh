@@ -36,9 +36,9 @@ export default function Login() {
       <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-ink via-brand to-brand-light p-14 text-white lg:flex">
         <Logo variant="white" className="h-14 w-auto max-w-[280px] self-start object-contain animate-fade-in" />
         <div className="max-w-md animate-slide-up">
-          <h1 className="text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
+          <p className="text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
             Gestão de pessoas, centralizada e sob controle.
-          </h1>
+          </p>
           <p className="mt-5 text-[15px] leading-relaxed text-brand-100">
             Colaboradores, carreira, desempenho, férias, conformidade e comunicação interna — tudo
             em um só lugar, com a clareza que a Impresilk constrói há mais de 40 anos.
@@ -55,7 +55,7 @@ export default function Login() {
           <div className="mb-7 flex justify-center">
             <Logo variant="color" className="h-14 w-auto max-w-[220px] object-contain" />
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight text-brand-ink">Acessar o sistema</h2>
+          <h1 className="text-2xl font-semibold tracking-tight text-brand-ink">Entrar no RH</h1>
           <p className="mt-1.5 text-sm text-slate-500">O mesmo usuário e a mesma senha dos outros sistemas.</p>
 
           <form onSubmit={submeter} className="mt-7 space-y-5">
