@@ -1,3 +1,4 @@
+import { incluirPagamentoNaConferencia, prepararReferenciasPessoas } from "../_shared/pagamentosPessoas.ts";
 // ============================================================================
 // Busca os pagamentos de pessoal no ERP Mubisys (contas a pagar) — Edge Function.
 //
@@ -479,7 +480,26 @@ Deno.serve(async (req) => {
       if (!antigo || antigo === c) return false;
       return antigo.startsWith("2.1.") || FOLHA_FORA_DO_21.some((x) => antigo === x || antigo.startsWith(x + "."));
     };
-    const folha = itens.filter((i) => ehFolhaOuEquivalente(String(i.plano_contas)));
+    // Qualquer pagamento identificado de pessoa participa, mesmo numa conta nova.
+    // Busca referências sem limites silenciosos de paginação; falha interrompe a consulta.
+    const pessoas: {cpf?: unknown; nome?: unknown}[] = [];
+    for (let inicio = 0; ; inicio += 500) {
+      const { data, error } = await admin.from("registros").select("registro").eq("colecao", "colaboradores").eq("apagado", false).order("id").range(inicio, inicio + 499);
+      if (error) throw new Error("Não foi possível conferir os cadastros do RH.");
+      for (const r of data ?? []) pessoas.push({ cpf: r.registro?.cpf, nome: r.registro?.nome });
+      if ((data?.length ?? 0) < 500) break;
+    }
+    const { data: cfg, error: erroCfg } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
+    if (erroCfg) throw new Error("Não foi possível conferir os vínculos do RH.");
+    const referencias = prepararReferenciasPessoas(pessoas, Object.keys(cfg?.config?.vinculosMubiTitulo ?? {}));
+    const participaDaConferencia = (i: Record<string, unknown>) => {
+      const plano = String(i.plano_contas ?? "");
+      const codigo = codigoDoPlano(plano);
+      // Mantém o limite de acesso societário existente, nas duas numerações.
+      const confidencial = ehConfidencialEquivalente({ codigo, nome: plano.split("-").slice(1).join("-").trim() }, ["2.14"], eqFolha);
+      return incluirPagamentoNaConferencia(i, referencias, ehFolhaOuEquivalente(plano), confidencial);
+    };
+    const folha = itens.filter(participaDaConferencia);
 
     // O QUE FICOU DE FORA, dito em voz alta.
     //
@@ -504,7 +524,7 @@ Deno.serve(async (req) => {
     const fora = new Map<string, { plano: string; quantos: number; total: number; pareceGente: boolean }>();
     for (const i of itens) {
       const plano = String(i.plano_contas ?? "");
-      if (!plano || ehFolhaOuEquivalente(plano)) continue;
+      if (!plano || participaDaConferencia(i)) continue;
       const nome = normalizar(plano.split("-").slice(1).join("-"));
       const x = fora.get(plano) ?? { plano, quantos: 0, total: 0, pareceGente: !!nome && NOME_DE_PESSOA.test(nome) };
       x.quantos += 1;
@@ -524,7 +544,7 @@ Deno.serve(async (req) => {
     // ela, sem esta lista, ele parecia ter sumido. Só ids — nenhum nome, nenhum
     // valor (revisão de 07/09/2026).
     const idsForaDaFolha = itens
-      .filter((i) => !ehFolhaOuEquivalente(String(i.plano_contas ?? "")))
+      .filter((i) => !participaDaConferencia(i))
       .map((i) => String(i.id ?? ""))
       .filter(Boolean);
     const linhas = folha.map((i) => {

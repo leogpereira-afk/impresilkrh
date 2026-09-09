@@ -1,3 +1,6 @@
+import { ConferenciaAno } from "@/components/custos/conferencia-ano";
+import { competenciasDoAno } from "@/lib/conferenciaSincronizacao";
+import { respostaDoHistorico } from "@/lib/historicoMubiPrevia";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -570,11 +573,11 @@ export default function Custos() {
    * Reimportar é seguro: título do ERP casa pelo id, então rodar de novo
    * ATUALIZA em vez de criar um segundo lançamento.
    */
-  const buscarHistorico = async () => {
+  const buscarHistorico = async (competenciasEscolhidas?: string[]) => {
     cancelarVarreduraRef.current = false;
     setErroMubi("");
     setBuscandoMubi(true);
-    const comps = competenciasParaTras(mesesHistorico);
+    const comps = competenciasEscolhidas ?? competenciasParaTras(mesesHistorico);
     try {
       const r = await buscarHistoricoMubi(
         comps,
@@ -589,13 +592,12 @@ export default function Custos() {
         const soma = naoPagos.reduce((s, l) => s + (Number(l.valor) || 0), 0);
         setErroMubi(
           naoPagos.length > 0
-            ? `O Mubisys tem ${naoPagos.length} título(s) de pessoal nos últimos ${mesesHistorico} meses, todos ainda em aberto (${formatBRL(soma)}). Nenhum entra na ficha até o ERP baixar.`
-            : `O Mubisys não devolveu lançamento de pessoal nos últimos ${mesesHistorico} meses.`,
+            ? `O Mubisys tem ${naoPagos.length} título(s) de pessoal no período de ${compLabel(comps[comps.length - 1])} a ${compLabel(comps[0])}, todos ainda em aberto (${formatBRL(soma)}). Nenhum entra na ficha até o ERP baixar.`
+            : `O Mubisys não devolveu lançamento de pessoal no período de ${compLabel(comps[comps.length - 1])} a ${compLabel(comps[0])}.`,
         );
-        return;
       }
       previaDoMubi(
-        { competencia: comps[comps.length - 1], buscadoEm: r.buscadoEm, totalTitulosNoMes: r.linhas.length, paginas: 0, truncado: r.truncado, linhas: r.linhas, idsForaDaFolha: r.idsForaDaFolha },
+        respostaDoHistorico(r, comps),
         vinculos,
         // A cobertura vai junto: mês que falhou aparecia só num toast e sumia.
         { truncado: r.truncado, pedidas: comps, lidas: r.competenciasLidas, falhas: r.falhas.map((f) => f.competencia) },
@@ -2435,6 +2437,7 @@ export default function Custos() {
                 <p className="text-sm text-slate-500">
                   Plano de contas do contador e folha do Mubisys — de onde vêm os números desta tela — e a conferência da classificação.
                 </p>
+                <ConferenciaAno pagamentos={pagamentos} pessoas={d.colaboradores} ocupado={buscandoMubi} onBuscarAno={ano => void buscarHistorico(competenciasDoAno(ano))} onBuscarMes={mes => void buscarHistorico([mes])} />
                 {(config.titulosForaRh ?? []).length > 0 && (
                   <Card><CardHeader title="Não faz parte do RH" /><CardBody>
                     <p className="mb-3 text-sm text-slate-500">Decisões por título do ERP. Lançamentos já gravados são preservados. Desfazer devolve o título à conferência na próxima busca ou na prévia aberta.</p>

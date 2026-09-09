@@ -258,6 +258,7 @@ export async function buscarCompetenciaCompleta(
     if (cancelado?.()) { incompleta = true; break; }
     const r = await buscarPagamentosMubi(competencia, pagina);
     linhas.push(...r.linhas);
+    if (r.truncado) incompleta = true;
     fora.push(r.contasForaDaFolha);
     naoPagas.push(...(r.naoPagas ?? []));
     foraOmitidas += Number(r.contasForaOmitidas) || 0;
@@ -306,7 +307,7 @@ export async function buscarHistoricoMubi(
   let truncado = false;
 
   for (let i = 0; i < competencias.length; i++) {
-    if (cancelado?.()) break;
+    if (cancelado?.()) { truncado = true; break; }
     const comp = competencias[i];
     aoProgredir?.(i, competencias.length, comp);
     try {

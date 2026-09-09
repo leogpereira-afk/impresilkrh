@@ -52,3 +52,11 @@ describe("o teto da lista de contas recusadas é declarado", () => {
     return buscarCompetenciaCompleta("2026-08").then((r) => expect(r.contasForaOmitidas).toBe(0));
   });
 });
+
+describe('cobertura da resposta antiga', () => {
+  it('não declara completa uma resposta que informa truncamento sem temMais', async () => {
+    paginas[1] = { linhas: [], truncado: true, paginas: 8 };
+    delete paginas[2];
+    expect((await buscarCompetenciaCompleta('2026-01')).incompleta).toBe(true);
+  });
+});

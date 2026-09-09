@@ -31,6 +31,7 @@ import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio, tipoSocietario } from "./societario";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
 import { contasQuePararam } from "./contaQueParou";
+import { tituloPago } from "./mubiPagamentos";
 
 export type RegraAuditoria =
   | "classificacao"
@@ -191,7 +192,7 @@ export function auditarLancamentos(
 
   // ---- pessoa por pessoa: o cadastro bate com o que foi pago? ----
   for (const c of colaboradores) {
-    const dela = pags.filter((p) => p.colaboradorId === c.id);
+    const dela = pags.filter((p) => p.colaboradorId === c.id && tituloPago(p.statusErp));
     const problemas: string[] = [];
     const adm = mes(c.dataAdmissao);
     const des = mes(c.dataDesligamento);
