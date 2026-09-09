@@ -97,7 +97,8 @@ export default function Ferias() {
     <p className="text-xs text-slate-500">O histórico registrado não prova que todos os períodos anteriores foram lançados. Vínculo e direito precisam ser conferidos; salário e pagamentos avulsos não definem quem tem direito a férias.</p>
     {podeEditar && <details className="rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-medium text-slate-700">Histórico de alterações</summary><div className="mt-4"><HistoricoFerias nomeDe={id=>d.nomeColab(id)} /></div></details>}
     {escolher && <Modal aberto onFechar={()=>setEscolher(false)} titulo="Escolher pessoa" descricao="O período e o gozo serão conferidos antes de salvar."><Campo label="Pessoa"><Select aria-label="Pessoa para programar férias" value="" onChange={e=>{setPessoa(e.target.value);setEscolher(false);}}><option value="">Selecione</option>{escopo.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</Select></Campo></Modal>}
-    {colab && <FormularioFerias colaborador={colab} registros={ferias.filter(f=>f.colaboradorId===colab.id)} registro={editando} onFechar={fechar} onSalvar={dados=>{
+    {colab && <FormularioFerias colaborador={colab} registros={ferias.filter(f=>f.colaboradorId===colab.id)} registro={editando} onFechar={fechar} onSalvar={(dados,ajustes)=>{
+      ajustes.forEach(a=>atualizar(a.id,{direitoDias:a.direitoDias}));
       if(editando){const patch=Object.fromEntries(Object.entries(dados).filter(([k,v])=>v!==editando[k as keyof TFerias]));atualizar(editando.id,patch);}
       else criar(dados);
       toast(editando?'Férias atualizadas.':'Férias registradas.');fechar();

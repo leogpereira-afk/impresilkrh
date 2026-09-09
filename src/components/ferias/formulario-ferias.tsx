@@ -4,12 +4,12 @@ import { Modal } from '@/components/ui/modal';
 import { Campo, Input, Select, Textarea } from '@/components/ui/form';
 import { diaLocalISO, diasDeCalendario, formatDate } from '@/lib/format';
 import { useHoje } from '@/lib/useHoje';
-import { aquisitivoDe, dataFerias, deslocarDia, duracaoFerias, estadoFerias, opcoesAquisitivos, periodosFerias, validarRegistroFerias } from '@/lib/feriasPeriodos';
+import { aquisitivoDe, dataFerias, deslocarDia, duracaoFerias, estadoFerias, opcoesAquisitivos, periodosFerias, prepararDireitoFerias, validarRegistroFerias } from '@/lib/feriasPeriodos';
 
 export function FormularioFerias({colaborador,registros,registro=null,inicial=null,onFechar,onSalvar}:{
   colaborador:Colaborador; registros:Ferias[]; registro?:Ferias|null;
   inicial?:{inicio:string;fim:string}|null; onFechar:()=>void;
-  onSalvar:(dados:Omit<Ferias,'id'>)=>void;
+  onSalvar:(dados:Omit<Ferias,'id'>,ajustes:Array<{id:string;direitoDias:number}>)=>void;
 }) {
   const hoje=useHoje();
   const opcoes=opcoesAquisitivos(colaborador,registros,hoje);
@@ -35,15 +35,16 @@ export function FormularioFerias({colaborador,registros,registro=null,inicial=nu
     diasGozados:!inicio && status==='Concluída' ? Number(dias):0,saldoDias:0,status:status==='automatico'?'Em aberto':status,observacao:obs.trim()||null};
   if (status==='automatico') {const estado=estadoFerias(draft,hoje);draft.status=estado==='Conferir datas'?'Em aberto':estado;}
   if (draft.status==='Concluída') draft.diasGozados=duracaoFerias(draft)??0;
-  const previstos=periodosFerias([...registros.filter(f=>f.id!==draft.id),draft],hoje);
+  const direitoAquisitivo=prepararDireitoFerias(draft,registros);
+  const previstos=periodosFerias([...direitoAquisitivo.previstos.filter(f=>f.id!==draft.id),draft],hoje);
   const depois=previstos.find(p=>p.chave===aquisitivoDe(draft)?.chave);
   draft.saldoDias=Math.max(0,depois?.disponivel??0);
-  const erros=validarRegistroFerias(draft,registros,hoje);
+  const erros=validarRegistroFerias(draft,direitoAquisitivo.previstos,hoje);
   if (!confirmado && status!=='Cancelada') erros.push('Confirme o vínculo, o aquisitivo e o direito em dias antes de salvar.');
   const inicioData=dataFerias(inicio);
   const pagamentoAte=inicioData ? deslocarDia(inicioData,-2):null;
   const recalcular=(i:string,n:string)=>{const d=dataFerias(i),q=Number(n);if(d&&Number.isInteger(q)&&q>0&&q<=30)setRetorno(diaLocalISO(deslocarDia(d,q)));};
-  const salvar=()=>{setTentou(true);if(erros.length)return;const dados={...(registro && status==='Cancelada' ? {...registro,status:'Cancelada'} : draft)};delete (dados as Partial<Ferias>).id;onSalvar(dados);};
+  const salvar=()=>{setTentou(true);if(erros.length)return;const dados={...(registro && status==='Cancelada' ? {...registro,status:'Cancelada'} : draft)};delete (dados as Partial<Ferias>).id;onSalvar(dados,direitoAquisitivo.ajustes);};
   return <Modal aberto largura="max-w-2xl" onFechar={onFechar} titulo={registro?'Editar férias':'Programar férias'}
     descricao={colaborador.nome} rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Salvar férias</button></>}>
     <div className="space-y-4">
@@ -67,6 +68,7 @@ export function FormularioFerias({colaborador,registros,registro=null,inicial=nu
         {pagamentoAte && <p>Pagamento de férias: conferir até {formatDate(pagamentoAte)}. A agenda não comprova pagamento.</p>}
         {depois && retorno && dataFerias(retorno)!>deslocarDia(depois.limite,1) && <p className="text-amber-800">O último dia do gozo ultrapassa o prazo de {formatDate(depois.limite)}. Confira com o RH.</p>}
       </div>
+      {direitoAquisitivo.ajustes.length>0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Ao salvar, o direito de {direito} dias também será aplicado a {direitoAquisitivo.ajustes.length} outra(s) fração(ões) deste aquisitivo. Datas e dias vendidos dessas frações serão preservados.</p>}
       <Campo label="Observação"><Textarea aria-label="Observação das férias" value={obs} onChange={e=>setObs(e.target.value)} /></Campo>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={confirmado} onChange={e=>setConfirmado(e.target.checked)} />Conferi o vínculo, o aquisitivo e o direito em dias desta pessoa.</label>
       <p className="text-xs text-slate-500">Antes de agendar: confira aviso com antecedência, concordância com a divisão e os feriados e descansos da escala. Não iniciar nos dois dias anteriores a feriado ou repouso semanal. Antecipações e férias coletivas exigem análise própria.</p>

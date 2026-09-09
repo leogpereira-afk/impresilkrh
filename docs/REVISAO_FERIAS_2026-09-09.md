@@ -35,6 +35,8 @@ A página de Férias lista as pessoas do quadro visível, inclusive quem ainda n
 
 A referência de 30 dias não comprova o direito. Vínculo, aquisitivo e quantidade precisam ser conferidos pela pessoa responsável antes de salvar. Status, salário e verba avulsa não são usados para inferir regime de contratação.
 
+Ao corrigir o direito, o formulário avisa quantas outras frações do mesmo aquisitivo receberão o novo valor. Datas, abono e aquisitivos de outras pessoas são preservados.
+
 A divisão comum é validada em até três frações, com uma de pelo menos 14 dias e demais de pelo menos cinco; não é permitido reservar mais que o direito ou deixar um saldo incompatível com a próxima fração. Abono fica limitado a um terço do direito informado. Uma concessão integral de direito reduzido não é confundida com fracionamento.
 
 O formulário lembra a conferência do pagamento até dois dias antes do gozo, do aviso, da concordância e dos feriados/descansos da escala. **Não afirma que houve pagamento nem cria obrigação financeira automática.** Antecipações e férias coletivas exigem tratamento específico; esta revisão não implementa esses fluxos.

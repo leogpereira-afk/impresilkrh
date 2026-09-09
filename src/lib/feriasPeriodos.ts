@@ -162,3 +162,15 @@ export function prazoPeriodoFerias(p: PeriodoFerias, hoje=new Date()) {
   return {dias,gozoAposLimite,conferir,atencao:pendente && (dias<=60 || gozoAposLimite),
     texto:!pendente ? 'Período utilizado' : gozoAposLimite ? 'Gozo ultrapassa o prazo' : dias<0 ? 'Prazo encerrado: conferir' : dias===0 ? 'Prazo termina hoje' : `Prazo em ${dias} dias`};
 }
+
+/** Direito é do aquisitivo; uma correção confirmada atualiza suas frações juntas. */
+export function prepararDireitoFerias(novo: Ferias, registros: readonly Ferias[]) {
+  const aq=aquisitivoDe(novo);
+  const ajustes: Array<{id:string;direitoDias:number}>=[];
+  const previstos=registros.map(f=>{
+    if (novo.status==='Cancelada' || !aq || !Number.isInteger(novo.direitoDias) || f.id===novo.id || f.colaboradorId!==novo.colaboradorId || f.status==='Cancelada' || aquisitivoDe(f)?.chave!==aq.chave || f.direitoDias===novo.direitoDias) return f;
+    ajustes.push({id:f.id,direitoDias:novo.direitoDias!});
+    return {...f,direitoDias:novo.direitoDias};
+  });
+  return {ajustes,previstos};
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ferias, Colaborador } from '@/data/types';
-import { aquisitivoDe, dataFerias, estadoFerias, periodosFerias, resumoFeriasPessoa, validarRegistroFerias, opcoesAquisitivos, prazoPeriodoFerias, anosCompletosFerias } from './feriasPeriodos';
+import { aquisitivoDe, dataFerias, estadoFerias, periodosFerias, resumoFeriasPessoa, validarRegistroFerias, opcoesAquisitivos, prazoPeriodoFerias, prepararDireitoFerias, anosCompletosFerias } from './feriasPeriodos';
 const hoje=new Date(2026,8,9,12);
 const f=(patch:Partial<Ferias>={}):Ferias=>({id:'a',colaboradorId:'ana',periodoAquisitivoInicio:'2025-01-01',periodoAquisitivoFim:'2025-12-31',direitoDias:30,abonoDias:0,diasGozados:0,saldoDias:30,status:'Agendada',dataInicio:'2026-10-01',dataRetorno:'2026-10-21',...patch});
 describe('saldo e agenda por aquisitivo',()=>{
@@ -79,3 +79,17 @@ it('duplicidade histórica de duas frações de 15 dias não se apresenta como s
   expect(r.disponivel).toBeNull();expect(r.periodos[0].pendencias.join(' ')).toContain('sobrepostos');
 });
 it('quantidade concluída diferente das datas pede conferência',()=>expect(resumoFeriasPessoa([f({status:'Concluída',dataInicio:'2026-08-01',dataRetorno:'2026-08-16',diasGozados:30})],hoje).disponivel).toBeNull());
+
+
+it('corrige o direito de todas as frações do aquisitivo sem alterar outro ano ou pessoa',()=>{
+  const a=f({dataRetorno:'2026-10-15'}),b=f({id:'b',dataInicio:'2026-11-01',dataRetorno:'2026-11-06'});
+  const outros=[f({id:'outra-pessoa',colaboradorId:'bia'}),f({id:'outro-ano',periodoAquisitivoInicio:'2024-01-01',periodoAquisitivoFim:'2024-12-31',dataInicio:'2025-10-01',dataRetorno:'2025-10-21'}),f({id:'cancelada',status:'Cancelada'})];
+  const corrigido={...a,direitoDias:24};
+  const proposta=prepararDireitoFerias(corrigido,[a,b,...outros]);
+  expect(proposta.ajustes).toEqual([{id:'b',direitoDias:24}]);
+  expect(validarRegistroFerias(corrigido,proposta.previstos,hoje)).toEqual([]);
+  expect(proposta.previstos.find(f=>f.id==='b')).toEqual({...b,direitoDias:24});
+  expect(proposta.previstos.slice(2)).toEqual(outros);
+  expect(b.direitoDias).toBe(30);
+});
+it('cancelamento não altera direito de outras frações',()=>expect(prepararDireitoFerias(f({status:'Cancelada',direitoDias:24}),[f({id:'b'})]).ajustes).toEqual([]));

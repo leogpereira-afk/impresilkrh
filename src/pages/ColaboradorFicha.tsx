@@ -1762,7 +1762,8 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
           registro={edit}
           inicial={novoPeriodo}
           onFechar={() => { setEdit(null); setNovoPeriodo(null); }}
-          onSalvar={(dados) => {
+          onSalvar={(dados,ajustes) => {
+            ajustes.forEach(a=>atualizar(a.id,{direitoDias:a.direitoDias}));
             if (edit) { const patch=Object.fromEntries(Object.entries(dados).filter(([k,v])=>v!==edit[k as keyof typeof edit])); atualizar(edit.id, patch); toast("Período de férias atualizado."); }
             else { criar(dados); toast("Período de férias lançado."); }
             setEdit(null); setNovoPeriodo(null);
