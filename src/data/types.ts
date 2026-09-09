@@ -266,6 +266,10 @@ export interface POP {
 }
 
 export interface Ferias {
+  /** Direito confirmado do aquisitivo; ausência mantém referência de 30 dias. */
+  direitoDias?: number;
+  /** Dias vendidos neste lançamento; nunca inferidos da observação. */
+  abonoDias?: number;
   id: string;
   colaboradorId: string;
   periodoAquisitivoInicio?: string | null;

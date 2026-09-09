@@ -1,3 +1,5 @@
+import { useHoje } from '@/lib/useHoje';
+import { resumoFeriasPessoa } from '@/lib/feriasPeriodos';
 import { riscoInformado } from "@/lib/qualidadeIndicadores";
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useMemo, useRef, useState } from "react";
@@ -43,6 +45,7 @@ const ddmm = (iso?: string | null) => {
 };
 
 export default function Painel() {
+  const hojeFerias=useHoje();
   const navegar = useNavigate();
   const sessao = useSessao();
   const d = useDominio();
@@ -142,7 +145,7 @@ export default function Painel() {
   // Quem está de férias HOJE sai das datas do período (lib/ferias), não do texto
   // "Em andamento" — ninguém volta na tela para avançar esse texto, então ele
   // contava quem já retornou e ignorava quem está fora agora.
-  const feriasAtivas = ferias.filter((f) => ids.has(f.colaboradorId) && feriasEmCurso(f));
+  const feriasAtivas = ferias.filter((f) => ids.has(f.colaboradorId) && feriasEmCurso(f,hojeFerias));
   const proximosRetornos = ferias
     .filter((f) => ids.has(f.colaboradorId) && feriasEmCurso(f) && f.dataRetorno && dias(f.dataRetorno) >= 0)
     .sort((a, b) => dias(a.dataRetorno) - dias(b.dataRetorno));
@@ -604,7 +607,7 @@ export default function Painel() {
           onClick={() => alternarFoco("avaliacoes")}
         />
         <StatCard
-          label="De férias agora" value={feriasAtivas.length} icon={<Palmtree className="h-5 w-5" />} accent="green"
+          label="De férias agora" value={new Set(feriasAtivas.map(f=>f.colaboradorId)).size} icon={<Palmtree className="h-5 w-5" />} accent="green"
           title="Ver quem está de férias"
           onClick={() => drill.abrir("De férias agora", escopo.filter((c) => feriasAtivas.some((f) => f.colaboradorId === c.id)), "Colaboradores em período de férias")}
         />
@@ -904,6 +907,7 @@ export default function Painel() {
 
 // ---------- Visão do colaborador (autoatendimento) ----------
 function PainelPessoal() {
+  const hojeFerias=useHoje();
   const sessao = useSessao();
   const d = useDominio();
   const navigate = useNavigate();
@@ -919,8 +923,8 @@ function PainelPessoal() {
   if (!c) return null;
 
   const minhasFerias = ferias.filter((f) => f.colaboradorId === c.id);
-  const feriasAtiva = minhasFerias.find((f) => f.status === "Em andamento" || f.status === "Agendada");
-  const saldoFerias = minhasFerias.reduce((acc, f) => Math.max(acc, f.saldoDias), 0);
+  const resumoFerias = resumoFeriasPessoa(minhasFerias,hojeFerias);
+  const saldoFerias = resumoFerias.disponivel;
   const minhaAval = avaliacoes.find((a) => a.colaboradorId === c.id && a.tipo === "GESTOR");
   const meusPdis = pdis.filter((p) => p.colaboradorId === c.id);
   const meusDocsAlerta = documentos.filter((doc) => doc.colaboradorId === c.id && doc.dataVencimento && dias(doc.dataVencimento) <= JANELA_ALERTA_DIAS);
@@ -961,7 +965,7 @@ function PainelPessoal() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Cargo" value={<span className="text-base">{d.nomeCargo(c)}</span>} icon={<Users className="h-5 w-5" />} accent="brand" hint={`Nível ${d.nomeNivel(c.nivelId)}`} />
         {/* Há lista por trás deste número, sim: os períodos na aba Férias. */}
-        <StatCard label="Saldo de férias" value={`${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={feriasAtiva ? feriasAtiva.status : "Em aberto"}
+        <StatCard label="Dias livres de férias" value={saldoFerias===null ? "Conferir histórico" : `${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={resumoFerias.referencia ? "Direito a confirmar; reservas descontadas" : "Nos aquisitivos registrados; reservas descontadas"}
           title="Ver meus períodos de férias" onClick={() => navigate("/meu-perfil?tab=ferias")} />
         <StatCard label="Nota da avaliação" value={minhaAval?.notaFinal ?? "—"} icon={<Award className="h-5 w-5" />} accent="gold" hint={minhaAval?.statusDesempenho ?? "Sem avaliação"} />
         <StatCard

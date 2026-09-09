@@ -1,3 +1,4 @@
+import { estadoFerias } from './feriasPeriodos';
 // ============================================================================
 // O relógio das férias: quantos dias faltam, quantos já passaram, e quanto
 // tempo resta antes de a empresa pagar em dobro.
@@ -14,7 +15,6 @@
 // leitura das 9h e a das 15h.
 // ============================================================================
 import { diasDeCalendario, formatDate, parseData } from "@/lib/format";
-import { HOJE } from "@/data/_gen";
 import type { Ferias } from "@/data/types";
 
 /** Onde este período está na linha do tempo, comparado com hoje. */
@@ -46,7 +46,7 @@ const plural = (n: number, um: string, muitos: string) => (n === 1 ? um : muitos
  * Sem data de retorno mas com início, o período conta como começado: é o que a
  * data disponível sustenta. Dizer "voltou" sem saber quando seria inventar.
  */
-export function contagem(f: Pick<Ferias, "dataInicio" | "dataRetorno">, hoje: Date = HOJE): Contagem {
+export function contagem(f: Pick<Ferias, "dataInicio" | "dataRetorno">, hoje: Date = new Date()): Contagem {
   const inicio = parseData(f.dataInicio);
   const retorno = parseData(f.dataRetorno);
 
@@ -112,8 +112,8 @@ export interface Proxima {
  * marcada, porque é o que muda a escala de hoje. Entre as futuras, a mais
  * próxima. Período cancelado não conta.
  */
-export function proximaFerias(registros: Ferias[], hoje: Date = HOJE): Proxima {
-  const vivos = (registros || []).filter((f) => f.status !== "Cancelada");
+export function proximaFerias(registros: Ferias[], hoje: Date = new Date()): Proxima {
+  const vivos = (registros || []).filter((f) => ["Agendada", "Em andamento"].includes(estadoFerias(f, hoje)));
 
   const emCurso = vivos
     .map((f) => ({ f, c: contagem(f, hoje) }))
@@ -183,7 +183,7 @@ export interface Prazo {
  */
 export function prazoDeConcessao(
   f: Pick<Ferias, "status" | "periodoAquisitivoFim">,
-  hoje: Date = HOJE,
+  hoje: Date = new Date(),
   desde: Date | null = null,
   janelaAlertaDias = 60,
 ): Prazo {
@@ -236,7 +236,7 @@ export function prazoDeConcessao(
  */
 export function statusSugerido(
   f: Pick<Ferias, "status" | "dataInicio" | "dataRetorno">,
-  hoje: Date = HOJE,
+  hoje: Date = new Date(),
 ): string | null {
   if (!statusIncoerente(f, hoje)) return null;
   const { fase } = contagem(f, hoje);
@@ -248,7 +248,7 @@ export function statusSugerido(
 
 export function statusIncoerente(
   f: Pick<Ferias, "status" | "dataInicio" | "dataRetorno">,
-  hoje: Date = HOJE,
+  hoje: Date = new Date(),
 ): string | null {
   const { fase } = contagem(f, hoje);
   const status = f.status;

@@ -1,3 +1,5 @@
+import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
+import { useHoje } from '@/lib/useHoje';
 import { useMemo, useState } from "react";
 import {
   CalendarDays, Cake, PartyPopper, Flag, Sparkles, CalendarClock, Building2,
@@ -79,6 +81,7 @@ export default function Calendario() {
   const { items: documentos } = useColecao("documentos");
   const { items: certificacoes } = useColecao("certificacoesNr");
   const { items: ferias } = useColecao("ferias");
+  const hojeFerias=useHoje();
   const config = useConfig();
   /* `?? []` cria um array NOVO a cada render, e aí o useMemo abaixo nunca
      memoriza nada. Memoizado, ele só muda quando a config muda de verdade. */
@@ -227,14 +230,14 @@ export default function Calendario() {
     // Prazo de conceder férias (art. 134): passou, paga em dobro.
     const desde = inicioDoHistorico(ferias);
     for (const c of d.ativos) {
-      const sit = situacaoFerias(c, ferias.filter((f) => f.colaboradorId === c.id), undefined, desde);
+      const sit = situacaoFerias(c, ferias.filter((f) => f.colaboradorId === c.id), hojeFerias, desde);
       if (!sit || sit.jaGozou || sit.situacao === "sem-registro") continue;
       const dt = noMes(sit.limiteConcessao.toISOString());
       if (!dt) continue;
       out.push({
         dia: dt.getDate(), tipo: "Férias — prazo CLT",
         titulo: c.nome,
-        sub: `Último dia para conceder ${sit.diasEmAberto} dia(s) sem pagar em dobro`,
+        sub: `Prazo de concessão do aquisitivo · confira a agenda e ${sit.diasEmAberto} dia(s) ainda não concluídos`,
       });
     }
 
@@ -249,10 +252,10 @@ export default function Calendario() {
       const nome = d.nomeColab(f.colaboradorId);
       const ini = noMes(f.dataInicio);
       const ret = noMes(f.dataRetorno);
-      const volta = parseData(f.dataRetorno);
-      const saida = parseData(f.dataInicio);
-      const bruto = saida && volta
-        ? Math.round((volta.getTime() - saida.getTime()) / 86_400_000) : null;
+      const volta = dataFerias(f.dataRetorno);
+      const saida = dataFerias(f.dataInicio);
+      if (f.status === "Concluída" && saida && saida > hojeFerias) continue;
+      const bruto = duracaoFerias(f);
       // Registro com retorno ANTES do início existe na base antiga (a tela só
       // passou a impedir hoje). Imprimir "-31 dia(s)" é a tela afirmando um
       // absurdo: melhor dizer que o período está torto e mandar conferir.
@@ -294,7 +297,7 @@ export default function Calendario() {
     return out
       .filter((x) => visivel(x.tipo, foco))
       .sort((x, y) => x.dia - y.dia || x.tipo.localeCompare(y.tipo));
-  }, [d, noQuadroIds, eventos, documentos, certificacoes, ferias, ano, mes, foco]);
+  }, [d, noQuadroIds, eventos, documentos, certificacoes, ferias, ano, mes, foco, hojeFerias]);
 
   const porDia = useMemo(() => {
     const m = new Map<number, Item[]>();

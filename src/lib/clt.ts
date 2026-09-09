@@ -1,3 +1,4 @@
+import { anosCompletosFerias, aquisitivoDe, periodosFerias, prazoPeriodoFerias, deslocarDia, estadoFerias, dataFerias } from './feriasPeriodos';
 // ============================================================================
 // Prazos da CLT que custam dinheiro se passarem batido.
 //
@@ -17,7 +18,7 @@
 // Tudo é calculado a partir da data de admissão e dos períodos de férias já
 // lançados. Nenhum campo novo é exigido de quem usa.
 // ============================================================================
-import { parseData } from "@/lib/format";
+import { parseData, diasDeCalendario } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador, Ferias } from "@/data/types";
 
@@ -99,18 +100,32 @@ export function inicioDoHistorico(ferias: Ferias[]): Date | null {
 export function situacaoFerias(
   c: Colaborador,
   feriasDaPessoa: Ferias[],
-  hoje = HOJE,
+  hoje = new Date(),
   /** Antes desta data o sistema não tem histórico — ver inicioDoHistorico(). */
   desde: Date | null = null,
 ): SituacaoFerias | null {
+  const saida = parseData(c.dataDesligamento);
+  const ate = saida && saida.getTime() < hoje.getTime() ? saida : hoje;
+  // Registros com aquisitivo explícito usam a mesma conta da agenda e da ficha.
+  // Históricos antigos sem vínculo mantêm a leitura legada abaixo; não são redistribuídos.
+  const periodosExplicitos=periodosFerias(feriasDaPessoa,ate).filter(p=>diasDeCalendario(p.fim,ate)<0);
+  if (periodosExplicitos.length) {
+    const p=periodosExplicitos.find(p=>p.aConceder>0) ?? periodosExplicitos[periodosExplicitos.length-1];
+    const semVinculo=feriasDaPessoa.some(f=>f.status!=='Cancelada' && !aquisitivoDe(f));
+    const incerto=semVinculo || p.pendencias.length>0 || !p.direitoConfirmado;
+    const diasParaLimite=dias(ate,p.limite);
+    const jaGozou=p.aConceder<=0;
+    const futuras=p.registros.filter(f=>estadoFerias(f,ate)==='Agendada').map(f=>dataFerias(f.dataInicio)!).sort((a,b)=>+a-+b);
+    return {aquisitivoInicio:p.inicio,direitoDesde:deslocarDia(p.fim,1),limiteConcessao:p.limite,diasParaLimite,
+      jaGozou,diasGozados:p.gozados,diasEmAberto:Math.max(0,p.aConceder),diasAgendados:p.agendados,agendadoPara:futuras[0]??null,
+      situacao:incerto?'sem-registro':jaGozou?'em-dia':diasParaLimite<0?'vencida':prazoPeriodoFerias(p,ate).atencao?'a-vencer':'em-dia'};
+  }
   const adm = parseData(c.dataAdmissao);
   if (!adm) return null;
   // Quem saiu tem o relógio parado no último dia. Sem isto a ficha de um
   // desligado continuava abrindo período aquisitivo novo contra HOJE e o
   // "vencidas há N dias" crescia sozinho todo dia — em 53 pessoas inativas.
-  const saida = parseData(c.dataDesligamento);
-  const ate = saida && saida.getTime() < hoje.getTime() ? saida : hoje;
-  const mesesDeCasa = Math.floor(dias(adm, ate) / 30.44);
+  const mesesDeCasa = anosCompletosFerias(adm, ate) * 12;
   if (mesesDeCasa < 12) return null; // ainda no primeiro período aquisitivo
 
   // Cada gozo, com QUANTOS dias foram tirados. A conta antiga só perguntava se

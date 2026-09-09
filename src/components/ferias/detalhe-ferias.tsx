@@ -1,3 +1,5 @@
+import { estadoFerias, duracaoFerias } from '@/lib/feriasPeriodos';
+import { useHoje } from '@/lib/useHoje';
 // ============================================================================
 // O que abre quando se expande uma linha de férias: observações e documentação.
 //
@@ -29,8 +31,7 @@ import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { formatDate } from "@/lib/format";
 import { CATEGORIA_DOC_FERIAS } from "@/lib/constants";
-import { contagem, prazoDeConcessao, statusIncoerente, statusSugerido } from "@/lib/feriasContagem";
-import { inicioDoHistorico } from "@/lib/clt";
+import { contagem, statusIncoerente, statusSugerido } from "@/lib/feriasContagem";
 import type { Documento, Ferias } from "@/data/types";
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -61,17 +62,17 @@ function CartaoPeriodo({
   podeEditar,
   aoEditar,
   aoExcluir,
-  desde,
 }: {
   ferias: Ferias;
   podeEditar: boolean;
   aoEditar?: (f: Ferias) => void;
   aoExcluir?: (f: Ferias) => void;
-  desde: Date | null;
 }) {
-  const avisoStatus = statusIncoerente(ferias);
-  const c = contagem(ferias);
-  const prazo = prazoDeConcessao(ferias, undefined, desde);
+  const hoje=useHoje();
+  const estado=estadoFerias(ferias,hoje);
+  const encerrado=ferias.status==='Concluída'||ferias.status==='Cancelada';
+  const avisoStatus = encerrado ? null : statusIncoerente(ferias,hoje);
+  const c = contagem(ferias,hoje);
   const toast = useToast();
   const { atualizar } = useColecao("ferias");
   const guardado = ferias.observacao ?? "";
@@ -86,7 +87,7 @@ function CartaoPeriodo({
 
   /* O status que as DATAS pedem, quando ele contradiz o que está gravado.
      `null` quando está coerente ou quando não dá para afirmar nada. */
-  const sugerido = statusSugerido(ferias);
+  const sugerido = encerrado ? null : statusSugerido(ferias,hoje);
 
   const salvar = () => {
     // Grava SÓ este campo. Escrever o registro inteiro por cima apagaria o que
@@ -100,7 +101,7 @@ function CartaoPeriodo({
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
       {/* Cabeçalho do período: o que antes era a linha da tabela. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Badge variant={varianteStatus(ferias.status)}>{ferias.status || "Sem status"}</Badge>
+        <Badge variant={varianteStatus(estado)}>{estado}</Badge>
         <span className="text-sm text-slate-700">
           {ferias.dataInicio
             ? `${formatDate(ferias.dataInicio)} → ${formatDate(ferias.dataRetorno)}`
@@ -111,16 +112,9 @@ function CartaoPeriodo({
             ? `${formatDate(ferias.periodoAquisitivoInicio)} – ${formatDate(ferias.periodoAquisitivoFim)}`
             : "não informado"}
         </span>
-        <span className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-slate-500">{c.texto}</span>
-          <span className="text-xs font-medium text-slate-700">saldo {ferias.saldoDias ?? 0} dias</span>
-          {prazo.situacao === "vencido" ? (
-            <Badge variant="danger">{prazo.texto}</Badge>
-          ) : prazo.situacao === "a-vencer" ? (
-            <Badge variant="warning">{prazo.texto}</Badge>
-          ) : prazo.situacao === "no-prazo" ? (
-            <span className="text-xs text-slate-400">{prazo.texto}</span>
-          ) : null}
+        <span className="ml-auto flex flex-wrap items-center gap-3">
+          <span className="text-xs text-slate-500">{encerrado ? estado : estado==='Conferir datas' ? 'Conferir datas' : c.texto}</span>
+          <span className="text-xs font-medium text-slate-700">Gozo: {duracaoFerias(ferias)??'a conferir'} dias</span>
           {podeEditar && aoEditar && (
             <button className="btn-ghost p-1.5" title="Editar este período" onClick={() => aoEditar(ferias)}>
               <Pencil className="h-4 w-4" />
@@ -446,10 +440,6 @@ export function DetalheFerias({
   aoEditar?: (f: Ferias) => void;
   aoExcluir?: (f: Ferias) => void;
 }) {
-  const { items: todasFerias } = useColecao("ferias");
-  // O corte do histórico sai de TODA a base, não só desta pessoa: o que define
-  // até onde o sistema enxerga é quando a empresa começou a lançar férias.
-  const desde = inicioDoHistorico(todasFerias);
 
   return (
     <Tabs
@@ -477,7 +467,6 @@ export function DetalheFerias({
                     podeEditar={podeEditar}
                     aoEditar={aoEditar}
                     aoExcluir={aoExcluir}
-                    desde={desde}
                   />
                 ))
               )}

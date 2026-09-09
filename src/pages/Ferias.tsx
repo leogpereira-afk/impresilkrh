@@ -1,951 +1,107 @@
-import { Fragment, useMemo, useState } from "react";
-import {
-  Palmtree, CalendarClock, CalendarPlus, ShieldAlert, Plus, BarChart3, Save,
-  ChevronRight, AlertTriangle,
-} from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatCard } from "@/components/ui/stat-card";
-import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Modal, ConfirmDialog } from "@/components/ui/modal";
-import { LinkFicha } from "@/components/ui/link-ficha";
-import { Campo, Input, Select } from "@/components/ui/form";
-import { Avatar, EmptyState } from "@/components/ui/misc";
-import { useToast } from "@/components/ui/toast";
-import { BarrasColoridas, BarrasVerticais } from "@/components/charts/charts";
-import { useDrill, DrillModal } from "@/components/ui/drilldown";
-import { useColecao } from "@/lib/store";
-import { useDominio, noQuadro } from "@/lib/dominio";
-import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatDate, parseData, diaLocalISO, diasDeCalendario } from "@/lib/format";
-import { JANELA_ALERTA_DIAS, STATUS_FERIAS } from "@/lib/constants";
-import { feriasEmCurso } from "@/lib/ferias";
-import { HistoricoFerias } from "@/components/ferias/historico-ferias";
-import { situacaoFerias, inicioDoHistorico, DIAS_FERIAS } from "@/lib/clt";
-import {
-  contagem, prazoDeConcessao, statusIncoerente, proximaFerias, limiteDeConcessao,
-} from "@/lib/feriasContagem";
-import { DetalheFerias } from "@/components/ferias/detalhe-ferias";
-import {
-  validarAgendamento, validarPeriodo, retornoDe, diasEntre, temErro,
-  MAX_ABONO_DIAS, type Achado,
-} from "@/lib/feriasAgenda";
-import { HOJE } from "@/data/_gen";
-import type { Ferias as TFerias, Colaborador } from "@/data/types";
-
-// Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
-// milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
-// documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
-const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
-// ISO -> "yyyy-MM-dd" para inputs type="date" (e o caminho inverso).
-const isoParaInput = (iso?: string | null) => { const d = parseData(iso); return d ? diaLocalISO(d) : ""; };
-
-/* Grava DATA PURA ("2026-08-04"), a mesma convenção do período aquisitivo.
-   Antes montava `new Date(v + "T12:00:00").toISOString()`, meio-dia LOCAL, que
-   em Brasília vira 15:00Z. Como o banco guarda 12:00Z em 17 dos 31 registros,
-   abrir e salvar SEM TOCAR NA DATA movia o instante em 3 horas — e ainda criava
-   uma convenção nova por fuso de quem editasse. Data de férias não tem hora:
-   guardar só o dia acaba com o problema na origem, e a ida e volta vira
-   identidade. */
-const inputParaIso = (v: string) => (v ? v : null);
-
-/* Salvar SEM MEXER na data não pode alterar o que está gravado.
-   O banco guarda a mesma data em formatos diferentes ("2026-09-07T12:00:00.000Z"
-   e "2026-09-07"), e reescrever no formato novo gerava uma alteração de valor
-   com o MESMO dia — que ia parar no histórico como "07/09/2026 → 07/09/2026" e
-   ainda oferecia um "Desfazer" que não desfazia nada. Se o dia é o mesmo, o
-   valor guardado fica como está; só troca quando a pessoa realmente mudou. */
-const manterSeMesmoDia = (guardado: string | null | undefined, noCampo: string) =>
-  isoParaInput(guardado) === noCampo ? (guardado ?? null) : inputParaIso(noCampo);
-
-// Paleta dos status de férias (alinhada às variantes de Badge / Situação dos períodos).
-const CORES_STATUS: Record<string, string> = {
-  "Em andamento": "#16a34a",
-  Agendada: "#2563eb",
-  "Em aberto": "#d97706",
-  Concluída: "#94a3b8",
-};
-
-/* Cor da contagem. Quem está de férias AGORA é a informação que muda a decisão
-   de quem escala o dia — por isso é a única em verde forte; o resto é leitura
-   calma, e "datas trocadas" é o único vermelho porque é dado errado. */
-const COR_FASE: Record<string, string> = {
-  "em-curso": "text-emerald-600",
-  futuro: "text-sky-600",
-  voltou: "text-slate-400",
-  "sem-gozo": "text-slate-400",
-  // Vem de proximaFerias: ninguem marcou nada. Nao e erro, e agenda vazia.
-  "sem-marcacao": "text-slate-400",
-  "datas-trocadas": "text-red-600",
-};
-
-// Variante de Badge por status de férias (Apêndice — CLT).
-function varianteStatus(status: string): "neutral" | "success" | "info" | "warning" {
-  if (status === "Concluída") return "neutral";
-  if (status === "Em andamento") return "success";
-  if (status === "Agendada") return "info";
-  return "warning"; // Em aberto
-}
-
-/* O prazo que interessa NÃO é o fim do período aquisitivo — é doze meses depois
-   dele (art. 134: a empresa tem os 12 meses seguintes para conceder). Comparar
-   com `periodoAquisitivoFim` direto marcava "vencido" assim que o direito
-   nascia, um ano inteiro antes de existir qualquer risco de pagar em dobro.
-
-   A conta mora em lib/feriasContagem.ts, com testes: aqui a tela só decide o
-   que mostrar. `desdeHistorico` é a data a partir da qual o sistema tem
-   registro de férias — período cujo prazo acabou antes disso não é "vencido",
-   é desconhecido (ver inicioDoHistorico em lib/clt.ts). */
-type Alerta = "vencido" | "a-vencer" | null;
-
-function alertaCLT(f: TFerias, desde: Date | null): Alerta {
-  const s = prazoDeConcessao(f, HOJE, desde, JANELA_ALERTA_DIAS).situacao;
-  return s === "vencido" || s === "a-vencer" ? s : null;
-}
+import { useMemo, useState } from 'react';
+import { CalendarClock, CalendarPlus, ChevronDown, Palmtree, Search, ShieldAlert } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatCard } from '@/components/ui/stat-card';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
+import { Modal, ConfirmDialog } from '@/components/ui/modal';
+import { Campo, Input, Select } from '@/components/ui/form';
+import { LinkFicha } from '@/components/ui/link-ficha';
+import { EmptyState } from '@/components/ui/misc';
+import { useToast } from '@/components/ui/toast';
+import { useColecao } from '@/lib/store';
+import { useDominio, noQuadro } from '@/lib/dominio';
+import { useSessao } from '@/lib/session';
+import { colaboradoresVisiveis, podeGerir } from '@/lib/rbac';
+import { formatDate } from '@/lib/format';
+import { useHoje } from '@/lib/useHoje';
+import { dataFerias, estadoFerias, resumoFeriasPessoa, prazoPeriodoFerias } from '@/lib/feriasPeriodos';
+import { proximaFerias } from '@/lib/feriasContagem';
+import { DetalheFerias } from '@/components/ferias/detalhe-ferias';
+import { HistoricoFerias } from '@/components/ferias/historico-ferias';
+import { FormularioFerias } from '@/components/ferias/formulario-ferias';
+import { ResumoFerias } from '@/components/ferias/resumo-ferias';
+import type { Ferias as TFerias } from '@/data/types';
 
 export default function Ferias() {
-  const sessao = useSessao();
-  const d = useDominio();
-  const toast = useToast();
-  const { items: ferias, criar, atualizar, remover } = useColecao("ferias");
-  const drill = useDrill();
-
-  const [novo, setNovo] = useState(false);
-  const [colabId, setColabId] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  // Dias deixou de ser sempre 30: a CLT permite partir em até três períodos, e
-  // quem agenda 15 dias não tinha como registrar isso — ficava gravado 30.
-  const [dias, setDias] = useState("30");
-  const [abono, setAbono] = useState("0");
-
-  // Uma linha aberta por vez: o painel é alto (abas + anexos) e dois abertos
-  // ao mesmo tempo empurram a tabela para fora da tela.
-  const [expandida, setExpandida] = useState<string | null>(null);
-
-  // CRUD — edição/exclusão de um registro de férias (Situação dos períodos).
-  const [editando, setEditando] = useState<TFerias | null>(null);
-  const [edForm, setEdForm] = useState({
-    aqInicio: "",
-    aqFim: "",
-    dataInicio: "",
-    dataRetorno: "",
-    diasGozados: "0",
-    saldoDias: "0",
-    status: "Em aberto" as string,
-  });
-  const [excluindo, setExcluindo] = useState<TFerias | null>(null);
-
-  const podeEditar = podeGerir(sessao);
-
-  // Escopo: colaboradores visíveis, sem direção e sem inativos.
-  const escopo = useMemo(
-    () =>
-      colaboradoresVisiveis(sessao, d.colaboradores)
-        .filter((c) => !c.ehDirecao && noQuadro(c)),
-    [sessao, d.colaboradores],
-  );
-  const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
-
-  const lista = useMemo(
-    () => ferias.filter((f) => idsEscopo.has(f.colaboradorId)),
-    [ferias, idsEscopo],
-  );
-
-  // "De férias agora" vem das DATAS (helper único em lib/ferias), não do texto
-  // "Em andamento": esse texto é digitado à mão e ninguém volta para avançá-lo,
-  // então contava quem já voltou e deixava de fora quem está fora hoje. Sem isso
-  // esta tela diria 0 enquanto a de Colaboradores diz 2, para a mesma pergunta.
-  const deFeriasAgora = useMemo(
-    () =>
-      lista
-        .filter((f) => feriasEmCurso(f))
-        // registros sem data de retorno (NaN) vão para o fim, sem embaralhar a ordem.
-        .sort((a, b) => {
-          const da = diasAte(a.dataRetorno), db = diasAte(b.dataRetorno);
-          if (isNaN(da)) return isNaN(db) ? 0 : 1;
-          if (isNaN(db)) return -1;
-          return da - db;
-        }),
-    [lista],
-  );
-  const agendadas = useMemo(() => lista.filter((f) => f.status === "Agendada"), [lista]);
-  const emAberto = useMemo(() => lista.filter((f) => f.status === "Em aberto"), [lista]);
-
-  /* Filtrava por feriasEmCurso, ou seja: só quem JÁ ESTÁ de férias. Um período
-     agendado para o mês que vem — justamente o que se quer ver chegando — nunca
-     aparecia, e o cartão dizia "nenhum retorno agendado" com o indicador
-     "Agendadas 1" logo acima. Agora entra todo retorno futuro que ainda não
-     foi concluído nem cancelado. */
-  const proximosRetornos = useMemo(
-    () =>
-      lista
-        .filter((f) =>
-          f.status !== "Concluída" && f.status !== "Cancelada" &&
-          f.dataRetorno && diasAte(f.dataRetorno) >= 0)
-        .sort((a, b) => diasAte(a.dataRetorno) - diasAte(b.dataRetorno)),
-    [lista],
-  );
-
-  // O corte vem de TODA a base de férias, não só do escopo visível: o que
-  // define até onde o sistema enxerga é quando a empresa começou a lançar.
-  const desdeHistorico = useMemo(() => inicioDoHistorico(ferias), [ferias]);
-  const alertasCLT = useMemo(
-    () => lista.filter((f) => alertaCLT(f, desdeHistorico) !== null),
-    [lista, desdeHistorico],
-  );
-
-  /* Vencido é diferente de "a vencer": um custa dinheiro HOJE (art. 137 — as
-     férias passam a ser pagas em dobro), o outro é agenda. O cartão "Alertas
-     CLT" soma os dois num número só, e quem lê não sabe se precisa correr. */
-  const vencidas = useMemo(
-    () => lista.filter((f) => prazoDeConcessao(f, HOJE, desdeHistorico, JANELA_ALERTA_DIAS).situacao === "vencido"),
-    [lista, desdeHistorico],
-  );
-
-  /* A próxima pessoa a sair de férias, com a contagem. Só olha gozo FUTURO:
-     quem já está de férias aparece no cartão "De férias agora". */
-  const proxima = useMemo(() => {
-    const futuras = lista
-      .map((f) => ({ f, c: contagem(f, HOJE) }))
-      .filter((x) => x.c.fase === "futuro" && x.f.status !== "Cancelada");
-    futuras.sort((a, b) => a.c.dias - b.c.dias);
-    return futuras[0] ?? null;
-  }, [lista]);
-
-  // Os 4 indicadores são recortes da tabela "Controle de férias", então clicar filtra a tabela.
-  const [foco, setFoco] = useState<string | null>(null);
-  const alternarFoco = (f: string) => setFoco((atual) => (atual === f ? null : f));
-
-  /* UMA LINHA POR PESSOA, não por lançamento.
-     Antes cada período virava uma linha, e quem tinha três anos de histórico
-     aparecia três vezes seguidas — com a mesma foto, o mesmo nome e três
-     contagens diferentes. A pergunta que se faz aqui é sobre a PESSOA ("falta
-     muito para as férias do Andre?"), não sobre o lançamento; o histórico dela
-     mora no painel que abre na linha.
-
-     O filtro dos cartões continua valendo sobre os LANÇAMENTOS: a pessoa entra
-     na tabela se algum período dela casa com o recorte, e o painel mostra os
-     períodos que casaram — senão o número do cartão diria uma coisa e a lista
-     mostraria outra. */
-  const tabela = useMemo(() => {
-    const base =
-      foco === "alertas" ? lista.filter((f) => alertaCLT(f, desdeHistorico) !== null)
-      // "agora" tem chave própria porque não é um status: é o cálculo por datas
-      // do card. Filtrar por texto aqui mostraria uma lista diferente do número.
-      : foco === "agora" ? lista.filter((f) => feriasEmCurso(f))
-      : foco ? lista.filter((f) => f.status === foco)
-      : lista;
-
-    const porPessoa = new Map<string, TFerias[]>();
-    for (const f of base) {
-      const atual = porPessoa.get(f.colaboradorId);
-      if (atual) atual.push(f);
-      else porPessoa.set(f.colaboradorId, [f]);
-    }
-
-    return [...porPessoa.entries()]
-      .map(([colaboradorId, registros]) => {
-        // Do mais recente para o mais antigo: o histórico se lê de cima.
-        const ordenados = [...registros].sort((a, b) =>
-          String(b.dataInicio || b.periodoAquisitivoFim || "").localeCompare(
-            String(a.dataInicio || a.periodoAquisitivoFim || ""),
-          ),
-        );
-        /* A próxima sai de TODOS os períodos da pessoa, não só dos que passaram
-           no filtro: com o cartão "Concluídas" ligado, olhar só o recorte diria
-           "sem férias marcadas" para quem tem uma agendada. */
-        const todosDela = lista.filter((f) => f.colaboradorId === colaboradorId);
-        const prazos = todosDela
-          .map((f) => prazoDeConcessao(f, HOJE, desdeHistorico, JANELA_ALERTA_DIAS))
-          .filter((p) => p.situacao !== "sem-prazo");
-        return {
-          colaboradorId,
-          nome: d.nomeColab(colaboradorId),
-          registros: ordenados,
-          proxima: proximaFerias(todosDela, HOJE),
-          // Saldo do que ainda está por gozar; período concluído não soma.
-          saldoAberto: todosDela
-            .filter((f) => f.status === "Em aberto" || f.status === "Agendada")
-            .reduce((s, f) => s + (Number(f.saldoDias) || 0), 0),
-          // O prazo que corre mais risco manda na linha.
-          prazo: prazos.sort((a, b) => a.dias - b.dias)[0] ?? null,
-          incoerentes: todosDela.filter((f) => statusIncoerente(f, HOJE)).length,
-        };
-      })
-      .sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [lista, d, foco, desdeHistorico]);
-
-  // ---- Situação dos períodos: distribuição por status (gráfico clicável) ----
-  const porStatus = useMemo(
-    () =>
-      STATUS_FERIAS.map((s) => ({
-        nome: s,
-        valor: lista.filter((f) => f.status === s).length,
-        cor: CORES_STATUS[s] ?? "#64748b",
-      })),
-    [lista],
-  );
-
-  // Distribuição por área (somente registros com gozo programado/ativo/concluído).
-  const porArea = useMemo(() => {
-    const acc = new Map<string, number>();
-    for (const f of lista) {
-      const c = d.colabById.get(f.colaboradorId);
-      const area = d.nomeArea(c?.areaId);
-      acc.set(area, (acc.get(area) ?? 0) + 1);
-    }
-    return [...acc.entries()]
-      .map(([nome, valor]) => ({ nome, valor }))
-      .sort((a, b) => b.valor - a.valor);
-  }, [lista, d]);
-
-  // Mapeia uma lista de férias -> colaboradores (para o drill-down).
-  const colabsDe = (fs: TFerias[]): Colaborador[] =>
-    fs
-      .map((f) => d.colabById.get(f.colaboradorId))
-      .filter((c): c is Colaborador => !!c);
-
-  const abrirDrillStatus = (status: string) => {
-    const fs = lista.filter((f) => f.status === status);
-    if (fs.length === 0) {
-      toast(`Nenhum colaborador com férias "${status}".`, "erro");
-      return;
-    }
-    drill.abrir(`Férias — ${status}`, colabsDe(fs), `${fs.length} colaborador(es) neste status`);
-  };
-
-  const abrirDrillArea = (area: string) => {
-    const fs = lista.filter((f) => d.nomeArea(d.colabById.get(f.colaboradorId)?.areaId) === area);
-    if (fs.length === 0) return;
-    drill.abrir(`Férias — ${area}`, colabsDe(fs), `${fs.length} registro(s) na área`);
-  };
-
-  const resetForm = () => {
-    setColabId("");
-    setDataInicio("");
-    setDias("30");
-    setAbono("0");
-    setNovo(false);
-  };
-
-  /* O que a pessoa escolhida já tem: período aquisitivo aberto (calculado da
-     admissão pelo motor de clt.ts, que já existia e esta tela não usava) e os
-     períodos de férias dela, para conferir saldo e sobreposição. */
-  const contexto = useMemo(() => {
-    const colab = escopo.find((c) => c.id === colabId) || null;
-    const dela = ferias.filter((f) => f.colaboradorId === colabId);
-    /* Com o corte de histórico, igual ao Resumo 360º da ficha. Sem ele, esta
-       tela julgava períodos anteriores ao primeiro registro do banco e dizia
-       "vencida" onde a ficha dizia "sem registro" — duas réguas para a mesma
-       pessoa, e a que aparecia dependia de por onde se entrava. */
-    const sit = colab ? situacaoFerias(colab, dela, undefined, inicioDoHistorico(ferias)) : null;
-    return { colab, dela, sit };
-  }, [colabId, escopo, ferias]);
-
-  /* `new Date(...)` solto no corpo do componente devolve um objeto NOVO a cada
-     desenho, e este é dependência do useMemo logo abaixo — que por isso nunca
-     aproveitava o cache e refazia todas as conferências da CLT a cada tecla
-     digitada. Com o useMemo o objeto só muda quando o texto do campo muda. */
-  const inicioData = useMemo(
-    () => (dataInicio ? new Date(`${dataInicio}T12:00:00`) : null),
-    [dataInicio],
-  );
-  /* O campo de data aceita ano de cinco dígitos, e a data que sai disso EXISTE
-     (é truthy) sem valer nada. Guardar só `inicioData` no `&&` do desenho lá
-     embaixo deixava passar, e a linha "Fica fora de …" chamava .toISOString()
-     nela: erro no meio do desenho derruba a tela inteira e quem preenchia perde
-     tudo. Ver feriasDataInvalida.test.ts. */
-  const inicioValido = !!inicioData && !isNaN(inicioData.getTime());
-  const diasNum = Number(dias);
-  const abonoNum = Number(abono);
-
-  const achados: Achado[] = useMemo(() => {
-    if (!colabId || !dataInicio) return [];
-    return validarAgendamento({
-      inicio: inicioData,
-      dias: diasNum,
-      abono: abonoNum,
-      diasJaLancados: contexto.sit?.diasGozados ?? 0,
-      fracoesExistentes: contexto.dela.filter((f) => f.status !== "Cancelada" && f.dataInicio).length,
-      outros: contexto.dela,
-    });
-  }, [colabId, dataInicio, inicioData, diasNum, abonoNum, contexto]);
-
-  const agendar = () => {
-    if (!colabId || !dataInicio) {
-      toast("Selecione o colaborador e a data de início.", "erro");
-      return;
-    }
-    if (temErro(achados)) {
-      toast(achados.find((a) => a.nivel === "erro")!.texto, "erro");
-      return;
-    }
-    const inicio = new Date(`${dataInicio}T12:00:00`);
-    const inicioISO = inicio.toISOString();
-    const sit = contexto.sit;
-    criar({
-      colaboradorId: colabId,
-      // Antes ia null nos dois, e por isso a coluna CLT e o indicador
-      // "Alertas CLT" ficavam vazios em TUDO que era criado por aqui — só os
-      // registros antigos, importados, tinham o período preenchido.
-      periodoAquisitivoInicio: sit ? sit.aquisitivoInicio.toISOString() : null,
-      periodoAquisitivoFim: sit ? sit.direitoDesde.toISOString() : null,
-      dataInicio: inicioISO,
-      dataRetorno: retornoDe(inicio, diasNum).toISOString(),
-      diasGozados: diasNum,
-      saldoDias: Math.max(0, DIAS_FERIAS - (sit?.diasGozados ?? 0) - diasNum - abonoNum),
-      status: "Agendada",
-      observacao: abonoNum > 0 ? `${abonoNum} dia(s) vendido(s) como abono pecuniário (art. 143).` : null,
-    });
-    toast(`Férias de ${diasNum} dia(s) agendadas para ${d.nomeColab(colabId)}.`);
-    resetForm();
-  };
-
-  // ---- Editar registro de férias ----
-  const abrirEdicao = (f: TFerias) => {
-    setEditando(f);
-    setEdForm({
-      aqInicio: isoParaInput(f.periodoAquisitivoInicio),
-      aqFim: isoParaInput(f.periodoAquisitivoFim),
-      dataInicio: isoParaInput(f.dataInicio),
-      dataRetorno: isoParaInput(f.dataRetorno),
-      diasGozados: String(f.diasGozados ?? 0),
-      saldoDias: String(f.saldoDias ?? 0),
-      status: f.status,
-    });
-  };
-
-  /* Conferência do que está no formulário de edição. Antes não havia nenhuma:
-     dava para gravar retorno ANTES do início (e aí "de férias agora" nunca
-     achava a pessoa, porque a janela era negativa), 999 dias gozados e saldo
-     de 99 — números que a CLT não permite e que ninguém digitaria de propósito,
-     mas que passavam calados quando o dedo escorregava. */
-  // Memoizados pelo mesmo motivo do inicioData acima: sem isto o useMemo de
-  // baixo refaz todas as conferências a cada tecla.
-  const edInicio = useMemo(
-    () => (edForm.dataInicio ? new Date(`${edForm.dataInicio}T12:00:00`) : null),
-    [edForm.dataInicio],
-  );
-  const edRetorno = useMemo(
-    () => (edForm.dataRetorno ? new Date(`${edForm.dataRetorno}T12:00:00`) : null),
-    [edForm.dataRetorno],
-  );
-  const edAchados: Achado[] = useMemo(() => {
-    if (!editando) return [];
-    const a = validarPeriodo(edInicio, edRetorno);
-    const g = Number(edForm.diasGozados);
-    const sa = Number(edForm.saldoDias);
-    if (!Number.isFinite(g) || g < 0 || g > DIAS_FERIAS) {
-      a.push({ nivel: "erro", texto: `Dias gozados vai de 0 a ${DIAS_FERIAS}.` });
-    }
-    if (!Number.isFinite(sa) || sa < 0 || sa > DIAS_FERIAS) {
-      a.push({ nivel: "erro", texto: `Saldo vai de 0 a ${DIAS_FERIAS}.` });
-    }
-    if (Number.isFinite(g) && Number.isFinite(sa) && g + sa > DIAS_FERIAS) {
-      a.push({ nivel: "aviso", texto: `Gozados + saldo dão ${g + sa} — um período aquisitivo tem ${DIAS_FERIAS} dias.` });
-    }
-    // O período aquisitivo também é um par: um sem o outro deixa a coluna CLT
-    // muda, e invertido faria o prazo de concessão nascer antes do direito.
-    const aqI = edForm.aqInicio ? new Date(`${edForm.aqInicio}T12:00:00`) : null;
-    const aqF = edForm.aqFim ? new Date(`${edForm.aqFim}T12:00:00`) : null;
-    if (aqI && aqF && aqF.getTime() <= aqI.getTime()) {
-      a.push({ nivel: "erro", texto: "O fim do período aquisitivo precisa ser depois do início." });
-    }
-    if (!!aqI !== !!aqF) {
-      a.push({ nivel: "aviso", texto: "Preencha as duas datas do período aquisitivo — só com as duas o alerta da CLT funciona." });
-    }
-    if (edInicio && edRetorno) {
-      const doPeriodo = diasEntre(edInicio, edRetorno);
-      if (doPeriodo > 0 && Number.isFinite(g) && g !== doPeriodo) {
-        a.push({ nivel: "aviso", texto: `As datas dão ${doPeriodo} dia(s) e "dias gozados" está ${g}.` });
-      }
-    }
-    return a;
-  }, [editando, edInicio, edRetorno, edForm.diasGozados, edForm.saldoDias, edForm.aqInicio, edForm.aqFim]);
-
-  const salvarEdicao = () => {
-    if (!editando) return;
-    if (temErro(edAchados)) {
-      toast(edAchados.find((a) => a.nivel === "erro")!.texto, "erro");
-      return;
-    }
-    atualizar(editando.id, {
-      // O período aquisitivo é gravado como DATA PURA ("AAAA-MM-DD"), que é como
-      // ele já está no banco nos 31 registros. Guardar hora aqui só criaria uma
-      // terceira convenção para as mesmas datas.
-      periodoAquisitivoInicio: manterSeMesmoDia(editando.periodoAquisitivoInicio, edForm.aqInicio),
-      periodoAquisitivoFim: manterSeMesmoDia(editando.periodoAquisitivoFim, edForm.aqFim),
-      dataInicio: manterSeMesmoDia(editando.dataInicio, edForm.dataInicio),
-      dataRetorno: manterSeMesmoDia(editando.dataRetorno, edForm.dataRetorno),
-      diasGozados: Math.max(0, Number(edForm.diasGozados) || 0),
-      saldoDias: Math.max(0, Number(edForm.saldoDias) || 0),
-      status: edForm.status,
-    });
-    toast(`Férias de ${d.nomeColab(editando.colaboradorId)} atualizadas.`);
-    setEditando(null);
-  };
-
-  // ---- Excluir registro de férias ----
-  const confirmarExclusao = () => {
-    if (!excluindo) return;
-    const nome = d.nomeColab(excluindo.colaboradorId);
-    remover(excluindo.id);
-    toast(`Registro de férias de ${nome} excluído.`);
-    setExcluindo(null);
-  };
-
-  return (
-    <div>
-      <PageHeader title="Férias" description="Painel de férias, saldos e conformidade CLT da sua equipe.">
-        {podeEditar && (
-          <button className="btn-primary" onClick={() => setNovo(true)}>
-            <CalendarPlus className="h-4 w-4" /> Agendar férias
-          </button>
-        )}
-      </PageHeader>
-
-      {/* Conclusão primeiro: a pergunta que se faz olhando esta tela é "falta
-          muito para a próxima?". Antes ela só era respondida contando no
-          calendário, linha por linha. Quando não há nenhuma marcada, o silêncio
-          seria a pior resposta — dizer isso em voz alta é o próprio aviso. */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-        <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
-        {proxima ? (
-          <>
-            <span className="text-slate-500">Próximas férias:</span>
-            <span className="font-medium text-slate-800">{d.nomeColab(proxima.f.colaboradorId)}</span>
-            <span className="font-medium text-sky-600">{proxima.c.texto.toLowerCase()}</span>
-            <span className="text-slate-400">
-              (início em {formatDate(proxima.f.dataInicio)}, retorno em {formatDate(proxima.f.dataRetorno)})
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="text-slate-600">Nenhuma férias marcada para os próximos dias.</span>
-            {emAberto.length > 0 && (
-              <span className="text-slate-400">
-                {emAberto.length} {emAberto.length === 1 ? "pessoa tem período" : "pessoas têm período"} em aberto para programar.
-              </span>
-            )}
-          </>
-        )}
-        {vencidas.length > 0 && (
-          <span className="ml-auto flex items-center gap-1.5 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-            <ShieldAlert className="h-3.5 w-3.5" />
-            {vencidas.length} {vencidas.length === 1 ? "período vencido" : "períodos vencidos"} — pagos em dobro
-          </span>
-        )}
+  const sessao=useSessao(),d=useDominio(),hoje=useHoje(),toast=useToast();
+  const {items:ferias,criar,atualizar,remover}=useColecao('ferias');
+  const podeEditar=podeGerir(sessao);
+  const [busca,setBusca]=useState(''),[area,setArea]=useState(''),[foco,setFoco]=useState('');
+  const [expandida,setExpandida]=useState<string|null>(null);
+  const [escolher,setEscolher]=useState(false),[pessoa,setPessoa]=useState('');
+  const [editando,setEditando]=useState<TFerias|null>(null),[excluindo,setExcluindo]=useState<TFerias|null>(null);
+  const escopo=useMemo(()=>colaboradoresVisiveis(sessao,d.colaboradores).filter(c=>!c.ehDirecao&&noQuadro(c)),[sessao,d.colaboradores]);
+  const linhas=useMemo(()=>escopo.map(c=>{
+    const registros=ferias.filter(f=>f.colaboradorId===c.id).sort((a,b)=>(b.periodoAquisitivoInicio??'').localeCompare(a.periodoAquisitivoInicio??''));
+    const resumo=resumoFeriasPessoa(registros,hoje);
+    const agora=registros.some(f=>estadoFerias(f,hoje)==='Em andamento');
+    const agendada=registros.some(f=>estadoFerias(f,hoje)==='Agendada');
+    const conferir=resumo.disponivel===null || resumo.referencia;
+    const prazos=resumo.periodos.map(p=>({p,prazo:prazoPeriodoFerias(p,hoje)})).filter(x=>x.prazo.atencao);
+    return {c,registros,resumo,agora,agendada,conferir,prazos,proxima:proximaFerias(registros,hoje)};
+  }).sort((a,b)=>a.c.nome.localeCompare(b.c.nome)),[escopo,ferias,hoje]);
+  const normalizar=(s:string)=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const base=linhas.filter(l=>(!area||l.c.areaId===area)&&normalizar(l.c.nome).includes(normalizar(busca)));
+  const grupos={agora:base.filter(l=>l.agora),agendada:base.filter(l=>l.agendada),prazos:base.filter(l=>l.prazos.length),conferir:base.filter(l=>l.conferir)};
+  const visiveis=foco ? grupos[foco as keyof typeof grupos] : base;
+  const agenda=base.flatMap(l=>l.registros.flatMap(f=>{
+    const estado=estadoFerias(f,hoje);
+    if(estado!=='Agendada'&&estado!=='Em andamento')return [];
+    return [{c:l.c,f,estado,data:estado==='Agendada'?f.dataInicio:f.dataRetorno}];
+  })).sort((a,b)=>+(dataFerias(a.data)??0)-+(dataFerias(b.data)??0));
+  const colab=d.colabById.get(editando?.colaboradorId??pessoa);
+  const fechar=()=>{setEditando(null);setPessoa('');};
+  const alternar=(v:string)=>setFoco(atual=>atual===v?'':v);
+  return <div className="space-y-5">
+    <PageHeader title="Férias" description="Agenda, saldo por aquisitivo e conferência do histórico"
+      >{podeEditar?<button className="btn-primary" onClick={()=>setEscolher(true)}><CalendarPlus className="h-4 w-4" /> Programar férias</button>:undefined}</PageHeader>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Campo label="Buscar pessoa"><Input aria-label="Buscar pessoa" placeholder="Nome da pessoa" value={busca} onChange={e=>setBusca(e.target.value)} /></Campo>
+        <Campo label="Área"><Select aria-label="Filtrar férias por área" value={area} onChange={e=>setArea(e.target.value)}><option value="">Todas as áreas</option>{d.areas.filter(a=>escopo.some(c=>c.areaId===a.id)).map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</Select></Campo>
       </div>
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="De férias agora" value={deFeriasAgora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Período em curso hoje" onClick={() => alternarFoco("agora")} ativo={foco === "agora"} title="Filtrar o controle de férias por quem está de férias agora" />
-        <StatCard label="Agendadas" value={agendadas.length} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Gozo programado" onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Filtrar o controle de férias pelas agendadas" />
-        <StatCard label="Em aberto" value={emAberto.length} icon={<CalendarPlus className="h-5 w-5" />} accent="amber" hint="Saldo a programar" onClick={() => alternarFoco("Em aberto")} ativo={foco === "Em aberto"} title="Filtrar o controle de férias pelas em aberto" />
-        <StatCard label="Alertas CLT" value={alertasCLT.length} icon={<ShieldAlert className="h-5 w-5" />} accent={alertasCLT.length ? "red" : "green"} hint="Períodos a vencer/vencidos" onClick={() => alternarFoco("alertas")} ativo={foco === "alertas"} title="Filtrar o controle de férias pelos períodos vencidos/a vencer" />
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Quem está de férias agora" subtitle="Colaboradores ausentes no momento" icon={<Palmtree className="h-[18px] w-[18px]" />} />
-          <CardBody className="space-y-2">
-            {deFeriasAgora.length === 0 ? (
-              <EmptyState title="Ninguém de férias" description="Nenhum colaborador em gozo de férias no momento." icon={<Palmtree className="h-8 w-8" />} />
-            ) : (
-              deFeriasAgora.map((f) => (
-                <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                  <LinkFicha id={f.colaboradorId} className="flex min-w-0 items-center gap-3">
-                    <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
-                      <p className="truncate text-xs text-slate-400">Desde {formatDate(f.dataInicio)}</p>
-                    </div>
-                  </LinkFicha>
-                  <Badge variant="success">Retorna {formatDate(f.dataRetorno)}</Badge>
-                </div>
-              ))
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Próximos retornos" subtitle="Ordenados pela data de retorno" icon={<CalendarClock className="h-[18px] w-[18px]" />} />
-          <CardBody className="space-y-2">
-            {proximosRetornos.length === 0 ? (
-              <EmptyState title="Sem retornos previstos" description="Nenhum retorno de férias agendado." icon={<CalendarClock className="h-8 w-8" />} />
-            ) : (
-              proximosRetornos.map((f) => {
-                const dd = diasAte(f.dataRetorno);
-                return (
-                  <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                    <LinkFicha id={f.colaboradorId} className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-700">{d.nomeColab(f.colaboradorId)}</p>
-                      <p className="text-xs text-slate-400">{formatDate(f.dataRetorno)}</p>
-                    </LinkFicha>
-                    <Badge variant={feriasEmCurso(f) ? "success" : "info"}>
-                      {dd === 0 ? "Volta hoje" : feriasEmCurso(f) ? `volta em ${dd}d` : `sai depois · ${dd}d`}
-                    </Badge>
-                  </div>
-                );
-              })
-            )}
-          </CardBody>
-        </Card>
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Situação dos períodos"
-            subtitle="Distribuição por status"
-            icon={<BarChart3 className="h-[18px] w-[18px]" />}
-          />
-          <CardBody>
-            {lista.length === 0 ? (
-              <EmptyState title="Sem dados" description="Nenhum registro de férias no seu escopo." icon={<BarChart3 className="h-8 w-8" />} />
-            ) : (
-              <>
-                <BarrasColoridas data={porStatus} altura={240} onItemClick={abrirDrillStatus} />
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {porStatus.map((s) => (
-                    <button
-                      key={s.nome}
-                      type="button"
-                      onClick={() => abrirDrillStatus(s.nome)}
-                      className="inline-flex items-center gap-1.5 text-xs text-slate-500 transition hover:text-brand"
-                    >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.cor }} aria-hidden />
-                      {s.nome} <span className="font-medium text-slate-700">({s.valor})</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader
-            title="Férias por área"
-            subtitle="Volume de registros por área"
-            icon={<BarChart3 className="h-[18px] w-[18px]" />}
-          />
-          <CardBody>
-            {porArea.length === 0 ? (
-              <EmptyState title="Sem dados" description="Nenhum registro de férias no seu escopo." icon={<BarChart3 className="h-8 w-8" />} />
-            ) : (
-              <BarrasVerticais data={porArea} altura={240} onItemClick={abrirDrillArea} />
-            )}
-          </CardBody>
-        </Card>
-      </div>
-
-      <Card className="mt-6 overflow-hidden">
-        <CardHeader title="Controle de férias" subtitle={`${tabela.length} ${tabela.length === 1 ? "pessoa" : "pessoas"} · ${lista.length} periodo(s) no seu escopo`} icon={<Palmtree className="h-[18px] w-[18px]" />} />
-        {tabela.length === 0 ? (
-          <CardBody>
-            {/* Card de valor zero também é clicável: sem este aviso a tela diria
-                que não há férias nenhuma com a lista cheia por trás do filtro. */}
-            <EmptyState
-              title={foco ? "Nenhum registro neste filtro" : "Sem registros de férias"}
-              description={foco ? "Clique de novo no cartão para ver todos os períodos." : "Nenhum período de férias no seu escopo de acesso."}
-              icon={<Palmtree className="h-8 w-8" />}
-            />
-          </CardBody>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-slate-100 bg-slate-50/50">
-                <tr>
-                  <th className="th w-8"><span className="sr-only">Abrir histórico</span></th>
-                  <th className="th">Colaborador</th>
-                  <th className="th">Próximas férias</th>
-                  <th className="th hidden sm:table-cell">Saldo a gozar</th>
-                  <th className="th hidden md:table-cell">Períodos</th>
-                  <th className="th">CLT</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {tabela.map((p) => {
-                  const aberta = expandida === p.colaboradorId;
-                  const prazo = p.prazo;
-                  return (
-                    <Fragment key={p.colaboradorId}>
-                      <tr className="transition hover:bg-slate-50/60">
-                        <td className="td pr-0">
-                          <button
-                            type="button"
-                            className="btn-ghost p-1.5"
-                            aria-expanded={aberta}
-                            title={aberta ? "Fechar" : "Ver o histórico de férias, observações e documentos"}
-                            aria-label={`${aberta ? "Fechar" : "Abrir"} o histórico de férias de ${p.nome}`}
-                            onClick={() => setExpandida(aberta ? null : p.colaboradorId)}
-                          >
-                            <ChevronRight className={`h-4 w-4 transition-transform ${aberta ? "rotate-90" : ""}`} />
-                          </button>
-                        </td>
-                        <td className="td">
-                          <LinkFicha id={p.colaboradorId} className="flex items-center gap-3" titulo="Abrir a ficha para lançar/agendar as férias">
-                            <Avatar nome={p.nome} foto={d.fotoColab(p.colaboradorId)} size="sm" />
-                            <span className="font-medium text-slate-800">{p.nome}</span>
-                          </LinkFicha>
-                        </td>
-                        {/* A pergunta que se faz olhando esta tela: falta muito?
-                            A contagem por lançamento respondia "voltou há 211
-                            dias" — verdade que não serve para nada. */}
-                        <td className="td">
-                          <span className={`text-xs font-medium ${COR_FASE[p.proxima.fase]}`}>
-                            {p.proxima.texto}
-                          </span>
-                          {p.proxima.registro?.dataInicio && (
-                            <span className="ml-1.5 text-xs text-slate-400">
-                              ({formatDate(p.proxima.registro.dataInicio)} → {formatDate(p.proxima.registro.dataRetorno)})
-                            </span>
-                          )}
-                          {p.incoerentes > 0 && (
-                            <span
-                              className="ml-1.5 inline-flex align-middle text-amber-500"
-                              title={`${p.incoerentes} período(s) com o status em desacordo com as datas. Abra para corrigir.`}
-                              aria-label={`${p.incoerentes} período com status desatualizado`}
-                            >
-                              <AlertTriangle className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                        </td>
-                        <td className="td hidden sm:table-cell text-slate-700">
-                          {p.saldoAberto > 0 ? `${p.saldoAberto} dias` : <span className="text-slate-300">—</span>}
-                        </td>
-                        <td className="td hidden md:table-cell text-slate-500">
-                          {p.registros.length} {p.registros.length === 1 ? "período" : "períodos"}
-                        </td>
-                        {/* Antes só falava dentro da janela de 60 dias: em tudo o
-                            mais ficava um travessão, que se lê como "não há prazo"
-                            quando na verdade há, com folga. Agora diz o prazo. */}
-                        <td className="td">
-                          {prazo?.situacao === "vencido" ? (
-                            <span title={`O limite era ${prazo.limite}`}>
-                              <Badge variant="danger">{prazo.texto}</Badge>
-                            </span>
-                          ) : prazo?.situacao === "a-vencer" ? (
-                            <span title={`Conceder até ${prazo.limite}`}>
-                              <Badge variant="warning">{prazo.texto}</Badge>
-                            </span>
-                          ) : prazo?.situacao === "no-prazo" ? (
-                            <span className="text-xs text-slate-500" title={`Conceder até ${prazo.limite}`}>{prazo.texto}</span>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
-                        </td>
-                      </tr>
-                      {aberta && (
-                        <tr>
-                          <td className="bg-slate-50/60 px-4 py-4" colSpan={6}>
-                            <DetalheFerias
-                              colaboradorId={p.colaboradorId}
-                              nome={p.nome}
-                              registros={p.registros}
-                              podeEditar={podeEditar}
-                              aoEditar={abrirEdicao}
-                              aoExcluir={setExcluindo}
-                            />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      {/* O log já existia, mas só em Configurações do RH. Quem erra um lançamento
-          precisa do valor ANTERIOR para desfazer, e precisa dele aqui. */}
-      {podeEditar && (
-        <div className="mt-6">
-          <HistoricoFerias nomeDe={(id) => d.nomeColab(id)} />
-        </div>
-      )}
-
-      {podeEditar && (
-        <Modal
-          aberto={novo}
-          onFechar={resetForm}
-          titulo="Agendar férias"
-          descricao="Programe o gozo. 30 dias corridos, ou partido em até três períodos."
-          rodape={
-            <>
-              <button className="btn-outline" onClick={resetForm}>Cancelar</button>
-              <button className="btn-primary" onClick={agendar} disabled={temErro(achados)}>
-                <Plus className="h-4 w-4" /> Agendar
-              </button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            <Campo label="Colaborador" obrigatorio>
-              <Select value={colabId} onChange={(e) => setColabId(e.target.value)}>
-                <option value="">Selecione…</option>
-                {escopo
-                  .slice()
-                  .sort((a, b) => a.nome.localeCompare(b.nome))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-              </Select>
-            </Campo>
-            {contexto.sit && (
-              <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Período aquisitivo desde <b>{formatDate(contexto.sit.aquisitivoInicio.toISOString())}</b> ·
-                {" "}direito nasceu em <b>{formatDate(contexto.sit.direitoDesde.toISOString())}</b> ·
-                {" "}conceder até <b>{formatDate(contexto.sit.limiteConcessao.toISOString())}</b>
-                <br />
-                Já lançados: <b>{contexto.sit.diasGozados} dia(s)</b> · disponível:{" "}
-                <b>{Math.max(0, DIAS_FERIAS - contexto.sit.diasGozados)} dia(s)</b>
-              </div>
-            )}
-            {colabId && !contexto.sit && (
-              <p className="text-xs text-amber-700">
-                Sem período aquisitivo completo (menos de 12 meses de casa) ou sem data de admissão no cadastro.
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <Campo label="Data de início" obrigatorio>
-                <Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
-              </Campo>
-              <Campo label="Dias de férias" obrigatorio hint="30 é o normal. Pode partir em até 3 períodos (mín. 5 dias).">
-                <Input type="number" min={1} max={30} step={1} value={dias}
-                  onChange={(e) => setDias(e.target.value)} />
-              </Campo>
-            </div>
-            <Campo label="Vender como abono (opcional)" hint={`Até ${MAX_ABONO_DIAS} dias, um terço das férias (art. 143).`}>
-              <Input type="number" min={0} max={MAX_ABONO_DIAS} step={1} value={abono}
-                onChange={(e) => setAbono(e.target.value)} />
-            </Campo>
-            {dataInicio && inicioValido && Number.isFinite(diasNum) && diasNum > 0 && (
-              <p className="text-xs text-slate-500">
-                Fica fora de <span className="font-medium text-slate-700">{formatDate(inicioData.toISOString())}</span>
-                {" "}a <span className="font-medium text-slate-700">{formatDate(retornoDe(inicioData, diasNum - 1).toISOString())}</span>
-                {" · "}volta em <span className="font-medium text-slate-700">{formatDate(retornoDe(inicioData, diasNum).toISOString())}</span>
-              </p>
-            )}
-            {achados.length > 0 && (
-              <ul className="space-y-1">
-                {achados.map((a, i) => (
-                  <li key={i} className={`rounded-lg px-3 py-2 text-xs ${a.nivel === "erro" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>
-                    {a.nivel === "erro" ? "⛔ " : "⚠️ "}{a.texto}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </Modal>
-      )}
-
-      {podeEditar && (
-        <Modal
-          aberto={!!editando}
-          onFechar={() => setEditando(null)}
-          titulo="Editar férias"
-          descricao={editando ? d.nomeColab(editando.colaboradorId) : undefined}
-          rodape={
-            <>
-              <button className="btn-outline" onClick={() => setEditando(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={salvarEdicao} disabled={temErro(edAchados)}>
-                <Save className="h-4 w-4" /> Salvar
-              </button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            {/* O período aquisitivo não tinha campo nenhum: era gravado só no
-                agendamento e nunca mais dava para corrigir — e é ele que manda
-                na coluna CLT e no alerta de férias vencidas. */}
-            <div className="rounded-lg border border-slate-200 p-3">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Período aquisitivo</p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Campo label="Início" hint="12 meses de trabalho que geraram o direito.">
-                  <Input type="date" value={edForm.aqInicio} onChange={(e) => setEdForm((s) => ({ ...s, aqInicio: e.target.value }))} />
-                </Campo>
-                <Campo label="Fim" hint="Quando o direito nasceu. Conceder em até 12 meses.">
-                  <Input type="date" value={edForm.aqFim} onChange={(e) => setEdForm((s) => ({ ...s, aqFim: e.target.value }))} />
-                </Campo>
-              </div>
-              {edForm.aqFim && (
-                <p className="mt-1 text-xs text-slate-500">
-                  Conceder até <b>{formatDate(limiteDeConcessao(edForm.aqFim))}</b>, senão as férias são pagas em dobro (art. 134).
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Campo label="Início do gozo">
-                <Input type="date" value={edForm.dataInicio} onChange={(e) => setEdForm((s) => ({ ...s, dataInicio: e.target.value }))} />
-              </Campo>
-              <Campo label="Retorno">
-                <Input type="date" value={edForm.dataRetorno} onChange={(e) => setEdForm((s) => ({ ...s, dataRetorno: e.target.value }))} />
-              </Campo>
-              <Campo label="Dias gozados">
-                <Input type="number" min={0} value={edForm.diasGozados} onChange={(e) => setEdForm((s) => ({ ...s, diasGozados: e.target.value }))} />
-              </Campo>
-              <Campo label="Saldo de dias">
-                <Input type="number" min={0} value={edForm.saldoDias} onChange={(e) => setEdForm((s) => ({ ...s, saldoDias: e.target.value }))} />
-              </Campo>
-            </div>
-            <Campo label="Status">
-              <Select value={edForm.status} onChange={(e) => setEdForm((s) => ({ ...s, status: e.target.value }))}>
-                {STATUS_FERIAS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </Select>
-            </Campo>
-            {edInicio && edRetorno && diasEntre(edInicio, edRetorno) > 0 && (
-              <button
-                type="button"
-                className="btn-outline w-full justify-center text-xs"
-                onClick={() => {
-                  // Acerta os números pelas datas, que é a informação confiável:
-                  // as datas vêm do calendário, os dias eram digitados à mão.
-                  const dd = diasEntre(edInicio, edRetorno);
-                  setEdForm((s) => ({ ...s, diasGozados: String(dd), saldoDias: String(Math.max(0, DIAS_FERIAS - dd)) }));
-                }}
-              >
-                Acertar os dias pelas datas ({diasEntre(edInicio, edRetorno)} dia(s))
-              </button>
-            )}
-            {edAchados.length > 0 && (
-              <ul className="space-y-1">
-                {edAchados.map((a, i) => (
-                  <li key={i} className={`rounded-lg px-3 py-2 text-xs ${a.nivel === "erro" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>
-                    {a.nivel === "erro" ? "⛔ " : "⚠️ "}{a.texto}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </Modal>
-      )}
-
-      {podeEditar && (
-        <ConfirmDialog
-          aberto={!!excluindo}
-          onFechar={() => setExcluindo(null)}
-          onConfirmar={confirmarExclusao}
-          titulo="Excluir registro de férias"
-          mensagem={
-            excluindo ? (
-              <>
-                Excluir o registro de férias de{" "}
-                <span className="font-medium text-slate-700">{d.nomeColab(excluindo.colaboradorId)}</span>? Esta ação não pode ser desfeita.
-              </>
-            ) : (
-              ""
-            )
-          }
-        />
-      )}
-
-      <DrillModal {...drill.props} />
+      <p className="text-xs text-slate-500">{base.length} pessoas no quadro neste filtro · atualização por calendário em {formatDate(hoje)}. Os cartões contam pessoas; uma pessoa pode ter férias atuais e futuras.</p>
     </div>
-  );
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <StatCard label="De férias agora" value={grupos.agora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Pessoas fora hoje" ativo={foco==='agora'} onClick={()=>alternar('agora')} />
+      <StatCard label="Com férias agendadas" value={grupos.agendada.length} icon={<CalendarPlus className="h-5 w-5" />} hint="Pessoas com saídas futuras" ativo={foco==='agendada'} onClick={()=>alternar('agendada')} />
+      <StatCard label="Prazos para conferir" value={grupos.prazos.length} icon={<CalendarClock className="h-5 w-5" />} accent="amber" hint="Até 60 dias, encerrados ou gozo após o prazo" ativo={foco==='prazos'} onClick={()=>alternar('prazos')} />
+      <StatCard label="Histórico a conferir" value={grupos.conferir.length} icon={<ShieldAlert className="h-5 w-5" />} accent="amber" hint="Direito não confirmado ou informação incompleta" ativo={foco==='conferir'} onClick={()=>alternar('conferir')} />
+    </div>
+    {agenda.length>0 && <Card><CardHeader title="Próximas saídas e retornos" subtitle="Movimentos mais próximos das pessoas no filtro" /><CardBody>
+      <div className="grid gap-2 md:grid-cols-2">{agenda.slice(0,6).map(x=><button key={x.f.id} className="rounded-lg border border-slate-200 p-3 text-left hover:bg-slate-50" onClick={()=>{setFoco('');setExpandida(x.c.id);document.getElementById('controle-ferias')?.scrollIntoView({behavior:'smooth'});}}>
+        <span className="block font-medium text-slate-800 break-words">{x.c.nome}</span><span className="text-sm text-slate-500">{x.estado==='Agendada'?'Sai em':'Retorna em'} {formatDate(x.data)} · {x.estado==='Agendada'?`retorno ${formatDate(x.f.dataRetorno)}`:'de férias agora'}</span>
+      </button>)}</div>
+      {agenda.length>6 && <p className="mt-3 text-xs text-slate-500">Mais {agenda.length-6} movimentos na lista de pessoas abaixo.</p>}
+    </CardBody></Card>}
+    <Card colapsavel={false}><CardHeader title="Controle de férias" subtitle={`${visiveis.length} de ${base.length} pessoas${foco?' · filtro do cartão ativo':''}`} action={foco?<button className="btn-outline" onClick={()=>setFoco('')}>Mostrar todas</button>:undefined} />
+      <CardBody><div id="controle-ferias" className="space-y-3">
+        {!visiveis.length && <EmptyState title="Nenhuma pessoa neste filtro" description="Ajuste a busca, a área ou o cartão selecionado." icon={<Search className="h-8 w-8" />} />}
+        {visiveis.map(l=><div key={l.c.id} className="rounded-xl border border-slate-200 overflow-hidden">
+          <div className="p-4 grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto] lg:items-center">
+            <div className="min-w-0"><LinkFicha id={l.c.id}>{l.c.nome}</LinkFicha><p className="text-xs text-slate-500">{d.areas.find(a=>a.id===l.c.areaId)?.nome??'Área não informada'}</p></div>
+            <div className="text-sm space-y-1"><p className={l.agora?'font-semibold text-emerald-700':'text-slate-700'}>{l.proxima.texto}</p>
+              <p className="text-slate-500">{l.resumo.disponivel===null?'Saldo a conferir':`${l.resumo.disponivel} dias livres${l.resumo.referencia?' · direito a confirmar':''}`} · {l.resumo.agendados} dias reservados</p>
+              {l.prazos.length>0 && <p className="text-amber-800">{l.prazos.length} aquisitivo(s) com prazo para conferir</p>}
+            </div>
+            <div className="flex flex-wrap gap-2"><button className="btn-outline" aria-expanded={expandida===l.c.id} aria-label={`Ver férias de ${l.c.nome}`} onClick={()=>setExpandida(atual=>atual===l.c.id?null:l.c.id)}><ChevronDown className="h-4 w-4" /> Detalhes</button>
+              {podeEditar && <button className="btn-outline" aria-label={`Programar férias de ${l.c.nome}`} onClick={()=>setPessoa(l.c.id)}><CalendarPlus className="h-4 w-4" /> Programar</button>}
+            </div>
+          </div>
+          {expandida===l.c.id && <div className="border-t border-slate-200 bg-slate-50 p-4 space-y-4"><ResumoFerias registros={l.registros} />
+            <DetalheFerias colaboradorId={l.c.id} nome={l.c.nome} registros={l.registros} podeEditar={podeEditar} aoEditar={setEditando} aoExcluir={setExcluindo} />
+          </div>}
+        </div>)}
+      </div></CardBody>
+    </Card>
+    <p className="text-xs text-slate-500">O histórico registrado não prova que todos os períodos anteriores foram lançados. Vínculo e direito precisam ser conferidos; salário e pagamentos avulsos não definem quem tem direito a férias.</p>
+    {podeEditar && <details className="rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-medium text-slate-700">Histórico de alterações</summary><div className="mt-4"><HistoricoFerias nomeDe={id=>d.nomeColab(id)} /></div></details>}
+    {escolher && <Modal aberto onFechar={()=>setEscolher(false)} titulo="Escolher pessoa" descricao="O período e o gozo serão conferidos antes de salvar."><Campo label="Pessoa"><Select aria-label="Pessoa para programar férias" value="" onChange={e=>{setPessoa(e.target.value);setEscolher(false);}}><option value="">Selecione</option>{escopo.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</Select></Campo></Modal>}
+    {colab && <FormularioFerias colaborador={colab} registros={ferias.filter(f=>f.colaboradorId===colab.id)} registro={editando} onFechar={fechar} onSalvar={dados=>{
+      if(editando){const patch=Object.fromEntries(Object.entries(dados).filter(([k,v])=>v!==editando[k as keyof TFerias]));atualizar(editando.id,patch);}
+      else criar(dados);
+      toast(editando?'Férias atualizadas.':'Férias registradas.');fechar();
+    }} />}
+    <ConfirmDialog aberto={!!excluindo} onFechar={()=>setExcluindo(null)} titulo="Excluir lançamento de férias" textoConfirmar="Excluir lançamento" mensagem="Excluir altera o saldo e remove este lançamento do histórico de períodos. Para preservar o registro de uma programação que não aconteceu, prefira editar e cancelar." onConfirmar={()=>{if(excluindo)remover(excluindo.id);setExcluindo(null);toast('Lançamento removido.');}} />
+  </div>;
 }

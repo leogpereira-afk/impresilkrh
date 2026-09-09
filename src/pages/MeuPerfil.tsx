@@ -1,3 +1,6 @@
+import { useHoje } from '@/lib/useHoje';
+import { ResumoFerias } from '@/components/ferias/resumo-ferias';
+import { estadoFerias } from '@/lib/feriasPeriodos';
 import { useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -300,12 +303,14 @@ function AbaDocumentos({ colaboradorId }: { colaboradorId: string }) {
 }
 
 function AbaFerias({ colaboradorId }: { colaboradorId: string }) {
+  const hojeFerias=useHoje();
   const { items } = useColecao("ferias");
   const lista = items.filter((f) => f.colaboradorId === colaboradorId);
   return (
     <Card>
       <CardHeader title="Minhas férias" subtitle="Períodos aquisitivos, saldo e status" />
       <CardBody>
+        <ResumoFerias registros={lista} />
         {lista.length === 0 ? (
           <EmptyState title="Sem registros de férias" />
         ) : (
@@ -317,11 +322,11 @@ function AbaFerias({ colaboradorId }: { colaboradorId: string }) {
                     Período {formatDate(f.periodoAquisitivoInicio)} – {formatDate(f.periodoAquisitivoFim)}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {f.dataInicio ? `Gozo: ${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "Sem gozo agendado"} · Saldo {f.saldoDias} dias
+                    {f.dataInicio ? `Gozo: ${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "Sem gozo agendado"}
                   </p>
                 </div>
-                <Badge variant={f.status === "Concluída" ? "neutral" : f.status === "Em andamento" ? "success" : f.status === "Agendada" ? "info" : "warning"}>
-                  {f.status}
+                <Badge variant={estadoFerias(f,hojeFerias) === "Concluída" ? "neutral" : estadoFerias(f,hojeFerias) === "Em andamento" ? "success" : estadoFerias(f,hojeFerias) === "Agendada" ? "info" : "warning"}>
+                  {estadoFerias(f,hojeFerias)}
                 </Badge>
               </div>
             ))}

@@ -1,3 +1,4 @@
+import { validarRegistroFerias } from '@/lib/feriasPeriodos';
 // ============================================================================
 // Histórico de alterações das FÉRIAS — quem mexeu, quando, e o que era antes.
 //
@@ -36,7 +37,7 @@ interface Alteracao {
 
 /** Campos que a tela de férias grava — os únicos que dá para desfazer daqui. */
 const CAMPOS_DESFAZIVEIS = new Set([
-  "dataInicio", "dataRetorno", "diasGozados", "saldoDias", "status",
+  "dataInicio", "dataRetorno", "diasGozados", "status", "direitoDias", "abonoDias",
   "periodoAquisitivoInicio", "periodoAquisitivoFim",
 ]);
 
@@ -44,6 +45,8 @@ const ROTULO: Record<string, string> = {
   dataInicio: "Início do gozo",
   dataRetorno: "Retorno",
   diasGozados: "Dias gozados",
+  direitoDias: "Direito no aquisitivo",
+  abonoDias: "Dias vendidos",
   saldoDias: "Saldo",
   status: "Status",
   periodoAquisitivoInicio: "Aquisitivo — início",
@@ -99,7 +102,7 @@ export function HistoricoFerias({ nomeDe }: { nomeDe: (id: string) => string }) 
     const { log, m } = desfazendo;
     const alvo = (ferias as Ferias[]).find((f) => f.id === log.registroId);
     if (!alvo) { toast("Este registro de férias não existe mais.", "erro"); setDesfazendo(null); return; }
-    const numero = m.campo === "diasGozados" || m.campo === "saldoDias";
+    const numero = ["diasGozados", "direitoDias", "abonoDias"].includes(m.campo);
     // O histórico guarda o valor LEGÍVEL: "—" é vazio, "•••" é mascarado e
     // "…" é truncado — nenhum deles pode virar dado (auditoria de 07/09/2026).
     if (m.de === "•••" || (typeof m.de === "string" && m.de.endsWith("…"))) { toast("O valor anterior não está inteiro no histórico; não dá para desfazer por aqui.", "erro"); setDesfazendo(null); return; }
@@ -108,9 +111,10 @@ export function HistoricoFerias({ nomeDe }: { nomeDe: (id: string) => string }) 
     const atualLegivel = valorLegivel((alvo as unknown as Record<string, unknown>)[m.campo]);
     if (atualLegivel !== (m.para ?? "—")) { toast(`${ROTULO[m.campo] ?? m.campo} já mudou depois desta linha (hoje: ${bonito(m.campo, atualLegivel)}). Desfaça primeiro a alteração mais recente.`, "erro"); setDesfazendo(null); return; }
     const vazio = m.de == null || m.de === "" || m.de === "—";
-    atualizar(alvo.id, {
-      [m.campo]: vazio ? null : numero ? Number(m.de) : m.de,
-    } as Partial<Ferias>);
+    const patch={ [m.campo]: vazio ? null : numero ? Number(m.de) : m.de } as Partial<Ferias>;
+    const erros=validarRegistroFerias({...alvo,...patch},ferias);
+    if (erros.length) { toast(`Não foi restaurado: ${erros[0]} Abra a edição do período para conferir o conjunto.`, "erro");setDesfazendo(null);return; }
+    atualizar(alvo.id, patch);
     toast(`${ROTULO[m.campo] ?? m.campo} devolvido para ${bonito(m.campo, m.de)}.`);
     setDesfazendo(null);
   };

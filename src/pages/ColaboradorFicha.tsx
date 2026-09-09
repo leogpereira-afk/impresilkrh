@@ -1,3 +1,7 @@
+import { useHoje } from '@/lib/useHoje';
+import { FormularioFerias } from '@/components/ferias/formulario-ferias';
+import { ResumoFerias } from '@/components/ferias/resumo-ferias';
+import { estadoFerias } from '@/lib/feriasPeriodos';
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
@@ -32,7 +36,7 @@ import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
-import { STATUS_FERIAS, CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
+import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
 import { vinculosDoColaborador } from "@/lib/vinculos";
@@ -431,14 +435,14 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
            mas repeti-lo igual para quem já marcou as férias faz parecer que o
            sistema não registrou o lançamento. Dizer que existe agendamento
            mantém a cobrança de pé e mostra que o passo seguinte já foi dado. */
-        ? `Férias VENCIDAS há ${Math.abs(sFerias.diasParaLimite)} dia(s) — limite era ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Por lei, o pagamento é em dobro.`
+        ? `Prazo de férias encerrado há ${Math.abs(sFerias.diasParaLimite)} dia(s), em ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Confira gozos realizados e saldo com o RH.`
           + (sFerias.diasAgendados > 0 && sFerias.agendadoPara
-            ? ` Já há ${sFerias.diasAgendados} dia(s) agendados para ${sFerias.agendadoPara.toLocaleDateString("pt-BR")} — o dobro continua devido.`
+            ? ` Já há ${sFerias.diasAgendados} dia(s) agendados para ${sFerias.agendadoPara.toLocaleDateString("pt-BR")}; confira se as datas atendem ao prazo.`
             : "")
         : sFerias.situacao === "sem-registro"
-        ? `Sem histórico de férias no sistema para os períodos até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")}. Se foram gozadas, lance para o alerta ficar correto.`
-        : `Férias a conceder até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")} (${sFerias.diasParaLimite} dia(s)), senão paga em dobro.`,
-      rotulo: "Agendar férias",
+        ? `Histórico ou direito de férias a conferir no aquisitivo iniciado em ${sFerias.aquisitivoInicio.toLocaleDateString("pt-BR")}. Confira os registros antes de programar.`
+        : `Férias a conceder até ${sFerias.limiteConcessao.toLocaleDateString("pt-BR")} (${sFerias.diasParaLimite} dia(s)). Confira a programação completa.`,
+      rotulo: sFerias.situacao === "sem-registro" ? "Conferir férias" : "Agendar férias",
       acao: {
         tipo: "ferias",
         aquisitivoInicio: diaLocalISO(sFerias.aquisitivoInicio),
@@ -1669,18 +1673,8 @@ function EditarDocumentoModal({ doc, onFechar, onSalvar }: { doc: import("@/data
   );
 }
 
-// A MESMA lista da tela /ferias. Ter um status a mais só aqui ("Cancelada")
-// criava um estado que o resto do sistema não conhece: o alerta da CLT parava
-// de contar o período, o gráfico não classificava e o select de lá exibia outro
-// status. Se um dia precisar de "Cancelada", ela entra em STATUS_FERIAS.
-const STATUS_FERIAS_FICHA = STATUS_FERIAS;
-const somaDiasISO = (iso: string, n: number) => {
-  const d = parseData(iso);
-  if (!d) return "";
-  return diaLocalISO(new Date(d.getTime() + n * 86400000));
-};
-
 function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colaboradorId: string; podeEditar: boolean; pedido?: { aquisitivoInicio: string; aquisitivoFim: string } | null; onConsumir?: () => void }) {
+  const hojeFerias=useHoje();
   const toast = useToast();
   const d = useDominio();
   const { items, criar, atualizar, remover } = useColecao("ferias");
@@ -1701,7 +1695,7 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
      delas o modal sugeria um período de 2021 enquanto o alerta da MESMA ficha
      mandava conceder o de 2024. Quem gravasse pelo modal criava um período que
      o alerta não reconhece, e o aviso ficava na tela pedindo de novo. */
-  const sit = colab ? situacaoFerias(colab, lista, undefined, inicioDoHistorico(items)) : null;
+  const sit = colab ? situacaoFerias(colab, lista, hojeFerias, inicioDoHistorico(items)) : null;
   const sugestao = (() => {
     if (sit) return { inicio: diaLocalISO(sit.aquisitivoInicio), fim: diaLocalISO(new Date(sit.direitoDesde.getTime() - 86400000)) };
     // Menos de 12 meses de casa: o primeiro aquisitivo é o ano a partir da admissão.
@@ -1731,6 +1725,7 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
         subtitle="Períodos aquisitivos, saldo e status — clique para editar ou agendar o gozo"
         action={podeEditar ? <button className="btn-outline" onClick={() => setNovoPeriodo(sugestao)}><Plus className="h-4 w-4" /> Novo período</button> : undefined}
       >
+        <ResumoFerias registros={lista} />
         {lista.length === 0 ? <EmptyState title="Sem registros de férias" description={podeEditar ? "Use 'Novo período' para lançar o período aquisitivo e agendar o gozo." : undefined} /> : (
           <div className="space-y-3">
             {lista.map((f) => {
@@ -1738,9 +1733,9 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
                 <>
                   <div className="min-w-0 text-left">
                     <p className="text-sm font-medium text-slate-700">Período {formatDate(f.periodoAquisitivoInicio)} – {formatDate(f.periodoAquisitivoFim)}</p>
-                    <p className="text-xs text-slate-400">{f.dataInicio ? `Gozo: ${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "Sem gozo agendado"} · Saldo {f.saldoDias} dias</p>
+                    <p className="text-xs text-slate-400">{f.dataInicio ? `Gozo: ${formatDate(f.dataInicio)} → ${formatDate(f.dataRetorno)}` : "Sem gozo agendado"}</p>
                   </div>
-                  <Badge variant={f.status === "Concluída" ? "neutral" : f.status === "Em andamento" ? "success" : f.status === "Agendada" ? "info" : f.status === "Cancelada" ? "neutral" : "warning"}>{f.status}</Badge>
+                  <Badge variant={estadoFerias(f,hojeFerias) === "Concluída" ? "neutral" : estadoFerias(f,hojeFerias) === "Em andamento" ? "success" : estadoFerias(f,hojeFerias) === "Agendada" ? "info" : f.status === "Cancelada" ? "neutral" : "warning"}>{estadoFerias(f,hojeFerias)}</Badge>
                 </>
               );
               if (!podeEditar) {
@@ -1760,14 +1755,16 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
         )}
       </SecaoColapsavel>
 
-      {(edit || novoPeriodo) && (
-        <PeriodoFeriasModal
+      {colab && (edit || novoPeriodo) && (
+        <FormularioFerias
+          colaborador={colab}
+          registros={lista}
           registro={edit}
           inicial={novoPeriodo}
           onFechar={() => { setEdit(null); setNovoPeriodo(null); }}
           onSalvar={(dados) => {
-            if (edit) { atualizar(edit.id, dados); toast("Período de férias atualizado."); }
-            else { criar({ colaboradorId, ...dados }); toast("Período de férias lançado."); }
+            if (edit) { const patch=Object.fromEntries(Object.entries(dados).filter(([k,v])=>v!==edit[k as keyof typeof edit])); atualizar(edit.id, patch); toast("Período de férias atualizado."); }
+            else { criar(dados); toast("Período de férias lançado."); }
             setEdit(null); setNovoPeriodo(null);
           }}
         />
@@ -1782,80 +1779,6 @@ function AbaFerias({ colaboradorId, podeEditar, pedido, onConsumir }: { colabora
         mensagem={excluir ? <>Excluir o período {formatDate(excluir.periodoAquisitivoInicio)} – {formatDate(excluir.periodoAquisitivoFim)}? Isso muda o cálculo de férias vencidas desta pessoa.</> : ""}
       />
     </>
-  );
-}
-
-/** Lança/edita um período aquisitivo e o gozo. O retorno acompanha o início. */
-function PeriodoFeriasModal({ registro, inicial, onFechar, onSalvar }: {
-  registro: import("@/data/types").Ferias | null;
-  inicial: { inicio: string; fim: string } | null;
-  onFechar: () => void;
-  onSalvar: (dados: Partial<import("@/data/types").Ferias>) => void;
-}) {
-  const toast = useToast();
-  // Mesma armadilha do modal de documento: data com hora não entra em input date.
-  const dia = (v?: string | null) => (v ?? "").slice(0, 10);
-  const [aqIni, setAqIni] = useState(dia(registro?.periodoAquisitivoInicio) || inicial?.inicio || "");
-  const [aqFim, setAqFim] = useState(dia(registro?.periodoAquisitivoFim) || inicial?.fim || "");
-  const [inicio, setInicio] = useState(dia(registro?.dataInicio));
-  const [retorno, setRetorno] = useState(dia(registro?.dataRetorno));
-  const [dias, setDias] = useState(String(registro?.diasGozados ?? 0));
-  const [saldo, setSaldo] = useState(String(registro?.saldoDias ?? 30));
-  const [status, setStatus] = useState(registro?.status ?? (inicial ? "Agendada" : "Em aberto"));
-  const [obs, setObs] = useState(registro?.observacao ?? "");
-
-  // Marcar o início já preenche o retorno e o saldo — o caso comum são 30 dias
-  // corridos, e digitar as três coisas à mão só cria divergência.
-  const mudarInicio = (v: string) => {
-    setInicio(v);
-    if (!v) return;
-    const n = Number(dias) > 0 ? Number(dias) : 30;
-    if (!retorno || dia(registro?.dataInicio) !== v) setRetorno(somaDiasISO(v, n));
-    if (status === "Em aberto") setStatus("Agendada");
-    // Dias GOZADOS só depois de gozar. Marcar 30/0 ao agendar dizia que férias
-    // que só começam daqui a 40 dias já foram tiradas: a pessoa sumia do alerta
-    // de férias vencidas e o saldo zerava antes da hora. Agendado = saldo cheio.
-    if (Number(dias) === 0 && v > diaLocalISO(HOJE)) setSaldo(saldo === "0" ? "30" : saldo);
-  };
-
-  const salvar = () => {
-    if (!aqIni || !aqFim) return toast("Informe o período aquisitivo.", "erro");
-    if (aqFim < aqIni) return toast("O fim do período aquisitivo não pode vir antes do início.", "erro");
-    if (inicio && retorno && retorno < inicio) return toast("O retorno não pode ser anterior ao início do gozo.", "erro");
-    if (status === "Agendada" && !inicio) return toast("Para agendar, informe a data de início do gozo.", "erro");
-    onSalvar({
-      periodoAquisitivoInicio: aqIni, periodoAquisitivoFim: aqFim,
-      dataInicio: inicio || null, dataRetorno: retorno || null,
-      diasGozados: Number(dias) || 0, saldoDias: Number(saldo) || 0,
-      status, observacao: obs.trim() || null,
-    });
-  };
-
-  return (
-    <Modal aberto onFechar={onFechar} titulo={registro ? "Editar período de férias" : "Lançar período de férias"}
-      descricao="O período aquisitivo é o ano trabalhado; o gozo é quando a pessoa sai."
-      rodape={<><button className="btn-outline" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Salvar</button></>}>
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label="Aquisitivo — início" obrigatorio><Input type="date" value={aqIni} onChange={(e) => setAqIni(e.target.value)} /></Campo>
-          <Campo label="Aquisitivo — fim" obrigatorio><Input type="date" value={aqFim} onChange={(e) => setAqFim(e.target.value)} /></Campo>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label="Início do gozo" hint="Preenche o retorno em 30 dias"><Input type="date" value={inicio} onChange={(e) => mudarInicio(e.target.value)} /></Campo>
-          <Campo label="Retorno"><Input type="date" value={retorno} onChange={(e) => setRetorno(e.target.value)} /></Campo>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label="Dias gozados"><Input type="number" min={0} max={30} value={dias} onChange={(e) => setDias(e.target.value)} /></Campo>
-          <Campo label="Saldo de dias"><Input type="number" min={0} max={30} value={saldo} onChange={(e) => setSaldo(e.target.value)} /></Campo>
-        </div>
-        <Campo label="Status">
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-            {STATUS_FERIAS_FICHA.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
-        </Campo>
-        <Campo label="Observação"><Input value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex.: 15 dias + abono pecuniário" /></Campo>
-      </div>
-    </Modal>
   );
 }
 
