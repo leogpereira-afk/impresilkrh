@@ -15,10 +15,11 @@
 //                      ruim). Zero aqui NUNCA é resultado: mês sem plano de
 //                      contas mostra "ausente", não "R$ 0,00" de rateio.
 import { TIPOS_BASE_ENCARGOS } from "./encargos";
+import { tituloPago } from "./mubiPagamentos";
 import type { DiagnosticoCompetencia } from "./custos";
 import type { Config } from "@/data/types";
 
-type Pag = { competencia: string; tipo: string; valor: number; colaboradorId?: string };
+type Pag = { competencia: string; tipo: string; valor: number; colaboradorId?: string; statusErp?: string | null };
 
 // ---------------------------------------------------------------------------
 // Variação contra o mês anterior
@@ -63,7 +64,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 function somaPorTipo(pags: Pag[], comp: string, ignorar: readonly string[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const p of pags) {
-    if (p.competencia !== comp || ignorar.includes(p.tipo)) continue;
+    if (p.competencia !== comp || ignorar.includes(p.tipo) || !tituloPago(p.statusErp)) continue;
     // Number(): valor que chega como texto ("100") concatenaria em vez de somar
     // e "100200" viraria o total do mês. NaN vira 0.
     m.set(p.tipo, (m.get(p.tipo) ?? 0) + (Number(p.valor) || 0));
@@ -81,7 +82,7 @@ function somaPorTipo(pags: Pag[], comp: string, ignorar: readonly string[]): Map
 export function competenciaAnteriorComFolha(comp: string, pags: Pag[], tiposEncargo: readonly string[] = []): string | null {
   const pago = new Map<string, number>();
   for (const p of pags) {
-    if (!p.competencia || p.competencia >= comp || tiposEncargo.includes(p.tipo)) continue;
+    if (!p.competencia || p.competencia >= comp || tiposEncargo.includes(p.tipo) || !tituloPago(p.statusErp)) continue;
     pago.set(p.competencia, (pago.get(p.competencia) ?? 0) + (Number(p.valor) || 0));
   }
   const antes = [...pago].filter(([, v]) => v !== 0).map(([c]) => c).sort();

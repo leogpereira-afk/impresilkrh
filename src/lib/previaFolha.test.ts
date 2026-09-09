@@ -46,10 +46,10 @@ describe("mudancas — o que mudou, campo a campo", () => {
       { campo: "data", de: "2026-07-15", para: "2026-07-16" },
     ]);
   });
-  it("status só conta quando os dois lados o têm", () => {
+  it("preencher estado legado também aparece para aprovação", () => {
     const a = pg({ id: "mubi-4" });
     const b = { ...pg({ id: "mubi-4" }), statusErp: "PAGO" } as Pagamento;
-    expect(mudancas(a, b)).toEqual([]);
+    expect(mudancas(a, b)).toEqual([{ campo: "status", de: "—", para: "PAGO" }]);
     const c = { ...a, statusErp: "ABERTO" } as Pagamento;
     expect(mudancas(c, b)).toEqual([{ campo: "status", de: "ABERTO", para: "PAGO" }]);
   });
@@ -61,6 +61,19 @@ describe("mudancas — o que mudou, campo a campo", () => {
 });
 
 describe("resumoDaPrevia — quanto cada mês muda, e o que pede confirmação", () => {
+  it("baixa de aberto para pago altera a prévia em reais e pode ser recusada", () => {
+    const antigo = pg({ id: "mubi-1", statusErp: "ABERTO" });
+    const novo = { ...antigo, statusErp: "PAGO" };
+    const cancelado = pg({ id: "mubi-2", statusErp: "CANCELADO", valor: 9000 });
+    const diff = { alterados: [{ antigo, novo }] };
+    const r = resumoDaPrevia(entrada(diff, [antigo, cancelado]));
+    expect([r.totalHoje, r.totalDepois, r.delta]).toEqual([0, 1000, 1000]);
+    expect(r.silenciosos).toBe(0);
+    expect(r.contaNoBotao).toBe(1);
+    expect(r.precisaConfirmar.some(a => a.id === "mes-fechado")).toBe(true);
+    const recusado = resumoDaPrevia(entrada(diff, [antigo, cancelado], { excluidos: new Set([antigo.id]) }));
+    expect([recusado.totalDepois, recusado.delta]).toEqual([0, 0]);
+  });
   it("base igual a si mesma: nada muda, nada no botão, pode aplicar", () => {
     const g = [pg({ id: "mubi-1" }), pg({ id: "mubi-2", competencia: "2026-07" })];
     const r = resumoDaPrevia(entrada({ iguais: g.map((p) => ({ antigo: p, novo: p })) }, g));

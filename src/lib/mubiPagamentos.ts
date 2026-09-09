@@ -200,9 +200,11 @@ export const tituloEmAberto = (status: unknown): boolean => /ABERT|PENDENT|VENCI
  */
 const PAGO = /PAG|QUITAD|BAIXAD|LIQUIDAD|COMPENSAD/i;
 export const tituloPago = (status: unknown): boolean => {
-  const t = String(status ?? "").trim();
-  if (!t) return true; // legado: nasceu sem status e sempre contou
-  return PAGO.test(t) && !tituloEmAberto(t); // "A PAGAR" tem "PAG" dentro
+  const original = String(status ?? "").trim();
+  if (!original) return true; // legado: nasceu sem status e sempre contou
+  const t = norm(original);
+  // Negação, baixa parcial e cancelamento prevalecem sobre a palavra "pago".
+  return PAGO.test(t) && !tituloEmAberto(t) && !tituloCancelado(t) && !/\bNAO\b|PARCIAL/.test(t);
 };
 
 /** Os que a régua do pago reteve — para contar, dizer e proteger o já gravado. */
@@ -552,7 +554,8 @@ export function paraRegistros(
     // A ordem é a força da chave: CPF do título → ID escrito no título (origem
     // ou descrição) → vínculo/nome da origem → vínculo por título → nome na
     // descrição. Só as duas primeiras não são palpite (regra do Leonardo).
-    const porChave = semOrigem ? null : casarColaboradorComo(l.nome, colaboradores, vinculos, l.cpfCnpj);
+    // O CPF identifica mesmo quando o ERP não informa a origem.
+    const porChave = casarColaboradorComo(l.nome, colaboradores, vinculos, l.cpfCnpj);
     const porIdTexto = porChave?.como === "cpf" ? null : acharPorIdNoTexto(`${l.nome} ${l.descricao ?? ""}`, ids);
     const casado =
       (porChave?.como === "cpf" ? porChave : null) ??

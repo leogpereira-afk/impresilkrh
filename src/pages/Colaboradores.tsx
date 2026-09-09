@@ -1,3 +1,4 @@
+import { tituloPago } from "@/lib/mubiPagamentos";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
@@ -137,7 +138,7 @@ export default function Colaboradores() {
   const custoPorColab = useMemo(() => {
     const m = new Map<string, { total: number; n: number; tipos: { tipo: string; valor: number }[] }>();
     for (const p of pagamentos) {
-      if (p.competencia !== mesCusto || TIPOS_ENCARGO.includes(p.tipo)) continue;
+      if (p.competencia !== mesCusto || !tituloPago(p.statusErp) || TIPOS_ENCARGO.includes(p.tipo)) continue;
       const atual = m.get(p.colaboradorId) ?? { total: 0, n: 0, tipos: [] };
       atual.total += p.valor || 0;
       atual.n += 1;

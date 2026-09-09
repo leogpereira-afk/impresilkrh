@@ -258,3 +258,13 @@ describe("semáforo — zero não é resultado", () => {
     expect(s.detalhe).toContain("cobriu 06/26, não este mês");
   });
 });
+
+describe("variação usa pagamentos efetivamente pagos", () => {
+  it("ignora não pagos nos dois meses e pula competência só com pendências", () => {
+    const pagos = [p("2026-06", "Salário", 1000), p("2026-08", "Salário", 1200)];
+    const pags = [...pagos, ...["ABERTO", "NÃO PAGO", "NAO PAGO", "NÃO QUITADO", "PAGO CANCELADO", "ESTORNADO", "AGENDADO"].flatMap((statusErp) =>
+      ["2026-06", "2026-07", "2026-08"].map((comp) => ({ ...p(comp, "Salário", 9000), statusErp })))];
+    expect(competenciaAnteriorComFolha("2026-08", pags, ENC)).toBe("2026-06");
+    expect(variacaoMensal(pags, "2026-08", ENC)).toEqual(variacaoMensal(pagos, "2026-08", ENC));
+  });
+});

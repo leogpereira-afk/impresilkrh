@@ -18,14 +18,15 @@ const ROTULO: Record<Natureza, string> = {
   mes: "Trocam de mês",
   tipo: "Trocam de tipo",
   data: "Vencimento muda",
+  baixa: "Data de pagamento confirmada muda",
   status: "Estado do título muda",
-  texto: "Só o texto da descrição muda",
+  texto: "Descrição e identificação atualizadas",
   conta: "Conta do plano muda",
   renumeracao: "Conta renumerada pelo contador (só o código; nada de dinheiro)",
   adocao: "Ganham o id do ERP (eram de planilha)",
 };
 const ROTULO_CAMPO: Record<Mudanca["campo"], string> = {
-  valor: "valor", pessoa: "pessoa", mes: "mês", tipo: "tipo", data: "vencimento", status: "estado", texto: "texto", conta: "conta", adocao: "id do ERP",
+  valor: "valor", pessoa: "pessoa", mes: "mês", tipo: "tipo", data: "vencimento", baixa: "pagamento confirmado", status: "estado", texto: "texto", conta: "conta", adocao: "id do ERP",
 };
 const pct = (p: number | null) => (p == null ? "" : `${p > 0 ? "+" : ""}${(p * 100).toFixed(1).replace(".", ",")}%`);
 const sinal = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${formatBRL(Math.abs(v))}`;
@@ -58,6 +59,7 @@ export function PreviaFolha({
   onExcluir,
   onExcluirBloco,
   vincular,
+  onForaRh,
   onAplicar,
   onCancelar,
 }: {
@@ -86,6 +88,7 @@ export function PreviaFolha({
     pessoas: { id: string; nome: string }[];
     onVincular: (nomeErp: string, colaboradorId: string) => void;
   };
+  onForaRh?: (p: Pagamento) => void;
   onAplicar: () => void;
   onCancelar: () => void;
 }) {
@@ -116,8 +119,8 @@ export function PreviaFolha({
     ? "Nada a alterar"
     : soCpf
     ? `Preencher ${cpfs.length} CPF(s)`
-    : `Aplicar ${resumo.contaNoBotao} alteração(ões)` +
-      (resumo.silenciosos ? ` · ${resumo.silenciosos} só de texto/conta/id` : "") +
+    : `Aplicar ${resumo.contaNoBotao + resumo.silenciosos} alteração(ões)` +
+      (resumo.silenciosos ? ` · ${resumo.silenciosos} de descrição/conta/id` : "") +
       (salariosMarcados.size ? ` · ${salariosMarcados.size} salário(s)` : "") +
       (cpfs.length ? ` · ${cpfs.length} CPF(s)` : "");
 
@@ -375,6 +378,7 @@ export function PreviaFolha({
           porque="O título existe no Mubisys; só não casou com ninguém desta vez. Escolha a pessoa aqui na linha — não remova."
           itens={resumo.ausentes.semDono} nomeDe={nomeDe} tom="border-sky-200 bg-sky-50/40 text-sky-900"
           vincular={vincular}
+          onForaRh={onForaRh}
         />
         <BlocoAusentes
           titulo="No ERP, mas a conta saiu da lista de folha"
@@ -422,7 +426,7 @@ function legivel(m: Mudanca, lado: "de" | "para", nomeDe: (id: string) => string
   if (m.campo === "valor") return formatBRL(Number(v));
   if (m.campo === "pessoa") return nomeDe(v);
   if (m.campo === "mes") return compLabel(v);
-  if (m.campo === "data") return ddmm(v);
+  if ((m.campo === "data" || m.campo === "baixa")) return ddmm(v);
   return v || "—";
 }
 
@@ -495,7 +499,8 @@ function GrupoDeMudanca({ grupo, nomeDe, onExcluir, onExcluirBloco }: {
   );
 }
 
-function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar, onMarcarTodos, vincular }: {
+function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar, onMarcarTodos, vincular, onForaRh }: {
+  onForaRh?: (p: Pagamento) => void;
   titulo: string; porque: string; itens: Pagamento[]; nomeDe: (id: string) => string; tom: string;
   marcados?: Set<string>; onMarcar?: (id: string, ok: boolean) => void; onMarcarTodos?: (ids: string[], ok: boolean) => void;
   /**
@@ -536,6 +541,7 @@ function BlocoAusentes({ titulo, porque, itens, nomeDe, tom, marcados, onMarcar,
               <td className="td text-slate-600"><Pessoa nome={nomeDe(a.colaboradorId)} colaboradorId={a.colaboradorId} /></td>
               <td className="td text-slate-500">{compLabel(a.competencia)} · {a.tipo}{a.descricao && <span className="text-[11px] text-slate-400"> · {a.descricao}</span>}</td>
               <td className="td text-right tabular-nums text-slate-500">{formatBRL(a.valor)}</td>
+              {onForaRh && <td className="td"><button type="button" className="btn-outline text-xs" onClick={() => onForaRh(a)}>Não faz parte do RH</button></td>}
               {vincular && (() => {
                 const nomeErp = vincular.nomeErpDe(a);
                 return (

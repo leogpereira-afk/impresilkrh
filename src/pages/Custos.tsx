@@ -25,6 +25,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
 import { ViagensPainel } from "@/pages/Viagens";
 import { Card, CardHeader, CardBody, useAbertoPersistido } from "@/components/ui/card";
+import { RelatoriosFinanceiros } from "@/components/custos/relatorios-financeiros";
+import { conciliarDoRh, linhasDoRh, paraRegistrosDoRh } from "@/lib/foraRh";
 import { HistoricoMensal } from "@/components/custos/historico-mensal";
 import { AuditoriaLancamentos } from "@/components/custos/auditoria-lancamentos";
 import { ConferenciaTipos } from "@/components/custos/conferencia-tipos";
@@ -57,7 +59,7 @@ import {
   horasDecimais, ADICIONAIS_HE, FATOR_HE_PADRAO, DIVISOR_MENSAL_PADRAO, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { minParaHora } from "@/lib/pontoImport";
 import { somaPorTipo, corDoTipo, TIPOS_PAGAMENTO, TIPOS_ENCARGO } from "@/lib/folha";
-import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, paraRegistros, sugerirSalarios, sugerirVinculo, norm as normNome, type ContaForaDaFolha, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado, ehOrigemGenerica } from "@/lib/mubiPagamentos";
+import { buscarPagamentosMubi, buscarHistoricoMubi, competenciasParaTras, sugerirSalarios, sugerirVinculo, tituloPago, norm as normNome, type ContaForaDaFolha, type LinhaMubi, type RespostaMubi, type SugestaoSalario, type NaoCasado, ehOrigemGenerica } from "@/lib/mubiPagamentos";
 import {
   classeMap,
   competenciasPlano,
@@ -70,8 +72,8 @@ import {
   serieCustos,
   CLASSE_LABEL,
   parsePlanoContas,
-  conciliarPagamentos,
   ehDoMubi,
+  idMubiDe,
   ehManual,
   contaEhConfidencial,
   classeDaConta,
@@ -112,7 +114,7 @@ const TOM_CLASSES: Record<Tom, string> = {
 let ultimaFalhaMubi: { competencia: string; em: number } | null = null;
 const ESPERA_APOS_FALHA_MS = 30 * 60 * 1000;
 
-const ABAS = ["custos", "global", "encargos", "societarias", "sync", "viagens"];
+const ABAS = ["custos", "global", "encargos", "societarias", "relatorios", "sync", "viagens"];
 
 export default function Custos() {
   const sessao = useSessao();
@@ -139,6 +141,7 @@ export default function Custos() {
   // manual do RH e precisam valer em qualquer computador — por isso todo salvar
   // daqui sobe para a nuvem, igual ao Painel de Controle.
   const salvarCfg = (patch: Parameters<typeof salvarConfig>[0]) => { salvarConfig(patch); enviarConfigNuvem(); };
+  const [decisaoForaRh, setDecisaoForaRh] = useState<{ id: string; desfazer: boolean; linha?: LinhaMubi; pagamento?: Pagamento } | null>(null);
   const planoColecao = useColecao("planoContas");
   const classifColecao = useColecao("classificacaoCustos");
   const pagamentosColecao = useColecao("pagamentos");
@@ -363,8 +366,8 @@ export default function Custos() {
   // contagem gravada em "Última busca" — sem isso o aviso mostra o total do ERP
   // e a linha de baixo mostra os vinculados, dois números diferentes no mesmo card.
   const vinculadosDaResposta = useMemo(
-    () => (respostaMubi ? paraRegistros(respostaMubi.linhas, d.colaboradores, config.vinculosMubi ?? {}, config.vinculosMubiTitulo ?? {}).registros.length : 0),
-    [respostaMubi, d.colaboradores, config.vinculosMubi, config.vinculosMubiTitulo],
+    () => (respostaMubi ? paraRegistrosDoRh(respostaMubi.linhas, d.colaboradores, config.vinculosMubi ?? {}, config.vinculosMubiTitulo ?? {}, config.titulosForaRh ?? []).registros.length : 0),
+    [respostaMubi, d.colaboradores, config.vinculosMubi, config.vinculosMubiTitulo, config.titulosForaRh],
   );
   // Seletor de vínculo manual: o cadastro INTEIRO, separado em quadro atual e
   // inativos. Os inativos ficavam escondidos — e 57 dos 88 são inativos, quase
@@ -526,7 +529,7 @@ export default function Custos() {
   // prévia de conciliação da planilha — nada é gravado sem o RH confirmar.
   // Monta a prévia de conciliação a partir do que veio do ERP.
   const previaDoMubi = (r: RespostaMubi, vinculos: Record<string, string>, busca?: CoberturaBusca) => {
-    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {});
+    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistrosDoRh(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {}, config.titulosForaRh ?? []);
     // Compara contra as competências dos REGISTROS, não contra o mês pedido: uma
     // busca pode gerar lançamentos em mais de uma competência e o que ficasse de
     // fora da comparação voltaria como "novo" (duplicata).
@@ -545,14 +548,14 @@ export default function Custos() {
     setAusentesMarcados(new Set());
     setConfirmados(new Set());
     setFolhaPrev({
-      diff: conciliarPagamentos(existentesDaComp, registros, comps),
+      diff: conciliarDoRh(existentesDaComp, registros, comps, config.titulosForaRh ?? []),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       janela: [...comps].filter(Boolean).sort(),
       mubi: { linhas: r.linhas, coletivas, truncado: r.truncado, foraDaFolha: r.contasForaDaFolha, foraOmitidas: r.contasForaOmitidas, idsForaDaFolha: r.idsForaDaFolha, naoPagas: r.naoPagas, busca: busca ?? { truncado: r.truncado, pedidas: [r.competencia], lidas: [r.competencia], falhas: [] } },
     });
     // Salário do cadastro sugerido pelo que o ERP pagou. Fica separado da folha:
     // são coisas diferentes e cada uma é aplicada por sua conta.
-    setSalarios(sugerirSalarios(r.linhas, d.colaboradores, vinculos));
+    setSalarios(sugerirSalarios(linhasDoRh(r.linhas, config.titulosForaRh), d.colaboradores, vinculos));
     setSalariosMarcados(new Set()); // marcação vale para a lista da tela, não para a pessoa
     setRespostaMubi(null);
   };
@@ -617,14 +620,14 @@ export default function Custos() {
       const r = await buscarPagamentosMubi(competencia);
       ultimaFalhaMubi = null;
       const vinculos = config.vinculosMubi ?? {};
-      const { registros, naoCasados } = paraRegistros(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {});
+      const { registros, naoCasados } = paraRegistrosDoRh(r.linhas, d.colaboradores, vinculos, config.vinculosMubiTitulo ?? {}, config.titulosForaRh ?? []);
       salvarCfg({ ultimaBuscaMubi: {
         competencia, em: r.buscadoEm, quantidade: registros.length,
         // O que sobrou fora dos vinculados. É isto que explica "consultou 140,
         // tem 141 gravados" na própria tela, sem ninguém precisar deduzir.
         consultados: r.linhas.length, naoCasados: naoCasados.length, truncado: !!r.truncado,
       } });
-      if (registros.length === 0 && naoCasados.length === 0) {
+      if (r.linhas.length === 0 && registros.length === 0 && naoCasados.length === 0) {
         if (abrirPrevia) setErroMubi(`O Mubisys não tem lançamentos de pessoal em ${compLabel(competencia)}.`);
         return;
       }
@@ -692,22 +695,30 @@ export default function Custos() {
   // no mês que vem esse mesmo nome casa sozinho, em qualquer computador.
   const recomputarPrevia = (vinculos: Record<string, string>, vinculosTitulo: Record<string, string>) => {
     if (!folhaPrev?.mubi) return;
-    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistros(folhaPrev.mubi.linhas, d.colaboradores, vinculos, vinculosTitulo);
+    const { registros, naoCasados, coletivas, cpfsAprendidos } = paraRegistrosDoRh(folhaPrev.mubi.linhas, d.colaboradores, vinculos, vinculosTitulo, config.titulosForaRh ?? []);
     const comps = new Set(registros.map((r) => r.competencia));
     const existentesDaComp = pagamentos.filter(
       (p: Pagamento) => comps.has(p.competencia) || ehDoMubi(p),
     );
     // O vínculo novo pode fazer aparecer (ou sumir) uma sugestão de salário.
-    setSalarios(sugerirSalarios(folhaPrev.mubi.linhas, d.colaboradores, vinculos));
+    setSalarios(sugerirSalarios(linhasDoRh(folhaPrev.mubi.linhas, config.titulosForaRh), d.colaboradores, vinculos));
     setSalariosMarcados(new Set());
     setAusentesMarcados(new Set()); // o vínculo pode ter tirado alguém de "ausente"
     setFolhaPrev({
-      diff: conciliarPagamentos(existentesDaComp, registros, comps),
+      diff: conciliarDoRh(existentesDaComp, registros, comps, config.titulosForaRh ?? []),
       naoCasados, cpfsAprendidos, totalLinhas: registros.length,
       janela: [...comps].filter(Boolean).sort(),
       mubi: { ...folhaPrev.mubi, coletivas },
     });
   };
+
+  // Recalcula também quando a decisão persistida chega de outro aparelho.
+  useEffect(() => {
+    recomputarPrevia(config.vinculosMubi ?? {}, config.vinculosMubiTitulo ?? {});
+    setConfirmados(new Set());
+    setConfirmarAplicacao(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.titulosForaRh]);
 
   const vincularMubi = (nomeMubi: string, colaboradorId: string) => {
     // Origem genérica ("COLABORADORES") é uma leva de gente diferente: vincular
@@ -1000,7 +1011,7 @@ export default function Custos() {
 
   // ---------- Seção 1: custo individual por colaborador ----------
   const pagsDoColab = useMemo(
-    () => pagamentos.filter((p: Pagamento) => p.colaboradorId === colabId && p.competencia === compAtiva),
+    () => pagamentos.filter((p: Pagamento) => p.colaboradorId === colabId && p.competencia === compAtiva && tituloPago(p.statusErp)),
     [pagamentos, colabId, compAtiva],
   );
   // Base da régua de % nos lançamentos da pessoa: tudo que ela recebeu no mês.
@@ -1018,7 +1029,7 @@ export default function Custos() {
     return (p: Pagamento) => socios.has(p.colaboradorId);
   }, [d.colaboradores]);
   const pagamentosDaEquipe = useMemo(() => (pagamentos as Pagamento[]).filter((p) => !ehDeSocio(p)), [pagamentos, ehDeSocio]);
-  const pagsDoMes = useMemo(() => pagamentosDaEquipe.filter((p: Pagamento) => p.competencia === compAtiva), [pagamentosDaEquipe, compAtiva]);
+  const pagsDoMes = useMemo(() => pagamentosDaEquipe.filter((p: Pagamento) => p.competencia === compAtiva && tituloPago(p.statusErp)), [pagamentosDaEquipe, compAtiva]);
   const pagsSocietariosDoMes = useMemo(
     () => (pagamentos as Pagamento[]).filter((p) => p.competencia === compAtiva && ehDeSocio(p)),
     [pagamentos, compAtiva, ehDeSocio],
@@ -2410,6 +2421,12 @@ export default function Custos() {
             ),
           }] : []),
           {
+            id: "relatorios",
+            label: "Relatórios",
+            icon: <FileSpreadsheet className="h-4 w-4" />,
+            conteudo: <RelatoriosFinanceiros pagamentos={pagamentosDaEquipe} colaboradores={d.colaboradores} areas={d.areas} comp={compAtiva} onComp={setComp} onSincronizar={() => setAba('sync')} />,
+          },
+          {
             id: "sync",
             label: "Sincronização",
             icon: <RefreshCw className="h-4 w-4" />,
@@ -2418,6 +2435,17 @@ export default function Custos() {
                 <p className="text-sm text-slate-500">
                   Plano de contas do contador e folha do Mubisys — de onde vêm os números desta tela — e a conferência da classificação.
                 </p>
+                {(config.titulosForaRh ?? []).length > 0 && (
+                  <Card><CardHeader title="Não faz parte do RH" /><CardBody>
+                    <p className="mb-3 text-sm text-slate-500">Decisões por título do ERP. Lançamentos já gravados são preservados. Desfazer devolve o título à conferência na próxima busca ou na prévia aberta.</p>
+                    <ul className="space-y-2">{(config.titulosForaRh ?? []).map(id => (
+                      <li key={id} className="flex items-center justify-between gap-2 text-sm">
+                        <span>Título ERP {id}</span>
+                        <button type="button" className="btn-outline" onClick={() => setDecisaoForaRh({ id, desfazer: true })}>Desfazer</button>
+                      </li>
+                    ))}</ul>
+                  </CardBody></Card>
+                )}
                 {/* ---------- Está atualizado? ----------
                     Quatro chips com tom e uma linha de porquê. Clicar leva ao
                     lugar onde se resolve (rola até o quadro de carga, ou vai à
@@ -2942,8 +2970,13 @@ export default function Custos() {
             onExcluirBloco={(ids, fora) => setExcluidos((s2) => { const n = new Set(s2); for (const i of ids) { if (fora) n.add(i); else n.delete(i); } return n; })}
             onMarcarAusente={(id, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); if (ok) n.add(id); else n.delete(id); return n; })}
             onMarcarBloco={(ids, ok) => setAusentesMarcados((atual) => { const n = new Set(atual); for (const id of ids) { if (ok) n.add(id); else n.delete(id); } return n; })}
+            onForaRh={folhaPrev.mubi ? (p) => {
+              const id = idMubiDe(p);
+              if (!id) return;
+              setDecisaoForaRh({ id, desfazer: false, pagamento: p, linha: folhaPrev.mubi?.linhas.find(l => String(l.idMubi) === id) });
+            } : undefined}
             vincular={folhaPrev.mubi ? {
-              nomeErpDe: (p) => (p.idMubi ? nomeErpPorTitulo.get(String(p.idMubi)) ?? null : null),
+              nomeErpDe: (p) => nomeErpPorTitulo.get(idMubiDe(p) ?? "") ?? null,
               pessoas: [...d.colaboradores].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((c) => ({ id: c.id, nome: c.nome })),
               onVincular: vincularMubi,
             } : undefined}
@@ -3146,6 +3179,8 @@ export default function Custos() {
                                         <span className="block max-w-[260px] truncate">{t.descricao || "—"}</span>
                                       </td>
                                       <td className="px-2 py-1">
+                                        <span className="block text-slate-500">Título ERP {t.idMubi}</span>
+                                        <button type="button" className="btn-outline mb-1 text-[11px]" disabled={!t.idMubi} onClick={() => setDecisaoForaRh({ id: String(t.idMubi), desfazer: false, linha: t })}>Não faz parte do RH</button>
                                         <Select
                                           className="min-w-[170px] text-[11px]"
                                           value={config.vinculosMubiTitulo?.[t.idMubi] ?? ""}
@@ -3188,6 +3223,27 @@ export default function Custos() {
         );
       })()}
 
+      <ConfirmDialog
+        aberto={!!decisaoForaRh}
+        onFechar={() => setDecisaoForaRh(null)}
+        titulo={decisaoForaRh?.desfazer ? "Desfazer decisão" : "Não faz parte do RH"}
+        textoConfirmar={decisaoForaRh?.desfazer ? "Desfazer decisão" : "Salvar decisão para este título"}
+        perigo={false}
+        mensagem={<>
+          <strong>Título ERP {decisaoForaRh?.id}</strong>
+          {decisaoForaRh?.linha && <span className="mt-2 block">{decisaoForaRh.linha.nome} · {decisaoForaRh.linha.descricao || "Sem descrição"} · {formatBRL(decisaoForaRh.linha.valor)} · vencimento {formatDate(decisaoForaRh.linha.dataVencimento)}</span>}
+          {!decisaoForaRh?.linha && decisaoForaRh?.pagamento && <span className="mt-2 block">{decisaoForaRh.pagamento.descricao || decisaoForaRh.pagamento.tipo} · {formatBRL(decisaoForaRh.pagamento.valor)} · competência {compLabel(decisaoForaRh.pagamento.competencia)}</span>}
+          <span className="mt-2 block">{decisaoForaRh?.desfazer ? "Este título voltará a participar da conferência." : "Somente este título ficará fora da importação do RH, inclusive nas próximas buscas. Outros títulos da mesma pessoa ou grupo continuam na conferência."} Nenhum lançamento já gravado será apagado. Você pode desfazer pela lista na aba Sincronização.</span>
+        </>}
+        onConfirmar={() => {
+          if (!decisaoForaRh || !podeGerir(sessao)) return;
+          const ids = new Set(config.titulosForaRh ?? []);
+          if (decisaoForaRh.desfazer) ids.delete(decisaoForaRh.id);
+          else ids.add(decisaoForaRh.id);
+          salvarCfg({ titulosForaRh: [...ids] });
+        }}
+      />
+
       {/* Confirmação final: o resumo em reais mais uma vez, antes de gravar. */}
       {folhaPrev && resumoPrev && (
         <ConfirmDialog
@@ -3198,7 +3254,7 @@ export default function Custos() {
           // que se faz é aplicar, e o texto tem de dizer o que vai acontecer.
           textoConfirmar={ausentesMarcados.size ? `Aplicar e remover ${ausentesMarcados.size}` : "Aplicar"}
           perigo={ausentesMarcados.size > 0}
-          titulo={`Aplicar ${resumoPrev.contaNoBotao} alteração(ões)?`}
+          titulo={`Aplicar ${resumoPrev.contaNoBotao + resumoPrev.silenciosos} alteração(ões)?`}
           mensagem={[
             `Pago à equipe: ${formatBRL(resumoPrev.totalHoje)} → ${formatBRL(resumoPrev.totalDepois)}${resumoPrev.delta !== 0 ? ` (${resumoPrev.delta > 0 ? "+" : "−"}${formatBRL(Math.abs(resumoPrev.delta))})` : ""}.`,
             resumoPrev.silenciosos ? `${resumoPrev.silenciosos} mudança(s) só de texto, conta ou id do ERP entram junto.` : "",

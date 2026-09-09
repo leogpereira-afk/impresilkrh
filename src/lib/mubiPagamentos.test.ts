@@ -744,3 +744,25 @@ describe("título sem credor não é pessoa", () => {
     expect(r.registros[0].casadoPor).toBe("titulo");
   });
 });
+
+describe("regressões de baixa e CPF sem origem", () => {
+  it.each(["123", "---", "NAO PAGO", "NÃO PAGO", "NÃO QUITADO", "não   quitado", "PAGO CANCELADO", "PAGO ESTORNADO", "PAGO PARCIAL", "NAO LIQUIDADO"])("não considera %s como pago", (status) => {
+    expect(tituloPago(status)).toBe(false);
+    expect(normalizarLinhas([linha("Ana Silva", { status })])).toEqual([]);
+  });
+
+  it("CPF único casa mesmo sem origem e prevalece sobre descrição de outra pessoa", () => {
+    const cadastro = [{ ...c("ana", "Ana Silva"), cpf: "123.456.789-01" }, c("bia", "Beatriz Souza")];
+    const r = paraRegistros([linha("", { cpfCnpj: "12345678901", descricao: "Beatriz Souza" })], cadastro, {});
+    expect(r.registros).toHaveLength(1);
+    expect(r.registros[0]).toMatchObject({ colaboradorId: "ana", casadoPor: "cpf" });
+    expect(r.coletivas).toEqual([]);
+  });
+
+  it("CPF ambíguo ou CNPJ sem origem não escolhe uma pessoa arbitrariamente", () => {
+    const cadastro = [{ ...c("ana", "Ana Silva"), cpf: "12345678901" }, { ...c("bia", "Beatriz Souza"), cpf: "12345678901" }];
+    for (const cpfCnpj of ["12345678901", "12345678000190"]) {
+      expect(paraRegistros([linha("", { cpfCnpj })], cadastro, {}).registros).toEqual([]);
+    }
+  });
+});

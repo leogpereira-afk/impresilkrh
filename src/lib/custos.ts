@@ -509,7 +509,7 @@ export function conciliarPagamentos(existentes: Pag[], novos: Pag[], janela?: Se
 }
 
 /** Mudou algo que precisa ser gravado? */
-export type CampoMudado = "valor" | "pessoa" | "mes" | "tipo" | "data" | "status" | "texto" | "conta" | "adocao";
+export type CampoMudado = "valor" | "pessoa" | "mes" | "tipo" | "data" | "baixa" | "status" | "texto" | "conta" | "adocao";
 export interface Mudanca { campo: CampoMudado; de: string; para: string }
 
 /** Parte a descrição gravada em texto do título e conta do ERP ("… · 2.1.1-Salário"). */
@@ -529,9 +529,8 @@ const nomeDaConta = (conta: string) => conta.replace(/^[\d.]+\s*-\s*/, "").norma
  * valor — e 20 de 21 "corrigidos" de julho eram só o código da conta que o
  * contador renumerou, impressos como "R$ X → R$ X". A descrição é comparada em
  * duas partes: o TEXTO do título e a CONTA do plano; e a conta que só trocou
- * de código (mesmo nome) é "conta", não "texto". `status` só conta quando os
- * dois lados o têm — o campo nasceu em 07/09/2026 e o que já estava gravado
- * não pode virar "alterado" por não tê-lo.
+ * de código (mesmo nome) é "conta", não "texto". O preenchimento de status e a data real de baixa também são alterações
+ * revisáveis; não devem desaparecer no grupo de registros iguais.
  */
 export function mudancas(a: Pag, b: Pag): Mudanca[] {
   const m: Mudanca[] = [];
@@ -543,7 +542,9 @@ export function mudancas(a: Pag, b: Pag): Mudanca[] {
   if (a.tipo !== b.tipo && !(a as { tipoTravado?: boolean }).tipoTravado) m.push({ campo: "tipo", de: a.tipo, para: b.tipo });
   if (dia10(a.dataPagamento) !== dia10(b.dataPagamento)) m.push({ campo: "data", de: dia10(a.dataPagamento), para: dia10(b.dataPagamento) });
   const sa = (a as { statusErp?: string }).statusErp, sb = (b as { statusErp?: string }).statusErp;
-  if (sa && sb && sa !== sb) m.push({ campo: "status", de: sa, para: sb });
+  if (sb && sa !== sb) m.push({ campo: "status", de: sa || "—", para: sb });
+  // Uma baixa recebida deve ser revisável mesmo sem mudança de valor.
+  if (b.pagoEm !== undefined && dia10(a.pagoEm ?? "") !== dia10(b.pagoEm ?? "")) m.push({ campo: "baixa", de: dia10(a.pagoEm ?? "") || "—", para: dia10(b.pagoEm ?? "") || "—" });
   const [ta, ca] = partirDescricao(a.descricao), [tb, cb] = partirDescricao(b.descricao);
   if (ta !== tb) m.push({ campo: "texto", de: ta, para: tb });
   if (ca !== cb) m.push({ campo: "conta", de: ca, para: cb });
@@ -552,7 +553,7 @@ export function mudancas(a: Pag, b: Pag): Mudanca[] {
 }
 
 /** Do mais grave ao mais inofensivo — a ordem em que a prévia agrupa. */
-export const ORDEM_CAMPOS: CampoMudado[] = ["valor", "pessoa", "mes", "tipo", "data", "status", "texto", "conta", "adocao"];
+export const ORDEM_CAMPOS: CampoMudado[] = ["valor", "pessoa", "mes", "tipo", "data", "baixa", "status", "texto", "conta", "adocao"];
 
 /** O campo mais grave da lista, ou "nada". */
 export const chefeDasMudancas = (muds: Mudanca[]): CampoMudado | "nada" =>

@@ -17,6 +17,7 @@ import type { Colaborador, Pagamento } from "@/data/types";
 import { chefeDasMudancas, ehManual, ehRenumeracao, fimDaCompetencia, idMubiDe, mudancas, ORDEM_CAMPOS, type CampoMudado, type DiffPagamentos, type Mudanca } from "./custos";
 import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio } from "./societario";
+import { tituloPago } from "./mubiPagamentos";
 
 export type Natureza = CampoMudado | "renumeracao";
 /** Do mais grave ao mais inofensivo. Renumeração é a conta que só trocou de código. */
@@ -46,7 +47,7 @@ export function diffAplicavel(diff: DiffPagamentos, excluidos?: Set<string>): Di
   };
 }
 
-export const NATUREZAS_SILENCIOSAS = new Set<Natureza>(["texto", "conta", "renumeracao", "adocao", "status"]);
+export const NATUREZAS_SILENCIOSAS = new Set<Natureza>(["texto", "conta", "renumeracao", "adocao"]);
 
 export interface ItemAlterado {
   antigo: Pagamento;
@@ -140,7 +141,7 @@ export interface ResumoDaPrevia {
   ausentes: AusentesSeparados;
   /** Alterações que mexem em dinheiro, pessoa, mês, tipo ou data + novos + remoções marcadas. */
   contaNoBotao: number;
-  /** Alterações silenciosas (texto, conta renumerada, adoção de id, status). */
+  /** Alterações silenciosas (texto, conta renumerada, adoção de id). */
   silenciosos: number;
   /** Ids desmarcados: a lista os mostra, mas nenhuma conta os inclui. */
   excluidos: Set<string>;
@@ -207,7 +208,7 @@ export function resumoDaPrevia(e: EntradaResumo): ResumoDaPrevia {
   const limites = { ...LIMITES_PADRAO, ...(e.limites ?? {}) };
   const ehSocioId = (id: string) => ehSocio(e.colaboradorPor(id) ?? null);
   // A régua do "pago à equipe", a mesma do topo da tela: sem encargo, sem sócio.
-  const contaNaFolha = (p: Pagamento) => !e.tiposEncargo.includes(p.tipo) && !ehSocioId(p.colaboradorId);
+  const contaNaFolha = (p: Pagamento) => tituloPago(p.statusErp) && !e.tiposEncargo.includes(p.tipo) && !ehSocioId(p.colaboradorId);
   const valorFolha = (p: Pagamento) => (contaNaFolha(p) ? num(p.valor) : 0);
 
   // Tira o que a pessoa desmarcou ANTES de qualquer conta. Filtrar só no fim

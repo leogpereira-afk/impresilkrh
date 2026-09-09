@@ -566,6 +566,8 @@ export interface Config {
    * título a título e o apontamento fica guardado.
    */
   vinculosMubiTitulo?: Record<string, string>;
+  /** Títulos explicitamente fora do RH. Somente IDs, sem dados financeiros. */
+  titulosForaRh?: string[];
   /**
    * Conta do plano de contas → card confidencial do sócio, apontado À MÃO.
    *

@@ -45,14 +45,14 @@ export function TotalEquipe({
         title={`Custo total da equipe · ${compLabelLongo(resumo.competencia)}`}
         subtitle={
           resumo.pessoas > 0
-            ? `${resumo.pessoas} pessoa(s) com lançamento no mês · soma de todos, sem sócios`
-            : "Nenhum lançamento neste mês"
+            ? `${resumo.pessoas} pessoa(s) com lançamento pago no mês · soma de todos, sem sócios`
+            : "Nenhum lançamento pago neste mês"
         }
         action={
           resumo.pctSobreMedia !== null && resumo.serie.length > 1 ? (
             <Badge variant={Math.abs(resumo.pctSobreMedia) < 0.1 ? "neutral" : resumo.pctSobreMedia > 0 ? "warning" : "success"}>
-              <span title={`Média dos últimos ${resumo.serie.length} meses com lançamento: ${formatBRL(resumo.mediaEstimada)}`}>
-                {pctTexto(resumo.pctSobreMedia)} sobre a média
+              <span title={`Média do custo estimado dos últimos ${resumo.serie.length} meses com lançamento pago: ${formatBRL(resumo.mediaEstimada)}`}>
+                {pctTexto(resumo.pctSobreMedia)} sobre a média do estimado
               </span>
             </Badge>
           ) : undefined
@@ -72,7 +72,7 @@ export function TotalEquipe({
               onClick={() => onAbrirMes?.(resumo.competencia)}
               disabled={!onAbrirMes || resumo.pessoas === 0}
               className="mt-1 block text-left text-3xl font-semibold tabular-nums text-brand-ink hover:underline disabled:cursor-default disabled:no-underline"
-              title={resumo.pessoas ? "Ver quem compõe este total" : undefined}
+              title={resumo.pessoas ? "Ver custo estimado por pessoa (com provisões)" : undefined}
             >
               {formatBRL(principal)}
             </button>
@@ -81,18 +81,18 @@ export function TotalEquipe({
                 ? `Pago ${formatBRL(resumo.pago)} + provisões ${formatBRL(resumo.provisoes)} (FGTS 8%, 13º e férias sobre ${formatBRL(resumo.base)}). Não é o custo patronal completo.`
                 : `Pago às pessoas. FGTS e INSS lançados ficam fora — são custo da empresa.`}
               {resumo.emAberto > 0.005 && (
-                <> <strong className="font-semibold text-amber-700">{formatBRL(resumo.emAberto)} ainda em aberto no ERP</strong> — entra na folha do mês, mas não saiu do caixa.</>
+                <> <strong className="font-semibold text-amber-700">{formatBRL(resumo.emAberto)} ainda em aberto no ERP</strong> — fora dos totais acima; ainda não saiu do caixa.</>
               )}
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               <StatCard label="Pago à equipe" value={formatBRL(resumo.pago)} icon={<Users className="h-4 w-4" />} accent="blue" onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
               <StatCard label="Provisões" value={formatBRL(resumo.provisoes)} icon={<PiggyBank className="h-4 w-4" />} accent="gold" hint={`sobre ${formatBRL(resumo.base)}`} title="Provisão do mês: FGTS, 13º e férias sobre a base, mais o FGTS lançado de verdade. Quanto SEPARAR por mês para os acertos está na aba Encargos estimados — lá o mês pela metade vale pela média, então os dois números não são o mesmo." />
-              <StatCard label="Média por pessoa" value={formatBRL(resumo.mediaPorPessoa)} icon={<TrendingUp className="h-4 w-4" />} accent="brand" hint={`${resumo.pessoas} pessoa(s)`} onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
+              <StatCard label="Média por pessoa" value={formatBRL(resumo.pessoas > 0 ? principal / resumo.pessoas : 0)} icon={<TrendingUp className="h-4 w-4" />} accent="brand" hint={`${resumo.pessoas} pessoa(s)`} onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
             </div>
             {pessoaNome && pessoaPeso !== null && (
               <p className="mt-3 text-xs text-slate-600">
                 <strong className="font-semibold text-brand-ink">{pessoaNome}</strong> responde por{" "}
-                <strong className="font-semibold tabular-nums text-brand-ink">{(pessoaPeso * 100).toFixed(1).replace(".", ",")}%</strong> deste total.
+                <strong className="font-semibold tabular-nums text-brand-ink">{(pessoaPeso * 100).toFixed(1).replace(".", ",")}%</strong> {comEncargos ? "deste total" : "do custo estimado (com provisões)"}.
               </p>
             )}
           </div>

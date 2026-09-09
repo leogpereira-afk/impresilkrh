@@ -115,14 +115,34 @@ describe("porPessoaNoMes", () => {
 });
 
 describe("títulos em aberto no ERP", () => {
-  it("entram no pago do mês, mas a parcela em aberto é dita à parte", () => {
+  it("ficam fora do pago do mês, com a parcela em aberto dita à parte", () => {
     const pags = [
       { competencia: "2026-09", colaboradorId: "a", tipo: "Salário", valor: 1000, statusErp: "PAGO" },
       { competencia: "2026-09", colaboradorId: "b", tipo: "Salário", valor: 700, statusErp: "ABERTO" },
       { competencia: "2026-09", colaboradorId: "c", tipo: "Salário", valor: 300 }, // legado, sem estado
     ];
     const m = mesDaEquipe(pags, "2026-09");
-    expect(m.pago).toBe(2000);
+    expect(m.pago).toBe(1300);
     expect(m.emAberto).toBe(700);
+  });
+});
+
+describe("agregações contam somente títulos pagos", () => {
+  it("exclui não pagos da base, FGTS, pessoas, pesos e médias sem diluir a série", () => {
+    const pagos = [p("2026-08", "a", "Salário", 1000), { ...p("2026-08", "b", "Diária", 500), statusErp: "PAGO" }];
+    const rejeitados = ["ABERTO", "CANCELADO", "PAGO ESTORNADO", "NÃO PAGO", "NAO PAGO", "NÃO QUITADO", "AGENDADO"];
+    const pags = [...pagos, ...rejeitados.flatMap((statusErp, i) => [
+      { ...p("2026-08", `fora-${i}`, "Salário", 9000), statusErp },
+      { ...p("2026-08", `fora-${i}`, "FGTS", 700), statusErp },
+      { ...p("2026-07", `fora-${i}`, "Salário", 9000), statusErp },
+    ])];
+    const esperado = mesDaEquipe(pagos, "2026-08");
+    expect(mesDaEquipe(pags, "2026-08")).toMatchObject({ pago: esperado.pago, base: esperado.base, provisoes: esperado.provisoes, pessoas: 2 });
+    expect(porPessoaNoMes(pags, "2026-08")).toEqual(porPessoaNoMes(pagos, "2026-08"));
+    expect(pesoDaPessoa(pags, "2026-08", "fora-0")).toBe(0);
+    expect(pesoDaPessoa(pags, "2026-08", "a")).toBe(pesoDaPessoa(pagos, "2026-08", "a"));
+    const resumo = resumoDaEquipe(pags, "2026-08");
+    expect(resumo.serie.map((m) => m.competencia)).toEqual(["2026-08"]);
+    expect(resumo.mediaEstimada).toBe(esperado.estimado);
   });
 });

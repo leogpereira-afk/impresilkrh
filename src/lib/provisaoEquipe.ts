@@ -16,7 +16,7 @@
 // Sócio não entra: quem chama já filtra (pagamentosDaEquipe).
 import { calcularEncargos } from "./encargos";
 import { TIPOS_ENCARGO } from "./folha";
-import { tituloEmAberto } from "./mubiPagamentos";
+import { tituloPago, tituloEmAberto, tituloCancelado } from "./mubiPagamentos";
 
 export interface Pag {
   competencia: string;
@@ -24,7 +24,7 @@ export interface Pag {
   valor: number;
   colaboradorId?: string;
   /** Estado do título no ERP (PAGO, ABERTO…). Ausente = legado, conta como pago. */
-  statusErp?: string;
+  statusErp?: string | null;
 }
 
 export interface MesDaEquipe {
@@ -34,12 +34,11 @@ export interface MesDaEquipe {
   estimado: number;
   /** Base de encargo do mês (salário + adiantamento). */
   base: number;
-  /** Quantas pessoas tiveram algum lançamento no mês. */
+  /** Quantas pessoas tiveram algum lançamento pago no mês. */
   pessoas: number;
   /**
-   * Quanto do "pago" ainda está EM ABERTO no ERP (título que venceu ou vence e
-   * não foi baixado). Entra na soma — é a folha do mês — mas a tela tem de
-   * dizer que esse pedaço ainda não saiu do caixa (auditoria de 07/09/2026).
+   * Valor em aberto no ERP, informado à parte. Não compõe pago, base,
+   * provisões, pessoas nem custo estimado.
    */
   emAberto: number;
 }
@@ -65,11 +64,11 @@ const somaPagos = (ps: Pag[]) =>
 
 /** O mês, com a mesma régua da tela. */
 export function mesDaEquipe(pags: Pag[], comp: string): MesDaEquipe {
-  const doMes = pags.filter((p) => p.competencia === comp);
+  const doMes = pags.filter((p) => p.competencia === comp && tituloPago(p.statusErp));
   const fgtsLancado = doMes.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const enc = calcularEncargos(doMes, fgtsLancado);
   const pago = somaPagos(doMes);
-  const emAberto = somaPagos(doMes.filter((p) => tituloEmAberto(p.statusErp)));
+  const emAberto = somaPagos(pags.filter((p) => p.competencia === comp && !tituloCancelado(p.statusErp) && tituloEmAberto(p.statusErp)));
   return {
     competencia: comp,
     pago,
@@ -85,12 +84,12 @@ export function mesDaEquipe(pags: Pag[], comp: string): MesDaEquipe {
  * O mês + a série que serve de base para a reserva.
  *
  * `meses` é o tamanho da janela (12 por padrão). A série só inclui competências
- * que TÊM lançamento: mês vazio no meio não vira R$ 0,00 na média — zero não é
+ * que TÊM lançamento pago: mês vazio ou só pendente não vira R$ 0,00 na média — zero não é
  * resultado, é ausência, e puxaria a reserva para baixo em silêncio.
  */
 export function resumoDaEquipe(pags: Pag[], comp: string, meses = 12): ResumoDaEquipe {
   const mes = mesDaEquipe(pags, comp);
-  const comps = [...new Set(pags.map((p) => p.competencia).filter(Boolean))]
+  const comps = [...new Set(pags.filter((p) => tituloPago(p.statusErp)).map((p) => p.competencia).filter(Boolean))]
     .filter((c) => c <= comp)
     .sort()
     .slice(-meses);
@@ -125,7 +124,7 @@ export interface PessoaNoMes {
  * números diferentes do mesmo dinheiro.
  */
 export function porPessoaNoMes(pags: Pag[], comp: string): PessoaNoMes[] {
-  const doMes = pags.filter((p) => p.competencia === comp && p.colaboradorId);
+  const doMes = pags.filter((p) => p.competencia === comp && p.colaboradorId && tituloPago(p.statusErp));
   const ids = [...new Set(doMes.map((p) => String(p.colaboradorId)))];
   return ids
     .map((colaboradorId) => {
@@ -142,7 +141,7 @@ export function porPessoaNoMes(pags: Pag[], comp: string): PessoaNoMes[] {
 export function pesoDaPessoa(pags: Pag[], comp: string, colaboradorId: string): number | null {
   const mes = mesDaEquipe(pags, comp);
   if (!(mes.estimado > 0)) return null;
-  const dela = pags.filter((p) => p.competencia === comp && p.colaboradorId === colaboradorId);
+  const dela = pags.filter((p) => p.competencia === comp && p.colaboradorId === colaboradorId && tituloPago(p.statusErp));
   const fgtsLancado = dela.filter((p) => p.tipo === "FGTS").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const enc = calcularEncargos(dela, fgtsLancado);
   return (somaPagos(dela) + enc.total) / mes.estimado;

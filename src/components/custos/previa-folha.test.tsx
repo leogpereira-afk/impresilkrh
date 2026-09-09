@@ -63,7 +63,7 @@ describe("PreviaFolha — diz o que muda e trava até conferir", () => {
        de texto/conta/id. Afirmar a frase velha deixava o main vermelho e
        travava o deploy de todo mundo (deploy.yml roda `npm run verificar`).
        Agora afirma o que o usuário lê de verdade, no lugar onde decide. */
-    expect(texto()).toMatch(/Aplicar\s*2 alteração\(ões\)\s*·\s*1 só de texto\/conta\/id/);
+    expect(texto()).toMatch(/Aplicar\s*3 alteração\(ões\)\s*·\s*1 de descrição\/conta\/id/);
     expect(texto()).toMatch(/2\.1\.11\.1-Diária\s*→\s*2\.1\.11\.3-Diária/);
   });
   it("o botão fica travado enquanto há aviso sem 'conferi'", () => {

@@ -1,3 +1,4 @@
+import { tituloPago } from "@/lib/mubiPagamentos";
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -196,7 +197,7 @@ export default function Painel() {
   // depende do status de hoje (quem saiu em junho recebeu em março), e FGTS/INSS
   // ficam fora dos dois — antes o card e a barra da MESMA competência diziam
   // números diferentes (auditoria de 07/09/2026).
-  const pagsFolha = pagamentos.filter((p) => idsBruto.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo));
+  const pagsFolha = pagamentos.filter((p) => idsBruto.has(p.colaboradorId) && tituloPago(p.statusErp) && !TIPOS_ENCARGO.includes(p.tipo));
   const pagsEscopo = pagsFolha;
   const pagsPeriodo = compFiltro
     ? pagsEscopo.filter((p) => p.competencia === compFiltro)
@@ -917,7 +918,7 @@ function PainelPessoal() {
   const anoAtual = String(HOJE.getFullYear());
   // Mesmo motivo: "Meus ganhos no ano" é o que a PESSOA recebeu, e o botão ao
   // lado gera comprovante — encargo da empresa não entra.
-  const meusPagamentos = pagamentos.filter((p) => p.colaboradorId === c.id && !TIPOS_ENCARGO.includes(p.tipo));
+  const meusPagamentos = pagamentos.filter((p) => p.colaboradorId === c.id && tituloPago(p.statusErp) && !TIPOS_ENCARGO.includes(p.tipo));
   const ganhoAno = meusPagamentos.filter((p) => p.competencia.startsWith(anoAtual)).reduce((s, p) => s + p.valor, 0);
 
   return (

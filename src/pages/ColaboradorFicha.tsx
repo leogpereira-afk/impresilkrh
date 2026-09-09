@@ -1,3 +1,4 @@
+import { tituloPago } from "@/lib/mubiPagamentos";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import {
@@ -1052,7 +1053,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
   // Somados aqui, o "total recebido" do mês de uma rescisão inflava milhares de
   // reais e o demonstrativo do colaborador ficava errado. Ficam de fora da
   // conta e aparecem à parte, rotulados.
-  const todos = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id), [pagamentos, c.id]);
+  const todos = useMemo(() => pagamentos.filter((p) => p.colaboradorId === c.id && tituloPago(p.statusErp)), [pagamentos, c.id]);
   const meus = useMemo(() => todos.filter((p) => !TIPOS_ENCARGO.includes(p.tipo)), [todos]);
   const encargos = useMemo(() => todos.filter((p) => TIPOS_ENCARGO.includes(p.tipo)), [todos]);
   // Competências disponíveis, da mais recente para a mais antiga.
