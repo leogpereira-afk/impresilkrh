@@ -92,6 +92,16 @@ describe("auditoria dos lançamentos", () => {
     expect(achado(auditarLancamentos([pg({ id: "o1", colaboradorId: "fantasma" })], [ana]), "orfao")).toHaveLength(1);
   });
 
+  it("só considera títulos efetivamente pagos na auditoria financeira", () => {
+    const aberto = pg({ id: "aberto", statusErp: "EM ABERTO", idMubi: "101" });
+    const pago = pg({ id: "pago", statusErp: "PAGO", idMubi: "102" });
+    const r = auditarLancamentos([aberto, pago], [ana]);
+
+    expect(r.resumo.linhas).toBe(1);
+    expect(achado(r, "classificacao")).toHaveLength(0);
+    expect(achado(r, "possivel-duplicata")).toHaveLength(0);
+  });
+
   it("valor zero é erro", () => {
     expect(achado(auditarLancamentos([pg({ id: "v1", valor: 0 })], [ana]), "valor")).toHaveLength(1);
   });
@@ -161,6 +171,11 @@ describe("como corrigir", () => {
     const passos = COMO_CORRIGIR["sem-lancamento"].passos;
     expect(passos[0]).toContain("Não encontrados");
     expect(passos.findIndex((p) => p.includes("admissão"))).toBeGreaterThan(0);
+  });
+
+  it("conta não reconhecida manda conferir a conta completa no Mubisys", () => {
+    expect(COMO_CORRIGIR["conta-desconhecida"].onde).toBe("erp");
+    expect(COMO_CORRIGIR["conta-desconhecida"].passos.join(" ")).toContain("Mubisys");
   });
 });
 

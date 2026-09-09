@@ -84,15 +84,30 @@ export function AuditoriaLancamentos({
   const [confirmarAdmissao, setConfirmarAdmissao] = useState(false);
   const [ano, setAno] = useState("");
   const [gravidade, setGravidade] = useState<Gravidade | "">("");
+  const [busca, setBusca] = useState("");
   const [confirmar, setConfirmar] = useState(false);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
+  const [mostrarTodos, setMostrarTodos] = useState<Set<string>>(new Set());
 
   const { achados, resumo } = useMemo(
     () => auditarLancamentos(pagamentos, colaboradores, ano ? { de: `${ano}-01`, ate: `${ano}-12` } : {}),
     [pagamentos, colaboradores, ano],
   );
-  const visiveis = gravidade ? achados.filter((a) => a.gravidade === gravidade) : achados;
-  const consertaveis = achados.filter((a) => a.conserto);
+  const termo = busca.trim().toLocaleLowerCase("pt-BR");
+  const visiveis = achados.filter((a) => {
+    if (gravidade && a.gravidade !== gravidade) return false;
+    if (!termo) return true;
+    const dadosDosPagamentos = pagamentos
+      .filter((p) => a.pagamentoIds.includes(p.id))
+      .flatMap((p) => [p.descricao, p.tipo, p.idMubi ?? ""]);
+    const texto = [a.titulo, a.detalhe, a.colaboradorId, ...a.competencias, ...a.pagamentoIds, ...dadosDosPagamentos]
+      .join(" ").toLocaleLowerCase("pt-BR");
+    return texto.includes(termo);
+  });
+  // O botão acompanha o recorte que a pessoa está vendo. Assim um filtro
+  // "Atenção" nunca aplica, escondido, um conserto de erro que ficou fora da
+  // tela.
+  const consertaveis = visiveis.filter((a) => a.conserto);
   const porRegra = useMemo(() => {
     const m = new Map<RegraAuditoria, AchadoAuditoria[]>();
     for (const a of visiveis) m.set(a.regra, [...(m.get(a.regra) ?? []), a]);
@@ -141,6 +156,25 @@ export function AuditoriaLancamentos({
             {resumo.competencias.length ? `${compLabel(resumo.competencias[0])} a ${compLabel(resumo.competencias[resumo.competencias.length - 1])}` : "sem competência"}
           </span>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar pessoa, competência, título ou ID"
+            aria-label="Buscar na auditoria dos lançamentos"
+            className="h-9 min-w-0 flex-1 text-sm sm:max-w-xl"
+          />
+          {(busca || gravidade || ano) && (
+            <button
+              type="button"
+              className="btn-ghost h-9 text-xs"
+              onClick={() => { setBusca(""); setGravidade(""); setAno(""); }}
+            >Limpar filtros</button>
+          )}
+          <span className="text-xs text-slate-500">
+            {visiveis.length} achado(s) exibido(s){visiveis.length !== achados.length ? ` de ${achados.length}` : ""}
+          </span>
+        </div>
 
         <div className={`flex items-start gap-3 rounded-xl border p-3 text-sm ${limpo ? "border-green-200 bg-green-50/60 text-green-800" : TOM.erro.caixa + " text-red-800"}`}>
           {limpo ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
@@ -165,6 +199,7 @@ export function AuditoriaLancamentos({
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${TOM[g].chip}`}>{TOM[g].rotulo}</span>
                 <span className="text-sm font-semibold text-brand-ink">{ROTULO_REGRA[regra]}</span>
                 <span className="text-xs text-slate-500">{lista.length}</span>
+                <span className="text-xs tabular-nums text-slate-400">{formatBRL(lista.reduce((s, a) => s + a.valor, 0))}</span>
                 <span className="ml-auto text-xs text-slate-500">{aberto ? "esconder" : "ver"}</span>
               </button>
               {aberto && (
@@ -196,11 +231,12 @@ export function AuditoriaLancamentos({
                   );
                 })()}
                 <ul className="space-y-1.5 border-t border-black/5 px-3 py-2">
-                  {lista.slice(0, MOSTRAR).map((a, i) => (
+                  {lista.slice(0, mostrarTodos.has(regra) ? lista.length : MOSTRAR).map((a, i) => (
                     <li key={`${a.regra}:${a.colaboradorId}:${a.pagamentoIds[0] ?? i}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
                       <Pessoa colaboradorId={a.colaboradorId} nome={nome(a.colaboradorId)} cpf={fichaDe(a.colaboradorId)?.cpf} />
                       <span className="text-slate-600">{a.detalhe}</span>
                       {a.valor > 0 && <span className="tabular-nums text-slate-500">{formatBRL(a.valor)}</span>}
+                      {a.competencias.length > 0 && <span className="text-xs text-slate-400">{a.competencias.map(compLabel).join(", ")}</span>}
                       {onVerPessoa && (
                         <button type="button" className="inline-flex items-center gap-1 text-xs text-brand hover:underline" onClick={() => onVerPessoa(a.colaboradorId)}>
                           <UserSearch className="h-3 w-3" /> abrir
@@ -209,8 +245,14 @@ export function AuditoriaLancamentos({
                     </li>
                   ))}
                   {lista.length > MOSTRAR && (
-                    <li className="flex items-center gap-1.5 pt-1 text-xs text-slate-500">
-                      <Info className="h-3 w-3" /> e mais {lista.length - MOSTRAR} — filtre por ano para ver o resto.
+                    <li className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-500">
+                      <Info className="h-3 w-3" />
+                      <span>{mostrarTodos.has(regra) ? "Todas as linhas deste alerta estão visíveis." : `Mais ${lista.length - MOSTRAR} linha(s) estão ocultas.`}</span>
+                      <button
+                        type="button"
+                        className="btn-outline h-7 px-2 py-0 text-xs"
+                        onClick={() => setMostrarTodos((s) => { const n = new Set(s); if (n.has(regra)) n.delete(regra); else n.add(regra); return n; })}
+                      >{mostrarTodos.has(regra) ? "Mostrar menos" : "Mostrar todas"}</button>
                     </li>
                   )}
                 </ul>

@@ -106,7 +106,11 @@ export function auditarLancamentos(
   const hoje = opcoes.hoje ?? new Date();
   const fechada = (comp: string) => competenciaFechada(comp, hoje);
   const dentro = (c: string) => (!opcoes.de || c >= opcoes.de) && (!opcoes.ate || c <= opcoes.ate);
-  const pags = pagamentos.filter((p) => dentro(p.competencia));
+  // A auditoria financeira responde pelo dinheiro que efetivamente saiu do
+  // caixa. Títulos em aberto, cancelados ou não pagos podem continuar na
+  // coleção para a conferência do ERP, mas não entram como lançamento pago,
+  // nem podem criar falso mês completo, duplicidade ou conta que "parou".
+  const pags = pagamentos.filter((p) => dentro(p.competencia) && tituloPago(p.statusErp));
   const achados: AchadoAuditoria[] = [];
   /** Lançamentos que acharam a pessoa pelo texto, não pela chave (CPF/ID). */
   const porTexto: Pagamento[] = [];
@@ -387,11 +391,11 @@ export const COMO_CORRIGIR: Record<RegraAuditoria, ComoCorrigir> = {
   },
   "conta-desconhecida": {
     causa: "O contador criou ou renomeou uma conta que nenhuma regra de classificação reconhece; o tipo gravado foi um palpite.",
-    onde: "ficha",
+    onde: "erp",
     passos: [
-      "Abra a pessoa e confira se o tipo gravado faz sentido para essa conta.",
-      "Se a conta veio para ficar, peça para incluir o nome dela na regra — assim o mês que vem já entra classificado.",
-      "Nunca classifique pelo código: o contador renumera o plano inteiro e o código muda de dono.",
+      "Abra a linha e confira no Mubisys o nome completo da conta e o favorecido.",
+      "Se a conta veio para ficar, inclua o nome dela na regra de classificação — assim o mês que vem já entra classificado.",
+      "Nunca classifique pelo código sozinho: o contador renumera o plano e o código muda de dono.",
     ],
   },
   competencia: {

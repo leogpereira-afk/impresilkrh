@@ -190,3 +190,53 @@ describe("Auditoria — corrigir o cadastro pelo que os pagamentos provam", () =
     expect(container.textContent).not.toContain("Tem data de saída, mas continua recebendo");
   });
 });
+
+describe("Auditoria — localizar e abrir listas longas", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => { container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); });
+
+  it("permite buscar um lançamento e mostrar todas as linhas do alerta", () => {
+    const pessoa: Colaborador[] = [{ id: "ana", nome: "Ana Silva", statusId: "ativo", dataAdmissao: "2020-01-01" } as Colaborador];
+    const linhas: Pagamento[] = Array.from({ length: 27 }, (_, i) => ({
+      id: `conta-${i}`,
+      colaboradorId: "ana",
+      competencia: "2026-08",
+      tipo: "Salário",
+      valor: i + 1,
+      dataPagamento: "2026-09-05",
+      idMubi: String(300 + i),
+      statusErp: "PAGO",
+      descricao: `Lançamento financeiro ${i} · 2.9.99-Conta nova`,
+    } as Pagamento));
+
+    act(() => { root.render(<AuditoriaLancamentos pagamentos={linhas} colaboradores={pessoa} onCorrigir={() => {}} />); });
+    const input = container.querySelector("input[aria-label='Buscar na auditoria dos lançamentos']") as HTMLInputElement;
+    expect(input).toBeTruthy();
+    const setInputValue = (value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => {
+      setInputValue("Lançamento financeiro 26");
+    });
+    expect(container.textContent).toContain("1 achado(s) exibido(s) de 27");
+
+    const grupo = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("Conta não reconhecida"));
+    expect(grupo).toBeTruthy();
+    act(() => { grupo!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(container.textContent).toContain("Conta nova");
+
+    act(() => {
+      setInputValue("");
+    });
+    const verTodas = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "Mostrar todas");
+    expect(verTodas).toBeTruthy();
+    act(() => { verTodas!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(container.textContent).toContain("Todas as linhas deste alerta estão visíveis.");
+    expect(container.textContent).toContain("Conta nova");
+  });
+});
