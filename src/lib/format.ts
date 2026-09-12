@@ -8,7 +8,14 @@ export function parseData(data: Date | string | null | undefined): Date | null {
   if (!data) return null;
   if (data instanceof Date) return isNaN(data.getTime()) ? null : data;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data.trim());
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (m) {
+    const ano = Number(m[1]), mes = Number(m[2]) - 1, dia = Number(m[3]);
+    const d = new Date(0);
+    d.setFullYear(ano, mes, dia);
+    d.setHours(0, 0, 0, 0);
+    // Datas inexistentes não podem virar silenciosamente outro vencimento.
+    return d.getFullYear() === ano && d.getMonth() === mes && d.getDate() === dia ? d : null;
+  }
   const d = new Date(data);
   return isNaN(d.getTime()) ? null : d;
 }

@@ -1,3 +1,4 @@
+import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -312,19 +313,7 @@ function Repositorio() {
   };
 
   const abrir = async (arq: ArquivoRepositorio) => {
-    const dataUrl = await resolver(arq);
-    if (!dataUrl) {
-      toast("Este documento não possui arquivo anexado.", "info");
-      return;
-    }
-    const w = window.open();
-    if (w) {
-      w.document.write(
-        `<iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe>`,
-      );
-    } else {
-      toast("Permita pop-ups para abrir o arquivo em nova aba.", "info");
-    }
+    await abrirAnexoEmNovaAba(() => resolver(arq), mensagem => toast(mensagem, "erro"), arq.nome);
   };
 
   const baixarArquivo = async (arq: ArquivoRepositorio) => {

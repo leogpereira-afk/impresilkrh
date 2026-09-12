@@ -5,6 +5,7 @@ import { UserMinus, Trash2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useColecao, obter, obterDinamico, definirColecaoDinamica } from "@/lib/store";
+import { erroDatasCadastro, camposEmConflito } from "@/lib/edicaoCadastro";
 import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 import { useDominio, enquadrar, noQuadro } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
@@ -57,7 +58,7 @@ export function ColaboradorForm({
 
   const vazio: Partial<Colaborador> = {
     nome: "", areaId: "producao", statusId: "ativo", nivelId: "N1", qtdFilhos: 0,
-    riscoSaida: "Baixo", potencial: "Médio", perfil: "COLABORADOR", valeTransporte: true,
+    perfil: "COLABORADOR", valeTransporte: true,
   };
   const [form, setForm] = useState<Partial<Colaborador>>(editar ?? vazio);
   /* RETRATO DE ABERTURA, congelado no primeiro render.
@@ -69,7 +70,7 @@ export function ColaboradorForm({
      acabado de mudar. Pelo Organograma a trava funcionava, porque lá o objeto
      vem de um state; pela ficha, não. */
   const [retrato] = useState<(Colaborador & { _rhRev?: number }) | null>(
-    () => (editar ? ({ ...editar } as Colaborador & { _rhRev?: number }) : null),
+    () => (editar ? (structuredClone(editar) as Colaborador & { _rhRev?: number }) : null),
   );
   const set = (patch: Partial<Colaborador>) => setForm((f) => ({ ...f, ...patch }));
   // O salário é guardado como TEXTO enquanto se digita e só vira número ao
@@ -191,6 +192,8 @@ export function ColaboradorForm({
       toast("Informe o nome do colaborador.", "erro");
       return;
     }
+    const erroData = erroDatasCadastro(form, retrato);
+    if (erroData) { toast(erroData, "erro"); return; }
     if (form.cpf?.trim() && !cpfValido(form.cpf)) {
       toast("CPF inválido. Confira os números (11 dígitos).", "erro");
       return;
@@ -250,14 +253,15 @@ export function ColaboradorForm({
       ...form,
       salario,
       filhos: filhosLimpos,
-      qtdFilhos: filhosLimpos.length,
+      qtdFilhos: JSON.stringify(form.filhos ?? []) === JSON.stringify(retrato?.filhos ?? [])
+        ? (form.qtdFilhos ?? filhosLimpos.length) : filhosLimpos.length,
       contatoEmergencia: temContato ? ce : undefined,
       refMin: cargo?.faixas[0] ?? form.refMin ?? null,
       refMax: cargo?.faixas[4] ?? form.refMax ?? null,
       enquadramento,
       // Reativar (status ativo) limpa a data de desligamento para o colaborador
       // voltar a contar no quadro e o botão "Desligar" reaparecer.
-      dataDesligamento: form.statusId === "ativo" ? null : (form.dataDesligamento ?? null),
+      dataDesligamento: (form.statusId === "ativo" && retrato?.statusId !== "ativo") ? null : (form.dataDesligamento ?? null),
     };
 
     if (editar) {
@@ -271,10 +275,13 @@ export function ColaboradorForm({
         toast("Este cadastro foi alterado por outra pessoa enquanto você editava. Feche e reabra para continuar.", "erro");
         return;
       }
-      const patch = patchDoQueMudou(editar, dados, {
-        sempre: ["salario", "filhos", "qtdFilhos", "contatoEmergencia", "refMin", "refMax", "enquadramento", "dataDesligamento"],
+      if (!atual) { toast("Este cadastro deixou de existir. Feche e confira a lista antes de continuar.", "erro"); return; }
+      const patch = patchDoQueMudou(retrato ?? editar, dados, {
         nunca: ["id"],
       });
+      if (camposEmConflito(retrato ?? editar, atual, patch).length) {
+        toast("Um dos campos editados mudou em outro acesso. Feche e reabra a ficha para conferir antes de salvar.", "erro"); return;
+      }
       atualizar(editar.id, patch);
       // Mesmo registro que a edição no lugar faz: sem isto, promover pelo
       // formulário grande continuava invisível na linha do tempo.
@@ -364,6 +371,7 @@ export function ColaboradorForm({
 
         <Campo label="Área" estado={estadoDe("areaId")}>
           <Select value={form.areaId ?? ""} onChange={(e) => set({ areaId: e.target.value, cargoId: null })}>
+            <option value="">Não informada</option>
             {d.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
           </Select>
         </Campo>
@@ -371,10 +379,12 @@ export function ColaboradorForm({
           <Select value={form.cargoId ?? ""} onChange={(e) => set({ cargoId: e.target.value })}>
             <option value="">— selecione —</option>
             {cargosArea.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            {form.cargoId && !cargosArea.some(c => c.id === form.cargoId) && <option value={form.cargoId}>{d.cargoById.get(form.cargoId)?.nome ?? 'Cargo não localizado'} · conferir área</option>}
           </Select>
         </Campo>
         <Campo label="Nível" estado={estadoDe("nivelId")}>
           <Select value={form.nivelId ?? ""} onChange={(e) => set({ nivelId: e.target.value })}>
+            <option value="">Não informado</option>
             {d.niveis.map((n) => <option key={n.id} value={n.id}>{n.codigo} · {n.nome}</option>)}
           </Select>
         </Campo>
@@ -450,12 +460,14 @@ export function ColaboradorForm({
         </Campo>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Risco de saída">
-            <Select value={form.riscoSaida ?? "Baixo"} onChange={(e) => set({ riscoSaida: e.target.value })}>
+            <Select value={form.riscoSaida ?? ""} onChange={(e) => set({ riscoSaida: e.target.value })}>
+              <option value="">Não informado</option>
               {NIVEIS_RISCO.map((r) => <option key={r} value={r}>{r}</option>)}
             </Select>
           </Campo>
           <Campo label="Potencial">
-            <Select value={form.potencial ?? "Médio"} onChange={(e) => set({ potencial: e.target.value })}>
+            <Select value={form.potencial ?? ""} onChange={(e) => set({ potencial: e.target.value })}>
+              <option value="">Não informado</option>
               {POTENCIAIS.map((p) => <option key={p} value={p}>{p}</option>)}
             </Select>
           </Campo>
@@ -484,7 +496,7 @@ export function ColaboradorForm({
           <button type="button" className="text-xs font-medium text-brand hover:underline" onClick={addFilho}>+ Adicionar filho</button>
         </div>
         {filhos.length === 0 ? (
-          <p className="text-sm text-slate-400">Nenhum filho cadastrado.</p>
+          <p className="text-sm text-slate-400">{form.qtdFilhos ? `${form.qtdFilhos} filho(s) informado(s) no cadastro anterior, ainda sem nomes individuais.` : "Nenhum filho cadastrado."}</p>
         ) : (
           <div className="space-y-2">
             {filhos.map((f, i) => (

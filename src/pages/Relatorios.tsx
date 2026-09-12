@@ -1,3 +1,5 @@
+import { movimentacaoPeriodo } from "@/lib/movimentacaoPeriodo";
+import { cicloVigente as escolherCiclo } from "@/lib/cicloVigente";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -45,14 +47,15 @@ import { formatBRL, formatPercent, mesesDeCasa, parseData, MESES_PT } from "@/li
 // de mês por fuso. Retorna true se a data existe e é >= ref.
 const aposOuIgual = (s: string | null | undefined, ref: Date) => {
   const d = parseData(s);
-  return !!d && d.getTime() >= ref.getTime();
+  return !!d && d.getTime() >= ref.getTime() && d.getTime() <= HOJE.getTime();
 };
 import { COR_POSICAO_FAIXA, COR_HUMOR, COR_RISCO } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import type { Colaborador } from "@/data/types";
 import { TIPOS_ENCARGO } from "@/lib/folha";
 import { ehSocio } from "@/lib/societario";
-import { tituloCancelado, tituloEmAberto } from "@/lib/mubiPagamentos";
+import { pagamentoNaFolhaReal } from "@/lib/folhaRelatorio";
+import { tituloEmAberto } from "@/lib/mubiPagamentos";
 
 // Cor da nota/média de desempenho (verde ≥80, âmbar ≥60, vermelho abaixo).
 const corNota = (n: number) => (n >= 80 ? "#16a34a" : n >= 60 ? "#d97706" : "#dc2626");
@@ -161,20 +164,7 @@ export default function Relatorios() {
   }, [viagens, filtroAno, filtroMes, d]);
 
   // Movimentação e turnover do período selecionado.
-  const periodo = useMemo(() => {
-    const dentro = (iso?: string | null) => {
-      const dt = parseData(iso);
-      if (!dt || dt.getFullYear() !== filtroAno) return false;
-      return filtroMes === 0 ? true : dt.getMonth() + 1 === filtroMes;
-    };
-    const admit = colaboradores.filter((c) => dentro(c.dataAdmissao));
-    const deslig = colaboradores.filter((c) => dentro(c.dataDesligamento));
-    // Headcount médio aproximado no período (atual ± movimentação do período).
-    const inicio = ativos.length + deslig.length - admit.length;
-    const hcMedio = (ativos.length + Math.max(0, inicio)) / 2;
-    const turnover = hcMedio > 0 ? deslig.length / hcMedio : 0;
-    return { admit, deslig, saldo: admit.length - deslig.length, turnover };
-  }, [colaboradores, ativos, filtroMes, filtroAno]);
+  const periodo = useMemo(() => movimentacaoPeriodo(colaboradores, filtroAno, filtroMes, HOJE), [colaboradores, filtroMes, filtroAno]);
 
   // -- Folha real (pagamentos enviados), de quem está no quadro. Duas bases:
   //    "caixa" = pelo dia em que o pagamento saiu (dataPagamento);
@@ -191,11 +181,10 @@ export default function Relatorios() {
   );
   // Um pagamento entra na folha real quando é dinheiro PAGO À PESSOA: FGTS e
   // INSS lançados por pessoa são custo da empresa (a pessoa nunca viu) e título
-  // cancelado no ERP não é dinheiro. Título em aberto conta por competência
-  // (é a folha do mês) e NÃO conta no caixa (ainda não saiu).
+  // cancelado no ERP não é dinheiro. Títulos em aberto ficam fora das duas bases; continuam na conferência do ERP.
   const entraNaFolhaReal = useCallback(
     (p: { colaboradorId: string; tipo: string; statusErp?: string }) =>
-      idsFolha.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo) && !tituloCancelado(p.statusErp),
+      pagamentoNaFolhaReal(p, idsFolha),
     [idsFolha],
   );
   const mesDoCaixa = (p: { competencia: string; dataPagamento?: string | null; pagoEm?: string | null }) => {
@@ -224,6 +213,7 @@ export default function Relatorios() {
     return { caixa: resumo(porCaixa), competencia: resumo(porComp), temDados: porCaixa.size > 0 || porComp.size > 0 };
   }, [pagamentos, entraNaFolhaReal, filtroMes, filtroAno]);
   const folhaAtual = folhaReal[baseFolha];
+  const pendentesErp = pagamentos.filter(p => idsFolha.has(p.colaboradorId) && !TIPOS_ENCARGO.includes(p.tipo) && tituloEmAberto(p.statusErp)).length;
 
   const drillFolhaReal = useCallback(
     (nomeMes: string) => {
@@ -422,7 +412,7 @@ export default function Relatorios() {
   const { items: avaliacoes } = useColecao("avaliacoes");
   const { items: ciclos } = useColecao("ciclos");
   const cicloAtual = useMemo(
-    () => ciclos.find((c) => c.status === "Aberto") ?? [...ciclos].sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))[0],
+    () => escolherCiclo(ciclos),
     [ciclos],
   );
   const cicloAnterior = useMemo(() => {
@@ -702,10 +692,10 @@ export default function Relatorios() {
         />
         <StatCard
           label={`Turnover · ${rotuloPeriodo}`}
-          value={formatPercent(periodo.turnover)}
+          value={periodo.turnover == null ? "—" : formatPercent(periodo.turnover)}
           icon={<TrendingDown className="h-5 w-5" />}
           accent="amber"
-          hint={`${periodo.deslig.length} deslig. · ${periodo.admit.length} adm. no período`}
+          hint={periodo.incompletos ? `${periodo.incompletos} cadastro(s) com datas a conferir` : `${periodo.deslig.length} deslig. · quadro ${periodo.abertura} → ${periodo.fechamento}`}
           title="Ver quem foi desligado no período"
           onClick={() =>
             drill.abrir(
@@ -721,7 +711,7 @@ export default function Relatorios() {
         <Card>
           <CardHeader
             title="Folha real (pagamentos)"
-            subtitle={`Só dos ativos · ${rotuloPeriodo}. Clique numa barra para ver quem foi pago.`}
+            subtitle={`Pagamentos confirmados, inclusive de quem já saiu · ${rotuloPeriodo}. Clique numa barra para ver as pessoas.`}
             icon={<Wallet className="h-[18px] w-[18px]" />}
             action={
               <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
@@ -774,6 +764,7 @@ export default function Relatorios() {
               </ul>
             </div>
 
+            {pendentesErp > 0 && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{pendentesErp} título(s) em aberto no ERP, fora dos totais pagos. <Link className="underline" to="/custos?aba=sync">Conferir pendências</Link></p>}
             {folhaReal.temDados ? (
               <BarrasVerticais
                 data={folhaAtual.serie}

@@ -412,6 +412,7 @@ export default function Colaboradores() {
   return (
     <div>
       <PageHeader title="Colaboradores" description={`${lista.length} colaborador(es) no seu escopo de acesso.`}>
+        {ehRH(sessao) && <Link className="btn-outline" to="/painel-controle?aba=cadastros">Conferir cadastros</Link>}
         <button className="btn-outline" onClick={exportarCsv} disabled={lista.length === 0} title="Exporta a lista filtrada para CSV">
           <Download className="h-4 w-4" /> Exportar CSV
         </button>

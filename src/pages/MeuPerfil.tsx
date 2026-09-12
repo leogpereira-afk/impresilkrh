@@ -1,8 +1,9 @@
+import { quantidadeFilhos } from "@/lib/edicaoCadastro";
 import { useHoje } from '@/lib/useHoje';
 import { ResumoFerias } from '@/components/ferias/resumo-ferias';
 import { estadoFerias } from '@/lib/feriasPeriodos';
 import { useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   IdCard, Briefcase, FileText, Palmtree, Target, FileSignature,
   ExternalLink, UserCircle, Wallet, KeyRound, Camera,
@@ -10,6 +11,7 @@ import {
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { Badge, DotBadge } from "@/components/ui/badge";
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { Tabs } from "@/components/ui/tabs";
 import { AbaFinanceiro } from "./ColaboradorFicha";
 import { MeusTermos } from "./Aceites";
@@ -41,8 +43,7 @@ function enqVar(e: string): "danger" | "warning" | "success" | "info" {
 export default function MeuPerfil() {
   const sessao = useSessao();
   const d = useDominio();
-  const [params] = useSearchParams();
-  const abaInicial = params.get("tab") ?? undefined; // ex.: vindo do "Meus ganhos" no painel
+  const [aba, mudarAba] = useAbaNaUrl("meu-perfil", ["dados", "ganhos", "docs", "ferias", "desenv", "termos"], "dados", "tab");
   const c = sessao ? d.colabById.get(sessao.colaboradorId) : undefined;
 
   if (!c) {
@@ -82,7 +83,7 @@ export default function MeuPerfil() {
       </Card>
 
       <Tabs
-        inicial={abaInicial}
+        ativa={aba} aoMudar={mudarAba}
         abas={[
           { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} /> },
           { id: "ganhos", label: "Meus ganhos", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro c={c} sens /> },
@@ -159,7 +160,7 @@ function AbaDados({ c }: { c: Colaborador }) {
               className="col-span-2"
             />
             <Field label="Bairro" value={c.enderecoBairro ?? "—"} />
-            <Field label="Filhos" value={c.filhos?.length ?? c.qtdFilhos ?? 0} />
+            <Field label="Filhos" value={quantidadeFilhos(c) ?? "Não informado"} />
             <Field label="Cônjuge" value={c.conjugeNome ?? "—"} className="col-span-2" />
           </dl>
           <p className="mt-4 text-xs text-slate-400">

@@ -1,3 +1,5 @@
+import { tituloPago } from "./mubiPagamentos";
+import { TIPOS_ENCARGO } from "./folha";
 // ============================================================================
 // O QUE O SISTEMA JÁ SABE SOBRE A PESSOA, na hora da conversa.
 //
@@ -40,6 +42,7 @@ export interface PontoLike {
   dias?: { situacao?: string }[];
 }
 export interface PagamentoLike {
+  statusErp?: string | null;
   colaboradorId?: string | null;
   competencia?: string;
   tipo?: string;
@@ -118,7 +121,7 @@ export function ganhosAlemDoSalario(
   pagamentos: readonly PagamentoLike[], colaboradorId: string, hoje: Date = HOJE, meses = JANELA_MESES,
 ): Ganhos {
   const janela = new Set(competenciasDaJanela(hoje, meses));
-  const meus = pagamentos.filter((p) => p.colaboradorId === colaboradorId && janela.has(String(p.competencia)));
+  const meus = pagamentos.filter((p) => p.colaboradorId === colaboradorId && janela.has(String(p.competencia)) && tituloPago(p.statusErp) && !TIPOS_ENCARGO.includes(p.tipo ?? ""));
   if (!meus.length) return { temDados: false, total: 0, porTipo: [] };
   const mapa = new Map<string, number>();
   for (const p of meus) {

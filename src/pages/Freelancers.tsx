@@ -86,6 +86,8 @@ export default function Freelancers() {
   const [busca, setBusca] = useState("");
   const [verEncerrados, setVerEncerrados] = useState(false);
   const [form, setForm] = useState<Partial<Freelancer> | null>(null);
+  const [valorTexto, setValorTexto] = useState("");
+  const abrirForm = (f: Partial<Freelancer>) => { setForm(f); setValorTexto(f.valor != null ? String(f.valor) : ""); };
   const [apagando, setApagando] = useState<Freelancer | null>(null);
 
   const lista = useMemo(() => {
@@ -127,7 +129,9 @@ export default function Freelancers() {
         ?? todos.find((f) => f.id !== form.id && (f.apelido ?? "") === apelido);
       if (outro) return toast(`O apelido "${apelido}" já é de ${outro.nome}. Use outro.`, "erro");
     }
-    const dados = { ...form, nome, apelido, situacao: form.situacao ?? "ativo" };
+    const valor = valorTexto.trim() ? parseBRL(valorTexto) : undefined;
+    if (valorTexto.trim() && (valor == null || !Number.isFinite(valor) || /[-−]/.test(valorTexto))) return toast("Informe um valor válido, como 1.250,50.", "erro");
+    const dados = { ...form, valor: valor ?? undefined, nome, apelido, situacao: form.situacao ?? "ativo" };
     if (form.id) { atualizar(form.id, dados); toast("Contrato atualizado."); }
     else { criar(dados); toast("Freelancer cadastrado."); }
     setForm(null);
@@ -140,7 +144,7 @@ export default function Freelancers() {
         description="Gerencie os contratos de freelancer. A participação no quadro é conferida no cadastro da pessoa em Colaboradores."
       >
         {podeEditar && (
-          <button className="btn-primary" onClick={() => setForm({ ...VAZIO })}>
+          <button className="btn-primary" onClick={() => abrirForm({ ...VAZIO, contratoInicio: diaLocalISO() })}>
             <Plus className="h-4 w-4" /> Novo contrato
           </button>
         )}
@@ -213,7 +217,7 @@ export default function Freelancers() {
                         <td className="px-3 py-2"><Badge variant={e.variante}>{e.rotulo}</Badge></td>
                         {podeEditar && (
                           <td className="px-3 py-2 text-right">
-                            <button className="btn-ghost h-8 px-2" onClick={() => setForm({ ...f })}>
+                            <button className="btn-ghost h-8 px-2" onClick={() => abrirForm({ ...f })}>
                               <Pencil className="h-3.5 w-3.5" /> Editar
                             </button>
                             <button className="btn-ghost h-8 px-2 text-red-600" onClick={() => setApagando(f)}>
@@ -271,8 +275,8 @@ export default function Freelancers() {
                 onChange={(e) => setForm({ ...form, contratoFim: e.target.value })} />
             </Campo>
             <Campo label="Valor combinado">
-              <Input value={form.valor != null ? formatBRL(form.valor) : ""}
-                onChange={(e) => setForm({ ...form, valor: parseBRL(e.target.value) ?? undefined })} />
+              <Input inputMode="decimal" value={valorTexto}
+                onChange={(e) => setValorTexto(e.target.value)} placeholder="Ex.: 1.250,50" />
             </Campo>
             <Campo label="Forma de pagamento" hint="por serviço, por dia, mensal">
               <Input value={form.formaPagamento ?? ""}

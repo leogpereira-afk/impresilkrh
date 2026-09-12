@@ -1,3 +1,4 @@
+import { cicloVigente as escolherCiclo } from "@/lib/cicloVigente";
 import { useHoje } from '@/lib/useHoje';
 import { resumoFeriasPessoa } from '@/lib/feriasPeriodos';
 import { riscoInformado } from "@/lib/qualidadeIndicadores";
@@ -128,9 +129,9 @@ export default function Painel() {
   const admissoesPeriodo = admitidosPeriodo.length;
   const desligamentosPeriodo = desligadosPeriodo.length;
 
-  const desligados12m = escopoBruto.filter((c) => c.dataDesligamento && mesesAtras(c.dataDesligamento) <= 12);
+  const desligados12m = escopoBruto.filter((c) => c.dataDesligamento && mesesAtras(c.dataDesligamento) >= 0 && mesesAtras(c.dataDesligamento) <= 12);
   const desligamentos12m = desligados12m.length;
-  const admissoes12m = escopoBruto.filter((c) => c.dataAdmissao && mesesAtras(c.dataAdmissao) <= 12).length;
+  const admissoes12m = escopoBruto.filter((c) => c.dataAdmissao && mesesAtras(c.dataAdmissao) >= 0 && mesesAtras(c.dataAdmissao) <= 12).length;
   // Turnover = desligados / headcount médio (início reconstruído = fim + desligados − admitidos).
   const headcountInicio = Math.max(0, ativos.length + desligamentos12m - admissoes12m);
   const headcountMedio = (ativos.length + headcountInicio) / 2;
@@ -154,7 +155,7 @@ export default function Painel() {
   // à abertura de um ciclo novo, porque todo mundo tinha avaliação do ciclo
   // ANTERIOR — enquanto a tela de Desempenho listava as 40 pessoas pendentes.
   // Mesma régua da outra tela: vale a avaliação do ciclo vigente.
-  const cicloVigente = ciclos.find((x) => x.status === "Aberto") ?? ciclos[0];
+  const cicloVigente = escolherCiclo(ciclos);
   const cicloAvaliados = new Set(
     avaliacoes
       .filter((a) => a.tipo === "GESTOR" && (!cicloVigente || a.cicloId === cicloVigente.id))
@@ -335,7 +336,8 @@ export default function Painel() {
   const humorData = Object.entries(humorCont)
     .filter(([, v]) => v > 0)
     .map(([nome, valor]) => ({ nome, valor, cor: COR_HUMOR[nome] ?? "#94a3b8" }));
-  const pctMotivado = ativos.length ? Math.round(((humorCont.Motivado ?? 0) / ativos.length) * 100) : 0;
+  const humorInformado = ativos.length - humorCont["Não informado"];
+  const pctMotivado = humorInformado ? Math.round(((humorCont.Motivado ?? 0) / humorInformado) * 100) : null;
 
   // Perfil comportamental — distribuição dos 4 temperamentos entre os ativos.
   // Exibimos o ARQUÉTIPO correspondente (ex.: "O Executor") no lugar do temperamento.
@@ -357,7 +359,7 @@ export default function Painel() {
     });
 
   // Aniversário de empresa (tempo de casa) — admitidos no mês de referência
-  const anosDeCasa = (d?: string | null) => { const dt = parseData(d); return dt ? HOJE.getFullYear() - dt.getFullYear() : 0; };
+  const anosDeCasa = (d?: string | null) => { const dt = parseData(d); return dt ? Math.max(0, filtroAno - dt.getFullYear()) : 0; };
   const diaDoMes = (d?: string | null) => parseData(d)?.getDate() ?? 0;
   const aniversariosEmpresa = ativos
     .filter((c) => c.dataAdmissao && mesDe(c.dataAdmissao) === mesAniversario)
@@ -652,7 +654,7 @@ export default function Painel() {
             {humorData.length ? (
               <>
                 <Rosca data={humorData} onItemClick={(nome) => drill.abrir(`Clima · ${nome}`, colabsPorHumor(nome))} />
-                <p className="mt-1 text-center text-xs text-slate-500"><span className="font-semibold text-green-600">{pctMotivado}%</span> motivados</p>
+                <p className="mt-1 text-center text-xs text-slate-500"><span className="font-semibold text-green-600">{pctMotivado == null ? "—" : `${pctMotivado}%`}</span> {pctMotivado == null ? "Sem humor informado" : `motivados entre ${humorInformado} com informação`}</p>
               </>
             ) : (
               <EmptyState title="Sem dados de clima" />
@@ -731,7 +733,7 @@ export default function Painel() {
           <CardHeader title="Alertas e pendências" subtitle="Conformidade de documentos, NRs e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
             {semAlertas ? (
-              <EmptyState title="Tudo em dia" description="Nenhuma pendência crítica no seu escopo." icon={<ClipboardCheck className="h-8 w-8" />} />
+              <EmptyState title="Sem alertas neste filtro" description="Confira os cadastros e documentos: ausência de registros não confirma regularidade." icon={<ClipboardCheck className="h-8 w-8" />} />
             ) : (
               <>
                 {nrsVisiveis.map((c) => {
@@ -789,6 +791,7 @@ export default function Painel() {
                     <Badge variant="info">{cicloNome}</Badge>
                   </Link>
                 ))}
+                {!foco && avaliacoesPendentes.length > avaliacoesVisiveis.length && <button className="btn-ghost text-brand" onClick={() => alternarFoco("avaliacoes")}>Ver as {avaliacoesPendentes.length} avaliações pendentes</button>}
               </>
             )}
           </CardBody>

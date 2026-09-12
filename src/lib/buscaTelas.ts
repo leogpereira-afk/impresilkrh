@@ -115,6 +115,29 @@ export function destinosDaBusca(telas: readonly TelaBuscavel[], master = false):
       {aba:'advertencias',label:'Advertências',apelidos:['advertencia']},
       {aba:'absenteismo',label:'Ausências',apelidos:['falta','absenteismo']},
       {aba:'folha-variavel',label:'Verbas variáveis do mês',apelidos:['folha variavel','extras']},
+    ] : t.href === '/painel-controle' ? [
+      {aba:'cadastros',label:'Conferir cadastros e duplicidades',apelidos:['cadastro','duplicado','orfao','transferir']},
+      {aba:'usuarios',label:'Usuários e permissões',apelidos:['acesso','usuario','permissao']},
+      {aba:'aval',label:'Ciclos e modelos de avaliação',apelidos:['ciclo','checklist','pesos']},
+      {aba:'historico',label:'Histórico de alterações',apelidos:['historico','quem alterou']},
+      {aba:'marca',label:'Marca e backup',apelidos:['backup','restaurar','marca']},
+    ] : t.href === '/desempenho' ? [
+      {aba:'avaliacoes',label:'Avaliações da equipe',apelidos:['avaliacao','nota']},
+      {aba:'metas',label:'Metas da equipe',apelidos:['meta','objetivo']},
+      {aba:'pdi',label:'Planos de desenvolvimento',apelidos:['pdi','desenvolvimento']},
+      {aba:'pesquisas',label:'Pesquisas e dinâmicas',apelidos:['pesquisa','enps','dinamica']},
+    ] : t.href === '/integracao' ? [
+      {aba:'admissao',label:'Checklist de admissão',apelidos:['admissao','onboarding']},
+      {aba:'teste',label:'Teste antes da contratação',apelidos:['teste','experiencia antes']},
+      {aba:'desligamento',label:'Checklist de desligamento',apelidos:['desligamento','saida']},
+    ] : t.href === '/mensagens' ? [
+      {aba:'templates',label:'Modelos de mensagem',apelidos:['template','modelo de mensagem']},
+      {aba:'agendamentos',label:'Fila de mensagens',apelidos:['agendamento','fila','envio']},
+    ] : t.href === '/sst' ? [
+      {aba:'exames',label:'Exames e ASOs',apelidos:['exame','aso','validade']},
+      {aba:'certificacoes',label:'Certificações e NRs',apelidos:['nr','certificado']},
+      {aba:'programas',label:'Programas de saúde e segurança',apelidos:['pgr','pcmso','sst']}
+    ] : t.href === '/vagas' ? [{aba:'banco',label:'Banco de talentos',apelidos:['curriculo','banco','talento']}
     ] : t.href === '/documentos' ? [{aba:'pops',label:'Procedimentos (POPs)',apelidos:['procedimento','pop']}] : [];
     for (const f of filhos) destinos.push({href:`${t.href}?aba=${f.aba}`,label:f.label,grupo:t.label,apelidos:f.apelidos});
     if (t.href === '/colaboradores') destinos.push({href:'/colaboradores?status=freelancer',label:'Freelancers no quadro',grupo:t.label,apelidos:['freelancer','freela']});

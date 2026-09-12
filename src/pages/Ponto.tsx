@@ -1,3 +1,5 @@
+import { LeituraPonto } from "@/components/ponto/leitura-ponto";
+import { confereSomaDias, periodoDoPonto, pessoaNoPeriodo } from "@/lib/leituraPonto";
 import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -136,15 +138,7 @@ function diasCompletos(p: { dias?: PontoDia[]; periodoInicio?: string | null; pe
 // vai assinado para a contabilidade, então isso é checado de verdade em vez de
 // ser só uma frase na legenda. Registro sem detalhe diário não entra na conta
 // (não é divergência, é dado que não existe).
-function confereSomaDias(p: Ponto): { ok: boolean; difExtras: number; difFaltas: number } | null {
-  if (!p.dias?.length) return null;
-  const somaExtras = p.dias.reduce((s, x) => s + (x.extrasMin || 0), 0);
-  const somaFaltas = p.dias.reduce((s, x) => s + (x.faltasMin || 0), 0);
-  const difExtras = somaExtras - (p.extrasMin || 0);
-  const difFaltas = somaFaltas - (p.faltasMin || 0);
-  // 1 minuto de tolerância: o Secullum arredonda ao imprimir.
-  return { ok: Math.abs(difExtras) <= 1 && Math.abs(difFaltas) <= 1, difExtras, difFaltas };
-}
+
 
 // Contagens do extrato para o dashboard (soma de todos os colaboradores do mês).
 function resumoDias(dias: PontoDia[] | undefined) {
@@ -181,11 +175,18 @@ export default function Ponto() {
     <div>
       <PageHeader
         title="Ponto, ausências e advertências"
-        description="Registro disciplinar e relatórios de absenteísmo da equipe."
+        description="Confira horas, intervalos e ausências; acompanhe as ocorrências e a apuração da equipe."
       />
 
       <Tabs ativa={aba} aoMudar={mudarAba}
         abas={[
+          {
+            id: "ponto",
+            label: "Ponto do mês",
+            icon: <Clock className="h-4 w-4" />,
+            conteudo: <AbaPontoMes podeEditar={podeEditar} />,
+          },
+
           {
             id: "advertencias",
             label: "Advertências",
@@ -197,12 +198,6 @@ export default function Ponto() {
             label: "Absenteísmo",
             icon: <BarChart3 className="h-4 w-4" />,
             conteudo: <AbaAbsenteismo escopo={escopo} idsEscopo={idsEscopo} drill={drill} podeEditar={podeEditar} />,
-          },
-          {
-            id: "ponto",
-            label: "Ponto do mês",
-            icon: <Clock className="h-4 w-4" />,
-            conteudo: <AbaPontoMes podeEditar={podeEditar} />,
           },
           {
             id: "folha-variavel",
@@ -514,29 +509,22 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
   );
   const faltandoNoPonto = useMemo(
     () => {
-      // Quem ainda não estava na empresa não "deixou de aparecer no ponto".
-      // A competência do RH vai do dia 16 do mês anterior ao 15 deste, então o
-      // corte é o dia 16: admitido depois disso não tinha como bater ponto no
-      // período, e aparecia todo mês na lista de cobrança como se tivesse
-      // sumido. Desligado antes do início do período, idem.
-      const m = /^(\d{4})-(\d{2})$/.exec(competencia || "");
-      const fimDoPeriodo = m ? new Date(Number(m[1]), Number(m[2]) - 1, 15) : null;
-      const inicioDoPeriodo = m ? new Date(Number(m[1]), Number(m[2]) - 2, 16) : null;
+      // O período vem do PDF. Competência contábil não define as datas de batida.
+      const periodos = doMesTodos.map(periodoDoPonto).filter(p => p !== null);
+      const periodo = periodos.length ? {
+        inicio: periodos.map(p => p.inicio).sort()[0],
+        fim: periodos.map(p => p.fim).sort().reverse()[0],
+      } : periodoDoPonto({ competencia });
       return visiveisRbac
         // Afastado (INSS, licença) não bate ponto por definição — cobrar a ficha
         // dele seria ruído todo mês.
         .filter((c) => !c.ehDirecao && !c.naoBatePonto && noQuadro(c) && c.statusId !== "afastado" && !presentesIds.has(c.id))
         .filter((c) => {
-          if (!fimDoPeriodo || !inicioDoPeriodo) return true;
-          const adm = parseData(c.dataAdmissao);
-          if (adm && adm.getTime() > fimDoPeriodo.getTime()) return false;
-          const saida = parseData(c.dataDesligamento);
-          if (saida && saida.getTime() < inicioDoPeriodo.getTime()) return false;
-          return true;
+          return !periodo || pessoaNoPeriodo(c, periodo);
         })
         .sort((a, b) => a.nome.localeCompare(b.nome));
     },
-    [visiveisRbac, presentesIds, competencia],
+    [visiveisRbac, presentesIds, competencia, doMesTodos],
   );
 
   // Expandir/recolher todos os extratos (modo Tudo) — para varrer o mês inteiro.
@@ -579,19 +567,13 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
   return (
     <div className="space-y-4">
-      {/* Upload */}
-      <Card>
-        <CardHeader title="Importar Cartão Ponto (Secullum)" subtitle="Suba o PDF do mês. As horas extras e faltas já vêm calculadas — só extraio e cruzo com o cadastro." icon={<Upload className="h-[18px] w-[18px]" />} />
-        <CardBody>
-          <input ref={fileRef} type="file" accept="application/pdf" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) void onArquivo(f); }} />
-          <button onClick={() => fileRef.current?.click()} disabled={ocupado} className="btn-primary disabled:opacity-50">
-            {ocupado ? <Clock className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {ocupado ? "Lendo o PDF…" : "Escolher o PDF do ponto"}
-          </button>
-          <p className="mt-2 text-xs text-slate-400">Nada é enviado para fora: o PDF é lido aqui no seu navegador.</p>
-        </CardBody>
-      </Card>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div><p className="text-sm font-semibold text-slate-800">Cartão de ponto · Secullum</p><p className="text-xs text-slate-500">Importe o PDF e confira os vínculos antes de salvar.</p></div>
+        <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onArquivo(f); }} />
+        <button onClick={() => fileRef.current?.click()} disabled={ocupado} className="btn-primary disabled:opacity-50">
+          {ocupado ? <Clock className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{ocupado ? "Lendo o PDF…" : "Importar PDF"}
+        </button>
+      </div>
 
       {/* Prévia da importação */}
       {previa && (
@@ -717,7 +699,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                     meses; sem fichas, é um campo de mês livre. */}
                 {comps.length > 0 ? (
                   <Select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="text-sm">
-                    {!comps.includes(competencia) && <option value="">Escolha o mês…</option>}
+                    {!comps.includes(competencia) && competencia !== "__outro" && <option value={competencia}>{competencia ? labelMes(competencia) : "Escolha o mês…"}</option>}
                     {comps.map((c) => <option key={c} value={c}>{labelMes(c)}</option>)}
                     <option value="__outro">Outro mês…</option>
                   </Select>
@@ -735,6 +717,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
               <EmptyState icon={<Clock className="h-6 w-6" />} title="Nada importado ainda" description="Suba o PDF do Cartão Ponto acima para começar." />
             ) : (
               <>
+                <LeituraPonto key={competencia} pontos={doMes} nome={p => nomeColab(p.colaboradorId) || p.nomePdf} abrir={setVerMes} />
                 {/* Dashboard: resumo do mês */}
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <StatCard label="Horas extras" value={minParaHora(totExtras)} icon={<Trophy className="h-4 w-4" />} hint={`${agg.comExtra} dia(s) com extra`}
@@ -801,6 +784,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                           <button type="button" onClick={() => setVerMes(p)} className="font-bold underline decoration-dotted underline-offset-2 hover:text-red-900" title="Abrir o mês desta pessoa para conferir os dias">
                             {nomeColab(p.colaboradorId) || p.nomePdf}
                           </button>
+                          {c && c.difNormais !== 0 && ` · normais: dias somam ${minParaHora(p.normaisMin + c.difNormais)}, total do mês ${minParaHora(p.normaisMin)}`}
                           {c && c.difExtras !== 0 && ` · extras: dias somam ${minParaHora(p.extrasMin + c.difExtras)}, total do mês ${minParaHora(p.extrasMin)}`}
                           {c && c.difFaltas !== 0 && ` · faltas: dias somam ${minParaHora(p.faltasMin + c.difFaltas)}, total do mês ${minParaHora(p.faltasMin)}`}
                         </li>
@@ -829,11 +813,11 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
                     <p className="mt-2 text-[11px] text-amber-600/80">Clique no nome para lançar o ponto dele à mão. Quem não bate ponto (comissão/externo) já ficou fora desta lista — ajuste em "Não batem ponto".</p>
                   </div>
                 )}
-                <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-slate-400">
                     {foco ? `${visiveis.length} de ${doMes.length}` : `${doMes.length}`} funcionário(s){doMes.filter((p) => !p.colaboradorId).length ? ` · ${doMes.filter((p) => !p.colaboradorId).length} não vinculado(s)` : ""} · clique no nome para o extrato diário.
                   </p>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {idsExpansiveis.length > 0 && (
                       <button className="btn-ghost px-2 py-1 text-xs text-slate-500 hover:text-brand" onClick={alternarTodos}>
                         {todosAbertos ? "Recolher todos" : "Expandir todos"}
@@ -1621,7 +1605,7 @@ function ModalMesColaborador({
               )}
             </div>
           )}
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-slate-500">{temDetalhe ? `${dias.length} dia(s) do período · lacunas aparecem como “sem registro”.` : "Totais do mês (sem o dia a dia)."}</p>
             <div className="flex gap-2">
               <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={onEditar}>

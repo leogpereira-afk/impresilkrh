@@ -120,7 +120,7 @@ function NavConteudo({
   aoNavegar: () => void;
 }) {
   return (
-    <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 py-5">
+    <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
         if (!itens.length) return null;
@@ -135,7 +135,7 @@ function NavConteudo({
               type="button"
               onClick={() => alternarGrupo(grupo)}
               aria-expanded={!recolhido}
-              className="nav-section mb-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-3 text-xs font-bold uppercase tracking-[0.12em] transition hover:bg-slate-100"
+              className="nav-section mb-1 flex min-h-9 w-full items-center gap-2 rounded-lg px-3 text-xs font-bold uppercase tracking-[0.12em] transition hover:bg-slate-100"
             >
               <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform duration-200", !recolhido && "rotate-90")} />
               <span className="flex-1 text-left">{grupo}</span>
@@ -153,7 +153,7 @@ function NavConteudo({
                     to={item.href}
                     onClick={aoNavegar}
                     className={cn(
-                      "group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-semibold leading-snug transition-all duration-200 active:scale-[0.98]",
+                      "group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-[14px] font-semibold leading-snug transition-all duration-200 active:scale-[0.98]",
                       item.sub && "!pl-7 text-[14px]", // subitem aninhado (ex.: sob Colaboradores)
                       // Sidebar navy: item em destaque = pílula dourada; ativo = realce
                       // claro translúcido; inativo = texto claro com hover suave.
@@ -166,7 +166,7 @@ function NavConteudo({
                           : "text-slate-600 hover:bg-slate-100 hover:text-slate-800",
                     )}
                   >
-                    {EMOJIS[item.href.slice(1)] ? <span aria-hidden="true" className="w-6 shrink-0 text-center text-xl">{EMOJIS[item.href.slice(1)]}</span> : <Icon className="h-5 w-5 shrink-0" />}
+                    {EMOJIS[item.href.slice(1)] ? <span aria-hidden="true" className="w-5 shrink-0 text-center text-lg">{EMOJIS[item.href.slice(1)]}</span> : <Icon className="h-5 w-5 shrink-0" />}
                     <span className="flex-1">{item.label}</span>
                   </NavLink>
                 );
@@ -283,6 +283,7 @@ export function AppShell() {
   );
   // Bloqueio por URL direta: se o módulo da rota atual não está liberado, nega o acesso.
   const moduloAtual = location.pathname.split("/")[1] || "painel";
+  const telaAtual = itensVisiveis.find(i => location.pathname === i.href || location.pathname.startsWith(i.href + "/"));
   const rotaBloqueada = !moduloAcessivel(moduloAtual, liberados);
 
   return (
@@ -333,7 +334,7 @@ export function AppShell() {
             title="Ir para uma tela (Ctrl+K)"
           >
             <Search className="h-[18px] w-[18px]" />
-            <span className="hidden text-xs text-slate-400 sm:inline">Ctrl+K</span>
+            <span className="hidden text-sm sm:inline">Buscar no RH</span><kbd className="hidden rounded border border-slate-200 px-1.5 text-[10px] text-slate-400 xl:inline">Ctrl+K</kbd>
           </button>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <div className="hidden md:block lg:hidden">
@@ -393,7 +394,8 @@ export function AppShell() {
           </div>
         </Modal>
 
-        <main key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
+        <main id="conteudo-rh" key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
+          {telaAtual && <nav aria-label="Localização" className="no-print mb-3 flex items-center gap-1.5 text-xs text-slate-500"><span>{telaAtual.grupo}</span><ChevronRight className="h-3 w-3" /><span className="font-medium text-slate-700">{telaAtual.label}</span></nav>}
           {rotaBloqueada ? (
             <EmptyState
               title="Acesso restrito"

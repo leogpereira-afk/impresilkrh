@@ -1,3 +1,4 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
@@ -68,6 +69,7 @@ const NIVEIS_JORNADA = [
 const nivelJornada = (pct: number) => NIVEIS_JORNADA.find((n) => pct >= n.min)!;
 
 export default function Integracao() {
+  const [abaAtual, mudarAbaAtual] = useAbaNaUrl("integracao", ["admissao", "teste", "desligamento"], "admissao");
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
@@ -276,7 +278,7 @@ export default function Integracao() {
       </div>
 
       <div className="mt-6">
-        <Tabs
+        <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
           abas={[
             {
               id: "admissao",
@@ -594,8 +596,8 @@ function PainelChecklist({
             }}
             className={
               focoId === g.colaboradorId
-                ? "rounded-2xl ring-2 ring-brand ring-offset-2 transition"
-                : "transition"
+                ? "min-w-0 rounded-2xl ring-2 ring-brand ring-offset-2 transition"
+                : "min-w-0 transition"
             }
           >
             <CardChecklist

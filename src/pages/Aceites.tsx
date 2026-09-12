@@ -1,3 +1,4 @@
+import { aceiteDaVersao } from "@/lib/aceiteVersao";
 import { useMemo, useState } from "react";
 import { FileSignature, ShieldCheck, CheckCircle2, Target, ClipboardCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -71,7 +72,7 @@ function CodigoEticaCard({ c }: { c: Colaborador }) {
     [institucionais],
   );
 
-  const aceite = aceites.find((a) => a.colaboradorId === c.id && a.tipo === TIPO_ETICA);
+  const aceite = aceiteDaVersao(aceites, c.id, TIPO_ETICA, doc?.versao);
 
   const registrar = () => {
     if (!doc) return;
@@ -199,6 +200,8 @@ function CienciaPdiCard({ c }: { c: Colaborador }) {
 }
 
 function AcompanhamentoCard() {
+  const { items: institucionais } = useColecao("institucionais");
+  const doc = institucionais.find(x => x.id === "codigo-etica") ?? institucionais.find(x => x.categoria === TIPO_ETICA);
   const d = useDominio();
   const { items: aceites } = useColecao("aceites");
 
@@ -214,9 +217,9 @@ function AcompanhamentoCard() {
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     return colabs.map((c) => ({
       colab: c,
-      aceite: aceites.find((a) => a.colaboradorId === c.id && a.tipo === TIPO_ETICA),
+      aceite: aceiteDaVersao(aceites, c.id, TIPO_ETICA, doc?.versao),
     }));
-  }, [d.colaboradores, aceites, incluirSaiu]);
+  }, [d.colaboradores, aceites, incluirSaiu, doc?.versao]);
 
   const aceitos = linhas.filter((l) => l.aceite).length;
 
@@ -224,7 +227,7 @@ function AcompanhamentoCard() {
     <Card className="mt-6">
       <CardHeader
         title="Acompanhamento de aceites"
-        subtitle={`${aceitos} de ${linhas.length} colaboradores aceitaram o Código de Ética.`}
+        subtitle={`${aceitos} de ${linhas.length} colaboradores aceitaram o Código de Ética${doc?.versao ? ` · versão ${doc.versao}` : ""}.`}
         icon={<ShieldCheck className="h-[18px] w-[18px]" />}
         action={
           <div className="flex items-center gap-3">

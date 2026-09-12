@@ -1,3 +1,4 @@
+import { quantidadeFilhos, erroDatasCadastro } from "@/lib/edicaoCadastro";
 import { useHoje } from '@/lib/useHoje';
 import { FormularioFerias } from '@/components/ferias/formulario-ferias';
 import { ResumoFerias } from '@/components/ferias/resumo-ferias';
@@ -15,7 +16,8 @@ import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
 import { HumorIndicador, PerfilComportamentalBadge, MotivacaoRosto, PerfilComportamentalGuia } from "@/components/ui/indicadores";
 import { DESC_PERFIL_COMPORTAMENTAL, COR_PERFIL_COMPORTAMENTAL, ARQUETIPOS } from "@/lib/constants";
 import { Badge, DotBadge } from "@/components/ui/badge";
-import { Tabs, useAbaAtiva } from "@/components/ui/tabs";
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
+import { Tabs } from "@/components/ui/tabs";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { CampoEditavel } from "@/components/ui/campo-editavel";
@@ -36,7 +38,7 @@ import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
-import { CATEGORIAS_DOCUMENTO, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
+import { CATEGORIAS_DOCUMENTO, CATEGORIAS_SST, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
 import { vinculosDoColaborador } from "@/lib/vinculos";
@@ -176,7 +178,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
   const fotoRef = useRef<HTMLInputElement>(null);
   const [editar, setEditar] = useState(false);
   const [desligar, setDesligar] = useState(false);
-  const [aba, setAba] = useAbaAtiva("ficha-colaborador", ABAS_FICHA);
+  const [aba, setAba] = useAbaNaUrl("ficha-colaborador", ABAS_FICHA, "resumo");
   const [experiencia, setExperiencia] = useState(false);
   // Pedido pendente para a aba de destino (ela abre o modal e devolve null).
   const [pedido, setPedido] = useState<AcaoFicha | null>(null);
@@ -388,6 +390,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
 // RH bater o olho e saber onde precisa agir.
 // ---------------------------------------------------------------------------
 function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) => void }) {
+  const hoje = useHoje();
   const d = useDominio();
   const { items: ferias } = useColecao("ferias");
   const { items: documentos } = useColecao("documentos");
@@ -401,11 +404,11 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
   const meus = <T extends { colaboradorId: string }>(arr: T[]) => arr.filter((x) => x.colaboradorId === c.id);
   // O corte sai de TODA a base, não só das férias desta pessoa: o que define
   // até onde o sistema enxerga é quando a empresa começou a lançar.
-  const sFerias = situacaoFerias(c, meus(ferias), undefined, inicioDoHistorico(ferias));
+  const sFerias = situacaoFerias(c, meus(ferias), hoje, inicioDoHistorico(ferias));
   const sExp = situacaoExperiencia(c);
   const vinc = vinculosDoColaborador(c.id);
 
-  const diasPara = (v?: string | null) => diasDeCalendario(v, HOJE);
+  const diasPara = (v?: string | null) => diasDeCalendario(v, hoje);
   const docsVencendo = meus(documentos).filter((x) => { const dd = diasPara(x.dataVencimento); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
   const nrsVencendo = meus(certificacoesNr).filter((x) => { const dd = diasPara(x.dataValidade); return !isNaN(dd) && dd <= JANELA_ALERTA_DIAS; });
 
@@ -471,6 +474,9 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
      renovar. As ABAS de documentos e certificações continuam visíveis: aquilo é
      o arquivo da pessoa, histórico legítimo. O que sai é a cobrança. */
   if (!desligado) {
+    for (const x of meus(documentos).filter(doc => CATEGORIAS_SST.includes(doc.categoria as typeof CATEGORIAS_SST[number]) && !parseData(doc.dataVencimento))) {
+      alertas.push({grave:false, texto:`Exame "${x.nome}" sem validade informada. Confira o prazo.`, rotulo:"Conferir exame", acao:{tipo:"documento", id:x.id}});
+    }
     for (const x of docsVencendo) {
       const dd = diasPara(x.dataVencimento);
       alertas.push({
@@ -515,7 +521,7 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
               Colaborador(a) desligado(a){c.dataDesligamento ? ` em ${formatDate(c.dataDesligamento)}` : ""} — os prazos legais não correm mais.
             </p>
           ) : alertas.length === 0 ? (
-            <p className="text-sm text-emerald-700">Nada pendente: prazos e vencimentos em dia.</p>
+            <p className="text-sm text-emerald-700">Sem alertas nos prazos informados. Isso não confirma documentos ou histórico ainda não cadastrados.</p>
           ) : (
             <ul className="space-y-2">
               {alertas.map((a, i) => {
@@ -555,18 +561,10 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Situação de férias (CLT)" icon={<Palmtree className="h-[18px] w-[18px]" />} />
+          <CardHeader title="Histórico e saldo de férias" icon={<Palmtree className="h-[18px] w-[18px]" />} />
           <CardBody>
-            {sFerias ? (
-              <dl className="grid grid-cols-2 gap-4">
-                <Field label="Direito adquirido em" value={sFerias.direitoDesde.toLocaleDateString("pt-BR")} />
-                <Field label="Conceder até" value={sFerias.limiteConcessao.toLocaleDateString("pt-BR")} />
-                <Field label="Já gozou no período" value={sFerias.jaGozou ? "Sim" : "Não"} />
-                <Field label="Situação" value={<Badge variant={sFerias.situacao === "vencida" ? "danger" : sFerias.situacao === "a-vencer" ? "warning" : "success"}>{sFerias.situacao === "vencida" ? "Vencida" : sFerias.situacao === "a-vencer" ? "A vencer" : "Em dia"}</Badge>} />
-              </dl>
-            ) : (
-              <p className="text-sm text-slate-500">Ainda não completou 12 meses de casa — o direito a férias nasce no primeiro aniversário de admissão.</p>
-            )}
+            <ResumoFerias registros={meus(ferias)} />
+            <Link to={`/colaboradores/${c.id}?aba=ferias`} className="mt-3 inline-flex text-sm font-semibold text-brand underline">Conferir férias desta pessoa</Link>
           </CardBody>
         </Card>
 
@@ -618,6 +616,8 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
   // ---------------------------------------------------------------------
   const gravar = (patch: Partial<Colaborador>) => {
     const depois = { ...c, ...patch } as Colaborador;
+    const erroData = erroDatasCadastro(depois, c);
+    if (erroData) return erroData;
     const cargoNovo = depois.cargoId ? d.cargoById.get(depois.cargoId) : undefined;
     const mexeuNoDinheiro = "salario" in patch || "cargoId" in patch || "nivelId" in patch;
     atualizar(c.id, mexeuNoDinheiro
@@ -696,7 +696,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               onSalvar={(v) => {
                 if (v && !anoOk(v)) return "Ano fora do razoável — confira a data.";
                 if (v && v > diaLocalISO(HOJE)) return "Data de nascimento no futuro.";
-                gravar({ dataNascimento: v });
+                return gravar({ dataNascimento: v });
               }}
             />
             <CampoEditavel
@@ -729,7 +729,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
             )}
             {/* Filhos vem da LISTA de filhos (nome + nascimento); um número solto
                 aqui brigaria com a lista. Edita no cadastro completo. */}
-            {sens && <Field label="Filhos" value={c.filhos?.length ?? c.qtdFilhos ?? 0} />}
+            {sens && <Field label="Filhos" value={quantidadeFilhos(c) ?? "Não informado"} />}
           </dl>
           {sens && (c.filhos?.length ?? 0) > 0 && (
             <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
@@ -839,7 +839,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 if (v && !anoOk(v)) return "Ano fora do razoável — confira a data.";
                 if (v && v > diaLocalISO(HOJE)) return "Admissão no futuro.";
                 if (v && c.dataDesligamento && v > c.dataDesligamento.slice(0, 10)) return "Depois do desligamento.";
-                gravar({ dataAdmissao: v });
+                return gravar({ dataAdmissao: v });
               }}
             />
             <CampoEditavel
@@ -855,7 +855,8 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 if (!v && c.statusId === "inativo") {
                   return "Pessoa inativa precisa da data — sem ela, some do quadro de todos os meses. Se voltou, mude o status para ativo antes.";
                 }
-                gravar({ dataDesligamento: v || null });
+                const erro = gravar({ dataDesligamento: v || null });
+                if (erro) return erro;
                 if (v && c.statusId === "ativo") {
                   toast("Data gravada. O status ainda está ATIVO — se ela saiu mesmo, mude o status; senão a pessoa segue contando como do quadro.", "info");
                 }
@@ -896,11 +897,9 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 cargo). Deixar editar aqui seria deixar mentir sobre o cálculo. */}
             <Field label="Enquadramento" value={<Badge variant={enqVar(d.enquadrarColab(c))}>{d.enquadrarColab(c)}</Badge>} />
             <CampoEditavel
-              // Sem opção vazia, igual ao cadastro: risco em branco criava um
-              // balde sem rótulo no Painel e a pessoa sumia da distribuição de
-              // risco (as três barras deixavam de somar o quadro).
-              label="Risco de saída" exibicao={c.riscoSaida || "Baixo"} valor={c.riscoSaida || "Baixo"} tipo="select" editavel={edit}
-              opcoes={NIVEIS_RISCO.map((x) => ({ valor: x, rotulo: x }))} onSalvar={(v) => gravar({ riscoSaida: v })}
+              // Ausência de avaliação permanece explícita, como no painel.
+              label="Risco de saída" exibicao={c.riscoSaida || "Não informado"} valor={c.riscoSaida || ""} tipo="select" editavel={edit}
+              opcoes={lista(NIVEIS_RISCO, "Não informado")} onSalvar={(v) => gravar({ riscoSaida: v })}
             />
             <CampoEditavel
               label="Categoria CNH" exibicao={c.cnh ? c.cnh : "Não informado"} valor={c.cnh ?? ""} tipo="select" editavel={edit}

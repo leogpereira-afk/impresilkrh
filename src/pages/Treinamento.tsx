@@ -103,8 +103,7 @@ export default function Treinamento() {
   const porTipo = useMemo(() => {
     const mapa = new Map<string, number>();
     lista.forEach((t) => mapa.set(t.tipo, (mapa.get(t.tipo) ?? 0) + 1));
-    return TIPOS_TREINAMENTO
-      .filter((t) => (mapa.get(t) ?? 0) > 0)
+    return [...mapa.keys()].sort((a, b) => a.localeCompare(b, "pt-BR"))
       .map((t) => ({ nome: t, valor: mapa.get(t) ?? 0, cor: COR_TIPO[t] ?? "#64748b" }));
   }, [lista]);
 
@@ -113,8 +112,7 @@ export default function Treinamento() {
     const mapa = new Map<string, number>();
     lista.forEach((t) => mapa.set(t.status, (mapa.get(t.status) ?? 0) + 1));
     const cores: Record<string, string> = { Pendente: "#94a3b8", "Em andamento": "#d97706", Concluído: "#16a34a" };
-    return STATUS_TREINAMENTO
-      .filter((s) => (mapa.get(s) ?? 0) > 0)
+    return [...mapa.keys()].sort((a, b) => a.localeCompare(b, "pt-BR"))
       .map((s) => ({ nome: s, valor: mapa.get(s) ?? 0, cor: cores[s] ?? "#64748b" }));
   }, [lista]);
 
@@ -219,7 +217,7 @@ export default function Treinamento() {
           onClick={pendentes.length ? () => drillRegs("Treinamentos pendentes", pendentes, `${pessoasDe(pendentes).length} pessoa(s) com pendência`) : undefined}
           title={pendentes.length ? "Ver quem tem treinamento pendente" : undefined}
         />
-        <StatCard label="Progresso médio" value={formatPercent(progressoMedio, 0)} hint="Média de conclusão" icon={<Trophy className="h-5 w-5" />} accent="gold" />
+        <StatCard label="Progresso médio" value={lista.length ? formatPercent(progressoMedio, 0) : "—"} hint="Média de conclusão" icon={<Trophy className="h-5 w-5" />} accent="gold" />
       </div>
 
       {/* Gráficos por tipo e por status */}
@@ -285,7 +283,7 @@ export default function Treinamento() {
         />
         {emTreinamento.length === 0 ? (
           <CardBody>
-            <EmptyState title="Ninguém em treinamento" description="Todos os treinamentos do seu escopo estão concluídos." icon={<CheckCircle2 className="h-8 w-8" />} />
+            <EmptyState title="Ninguém em treinamento" description={lista.length ? "Todos os treinamentos do seu escopo estão concluídos." : "Nenhum treinamento registrado para conferir a capacitação."} icon={<CheckCircle2 className="h-8 w-8" />} />
           </CardBody>
         ) : (
           <div className="overflow-x-auto">

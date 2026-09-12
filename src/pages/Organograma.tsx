@@ -137,7 +137,7 @@ function Node({ c, filhosPorGestor, colapsados, toggle, acoes }: {
 
         {/* Ações de RH (aparecem no hover quando podeEditar) */}
         {acoes.podeEditar && (
-          <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+          <div className="flex shrink-0 gap-0.5 opacity-100 transition sm:opacity-0 focus-within:opacity-100 group-hover:opacity-100">
             <button
               type="button"
               onClick={() => acoes.onEditar(c)}
@@ -208,7 +208,7 @@ function LinhaPessoa({ c, visao, nomeArea, acoes }: {
         <p className="truncate text-[11px] text-slate-400">{acoes.nomeCargo(c)}{visao === "area" && c.empresa ? ` · ${c.empresa}` : ""}{visao === "empresa" ? ` · ${nomeArea(c.areaId)}` : ""}</p>
       </Link>
       {acoes.podeEditar && (
-        <div className="flex shrink-0 gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex shrink-0 gap-0.5 opacity-100 transition sm:opacity-0 focus-within:opacity-100 group-hover:opacity-100">
           <button type="button" onClick={() => acoes.onEditar(c)} title="Editar colaborador" aria-label={`Editar ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Pencil className="h-4 w-4" /></button>
           <button type="button" onClick={() => acoes.onFoto(c.id)} title="Enviar foto" aria-label={`Enviar foto de ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-brand"><Camera className="h-4 w-4" /></button>
           <button type="button" onClick={() => acoes.onRemover(c)} title="Remover do organograma" aria-label={`Remover ${c.nome}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-red-600"><UserMinus className="h-4 w-4" /></button>

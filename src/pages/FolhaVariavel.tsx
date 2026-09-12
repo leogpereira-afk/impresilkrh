@@ -77,7 +77,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
   );
   const escopo = useMemo(
     () => todos
-      .filter((c) => noQuadro(c) || incluirInativos || comVerbaNoMes.has(c.id))
+      .filter((c) => (!c.ehDirecao && (noQuadro(c) || incluirInativos)) || comVerbaNoMes.has(c.id))
       .sort((a, b) => a.nome.localeCompare(b.nome)),
     [todos, incluirInativos, comVerbaNoMes],
   );

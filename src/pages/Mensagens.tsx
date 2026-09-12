@@ -1,3 +1,4 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useMemo, useState } from "react";
 import {
   Send, Users, FileText, Clock, Info, Plus, Pencil, Trash2, CheckCircle2,
@@ -69,6 +70,7 @@ function abrirWhatsApp(tel: string, texto: string) {
 }
 
 export default function Mensagens() {
+  const [abaAtual, mudarAbaAtual] = useAbaNaUrl("mensagens", ["contatos", "templates", "agendamentos"], "contatos");
   const sessao = useSessao();
   const podeEditar = podeGerir(sessao);
 
@@ -85,7 +87,7 @@ export default function Mensagens() {
         (sem abrir o WhatsApp) depende de contratar um serviço de mensageria.
       </p>
 
-      <Tabs
+      <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
         abas={[
           { id: "contatos", label: "Contatos", icon: <Users className="h-4 w-4" />, conteudo: <AbaContatos podeEditar={podeEditar} /> },
           { id: "templates", label: "Templates", icon: <FileText className="h-4 w-4" />, conteudo: <AbaTemplates podeEditar={podeEditar} /> },

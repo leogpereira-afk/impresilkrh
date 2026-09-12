@@ -1,3 +1,4 @@
+import { useHoje } from "@/lib/useHoje";
 /* FEEDBACK — a fila de quem está esperando.
  *
  * A coleção de feedbacks existia desde sempre e tinha QUATRO registros, para
@@ -77,6 +78,8 @@ function ThOrdenavel({ campo, ordem, setOrdem, className, children }: {
 }
 
 export default function Feedback() {
+  const hoje = useHoje();
+  const { items: pdis } = useColecao("pdis");
   const d = useDominio();
   const sessao = useSessao();
   const toast = useToast();
@@ -132,11 +135,11 @@ export default function Feedback() {
          de efetivar), 45 com plano de ação aberto, 90 no padrão. */
       const dias = cadenciaDaPessoa({
         emExperiencia: !!situacaoExperiencia(c),
-        comPlanoAberto: false, // PDI ainda não é lido aqui; entra quando houver a fonte
+        comPlanoAberto: pdis.some(p => p.colaboradorId === c.id && p.status !== "Concluída" && p.status !== "Cancelado" && (p.progresso ?? 0) < 100),
       });
-      return { c, cad: cadenciaDe(agrupado.get(c.id) ?? [], c.dataAdmissao, undefined, dias) };
+      return { c, cad: cadenciaDe(agrupado.get(c.id) ?? [], c.dataAdmissao, hoje, dias) };
     });
-  }, [pessoas, feedbacks]);
+  }, [pessoas, feedbacks, pdis, hoje]);
 
   /* Os quatro números saem SEMPRE do quadro inteiro, nunca da lista filtrada:
      contador que muda quando se digita na busca não é panorama. */

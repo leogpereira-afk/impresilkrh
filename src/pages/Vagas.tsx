@@ -1,3 +1,4 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -40,6 +41,7 @@ type FocoVagas = "abertas" | "comCandidatos" | "entrevista";
 const emEntrevistaOuTeste = (c: Candidato) => c.etapa === "Entrevista" || c.etapa === "Teste";
 
 export default function Vagas() {
+  const [abaAtual, mudarAbaAtual] = useAbaNaUrl("vagas", ["vagas", "banco"], "vagas");
   const { items: vagas, criar: criarVaga, atualizar: atualizarVaga, remover: removerVaga } = useColecao("vagas");
   const { items: candidatos, criar: criarCand, atualizar: atualizarCand, remover: removerCand } = useColecao("candidatos");
   const { items: advertencias } = useColecao("advertencias");
@@ -156,7 +158,7 @@ export default function Vagas() {
           onClick={() => alternarFoco("entrevista")} ativo={foco === "entrevista"} title="Ver só quem está em entrevista ou teste" />
       </div>
 
-      <Tabs
+      <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
         idPersistencia="vagas"
         abas={[
           {

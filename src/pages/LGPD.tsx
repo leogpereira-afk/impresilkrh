@@ -1,9 +1,11 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Lock, ShieldCheck, Eye, FileSearch, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/form";
+import { normalizar } from "@/lib/buscaTelas";
 import { EmptyState } from "@/components/ui/misc";
 import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
@@ -11,7 +13,7 @@ import { LinkFicha } from "@/components/ui/link-ficha";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { PERFIL_LABEL } from "@/lib/constants";
-import { formatDate } from "@/lib/format";
+import { formatDate, diaLocalISO } from "@/lib/format";
 
 function dataHora(iso?: string | null): string {
   if (!iso) return "—";
@@ -38,12 +40,18 @@ export default function LGPD() {
     [acessos],
   );
 
-  // NÃO existe filtro aqui de propósito: hoje o sistema registra um único tipo
-  // de acesso (visualização de dados sensíveis, em ColaboradorFicha) e grava
-  // todo consentimento como "consentido". Um filtro por esses campos devolveria
-  // sempre a lista inteira — botão que acende e não muda nada engana mais do
-  // que ajuda. Volta a fazer sentido quando houver outras ações registradas.
-  const trilha = ordenados;
+  const [busca, setBusca] = useState("");
+  const [inicio, setInicio] = useState("");
+  const [fim, setFim] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const trilha = ordenados.filter(a => {
+    const data = diaLocalISO(new Date(a.criadoEm));
+    return (!inicio || data >= inicio) && (!fim || data <= fim)
+      && normalizar(`${a.usuarioNome} ${a.colaboradorId ? d.nomeColab(a.colaboradorId) : ''} ${a.acao} ${a.recurso}`).includes(normalizar(busca));
+  });
+  const paginas = Math.max(1, Math.ceil(trilha.length / 50));
+  const atual = Math.min(pagina, paginas);
+  const linhas = trilha.slice((atual - 1) * 50, atual * 50);
   const consentVisiveis = consentimentos;
 
   if (!ehRH(sessao)) {
@@ -86,9 +94,16 @@ export default function LGPD() {
           icon={<Eye className="h-[18px] w-[18px]" />}
         />
         <CardBody>
+          <div className="mb-4 flex flex-wrap items-end gap-3 print:hidden">
+            <label className="min-w-0 flex-1 text-xs text-slate-500">Pessoa, ação ou recurso<Input className="mt-1" placeholder="Buscar nos acessos…" value={busca} onChange={e => { setBusca(e.target.value); setPagina(1); }} /></label>
+            <label className="text-xs text-slate-500">De<Input type="date" className="mt-1" value={inicio} onChange={e => { setInicio(e.target.value); setPagina(1); }} /></label>
+            <label className="text-xs text-slate-500">Até<Input type="date" className="mt-1" value={fim} min={inicio || undefined} onChange={e => { setFim(e.target.value); setPagina(1); }} /></label>
+            {(busca || inicio || fim) && <button className="btn-ghost" onClick={() => { setBusca(''); setInicio(''); setFim(''); setPagina(1); }}>Limpar filtros</button>}
+          </div>
+          <p className="mb-3 text-xs text-slate-500">{trilha.length} de {acessos.length} acesso(s) · página {atual} de {paginas}</p>
           {trilha.length === 0 ? (
             <EmptyState
-              title="Nenhum acesso registrado"
+              title={acessos.length ? "Nenhum acesso neste filtro" : "Nenhum acesso registrado"}
               description="Os registros são criados automaticamente quando o RH ou um gestor abre a ficha de um colaborador e visualiza dados sensíveis."
               icon={<ShieldCheck className="h-8 w-8" />}
             />
@@ -106,7 +121,7 @@ export default function LGPD() {
                   </tr>
                 </thead>
                 <tbody>
-                  {trilha.map((a) => (
+                  {linhas.map((a) => (
                     <tr key={a.id} className="border-t border-slate-100">
                       <td className="td whitespace-nowrap text-slate-500">{dataHora(a.criadoEm)}</td>
                       <td className="td font-medium text-slate-700">{a.usuarioNome}</td>
@@ -122,6 +137,7 @@ export default function LGPD() {
               </table>
             </div>
           )}
+          {paginas > 1 && <div className="mt-3 flex items-center justify-end gap-2 print:hidden"><button className="btn-outline" disabled={atual <= 1} onClick={() => setPagina(atual - 1)}>Anterior</button><span className="text-xs text-slate-500">{atual} / {paginas}</span><button className="btn-outline" disabled={atual >= paginas} onClick={() => setPagina(atual + 1)}>Próxima</button></div>}
         </CardBody>
       </Card>
 

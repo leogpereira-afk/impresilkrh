@@ -1,3 +1,6 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
+import { situacaoValidade, type SituacaoValidade } from "@/lib/validadeDocumento";
+import { useHoje } from "@/lib/useHoje";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { HardHat, ShieldCheck, FileText, Stethoscope, CheckCircle2, Clock, AlertTriangle, Award, Plus, Trash2, Pencil, MessageCircle, CalendarClock, ChevronDown, ChevronRight, UserX,
@@ -31,23 +34,19 @@ import { HOJE } from "@/data/_gen";
 // documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
 const dias = (d?: string | null) => diasDeCalendario(d, HOJE);
 
-type Situacao = "Vencido" | "A vencer" | "Válido";
+type Situacao = SituacaoValidade;
+const situacaoDoc = (data?: string | null, hoje = new Date()) => situacaoValidade(data, hoje, JANELA_ALERTA_DIAS);
 
-function situacaoDoc(dataVencimento?: string | null): Situacao {
-  const dd = dias(dataVencimento);
-  if (isNaN(dd)) return "Válido";
-  if (dd < 0) return "Vencido";
-  if (dd <= JANELA_ALERTA_DIAS) return "A vencer";
-  return "Válido";
-}
-
-const VARIANTE_SITUACAO: Record<Situacao, "danger" | "warning" | "success"> = {
+const VARIANTE_SITUACAO: Record<Situacao, "danger" | "warning" | "success" | "neutral"> = {
+  "Sem validade informada": "neutral",
   Vencido: "danger",
   "A vencer": "warning",
   Válido: "success",
 };
 
 export default function SST() {
+  const hoje = useHoje();
+  const [abaAtual, mudarAbaAtual] = useAbaNaUrl("sst", ["exames", "certificacoes", "programas"], "exames");
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
@@ -80,13 +79,13 @@ export default function SST() {
     return documentos
       .filter((doc) => cats.has(doc.categoria) && idsVisiveis.has(doc.colaboradorId))
       .sort((a, b) => {
-        const da = dias(a.dataVencimento);
-        const db = dias(b.dataVencimento);
+        const da = diasDeCalendario(a.dataVencimento, hoje);
+        const db = diasDeCalendario(b.dataVencimento, hoje);
         if (isNaN(da)) return 1;
         if (isNaN(db)) return -1;
         return da - db;
       });
-  }, [documentos, sessao, d.colaboradores, incluirSaiu]);
+  }, [documentos, sessao, d.colaboradores, incluirSaiu, hoje]);
 
   // Quantos exames ficaram de fora: um filtro que esconde sem dizer quanto
   // escondeu vira "o sistema perdeu exames".
@@ -118,9 +117,10 @@ export default function SST() {
   }, [sessao, d.colaboradores, documentos, incluirSaiu]);
 
   const total = exames.length;
-  const vencidos = exames.filter((doc) => situacaoDoc(doc.dataVencimento) === "Vencido").length;
-  const aVencer = exames.filter((doc) => situacaoDoc(doc.dataVencimento) === "A vencer").length;
-  const validos = total - vencidos - aVencer;
+  const vencidos = exames.filter((doc) => situacaoDoc(doc.dataVencimento, hoje) === "Vencido").length;
+  const aVencer = exames.filter((doc) => situacaoDoc(doc.dataVencimento, hoje) === "A vencer").length;
+  const validos = exames.filter(doc => situacaoDoc(doc.dataVencimento, hoje) === "Válido").length;
+  const semValidade = total - vencidos - aVencer - validos;
 
   // Os 4 números saem da mesma tabela abaixo, então clicar filtra em vez de abrir outra tela.
   const [focoExame, setFocoExame] = useState<Situacao | null>(null);
@@ -133,8 +133,8 @@ export default function SST() {
     setFocoExame((atual) => (atual === s ? null : s));
   };
   const examesVisiveis = useMemo(
-    () => (focoExame ? exames.filter((doc) => situacaoDoc(doc.dataVencimento) === focoExame) : exames),
-    [exames, focoExame],
+    () => (focoExame ? exames.filter((doc) => situacaoDoc(doc.dataVencimento, hoje) === focoExame) : exames),
+    [exames, focoExame, hoje],
   );
 
   /* UMA LINHA POR PESSOA. A tabela repetia o nome a cada exame: quem tem ASO e
@@ -207,6 +207,7 @@ export default function SST() {
     <div>
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total de exames" value={total} icon={<FileText className="h-5 w-5" />} accent="brand" onClick={() => setFocoExame(null)} ativo={focoExame === null} title="Mostrar todos os exames" />
+        <StatCard label="Sem validade informada" value={semValidade} hint="Exames com prazo a conferir" icon={<FileText className="h-5 w-5" />} onClick={() => alternarFoco("Sem validade informada")} ativo={focoExame === "Sem validade informada"} />
         <StatCard label="Válidos" value={validos} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={focoExame === "Válido"} title="Ver só os exames válidos" />
         <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={focoExame === "A vencer"} title="Ver só os exames a vencer" />
         <StatCard label="Vencidos" value={vencidos} icon={<AlertTriangle className="h-5 w-5" />} accent={vencidos ? "red" : "green"} onClick={() => alternarFoco("Vencido")} ativo={focoExame === "Vencido"} title="Ver só os exames vencidos" />
@@ -318,13 +319,13 @@ export default function SST() {
                      seria pior do que não ter grupo nenhum. */
                   const pior = docs
                     .map((x) => situacaoDoc(x.dataVencimento))
-                    .reduce((a, b) => (["Vencido", "A vencer", "Válido"].indexOf(a) <= ["Vencido", "A vencer", "Válido"].indexOf(b) ? a : b));
+                    .reduce((a, b) => (["Vencido", "Sem validade informada", "A vencer", "Válido"].indexOf(a) <= ["Vencido", "Sem validade informada", "A vencer", "Válido"].indexOf(b) ? a : b));
                   /* Uma pessoa com dois exames do MESMO tipo e MESMO vencimento
                      é duplicata de digitação, não histórico. Dizer isso no grupo
                      é o que faz o RH abrir e resolver. */
                   const iguais = new Set(docs.map((x) => `${x.categoria}|${(x.dataVencimento ?? "").slice(0, 10)}`)).size < docs.length;
                   const linhaExame = (doc: typeof docs[number], dentro: boolean) => {
-                    const situacao = situacaoDoc(doc.dataVencimento);
+                    const situacao = situacaoDoc(doc.dataVencimento, hoje);
                     return (
                     <tr key={doc.id} className={cn("border-b border-slate-50 hover:bg-slate-50/50", dentro && "bg-slate-50/40")}>
                       <td className={cn("td", dentro ? "pl-10 text-xs text-slate-400" : "font-medium text-slate-700")}>
@@ -459,7 +460,7 @@ export default function SST() {
           Programas é consulta e Certificações NR se mexe de vez em quando. Abrir
           em Certificações fazia quem entrava precisar de um clique só para chegar
           onde ia de fato trabalhar. */}
-      <Tabs
+      <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
         abas={[
           { id: "exames", label: "Exames ocupacionais", icon: <HardHat className="h-4 w-4" />, conteudo: abaExames },
           { id: "certificacoes", label: "Certificações NR", icon: <Award className="h-4 w-4" />, conteudo: <AbaCertificacoesNR /> },

@@ -28,6 +28,7 @@
  * no cargo: as pessoas ficariam apontando para um cargo inexistente e perderiam
  * nome na lista, enquadramento e faixa de uma vez.
  */
+import { dependentesCargo } from "@/lib/dependenciasEstrutura";
 import { useMemo, useState } from "react";
 import { Search, Briefcase, ChevronDown, ChevronRight, Users, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -68,6 +69,8 @@ export default function Cargos() {
   const toast = useToast();
   const podeEditar = ehRH(sessao);
   const { criar, atualizar, remover } = useColecao("cargos");
+  const { items: vagas } = useColecao("vagas");
+  const usos = (id: string) => dependentesCargo(id, d.colaboradores, vagas);
   const [editando, setEditando] = useState<Cargo | null>(null);
   const [criando, setCriando] = useState(false);
   const [apagando, setApagando] = useState<Cargo | null>(null);
@@ -293,9 +296,9 @@ export default function Cargos() {
         onFechar={() => setApagando(null)}
         onConfirmar={() => {
           if (!apagando) return;
-          const usados = (ocupacao.get(apagando.id) ?? []).length;
+          const usados = usos(apagando.id);
           if (usados > 0) {
-            toast(`Não dá para apagar: ${usados} pessoa(s) estão neste cargo. Mude-as antes.`, "erro");
+            toast(`Não dá para apagar: ${usados} cadastro(s) ou vaga(s) usam este cargo. Reatribua os vínculos antes.`, "erro");
             setApagando(null);
             return;
           }
@@ -305,9 +308,9 @@ export default function Cargos() {
         }}
         titulo="Apagar cargo?"
         mensagem={apagando
-          ? (ocupacao.get(apagando.id) ?? []).length > 0
-            ? `“${apagando.nome}” está em uso por ${(ocupacao.get(apagando.id) ?? []).length} pessoa(s) e não pode ser apagado.`
-            : `“${apagando.nome}” será removido. Nenhuma pessoa ocupa este cargo.`
+          ? usos(apagando.id) > 0
+            ? `“${apagando.nome}” está em uso por ${usos(apagando.id)} cadastro(s) ou vaga(s) e não pode ser apagado.`
+            : `“${apagando.nome}” será removido. Nenhum cadastro ou vaga está vinculado a este cargo.`
           : ""}
       />
 

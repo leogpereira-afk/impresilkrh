@@ -1,6 +1,6 @@
 import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
 import { useHoje } from '@/lib/useHoje';
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
   CalendarDays, Cake, PartyPopper, Flag, Sparkles, CalendarClock, Building2,
   Plus, ChevronLeft, ChevronRight, Pencil, Trash2, FileText, ShieldAlert, UserCheck, Palmtree,
@@ -24,7 +24,7 @@ import { cn } from "@/lib/cn";
 import { parseData, MESES_PT, formatDate } from "@/lib/format";
 import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/clt";
 import { diaDoPagamento, diaDoAdiantamento, feriadosDe, DIAS_UTEIS_PAGAMENTO } from "@/lib/diaPagamento";
-import { HOJE } from "@/data/_gen";
+
 import {
   tiposDisponiveis, COR_PADRAO_TIPO, TIPOS_DERIVADOS, TIPOS_DE_FABRICA, NOMES_RESERVADOS,
   type TipoPersonalizado,
@@ -82,6 +82,13 @@ export default function Calendario() {
   const { items: certificacoes } = useColecao("certificacoesNr");
   const { items: ferias } = useColecao("ferias");
   const hojeFerias=useHoje();
+  const HOJE = hojeFerias;
+  const [diaSelecionado, setDiaSelecionado] = useState<number | null>(null);
+  const agendaRef = useRef<HTMLDivElement>(null);
+  const abrirDia = (dia: number) => {
+    setDiaSelecionado(dia);
+    requestAnimationFrame(() => agendaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   const config = useConfig();
   /* `?? []` cria um array NOVO a cada render, e aí o useMemo abaixo nunca
      memoriza nada. Memoizado, ele só muda quando a config muda de verdade. */
@@ -313,8 +320,10 @@ export default function Calendario() {
   const navMes = (delta: number) => {
     let m = mes + delta, y = ano;
     if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
-    setMes(m); setAno(y);
+    setMes(m); setAno(y); setDiaSelecionado(null);
   };
+
+  const itensVisiveis = diaSelecionado === null ? itens : itens.filter(it => it.dia === diaSelecionado);
 
   return (
     <div>
@@ -327,7 +336,7 @@ export default function Calendario() {
           <button className="btn-outline px-2" onClick={() => navMes(-1)} aria-label="Mês anterior"><ChevronLeft className="h-4 w-4" /></button>
           <span className="min-w-[150px] text-center text-lg font-semibold text-brand-ink">{MESES_PT[mes]} {ano}</span>
           <button className="btn-outline px-2" onClick={() => navMes(1)} aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button>
-          <button className="btn-ghost text-sm" onClick={() => { setMes(HOJE.getMonth()); setAno(HOJE.getFullYear()); }}>Hoje</button>
+          <button className="btn-ghost text-sm" onClick={() => { setMes(HOJE.getMonth()); setAno(HOJE.getFullYear()); setDiaSelecionado(null); }}>Hoje</button>
         </div>
         {/* A legenda É o filtro: clicar num selo mostra SÓ aquele tipo, e clicar
             em mais de um soma. Antes o clique escondia — para ver só os
@@ -462,7 +471,7 @@ export default function Calendario() {
               const noMes = dt.getMonth() === mes;
               const evs = noMes ? (porDia.get(dt.getDate()) ?? []) : [];
               return (
-                <div key={i} className={cn("min-h-[88px] border-b border-r border-slate-100 p-1.5", !noMes && "bg-slate-50/40", ehHoje(dt) && "bg-brand-50/50")}>
+                <button type="button" key={i} disabled={!noMes} aria-pressed={noMes && diaSelecionado === dt.getDate()} aria-label={`${dt.getDate()} de ${MESES_PT[dt.getMonth()]}: ${evs.length} evento(s)`} onClick={() => abrirDia(dt.getDate())} className={cn("min-w-0 text-left transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand min-h-[88px] border-b border-r border-slate-100 p-1.5", !noMes && "bg-slate-50/40", ehHoje(dt) && "bg-brand-50/50", noMes && diaSelecionado === dt.getDate() && "ring-2 ring-inset ring-brand")}>
                   <div className={cn("mb-1 text-xs font-medium", noMes ? "text-slate-600" : "text-slate-300", ehHoje(dt) && "font-bold text-brand")}>{dt.getDate()}</div>
                   <div className="space-y-0.5">
                     {evs.slice(0, 3).map((e, j) => (
@@ -470,22 +479,23 @@ export default function Calendario() {
                     ))}
                     {evs.length > 3 && <div className="px-1 text-[10px] font-medium text-slate-400">+{evs.length - 3} mais</div>}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader title={`Tudo de ${MESES_PT[mes]}`} subtitle="Lista completa do mês, em ordem de data" icon={<CalendarDays className="h-[18px] w-[18px]" />} />
+      <div ref={agendaRef} className="scroll-mt-20">
+      <Card colapsavel={false}>
+        <CardHeader title={diaSelecionado === null ? `Agenda de ${MESES_PT[mes]}` : `${diaSelecionado} de ${MESES_PT[mes]}`} subtitle={`${itensVisiveis.length} evento(s) · ${diaSelecionado === null ? "mês completo" : "dia selecionado"}`} action={diaSelecionado !== null && <button className="btn-outline" onClick={() => setDiaSelecionado(null)}>Ver mês completo</button>} icon={<CalendarDays className="h-[18px] w-[18px]" />} />
         <CardBody>
-          {itens.length === 0 ? (
+          {itensVisiveis.length === 0 ? (
             /* Vazio POR FILTRO e vazio DE VERDADE são coisas diferentes: dizer
                "nada marcado neste mês" com o filtro ligado faz a pessoa concluir
                que o mês está livre quando ela mesma escondeu o resto. */
             <EmptyState
-              title={foco.size > 0 ? "Nada deste tipo neste mês" : "Nada marcado neste mês"}
+              title={diaSelecionado !== null ? "Nenhum evento neste dia com os filtros atuais" : foco.size > 0 ? "Nada deste tipo neste mês" : "Nada marcado neste mês"}
               description={foco.size > 0
                 ? `O filtro está mostrando só ${[...foco].join(", ")}. Clique em “Ver todos” na legenda acima.`
                 : "Use “Novo evento” para adicionar reuniões e datas comemorativas."}
@@ -493,7 +503,7 @@ export default function Calendario() {
             />
           ) : (
             <div className="space-y-1.5">
-              {itens.map((it, i) => {
+              {itensVisiveis.map((it, i) => {
                 const Icon = iconDe(it.tipo);
                 const ev = it.eventoId ? eventos.find((e) => e.id === it.eventoId) : null;
                 return (
@@ -505,7 +515,7 @@ export default function Calendario() {
                     <Icon className="h-4 w-4 shrink-0" style={{ color: corDe(it.tipo, personalizados) }} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-700">{it.titulo}</p>
-                      <p className="truncate text-xs text-slate-400">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
+                      <p className="break-words text-xs text-slate-500">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
                     </div>
                     {gere && ev && (
                       <div className="flex shrink-0 items-center gap-1">
@@ -521,6 +531,7 @@ export default function Calendario() {
         </CardBody>
       </Card>
 
+      </div>
       {(novo || edit) && <EventoModal onFechar={() => { setNovo(false); setEdit(null); }} editar={edit} />}
       <ConfirmDialog
         aberto={!!del}

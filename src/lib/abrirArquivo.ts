@@ -23,8 +23,11 @@ export async function abrirAnexoEmNovaAba(
     avisar("O navegador bloqueou a nova aba. Libere os pop-ups deste site e tente de novo.");
     return;
   }
+  w.opener = null;
+  const escapar = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const tituloSeguro = escapar(titulo);
   w.document.write(
-    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${titulo}</title></head>` +
+    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${tituloSeguro}</title></head>` +
     `<body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#64748b;padding:24px">Abrindo o arquivo…</body></html>`,
   );
   let dataUrl: string | null = null;
@@ -33,15 +36,15 @@ export async function abrirAnexoEmNovaAba(
   } catch {
     dataUrl = null;
   }
-  if (!dataUrl) {
+  if (!dataUrl || !/^(data:|blob:|https:\/\/)/i.test(dataUrl)) {
     w.close();
     avisar("Arquivo não encontrado neste computador nem na nuvem (pode ter sido anexado offline em outro PC).");
     return;
   }
   w.document.open();
   w.document.write(
-    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${titulo}</title></head>` +
-    `<body style="margin:0"><iframe src="${dataUrl}" style="border:0;width:100%;height:100vh"></iframe></body></html>`,
+    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${tituloSeguro}</title></head>` +
+    `<body style="margin:0"><iframe src="${escapar(dataUrl)}" style="border:0;width:100%;height:100vh"></iframe></body></html>`,
   );
   w.document.close();
 }

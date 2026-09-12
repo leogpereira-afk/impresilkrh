@@ -133,6 +133,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
   const toast = useToast();
 
   const [busca, setBusca] = useState("");
+  const [todosOrfaos, setTodosOrfaos] = useState(false);
   const [versao, setVersao] = useState(0);
   const [apagando, setApagando] = useState<{ ficha: FichaResumo; contagem: ContagemFicha; avaliacao: AvaliacaoExclusao; destino: FichaResumo | null; referencias: Referencia[] } | null>(null);
   const [digitado, setDigitado] = useState("");
@@ -469,13 +470,12 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
           />
           <CardBody>
             <p className="mb-2 text-xs text-slate-500">
-              Em 29/07/2026 havia 102 destes, e <strong>16 eram gente que trabalha aqui</strong> (um sobrenome truncado,
-              um “Eliza” escrito “Elia”). Apagar teria perdido 13 tarefas de uma pessoa.
+              {orfaos.length} vínculo(s) para conferir. Escolha a ficha correta e revise os registros antes de reconectar.
             </p>
             <ul className="divide-y divide-slate-50 rounded-xl border border-slate-200">
-              {orfaos.slice(0, 30).map((o) => (
+              {(todosOrfaos ? orfaos : orfaos.slice(0, 30)).map((o) => (
                 <li key={o.dono} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-xs">
-                  <code className="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600">{o.dono}</code>
+                  <code className="max-w-full break-all rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600">{o.dono}</code>
                   <span className="tabular-nums font-medium text-brand-ink">{o.quantidade}</span>
                   <span className="text-slate-500">
                     {o.porColecao.map((c) => `${c.quantidade} em ${c.colecao}`).join(", ")}
@@ -507,7 +507,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
               ))}
             </ul>
             {orfaos.length > 30 && (
-              <p className="mt-2 text-xs text-slate-500">e mais {orfaos.length - 30} — resolva estes primeiro.</p>
+              <button type="button" className="btn-ghost mt-2 text-brand" onClick={() => setTodosOrfaos(!todosOrfaos)}>{todosOrfaos ? "Mostrar os primeiros 30" : `Ver todos os ${orfaos.length} vínculos`}</button>
             )}
             <p className="mt-2 text-[11px] text-slate-500">
               Trilha (acessos e histórico) não entra nesta lista: ela aponta para quem saiu de propósito.

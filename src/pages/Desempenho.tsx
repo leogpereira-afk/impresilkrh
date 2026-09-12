@@ -1,3 +1,5 @@
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
+import { cicloVigente as escolherCiclo } from "@/lib/cicloVigente";
 import { faixaDesempenho as bucketDesempenho, faixaPotencial as bucketPotencial } from "@/lib/qualidadeIndicadores";
 import { useMemo, useState } from "react";
 import {
@@ -127,6 +129,7 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 
 // ===================== Página =====================
 export default function Desempenho() {
+  const [abaAtual, mudarAbaAtual] = useAbaNaUrl("desempenho", ["9box", "avaliacoes", "metas", "pdi", "feedbacks", "pesquisas"], "9box");
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
@@ -144,7 +147,7 @@ export default function Desempenho() {
 
   // Ciclo aberto (fallback para o primeiro cadastrado).
   const ciclo: CicloAvaliacao | undefined = useMemo(
-    () => ciclos.find((c) => c.status === "Aberto") ?? ciclos[0],
+    () => escolherCiclo(ciclos),
     [ciclos],
   );
 
@@ -403,7 +406,7 @@ export default function Desempenho() {
       </div>
 
       <div className="mt-6">
-        <Tabs abas={abas} />
+        <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual} abas={abas} />
       </div>
 
       <DrillModal {...drill.props} />
@@ -485,7 +488,7 @@ function NoveBox({
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {linhasPotencial.map((pot) =>
                 NIVEIS.map((des) => {
                   const colabs = matriz[pot][des];
@@ -511,7 +514,7 @@ function NoveBox({
                               )
                           : undefined
                       }
-                      className={`flex min-h-[176px] flex-col rounded-xl border p-3 text-left transition ${corCelula(idxDes, idxPot)} ${
+                      className={`flex min-w-0 flex-col rounded-xl border p-3 text-left transition sm:min-h-[176px] ${corCelula(idxDes, idxPot)} ${
                         temPessoas
                           ? "cursor-pointer hover:shadow-md hover:ring-2 hover:ring-brand/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                           : "cursor-default"
@@ -556,7 +559,7 @@ function NoveBox({
                 }),
               )}
             </div>
-            <div className="mt-2 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <div className="mt-2 hidden text-center text-xs font-semibold uppercase tracking-wider text-slate-400 sm:block">
               Desempenho →
             </div>
           </div>

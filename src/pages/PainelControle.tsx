@@ -1,3 +1,5 @@
+import { dependentesArea as contarArea, dependentesCargo } from "@/lib/dependenciasEstrutura";
+import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -113,11 +115,12 @@ function ModeloChecklistTextarea({ modelo, onGravar }: { modelo: ModeloChecklist
 export default function PainelControle() {
   const sessao = useSessao();
   const master = ehMaster(sessao);
+  const [abaAtual, mudarAbaAtual] = useAbaNaUrl("configuracoes-rh", [...["estrutura", "cadastros", "cargos", "conteudo", "aval", "usuarios", "historico", "marca"], ...(master ? ["confidencial"] : [])], "estrutura");
   const navegar = useNavigate();
   return (
     <div>
       <PageHeader title="Configurações do RH" description="Gerencie cadastros e acessos. Confira o estado de salvamento na nuvem para saber se as alterações foram enviadas." />
-      <Tabs
+      <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
         abas={[
           { id: "estrutura", label: "Estrutura", icon: <Building2 className="h-4 w-4" />, conteudo: <Estrutura /> },
           /* Todos os cadastros, com as fichas repetidas em cima (pedido do Léo
@@ -224,10 +227,12 @@ function AreasManager() {
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<Area | null>(null);
 
+  const { items: vagas } = useColecao("vagas");
+  const { items: metas } = useColecao("metas");
   // Dependentes: colaboradores e cargos vinculados a esta área. Excluir a área
   // deixaria esses registros apontando para um id inexistente (área "—").
   const dependentesArea = (id: string) =>
-    colaboradores.filter((c) => c.areaId === id).length + cargos.filter((c) => c.areaId === id).length;
+    contarArea(id, colaboradores, cargos, vagas, metas);
   const delEmUso = del ? dependentesArea(del.id) : 0;
 
   return (
@@ -236,9 +241,9 @@ function AreasManager() {
         action={<button className="btn-outline" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Nova área</button>} />
       <CardBody className="space-y-2">
         {[...items].sort((a, b) => a.ordem - b.ordem).map((a) => (
-          <div key={a.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-            <div><p className="text-sm font-medium text-slate-700">{a.nome}</p><p className="text-xs text-slate-400">{a.descricao}</p></div>
-            <div className="flex gap-1">
+          <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2">
+            <div className="min-w-0 flex-[1_1_10rem] break-words"><p className="text-sm font-medium text-slate-700">{a.nome}</p><p className="text-xs text-slate-400">{a.descricao}</p></div>
+            <div className="ml-auto flex shrink-0 gap-1">
               <button className="btn-ghost p-1.5" onClick={() => setEdit(a)} aria-label={`Editar ${a.nome}`}><Pencil className="h-4 w-4" /></button>
               <button className="btn-ghost p-1.5 text-red-500" onClick={() => setDel(a)} aria-label={`Excluir ${a.nome}`}><Trash2 className="h-4 w-4" /></button>
             </div>
@@ -269,7 +274,7 @@ function AreasManager() {
           remover(del.id); toast("Área excluída.");
         }}
         titulo="Excluir área?"
-        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} registro(s) (colaboradores/cargos) e não pode ser excluída.` : `"${del?.nome}" será removida.`}
+        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} registro(s) (colaboradores, cargos, vagas ou metas) e não pode ser excluída.` : `"${del?.nome}" será removida.`}
       />
     </Card>
   );
@@ -363,8 +368,8 @@ function StatusManager() {
           </div>
         )}
         {[...items].sort((a, b) => a.ordem - b.ordem).map((s) => (
-          <div key={s.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-            <div className="flex items-center gap-3">
+          <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
               <DotBadge label={s.nome} cor={s.cor} />
               {s.contaComoAtivo ? <Badge variant="success">Conta no headcount</Badge> : <Badge variant="neutral">Fora do headcount</Badge>}
               {ausencias.has(s.id) && <Badge variant="warning">Ausência</Badge>}
@@ -423,13 +428,14 @@ function CargosSecao() {
   const toast = useToast();
   const d = useDominio();
   const { items, criar, atualizar, remover } = useColecao("cargos");
+  const { items: vagas } = useColecao("vagas");
   const [edit, setEdit] = useState<Cargo | null>(null);
   const [novo, setNovo] = useState(false);
   const [del, setDel] = useState<Cargo | null>(null);
   const [form, setForm] = useState<Partial<Cargo>>({});
 
   // Colaboradores neste cargo — excluí-lo os deixaria sem cargo válido.
-  const delEmUso = del ? d.colaboradores.filter((c) => c.cargoId === del.id).length : 0;
+  const delEmUso = del ? dependentesCargo(del.id, d.colaboradores, vagas) : 0;
 
   const abrir = (c: Cargo | null) => {
     setForm(c ?? { nome: "", areaId: "producao", faixas: [1621, 1700, 1800, 1900, 2000], trilha: "" });
@@ -494,11 +500,11 @@ function CargosSecao() {
         onFechar={() => setDel(null)}
         onConfirmar={() => {
           if (!del) return;
-          if (delEmUso > 0) { toast(`Não dá para excluir: ${delEmUso} colaborador(es) têm este cargo. Reatribua-os antes.`, "erro"); setDel(null); return; }
+          if (delEmUso > 0) { toast(`Não dá para excluir: ${delEmUso} cadastro(s) ou vaga(s) usam este cargo. Reatribua-os antes.`, "erro"); setDel(null); return; }
           remover(del.id); toast("Cargo excluído.");
         }}
         titulo="Excluir cargo?"
-        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} colaborador(es) e não pode ser excluído.` : `"${del?.nome}" será removido.`}
+        mensagem={delEmUso > 0 ? `"${del?.nome}" está em uso por ${delEmUso} cadastro(s) ou vaga(s) e não pode ser excluído.` : `"${del?.nome}" será removido.`}
       />
     </Card>
   );
