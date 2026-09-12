@@ -1,6 +1,7 @@
 import { Tabs } from '@/components/ui/tabs';
 import { useAbaNaUrl } from '@/lib/useAbaNaUrl';
 import Plantoes from '@/components/plantoes/plantoes';
+import Programacao from '@/components/programacao/programacao';
 import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
 import { useHoje } from '@/lib/useHoje';
 import { useMemo, useState, useRef } from "react";
@@ -78,10 +79,10 @@ type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?
 
 export default function Calendario() {
   const sessao = useSessao();
-  const [aba, mudar] = useAbaNaUrl('calendario-principal', ['calendario', 'plantoes'], 'calendario');
+  const [aba, mudar] = useAbaNaUrl('calendario-principal', ['calendario', 'plantoes', 'programacao'], 'calendario');
   return <Tabs ativa={aba} aoMudar={mudar} abas={[
     {id:'calendario', label:'Calendário', conteudo:<CalendarioGeral/>},
-    ...(sessao?.perfil==='ADMIN_RH' ? [{id:'plantoes',label:'Plantões',conteudo:<Plantoes/>}] : []),
+    ...(sessao?.perfil==='ADMIN_RH' ? [{id:'plantoes',label:'Plantões',conteudo:<Plantoes/>},{id:'programacao',label:'Programação de serviços',conteudo:<Programacao/>}] : []),
   ]}/>;
 }
 function CalendarioGeral() {

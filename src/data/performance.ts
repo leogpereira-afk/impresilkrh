@@ -22,6 +22,7 @@ export interface Plantao {
   atualizadoEm: string;
 }
 export interface OrdemPerformance {
+  participantesRH?: string[];
   id: string;
   numero: string;
   cliente: string;

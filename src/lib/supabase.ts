@@ -21,3 +21,5 @@ export const FN_ADMIN_USERS = URL ? `${URL}/functions/v1/admin-users` : "";
 export const FN_ACESSO_ENTRAR = URL ? `${URL}/functions/v1/acesso-entrar` : "";
 export const ANON_PUBLICA = ANON_KEY;
 export const FN_MUBI_PAGAMENTOS = URL ? `${URL}/functions/v1/mubi-pagamentos` : "";
+
+export const FN_PROGRAMACAO = URL ? `${URL}/functions/v1/rh-programacao` : "";

@@ -8,5 +8,7 @@ export function projetarOrdem(r: Record<string, unknown>, atualizadoEm: string) 
     dia=`${d.find(x=>x.type==='year')?.value}-${d.find(x=>x.type==='month')?.value}-${d.find(x=>x.type==='day')?.value}`;
   }
   const inst=r.instalacao&&typeof r.instalacao==='object'?r.instalacao as Record<string,unknown>:{};
-  return {id:texto(r.id),numero:texto(r.numero),cliente:texto(r.cliente),servico:texto(r.servico),finalizadaEm:final?dia:'',prazo:texto(inst.data)||texto(r.previsaoEntrega),equipe:Array.isArray(r.equipe)?r.equipe.filter((v):v is string=>typeof v==='string'):[],retrabalho:r.retrabalho===true,baixaAutomatica:!!r.baixaAutoERP,atualizadoEm};
+  const meta=r.programacaoRH&&typeof r.programacaoRH==='object'?r.programacaoRH as Record<string,unknown>:{};
+  const participantes=Array.isArray(meta.participantes)?meta.participantes.filter(p=>p&&typeof p==='object'&&Array.isArray(r.equipe)&&r.equipe.includes(p.nomePCP)&&typeof p.colaboradorId==='string').map(p=>p.colaboradorId as string):[];
+  return {...(participantes.length?{participantesRH:[...new Set(participantes)]}:{}),id:texto(r.id),numero:texto(r.numero),cliente:texto(r.cliente),servico:texto(r.servico),finalizadaEm:final?dia:'',prazo:texto(inst.data)||texto(r.previsaoEntrega),equipe:Array.isArray(r.equipe)?r.equipe.filter((v):v is string=>typeof v==='string'):[],retrabalho:r.retrabalho===true,baixaAutomatica:!!r.baixaAutoERP,atualizadoEm};
 }
