@@ -14,6 +14,7 @@ export const supabase = SUPABASE_CONFIGURADO
 
 // URL das Edge Functions (mesma base do projeto Supabase, path fixo do Functions).
 export const FN_SYNC = URL ? `${URL}/functions/v1/sync` : "";
+export const FN_PERFORMANCE = URL ? `${URL}/functions/v1/rh-performance` : "";
 export const FN_ADMIN_USERS = URL ? `${URL}/functions/v1/admin-users` : "";
 // A entrada única da casa: aceita o usuário CURTO (o mesmo do Painel, do PCP,
 // do Brief) e devolve a sessão do Supabase Auth já pronta.

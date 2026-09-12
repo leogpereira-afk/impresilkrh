@@ -1,4 +1,3 @@
-import { projetarOrdem } from '../_shared/performanceOS.ts';
 // ============================================================================
 // Função única de sincronização — Supabase Edge Function (Deno).
 // Substitui netlify/functions/sync.mts: MESMO contrato de ações (o cliente em
@@ -92,10 +91,10 @@ async function sessaoDoPedido(req: Request): Promise<Perfil | null> {
    o caso do `cargos`, em que todo mundo precisa do NOME do cargo e ninguem
    precisa do salario praticado. */
 const ESCOPO: Record<string, { nivel: "rh" | "gestao" | "meu" | "todos"; campos?: string[] }> = {
-  // --- dinheiro e vida da pessoa: so o RH
   equipesPlantoes: { nivel: "rh" },
   plantoes: { nivel: "rh" },
   performanceCiclos: { nivel: "rh" },
+  // --- dinheiro e vida da pessoa: so o RH
   planoContas: { nivel: "rh" },
   recuperacoesFolha: { nivel: "rh" },   // retrato para desfazer a folha (tem valor)
   classificacaoCustos: { nivel: "rh" },
@@ -389,28 +388,6 @@ Deno.serve(async (req) => {
       return !!pessoa && !pessoa.apagado && (escrita ? id === meuId : equipe.has(id));
     };
     switch (action) {
-      case "performanceOS": {
-        if (!ehAdmin) return json({ erro: "Entregas para bonificação são restritas ao RH." }, 403);
-        const competencia = String(body.competencia ?? "");
-        if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(competencia)) return json({ erro: "Mês inválido." }, 400);
-        const ordens = [];
-        let depois = "";
-        for (let pagina = 0; ; pagina++) {
-          if (pagina >= 100) throw new Error("A consulta atingiu o limite de segurança. Nenhum resultado parcial foi utilizado.");
-          let query = admin.from("pcp_registros").select("id,registro,atualizado_em").eq("colecao", "os").eq("apagado", false).order("id").limit(500);
-          if (depois) query = query.gt("id", depois);
-          const { data, error } = await query;
-          if (error) throw new Error("Não foi possível consultar as entregas do PCP.");
-          for (const linha of data ?? []) {
-            const os = projetarOrdem({ ...linha.registro, id: linha.id }, linha.atualizado_em);
-            if (os.finalizadaEm.startsWith(competencia)) ordens.push(os);
-          }
-          if (!data || data.length < 500) break;
-          depois = data[data.length-1].id;
-        }
-        return json({ ordens: ordens.sort((a,b)=>b.finalizadaEm.localeCompare(a.finalizadaEm)), consultadoEm: new Date().toISOString() });
-      }
-
       case "ping":
         return json({ ok: true, ts: new Date().toISOString() });
 

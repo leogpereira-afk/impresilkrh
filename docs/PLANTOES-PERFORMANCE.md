@@ -65,8 +65,9 @@ Sugestão de implantação: simular um ou dois ciclos, discutir diferenças de c
 ## Origem dos dados e limites
 
 - Pessoas e ponto: cadastro do RH.
-- O.S.: consulta autenticada e somente leitura à base do PCP, filtrada pela data local de conclusão. A tela informa a hora da consulta. Mudanças no Mubisys dependem primeiro da atualização do PCP.
+- O.S.: função independente `rh-performance`, somente leitura; a função central `sync` recebe apenas os nomes dos três novos cadastros restritos ao RH. Consulta autenticada e somente leitura à base do PCP, filtrada pela data local de conclusão. A tela informa a hora da consulta. Mudanças no Mubisys dependem primeiro da atualização do PCP.
 - Cada vínculo guarda o retrato conferido da O.S.; uma aprovação não é recalculada silenciosamente por mudança posterior no ERP. Para corrigir, reabrir e conferir os vínculos.
+- As três novas coleções são classificadas como exclusivas de ADMIN_RH. O sincronizador recebe somente essas três entradas na lista de coleções permitidas; sua autenticação, consultas e regras das coleções anteriores permanecem iguais.
 - Plantões, equipes habituais e ciclos usam a sincronização versionada existente. O indicador Nuvem mostra pendências e falhas; “salvo” localmente não dispensa conferir esse indicador.
 - Nenhum teste automático cria escala ou bonificação de uma pessoa real.
 
