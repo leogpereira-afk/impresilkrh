@@ -53,6 +53,9 @@ export interface LinhaHistorico {
 
 // Coleções cujo nome não diz nada para quem lê o histórico.
 const ROTULO: Record<string, string> = {
+  plantoes: "Plantão",
+  equipesPlantoes: "Equipe habitual",
+  performanceCiclos: "Apuração de performance",
   colaboradores: "Colaborador",
   pagamentos: "Pagamento",
   documentos: "Documento",

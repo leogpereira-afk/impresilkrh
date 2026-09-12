@@ -38,6 +38,7 @@ export interface TelaBuscavel {
 export const APELIDOS: Record<string, string[]> = {
   "/ponto": ["ponto", "frequencia", "advertencia", "falta", "atraso", "hora extra", "folha variavel"],
   "/sst": ["aso", "exame", "nr", "seguranca", "epi", "cipa", "saude"],
+  "/performance": ["performance", "bonificacao", "bonus", "instaladores", "entregas", "produtividade"],
   "/custos": ["folha", "salario", "pagamento", "custo", "adiantamento"],
   "/ferias": ["ferias", "descanso"],
   "/integracao": ["onboarding", "offboarding", "admissao", "desligamento", "checklist"],
@@ -59,7 +60,7 @@ export const APELIDOS: Record<string, string[]> = {
   // nome da tela em que o problema se resolve.
   "/painel-controle": ["configuracao", "ajuste", "backup", "ciclo", "modelo", "cadastro", "duplicado", "duplicidade", "repetido", "ficha repetida", "orfao", "apagar cadastro", "excluir cadastro"],
   "/lgpd": ["lgpd", "acesso", "auditoria", "log", "privacidade"],
-  "/calendario": ["calendario", "agenda", "data"],
+  "/calendario": ["calendario", "agenda", "data", "plantao", "plantoes", "escala", "sabado"],
   "/painel": ["inicio", "home", "resumo", "visao geral"],
   "/meu-perfil": ["meu perfil", "minha conta", "senha"],
   "/freelancers": ["freelancer", "prestador", "terceirizado", "contrato"],

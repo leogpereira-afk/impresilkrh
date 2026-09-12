@@ -1,3 +1,6 @@
+import { Tabs } from '@/components/ui/tabs';
+import { useAbaNaUrl } from '@/lib/useAbaNaUrl';
+import Plantoes from '@/components/plantoes/plantoes';
 import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
 import { useHoje } from '@/lib/useHoje';
 import { useMemo, useState, useRef } from "react";
@@ -74,6 +77,14 @@ const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarD
 type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?: string };
 
 export default function Calendario() {
+  const sessao = useSessao();
+  const [aba, mudar] = useAbaNaUrl('calendario-principal', ['calendario', 'plantoes'], 'calendario');
+  return <Tabs ativa={aba} aoMudar={mudar} abas={[
+    {id:'calendario', label:'Calendário', conteudo:<CalendarioGeral/>},
+    ...(sessao?.perfil==='ADMIN_RH' ? [{id:'plantoes',label:'Plantões',conteudo:<Plantoes/>}] : []),
+  ]}/>;
+}
+function CalendarioGeral() {
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();

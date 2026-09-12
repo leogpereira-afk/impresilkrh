@@ -1,3 +1,4 @@
+import type { Plantao, CicloPerformance, EquipePlantao } from './performance';
 // Registro central dos dados embutidos (defaults). A camada src/lib/store.ts
 // carrega estes valores na 1ª vez e depois persiste as edições no localStorage.
 
@@ -38,6 +39,9 @@ export const CONFIG_DEFAULT: Config = {
 
 // Mapa: nome da coleção → tipo do elemento. Garante tipagem do useColecao.
 export interface ColecaoMap {
+  equipesPlantoes: EquipePlantao;
+  plantoes: Plantao;
+  performanceCiclos: CicloPerformance;
   areas: Area;
   niveis: Nivel;
   cargos: Cargo;
@@ -105,6 +109,9 @@ export type NomeColecao = keyof ColecaoMap;
 // falta, ponto, vaga — nasce vazio e vem da nuvem.
 export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
   return structuredClone({
+    equipesPlantoes: [],
+    plantoes: [],
+    performanceCiclos: [],
     areas: AREAS,
     niveis: NIVEIS,
     cargos: CARGOS,

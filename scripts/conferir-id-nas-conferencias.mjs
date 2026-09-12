@@ -32,6 +32,9 @@ const RAIZ = path.resolve(import.meta.dirname, "..", "src");
  * seria ruído. A régua é "aqui se decide algo sobre a pessoa certa".
  */
 const CONFERENCIAS = [
+  "pages/Performance.tsx",
+  "components/plantoes/plantoes.tsx",
+  "components/performance/entrega-modal.tsx",
   "components/custos/auditoria-lancamentos.tsx",
   "components/custos/previa-folha.tsx",
   "components/custos/conferencia-tipos.tsx",
