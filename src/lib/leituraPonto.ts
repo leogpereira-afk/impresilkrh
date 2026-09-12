@@ -72,7 +72,9 @@ export function leituraDoPonto(pontos: readonly Ponto[], janela: JanelaPonto, ho
         const f = Number.isFinite(d.faltasMin) ? d.faltasMin : 0;
         normais += n; extras += e; faltas += f;
         dia.normais += n; dia.extras += e; dia.faltas += f; dia.registros++;
-        if (d.situacao === 'normal' || (d.marcacoes?.length ?? 0) > 0) {
+        // O importador pode chamar um dia zerado de "normal". Só há intervalo
+        // para conferir quando existem horas de trabalho ou alguma batida.
+        if (n > 0 || e > 0 || (d.marcacoes?.length ?? 0) > 0) {
           const pausa = intervaloDasBatidas(d.marcacoes);
           if (pausa.alerta) { alertas++; dia.alertas++; }
           intervalo += pausa.minutos ?? 0;

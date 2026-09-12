@@ -43,6 +43,16 @@ describe('auditoria — edição de cadastro', () => {
 });
 
 describe('auditoria — ponto e intervalos', () => {
+  it.each([
+    { nome: 'dia zerado importado como normal', normaisMin: 0, extrasMin: 0, faltasMin: 0, marcacoes: [], alertas: 0 },
+    { nome: 'falta integral sem trabalho', normaisMin: 0, extrasMin: 0, faltasMin: 540, marcacoes: [], alertas: 0 },
+    { nome: 'horas normais sem batidas', normaisMin: 540, extrasMin: 0, faltasMin: 0, marcacoes: [], alertas: 1 },
+    { nome: 'somente horas extras sem batidas', normaisMin: 0, extrasMin: 60, faltasMin: 0, marcacoes: [], alertas: 1 },
+    { nome: 'batida incompleta ainda sem horas', normaisMin: 0, extrasMin: 0, faltasMin: 0, marcacoes: ['07:00'], alertas: 1 },
+  ])('alerta de intervalo respeita evidência de trabalho: $nome', ({ normaisMin, extrasMin, faltasMin, marcacoes, alertas }) => {
+    const p = { ...ponto, dias: [{ data: '2026-09-12', situacao: 'normal' as const, normaisMin, extrasMin, faltasMin, marcacoes }] };
+    expect(leituraDoPonto([p], { inicio: '2026-09-12', fim: '2026-09-12' }, '2026-09-12').pessoas[0]).toMatchObject({ normais: normaisMin, extras: extrasMin, faltas: faltasMin, alertas, lacunas: 0 });
+  });
   it('o período é o do PDF, não o corte fixo 16 a 15', () => { expect(periodoDoPonto(ponto)).toEqual({inicio:'2026-08-29',fim:'2026-09-28'}); expect(pessoaNoPeriodo({dataAdmissao:'2026-09-20'} as Colaborador, periodoDoPonto(ponto)!)).toBe(true); });
   it('admitido após o período não é cobrado', () => expect(pessoaNoPeriodo({dataAdmissao:'2026-09-29'} as Colaborador, periodoDoPonto(ponto)!)).toBe(false));
   it('usa dias informados quando não há cabeçalho do PDF', () => expect(periodoDoPonto({...ponto,periodoInicio:null,periodoFim:null})).toEqual({inicio:'2026-09-10',fim:'2026-09-11'}));
