@@ -1,0 +1,1 @@
+function r(i,t,u={}){const o={},c=new Set(u.nunca??[]),e=i;for(const[n,f]of Object.entries(t))c.has(n)||JSON.stringify(f??null)!==JSON.stringify(e[n]??null)&&(o[n]=f);for(const n of u.sempre??[])c.has(n)||n in t&&(o[n]=t[n]);return o}export{r as p};

@@ -1,0 +1,1 @@
+import{f}from"./react-CBdd_3rf.js";import{u as p}from"./tabs-Ck4Sicm8.js";function h(n,a,o,t="aba"){const[u,c]=f(),[m,i]=p(n,a,o),r=u.get(t);return[r&&a.includes(r)?r:m,s=>{a.includes(s)&&(i(s),c(l=>{const e=new URLSearchParams(l);return e.set(t,s),e},{replace:!0}))}]}export{h as u};

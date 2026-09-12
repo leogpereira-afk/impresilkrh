@@ -1,0 +1,1 @@
+import{r as o}from"./react-CBdd_3rf.js";import{a1 as n}from"./index-BUgKt8b7.js";function w(){const[r,s]=o.useState(()=>new Date);return o.useEffect(()=>{const e=()=>s(t=>n(t)===n(new Date)?t:new Date),a=window.setInterval(e,3e4);return window.addEventListener("focus",e),()=>{window.clearInterval(a),window.removeEventListener("focus",e)}},[]),r}export{w as u};

@@ -1,0 +1,1 @@
+import{j as r,O as s}from"./index-BUgKt8b7.js";import{L as i}from"./react-CBdd_3rf.js";function u({id:o,children:t,className:a,aoIr:e,titulo:n}){return o?r.jsx(i,{to:`/colaboradores/${o}`,onClick:e,title:n??"Abrir a ficha desta pessoa",className:s("rounded transition hover:text-brand hover:underline",a),children:t}):r.jsx(r.Fragment,{children:t})}export{u as L};
