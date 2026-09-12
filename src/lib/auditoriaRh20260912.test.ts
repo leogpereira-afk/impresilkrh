@@ -46,6 +46,8 @@ describe('auditoria — ponto e intervalos', () => {
   it.each([
     { nome: 'dia zerado importado como normal', normaisMin: 0, extrasMin: 0, faltasMin: 0, marcacoes: [], alertas: 0 },
     { nome: 'falta integral sem trabalho', normaisMin: 0, extrasMin: 0, faltasMin: 540, marcacoes: [], alertas: 0 },
+    { nome: 'marcador Folga do PDF não é batida', normaisMin: 0, extrasMin: 0, faltasMin: 0, marcacoes: ['Folga'], alertas: 0 },
+    { nome: 'marcador Atestado do PDF não é batida', normaisMin: 0, extrasMin: 0, faltasMin: 0, marcacoes: ['Atestado'], alertas: 0 },
     { nome: 'horas normais sem batidas', normaisMin: 540, extrasMin: 0, faltasMin: 0, marcacoes: [], alertas: 1 },
     { nome: 'somente horas extras sem batidas', normaisMin: 0, extrasMin: 60, faltasMin: 0, marcacoes: [], alertas: 1 },
     { nome: 'batida incompleta ainda sem horas', normaisMin: 0, extrasMin: 0, faltasMin: 0, marcacoes: ['07:00'], alertas: 1 },
@@ -57,6 +59,8 @@ describe('auditoria — ponto e intervalos', () => {
   it('admitido após o período não é cobrado', () => expect(pessoaNoPeriodo({dataAdmissao:'2026-09-29'} as Colaborador, periodoDoPonto(ponto)!)).toBe(false));
   it('usa dias informados quando não há cabeçalho do PDF', () => expect(periodoDoPonto({...ponto,periodoInicio:null,periodoFim:null})).toEqual({inicio:'2026-09-10',fim:'2026-09-11'}));
   it('soma só as pausas entre saída e entrada', () => expect(intervaloDasBatidas(['07:00','12:00','13:00','17:00']).minutos).toBe(60));
+  it('separa situação e horários na coluna mista do Secullum', () => expect(intervaloDasBatidas(['Feriado','07:00','12:00','13:00','17:00'])).toEqual({ minutos: 60, alerta: null }));
+  it('aceita hora com um dígito, como o importador e o extrato', () => expect(intervaloDasBatidas(['7:00','12:00','13:00','17:00'])).toEqual({ minutos: 60, alerta: null }));
   it('suporta virada da noite', () => expect(intervaloDasBatidas(['22:00','02:00','03:00','07:00']).minutos).toBe(60));
   it('soma mais de um intervalo', () => expect(intervaloDasBatidas(['07:00','09:00','09:15','12:00','13:00','17:00']).minutos).toBe(75));
   it.each([['07:00','17:00'],['07:00','12:00','13:00'],['07:00','25:00','13:00','17:00']])('sinaliza batidas incompletas/intervalo ausente: %j', (...marcacoes) => expect(intervaloDasBatidas(marcacoes)).toMatchObject({minutos:null,alerta:expect.any(String)}));

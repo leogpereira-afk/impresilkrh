@@ -16,15 +16,20 @@ export function pessoaNoPeriodo(c: Pick<Colaborador, 'dataAdmissao' | 'dataDesli
     && (!c.dataDesligamento || c.dataDesligamento.slice(0, 10) >= periodo.inicio);
 }
 
+// A coluna do Secullum mistura horários e rótulos como Folga/Atestado.
+// Preservamos candidatos numéricos inválidos para a conferência de horário.
+const somenteBatidas = (marcacoes: readonly string[] = []) => marcacoes.map(m => m.trim()).filter(m => /\d/.test(m));
+
 /** Pausas entre saída e próxima entrada, sem descontar novamente os totais do Secullum. */
 export function intervaloDasBatidas(marcacoes: readonly string[] = []): { minutos: number | null; alerta: string | null } {
-  if (!marcacoes.length) return { minutos: null, alerta: 'Sem batidas' };
-  if (marcacoes.length % 2) return { minutos: null, alerta: 'Batidas incompletas' };
-  if (marcacoes.some(h => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(h))) return { minutos: null, alerta: 'Horário inválido' };
-  if (marcacoes.length < 4) return { minutos: null, alerta: 'Intervalo não registrado' };
+  const batidas = somenteBatidas(marcacoes);
+  if (!batidas.length) return { minutos: null, alerta: 'Sem batidas' };
+  if (batidas.length % 2) return { minutos: null, alerta: 'Batidas incompletas' };
+  if (batidas.some(h => !/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(h))) return { minutos: null, alerta: 'Horário inválido' };
+  if (batidas.length < 4) return { minutos: null, alerta: 'Intervalo não registrado' };
   let dia = 0, anterior = -1;
   const minutos: number[] = [];
-  for (const h of marcacoes) {
+  for (const h of batidas) {
     const [hh, mm] = h.split(':').map(Number);
     let n = hh * 60 + mm + dia;
     if (n < anterior) { dia += 1440; n += 1440; }
@@ -74,8 +79,9 @@ export function leituraDoPonto(pontos: readonly Ponto[], janela: JanelaPonto, ho
         dia.normais += n; dia.extras += e; dia.faltas += f; dia.registros++;
         // O importador pode chamar um dia zerado de "normal". Só há intervalo
         // para conferir quando existem horas de trabalho ou alguma batida.
-        if (n > 0 || e > 0 || (d.marcacoes?.length ?? 0) > 0) {
-          const pausa = intervaloDasBatidas(d.marcacoes);
+        const batidas = somenteBatidas(d.marcacoes);
+        if (n > 0 || e > 0 || batidas.length > 0) {
+          const pausa = intervaloDasBatidas(batidas);
           if (pausa.alerta) { alertas++; dia.alertas++; }
           intervalo += pausa.minutos ?? 0;
         }
