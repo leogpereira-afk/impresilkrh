@@ -1,10 +1,6 @@
-import { Tabs } from '@/components/ui/tabs';
-import { useAbaNaUrl } from '@/lib/useAbaNaUrl';
-import Plantoes from '@/components/plantoes/plantoes';
-import Programacao from '@/components/programacao/programacao';
+import { useMemo, useState, useRef } from "react";
 import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
 import { useHoje } from '@/lib/useHoje';
-import { useMemo, useState, useRef } from "react";
 import {
   CalendarDays, Cake, PartyPopper, Flag, Sparkles, CalendarClock, Building2,
   Plus, ChevronLeft, ChevronRight, Pencil, Trash2, FileText, ShieldAlert, UserCheck, Palmtree,
@@ -78,12 +74,7 @@ const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarD
 type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?: string };
 
 export default function Calendario() {
-  const sessao = useSessao();
-  const [aba, mudar] = useAbaNaUrl('calendario-principal', ['calendario', 'plantoes', 'programacao'], 'calendario');
-  return <Tabs ativa={aba} aoMudar={mudar} abas={[
-    {id:'calendario', label:'Calendário', conteudo:<CalendarioGeral/>},
-    ...(sessao?.perfil==='ADMIN_RH' ? [{id:'plantoes',label:'Plantões',conteudo:<Plantoes/>},{id:'programacao',label:'Programação de serviços',conteudo:<Programacao/>}] : []),
-  ]}/>;
+  return <CalendarioGeral/>;
 }
 function CalendarioGeral() {
   const sessao = useSessao();
@@ -342,6 +333,7 @@ function CalendarioGeral() {
       <PageHeader title="Calendário" description="Aniversários, vencimentos, pagamentos e férias. Clique na legenda para ver só um tipo.">
         {gere && <button className="btn-primary" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo evento</button>}
       </PageHeader>
+      <p className="mb-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Plantões e programação de serviços ficam na Produção (PCP). Este calendário é só de gente — os dois não conversam.</p>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">

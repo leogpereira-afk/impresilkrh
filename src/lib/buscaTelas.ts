@@ -60,7 +60,7 @@ export const APELIDOS: Record<string, string[]> = {
   // nome da tela em que o problema se resolve.
   "/painel-controle": ["configuracao", "ajuste", "backup", "ciclo", "modelo", "cadastro", "duplicado", "duplicidade", "repetido", "ficha repetida", "orfao", "apagar cadastro", "excluir cadastro"],
   "/lgpd": ["lgpd", "acesso", "auditoria", "log", "privacidade"],
-  "/calendario": ["calendario", "agenda", "data", "plantao", "plantoes", "escala", "sabado"],
+  "/calendario": ["calendario", "agenda", "data", "feriado", "aniversario", "pagamento"],
   "/painel": ["inicio", "home", "resumo", "visao geral"],
   "/meu-perfil": ["meu perfil", "minha conta", "senha"],
   "/freelancers": ["freelancer", "prestador", "terceirizado", "contrato"],
