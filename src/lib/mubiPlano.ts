@@ -297,13 +297,29 @@ export function puxadaPerdeuAFolha(
   return !novo.some((p) => classe(p) === "individual");
 }
 
-export function mesclarPlano(atual: ContaPlano[], novo: ContaPlano[], competencia: string): ContaPlano[] {
+export function mesclarPlano(
+  atual: ContaPlano[],
+  novo: ContaPlano[],
+  competencia: string,
+  /**
+   * QUEM NÃO PODE VER TAMBÉM NÃO PODE APAGAR (14/09/2026).
+   *
+   * A puxada de quem não é master NÃO RECEBE as contas do sócio — e a regra
+   * abaixo apaga do mês o que veio do ERP e não voltou nesta puxada. Sem esta
+   * guarda, qualquer ADMIN_RH sincronizando o mês destruía a linha do sócio
+   * que ele nem tinha o direito de ler. Ausência por censura não é ausência
+   * por sumiço; só a segunda apaga.
+   */
+  ehConfidencial: (p: ContaPlano) => boolean = () => false,
+): ContaPlano[] {
   const trazidos = new Map(novo.map((c) => [c.codigo, c]));
   // O que é do CONTADOR fica. O que veio do ERP numa puxada anterior e não
   // veio nesta SAI: o ERP é a fonte dessas linhas, e a versão velha delas era
   // justamente o que carregava a classificação errada (e o que a porta de
   // dados ainda não cortava) antes da equivalência de 07/09/2026.
-  const mantidas = atual.filter((p) => p.competencia !== competencia || (!trazidos.has(p.codigo) && p.origem !== "erp"));
+  const mantidas = atual.filter(
+    (p) => p.competencia !== competencia || (!trazidos.has(p.codigo) && (p.origem !== "erp" || ehConfidencial(p))),
+  );
   return [...mantidas, ...novo];
 }
 

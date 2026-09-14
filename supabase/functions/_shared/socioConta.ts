@@ -26,9 +26,20 @@
 /** Valor que significa "esta conta NÃO é de sócio nenhum" — resposta explícita. */
 export const NAO_E_DE_SOCIO = "nenhum";
 
+/**
+ * NFKD, e não NFD — a tela é quem GRAVA a chave, e ela usa NFKD.
+ *
+ * As duas formas só divergem em caractere de compatibilidade, e é justamente
+ * aí que este plano de contas vive: "13º Salário" vira `13 salario` em NFD e
+ * `13o salario` em NFKD; "Retiradas nº 2 Leonardo" vira `retiradas n 2...` de
+ * um lado e `retiradas no 2...` do outro. Chave diferente = apontamento não
+ * encontrado = a conta do sócio sai inteira pela porta de dados. O teste que
+ * eu tinha escrito comparava "Retiradas Leonárdo", em que as duas formas dão
+ * o MESMO resultado — controle que não pode falhar não é controle.
+ */
 export function normalizarNomeDeConta(v: unknown): string {
   return String(v ?? "")
-    .normalize("NFD")
+    .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")

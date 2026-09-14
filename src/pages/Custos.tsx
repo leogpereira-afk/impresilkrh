@@ -282,6 +282,17 @@ export default function Custos() {
   // useMemo: `?? {}` cria objeto novo a cada render e derrubaria a memória de
   // todo cálculo que depende dele.
   const vinculosSocio = useMemo(() => config.vinculosSocioConta ?? {}, [config.vinculosSocioConta]);
+  /* NA PUXADA DO ERP o master NÃO esconde de si mesmo: a conta do sócio tem de
+     vir na resposta, senão `mesclarPlano` apaga a linha já gravada e o dinheiro
+     some do card dele. Para todos os outros, vale o corte. (A régua de
+     classificação/rateio continua usando `vinculosSocio` cheio — lá o master
+     também não quer a conta do sócio no custo público.) */
+  const vinculosNaPuxada = useMemo(() => (ehMaster(sessao) ? {} : vinculosSocio), [sessao, vinculosSocio]);
+  /** A linha do plano que este usuário não pode ver — e portanto não pode apagar. */
+  const naoPodeApagar = useCallback(
+    (p: ContaPlano) => !ehMaster(sessao) && contaEhConfidencial(p, vinculosSocio),
+    [sessao, vinculosSocio],
+  );
 
   // ---------- Uploads ----------
   const hojeIso = new Date().toISOString().slice(0, 7);
@@ -431,7 +442,7 @@ export default function Custos() {
         toast(`O ERP não tem título nenhum vencendo em ${compLabelLongo(compUpload)}.`, "erro");
         return;
       }
-      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse, r.equivalencias, vinculosSocio);
+      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse, r.equivalencias, vinculosNaPuxada);
       const doMes = planoContas.filter((p: ContaPlano) => p.competencia === compUpload);
       setPlanoPrev({
         competencia: compUpload,
@@ -465,12 +476,12 @@ export default function Custos() {
       setBuscandoPlano(`Trazendo ${compLabel(comp)} do Mubisys…`);
       const r = await buscarPlanoCompleto(comp);
       if (r.incompleta) return "incompleto";
-      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse, r.equivalencias, vinculosSocio);
+      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse, r.equivalencias, vinculosNaPuxada);
       const base = planoColecao.items as ContaPlano[];
       if (competenciaEhDoContador(base, comp)) return "contador";
       salvarCfg({ ultimoPlanoMubi: { competencia: comp, em: new Date().toISOString(), contas: montado.contas.length } });
       if (montado.contas.length === 0) return "vazio";
-      planoColecao.definir(mesclarPlano(base, montado.contas, comp));
+      planoColecao.definir(mesclarPlano(base, montado.contas, comp, naoPodeApagar));
       void enviarColecao("planoContas");
       registrarAcaoManual(`Trouxe o plano de contas de ${compLabelLongo(comp)} do Mubisys`, `${montado.contas.length} conta(s) coletiva(s)`, "planoContas");
       return "gravado";
@@ -529,7 +540,7 @@ export default function Custos() {
     }
     // MESCLA, não substitui: o que o ERP trouxe entra; o que já existia e ele
     // não trouxe fica — exceto linha do ERP que a puxada nova não repetiu.
-    planoColecao.definir(mesclarPlano(planoContas as ContaPlano[], contas, competencia));
+    planoColecao.definir(mesclarPlano(planoContas as ContaPlano[], contas, competencia, naoPodeApagar));
     void enviarColecao("planoContas");
     setComp(competencia);
     registrarAcaoManual(`Montou o plano de contas de ${compLabelLongo(competencia)} pelo Mubisys`, `${contas.length} conta(s)`, "planoContas");
@@ -787,10 +798,21 @@ export default function Custos() {
     const lista = [...(config.lancamentosSocio ?? [])];
     // Id previsível o bastante para não colidir e único o bastante para o
     // "apagar" não pegar a linha errada.
-    const id = `ls_${l.socioId}_${l.competencia}_${lista.length + 1}_${Math.abs(Math.round(l.valor * 100))}`;
-    lista.push({ ...l, id, criadoEm: new Date().toISOString() });
+    /* O ID NÃO CARREGA O VALOR. Ele era `..._6074530` — o dinheiro do sócio
+       escrito dentro da chave, que viaja em toda lista e todo log. O carimbo
+       de criação já dá unicidade suficiente para o "apagar" não pegar a linha
+       errada. */
+    const criadoEm = new Date().toISOString();
+    const id = `ls_${l.socioId}_${l.competencia}_${criadoEm.replace(/\D/g, "")}`;
+    lista.push({ ...l, id, criadoEm });
     salvarCfg({ lancamentosSocio: lista });
-    registrarAcaoManual(`Lançou à mão "${l.rotulo}" em ${compLabelLongo(l.competencia)}`, `Societárias · ${formatBRL(l.valor)}`);
+    /* O HISTÓRICO É A TERCEIRA PORTA DO MESMO DINHEIRO (14/09/2026).
+       Esta linha gravava `Societárias · R$ 60.745,30` na coleção `alteracoes`,
+       que é nível RH: qualquer ADMIN_RH lia o valor pela tela de histórico,
+       enquanto a config e a porta de dados já o escondiam. O rastro continua
+       inteiro (quem, quando, que lançamento, que mês) — o que sai é o número,
+       que mora em um lugar só. */
+    registrarAcaoManual(`Lançou à mão "${l.rotulo}" em ${compLabelLongo(l.competencia)}`, "Societárias · valor no card do sócio");
   };
 
   const apagarManualSocio = (id: string) => {
@@ -1556,12 +1578,19 @@ export default function Custos() {
             {/* O que sai para sócio aparece, mas separado: é despesa
                 societária, não folha. Sem esta linha o dinheiro sumiria da vista
                 ao ser tirado dos totais da equipe. */}
-            {pagsSocietariosDoMes.length > 0 && (
+            {/* SÓ O MASTER VÊ O TOTAL. A porta de dados já corta os lançamentos
+                de Arrendamento/Retirada para quem não é master — mas o que sai
+                para um sócio com OUTRO tipo (plano de saúde, por exemplo)
+                chegava, e esta linha somava tudo num número visível. Para quem
+                não é master esse dinheiro nunca entrou nos totais da folha,
+                então nada "some da vista": ele simplesmente não é dessa
+                pessoa. Pendência aberta desde 07/09/2026. */}
+            {ehMaster(sessao) && pagsSocietariosDoMes.length > 0 && (
               <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Direção · despesa societária</p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador.{ehMaster(sessao) ? " O detalhe está na aba Pagamentos societários." : ""}
+                    {pagsSocietariosDoMes.length} lançamento(s) de sócio em {compLabelLongo(compAtiva)}. Fora da folha, fora da base de FGTS/13º/férias e fora do custo por colaborador. O detalhe está na aba Pagamentos societários.
                   </p>
                 </div>
                 <p className="text-xl font-semibold tabular-nums text-slate-700">{formatBRL(totalSocietarioMes)}</p>
@@ -1874,7 +1903,13 @@ export default function Custos() {
                     accent="brand"
                     icon={<Users className="h-4 w-4" />}
                     title="Ver os ativos que entram no divisor"
-                    onClick={() => drill.abrir("Colaboradores ativos", ativosOrdenados, `Individual ${formatBRL(totais.individual)} ÷ ${nColab} ativo(s)`)}
+                    /* A MESMA RESPOSTA NOS DOIS LADOS DO CLIQUE: o cartão diz
+                       "—" e a descrição do modal dizia "Individual R$ 0,00" —
+                       zero apresentado como resultado no mesmo clique em que a
+                       tela acabou de dizer que não sabe. */
+                    onClick={() => drill.abrir("Colaboradores ativos", ativosOrdenados, semFolhaNaComp
+                      ? `${nColab} ativo(s) — o individual deste mês não veio no plano`
+                      : `Individual ${formatBRL(totais.individual)} ÷ ${nColab} ativo(s)`)}
                   />
                   <StatCard
                     label="Total custos de colaboradores"
@@ -2762,9 +2797,12 @@ export default function Custos() {
                     // Conta LANÇAMENTOS, não achados: um achado agrupado leva
                     // dezenas de linhas junto, e o histórico tem de dizer
                     // quantas mudaram de verdade.
-                    const linhas = (as: typeof achados) => as.reduce((t, a) => t + a.pagamentoIds.length, 0);
+                    const linhas = (as: typeof achados) => new Set(as.flatMap((a) => a.pagamentoIds)).size;
                     const tipos = linhas(achados.filter((a) => a.conserto?.campo === "tipo"));
                     const comps = linhas(achados.filter((a) => a.conserto?.campo === "competencia"));
+                    // Um lançamento pode ter os DOIS defeitos: o total é de
+                    // linhas tocadas, não a soma das duas contas.
+                    const tocados = linhas(achados);
                     emLote(`Auditoria: corrigiu ${tipos} tipo(s) e ${comps} competência(s)`, () => {
                       for (const a of achados) {
                         if (!a.conserto) continue;
@@ -2783,7 +2821,7 @@ export default function Custos() {
                         );
                       }
                     });
-                    toast(`${tipos + comps} lançamento(s) corrigido(s) pela auditoria.`, "sucesso");
+                    toast(`${tocados} lançamento(s) corrigido(s) pela auditoria.`, "sucesso");
                   }}
                 />
 
@@ -3582,12 +3620,19 @@ function CustoGlobalFuncionarios({
   const { grupos, total } = useMemo(() => {
     const doMes = folhasDoMes(plano, compAtiva).filter((p) => String(p.codigo).startsWith(PREFIXO_FUNCIONARIOS));
     const nomePorCodigo = new Map(plano.filter((p) => p.competencia === compAtiva).map((p) => [p.codigo, p.nome]));
-    const g = new Map<string, { nome: string; valor: number }>();
+    /* `nomes` e `temPai` existem por causa do cartão de "Custos extras".
+       O plano que vem do ERP só tem FOLHAS — não há linha de conta-pai —,
+       então o nome do grupo virava o nome da PRIMEIRA filha da lista, que
+       depende da ordem da coleção e não do dado. Um grupo com "Vale
+       Alimentação" e "Vale Transporte" podia aparecer rotulado com um dos dois
+       carregando a soma dos dois. */
+    const g = new Map<string, { nome: string; valor: number; nomes: string[]; temPai: boolean }>();
     for (const p of doMes) {
       const cat = String(p.codigo).split(".").slice(0, 3).join("."); // agrupa no nível 2.1.X
-      const nome = nomePorCodigo.get(cat) ?? p.nome;
-      const atual = g.get(cat) ?? { nome, valor: 0 };
+      const doPai = nomePorCodigo.get(cat);
+      const atual = g.get(cat) ?? { nome: doPai ?? p.nome, valor: 0, nomes: [], temPai: !!doPai };
       atual.valor += p.valor;
+      atual.nomes.push(p.nome);
       g.set(cat, atual);
     }
     const grupos = [...g.entries()].map(([cod, v]) => ({ cod, ...v })).sort((a, b) => b.valor - a.valor);
@@ -3674,13 +3719,21 @@ function CustoGlobalFuncionarios({
                Agora a conta é achada pelo NOME que o ERP manda, e o rótulo é o
                nome dela: se o contador renomear, o cartão acompanha; se a
                conta não existir no mês, o cartão não aparece. */
+            /* O CARTÃO MOSTRA O TOTAL DO GRUPO, então ele só pode existir
+               quando o grupo INTEIRO é aquela coisa: com linha de conta-pai,
+               vale o nome do pai; sem ela (o caso do plano vindo do ERP), só
+               quando TODAS as filhas casam com a mesma régua. Senão o cartão
+               afirmaria "Vale Alimentação" sobre a soma de alimentação com
+               vale-transporte. */
+            const casa = (rx: RegExp, gr: { nome: string; nomes: string[]; temPai: boolean }) =>
+              gr.temPai ? rx.test(normalizarNome(gr.nome)) : gr.nomes.length > 0 && gr.nomes.every((n) => rx.test(normalizarNome(n)));
             const extras = [
               { rx: /aliment|refei|cesta|lanche/, accent: "green" as const },
               { rx: /confratern|festa|comemora|evento/, accent: "amber" as const },
             ]
-              .map(({ rx, accent }) => ({ c: grupos.find((g) => rx.test(normalizarNome(g.nome))), accent }))
+              .map(({ rx, accent }) => ({ c: grupos.find((g) => casa(rx, g)), accent }))
               .filter((x) => x.c)
-              .map((x) => ({ ...x, label: x.c!.nome }))
+              .map((x) => ({ ...x, label: x.c!.temPai ? x.c!.nome : x.c!.nomes[0] }))
               // Uma conta que casa com as duas réguas viraria dois cartões iguais.
               .filter((x, i, todos) => todos.findIndex((y) => y.c!.cod === x.c!.cod) === i);
             if (extras.length === 0) return null;

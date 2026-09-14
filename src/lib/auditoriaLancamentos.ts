@@ -165,7 +165,16 @@ export function auditarLancamentos(
         // 184 lançamentos (R$ 35.575,43) — 184 linhas iguais pedindo a mesma
         // decisão. O agrupamento é feito depois do laço.
         (desconhecidas.get(plano) ?? desconhecidas.set(plano, []).get(plano)!).push(p);
-      } else if (esperado !== p.tipo) {
+      } else if (esperado !== p.tipo && !(p as { tipoTravado?: boolean }).tipoTravado) {
+        /* TIPO TRAVADO NÃO É DIVERGÊNCIA — É DECISÃO (14/09/2026).
+           `tipoTravado` marca o lançamento cujo tipo alguém escolheu CONTRA a
+           conta do ERP; a importação já o respeita (previaFolha) e a régua de
+           mudanças também (custos.mudancas). A auditoria não respeitava, e o
+           efeito era circular: o conserto de "conta × descrição" grava tipo +
+           trava, e na varredura seguinte estes mesmos lançamentos voltavam
+           como ERRO com conserto para o tipo ANTIGO — na base real, clicar
+           "Corrigir 29" produzia 29 erros vermelhos e o clique seguinte no
+           mesmo botão desfazia tudo. */
         add({ regra: "classificacao", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
           titulo: `Tipo não bate com a conta do ERP`, detalhe: `${nomeDe(p.colaboradorId)} · ${plano} ⇒ ${esperado}, gravado "${p.tipo}"`, valor: num(p.valor),
           conserto: { campo: "tipo", para: esperado } });
@@ -356,11 +365,18 @@ export function auditarLancamentos(
     const total = ps.reduce((t, p) => t + num(p.valor), 0);
     const comps = [...new Set(ps.map((p) => p.competencia))].sort();
     const textos = [...new Set(ps.map((p) => String(p.descricao ?? "").split("·")[0].trim()).filter(Boolean))].slice(0, 3);
+    const emOutros = ps.filter((p) => p.tipo === "Outros").length;
     add({
       regra: "conta-desconhecida", gravidade: "atencao", colaboradorId: ps.length === 1 ? ps[0].colaboradorId : "",
       pagamentoIds: ps.map((p) => p.id), competencias: comps,
       titulo: `Conta que nenhuma regra reconhece: ${plano}`,
-      detalhe: `${ps.length} lançamento(s) de ${new Set(ps.map((p) => p.colaboradorId)).size} pessoa(s), ${total.toFixed(2)}, de ${comps[0]} a ${comps[comps.length - 1]} — gravados como "${ps[0].tipo}". As descrições dizem: ${textos.join(" · ")}. Diga que tipo é na Classificação dos tipos (aba Sincronização); enquanto ninguém disser, eles ficam em "Outros" e fora da base de encargos.`,
+      /* O GRUPO É POR CONTA, E O TIPO GRAVADO VARIA DENTRO DELE. Isto dizia
+         `gravados como "${ps[0].tipo}"` e garantia que todos ficavam em
+         "Outros" — mas o tipo vem de `classificarPagamento`, que também lê a
+         DESCRIÇÃO: na mesma conta desconhecida saem "Adiantamento", "Salário"
+         e "Outros" conforme o texto do título. Afirmar um tipo só, e o destino
+         de todos, é a tela falando do que não mediu. */
+      detalhe: `${ps.length} lançamento(s) de ${new Set(ps.map((p) => p.colaboradorId)).size} pessoa(s), ${total.toFixed(2)}, de ${comps[0]} a ${comps[comps.length - 1]} — gravados como ${[...new Set(ps.map((p) => p.tipo))].map((t) => `"${t}"`).join(", ")}${emOutros ? ` (${emOutros} em "Outros", fora da base de encargos)` : ""}. As descrições dizem: ${textos.join(" · ")}. Diga que tipo é na Classificação dos tipos (aba Sincronização); a conta continua sem régua até alguém dizer.`,
       valor: total,
     });
   }

@@ -60,9 +60,21 @@ describe("a régua do apontamento é a mesma na tela e no servidor", () => {
     expect(contaApontadaAoSocio({ codigo: "2.12.9", nome: "Retirada Pedro" }, v)).toBe(true);
   });
 
-  it("as duas montam a mesma chave", () => {
-    expect(chaveServidor("2.11.2.2", "Retiradas  Leonárdo")).toBe(chaveContaSocio("2.11.2.2", "Retiradas  Leonárdo"));
+  /* O CONTROLE QUE EU TINHA ESCRITO NÃO PODIA FALHAR: "Retiradas Leonárdo" dá
+     o mesmo resultado em NFD e NFKD, então ele passava com as duas réguas
+     divergentes. Os nomes abaixo são os que separam as duas formas — e o
+     primeiro deles existe neste plano de contas. */
+  it("as duas montam a mesma chave, inclusive onde NFD e NFKD divergem", () => {
+    for (const nome of ["Retiradas  Leonárdo", "13º Salário", "Retiradas nº 2 Leonardo", "Área ½ do galpão", "Metro²"]) {
+      expect(chaveServidor("2.11.2.2", nome), `chave divergente para "${nome}"`).toBe(chaveContaSocio("2.11.2.2", nome));
+    }
     expect(NENHUM_SERVIDOR).toBe(NAO_E_DE_SOCIO);
+  });
+
+  it("apontamento gravado pela tela é encontrado pelo servidor (nome com º)", () => {
+    // O caminho inteiro: a tela grava a chave, a porta de dados a procura.
+    const v = { [chaveContaSocio("2.11.2.2", "Retiradas nº 2 Leonardo")]: "leonardo" };
+    expect(contaApontadaAoSocio({ codigo: "2.11.2.2", nome: "Retiradas nº 2 Leonardo" }, v)).toBe(true);
   });
 });
 

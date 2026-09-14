@@ -203,6 +203,18 @@ Deno.serve(async (req) => {
     if (r.falhou) console.error("sync: sigo sem o mapa de vínculos societários — vale só o literal 2.14");
     vinculosSocioConta = r.vinculos;
   }
+  /* O DINHEIRO DO SÓCIO SÓ SAI PARA O MASTER — em TODA resposta que carrega a
+     config, não só no `getCfg`.
+     Eu tinha fechado o `getCfg` e deixado o `setCfg` responder `{ config }`
+     com a linha inteira depois da mesclagem (`rh_mesclar_config` faz
+     `returning config`): qualquer ADMIN_RH que gravasse uma cor recebia os
+     lançamentos societários de volta na resposta. Uma régua, um lugar — e
+     `podarConfig` é chamada em toda saída. */
+  const podarConfig = (cfg: unknown) => {
+    if (!cfg || typeof cfg !== "object" || Array.isArray(cfg) || ehMaster) return cfg;
+    const { lancamentosSocio: _fora, ...resto } = cfg as Record<string, unknown>;
+    return resto;
+  };
   const contaConfidencial = (r: any) => {
     const bate = (c: unknown) => typeof c === "string" && (c === "2.14" || c.startsWith("2.14."));
     if (bate(r?.codigo) || bate(r?.equivaleA)) return true;
@@ -450,7 +462,24 @@ Deno.serve(async (req) => {
         if (!ehAdmin) return json({ erro: "Importação restrita ao RH." }, 403);
         const dados = body.dados;
         if (!dados || typeof dados !== "object" || Array.isArray(dados) || Object.keys(dados).some(c => !validarColecao(c))) return json({ erro: "Coleções inválidas." }, 400);
-        return json(await rpc("rh_aplicar_retrato", { p_dados: dados, p_rev: versao(body.rev), p_substituir: body.substituir === true, p_config: body.config ?? null }));
+        /* QUEM NÃO LÊ TAMBÉM NÃO APAGA (14/09/2026).
+           `rh_aplicar_retrato` SUBSTITUI a linha `config_global` pela que o
+           cliente manda — e o cliente manda a config LOCAL dele, que desde a
+           poda do `getCfg` já vem sem `lancamentosSocio`. Ou seja: um ADMIN_RH
+           que não é o master clicando "Enviar tudo" apagaria os lançamentos
+           societários do dono, em silêncio, e a prévia do envio só conta
+           registros por coleção — nada avisaria.
+           Aqui a chave do banco é reposta antes de gravar: quem não pode ver
+           não pode sobrescrever com o vazio que recebeu. */
+        let configDoRetrato = body.config ?? null;
+        if (configDoRetrato && typeof configDoRetrato === "object" && !Array.isArray(configDoRetrato) && !ehMaster) {
+          const { data: guardada } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
+          const doBanco = (guardada?.config as Record<string, unknown> | null) ?? {};
+          configDoRetrato = "lancamentosSocio" in doBanco
+            ? { ...(configDoRetrato as Record<string, unknown>), lancamentosSocio: doBanco.lancamentosSocio }
+            : (({ lancamentosSocio: _fora, ...resto }) => resto)(configDoRetrato as Record<string, unknown>);
+        }
+        return json(await rpc("rh_aplicar_retrato", { p_dados: dados, p_rev: versao(body.rev), p_substituir: body.substituir === true, p_config: configDoRetrato }));
       }
       case "bulkUpsert":
         return json({ erro: "Atualize esta página para usar a importação protegida por cópia de segurança." }, 409);
@@ -507,9 +536,7 @@ Deno.serve(async (req) => {
            Contagem pode, dinheiro não: a chave sai da resposta para quem não é
            o master. Não é "esconder da tela" — a tela de Societárias já é só do
            master; é fechar a porta de dados, que é por onde se pega tudo. */
-        const cfg = (data?.config ?? null) as Record<string, unknown> | null;
-        const semDinheiroDeSocio = cfg && !ehMaster ? (({ lancamentosSocio: _, ...resto }) => resto)(cfg) : cfg;
-        return json({ config: data ? { config: semDinheiroDeSocio } : null });
+        return json({ config: data ? { config: podarConfig(data.config) } : null });
       }
       case "setCfg": {
         if (!ehAdmin) return json({ erro: "Configuração global é restrita ao RH." }, 403);
@@ -528,13 +555,15 @@ Deno.serve(async (req) => {
           return json({ erro: "Os lançamentos societários são do gestor master." }, 403);
         }
         const merged = await admin.rpc("rh_mesclar_config", { p_patch: patch });
-        if (!merged.error) return json({ ok: true, config: merged.data });
+        // `rh_mesclar_config` devolve a linha INTEIRA depois da mesclagem — por
+        // isso a poda vale aqui também, nos dois caminhos.
+        if (!merged.error) return json({ ok: true, config: podarConfig(merged.data) });
         // Sem a função no banco (migração ainda não aplicada): lê, mescla e grava.
         const { data: atual } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
         const config = { ...((atual?.config as Record<string, unknown> | null) ?? {}), ...patch };
         const { error } = await admin.from("config_global").upsert({ id: true, config, atualizado_em: new Date().toISOString() });
         if (error) throw new Error(error.message);
-        return json({ ok: true, config });
+        return json({ ok: true, config: podarConfig(config) });
       }
 
       // ---- fotos / anexos (bucket "arquivos", conteúdo = data URL cru, igual ao Blobs) ----

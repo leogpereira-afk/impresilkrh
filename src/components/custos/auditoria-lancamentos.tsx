@@ -112,7 +112,11 @@ export function AuditoriaLancamentos({
      que os achados repetidos passaram a vir agrupados (29 adiantamentos de
      fevereiro numa linha só), "Corrigir 3" mudaria 33 lançamentos — a tela
      diria um número e o banco outro. */
-  const linhas = (as: AchadoAuditoria[]) => as.reduce((t, a) => t + a.pagamentoIds.length, 0);
+  // IDS ÚNICOS, não a soma dos achados: o MESMO lançamento pode ter dois
+  // defeitos consertáveis (tipo errado E competência errada são regras
+  // independentes sobre a mesma linha). Somando, a tela prometia "Corrigir 2
+  // lançamento(s)" onde existe 1.
+  const linhas = (as: AchadoAuditoria[]) => new Set(as.flatMap((a) => a.pagamentoIds)).size;
   const aConsertar = linhas(consertaveis);
   const porRegra = useMemo(() => {
     const m = new Map<RegraAuditoria, AchadoAuditoria[]>();

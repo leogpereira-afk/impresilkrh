@@ -265,3 +265,34 @@ describe("a equivalência é a de TODAS as páginas", () => {
     expect(juntarEquivalencias([null, undefined])).toBe(null);
   });
 });
+
+describe("a puxada não apaga o que ela não podia ver", () => {
+  /* A guarda do sócio tem um efeito colateral que só aparece DEPOIS: a conta
+     apontada some da resposta do ERP, e `mesclarPlano` apaga do mês o que veio
+     do ERP e não voltou. Resultado: qualquer ADMIN_RH sincronizando destruía a
+     linha do sócio — e, antes do conserto no servidor, o próprio dono também. */
+  const conta = (codigo: string, valor: number, origem?: string): ContaPlano =>
+    ({ id: `pc_2026-09_${codigo}`, competencia: "2026-09", codigo, nome: codigo === "2.11.2.2" ? "Leonardo" : "Salário", valor, folha: true, ...(origem ? { origem } : {}) }) as ContaPlano;
+
+  it("linha confidencial do ERP sobrevive a uma puxada que não a trouxe", () => {
+    const atual = [conta("2.1.1", 1000, "erp"), conta("2.11.2.2", 60745.3, "erp")];
+    const novo = [conta("2.1.1", 1200, "erp")]; // o servidor censurou a do sócio
+    const r = mesclarPlano(atual, novo, "2026-09", (p) => p.codigo === "2.11.2.2");
+    expect(r.map((c) => c.codigo).sort()).toEqual(["2.1.1", "2.11.2.2"]);
+    expect(r.find((c) => c.codigo === "2.11.2.2")!.valor).toBe(60745.3);
+    expect(r.find((c) => c.codigo === "2.1.1")!.valor).toBe(1200);
+  });
+
+  it("sem a guarda, a linha que o ERP não trouxe continua saindo — a regra velha vale", () => {
+    // O outro lado: conta comum que sumiu do ERP TEM de sair, senão o plano
+    // fica com lixo da renumeração.
+    const atual = [conta("2.1.1", 1000, "erp"), conta("2.9.9", 500, "erp")];
+    const r = mesclarPlano(atual, [conta("2.1.1", 1200, "erp")], "2026-09");
+    expect(r.map((c) => c.codigo)).toEqual(["2.1.1"]);
+  });
+
+  it("linha do CONTADOR nunca saía e continua não saindo", () => {
+    const atual = [conta("2.1.1", 1000)];
+    expect(mesclarPlano(atual, [], "2026-09").map((c) => c.codigo)).toEqual(["2.1.1"]);
+  });
+});

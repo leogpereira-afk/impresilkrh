@@ -160,9 +160,12 @@ describe("mudou de número não é parou", () => {
 
   it("só o plural, sem parentesco de código, já segura o alarme", () => {
     // Código de outro galho de propósito: se o plural falhar, nada mais salva.
+    // A sucessora vem nos DOIS meses seguintes: renumeração de verdade não
+    // para no mês seguinte — e a média dela é medida por mês DECORRIDO.
     const pags = [
       ...tresMeses("2.1.11-Horas Extras", 7000),
       p("2026-07", "x · 2.4.9-Hora Extra", 6598.55),
+      p("2026-08", "x · 2.4.9-Hora Extra", 7100),
     ];
     expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
   });
@@ -178,17 +181,62 @@ describe("mudou de número não é parou", () => {
     ];
     const r = contasQuePararam(pags, "2026-08", nomeDe);
     expect(r.map((c) => c.codigo)).toEqual(["2.11.1"]);
-    // E o achado já vem com a explicação: continuou, mas magra.
+    // E o achado já vem com a explicação: continuou, mas magra. R$ 90 em UM
+    // mês, dois meses decorridos ⇒ R$ 45 por mês, que é o que ela vem
+    // trazendo de verdade desde que a outra parou.
     expect(r[0].sucessora?.rotulo).toBe("2.11.1.9-Freelancer");
-    expect(r[0].sucessora?.mediaMensal).toBe(90);
+    expect(r[0].sucessora?.mediaMensal).toBe(45);
   });
 
   it("sucessora que mantém o dinheiro cala, e o achado nem aparece", () => {
     const pags = [
       ...tresMeses("2.11.1-Freelancer", 1478),
       p("2026-07", "x · 2.11.1.9-Freelancer", 800),
+      p("2026-08", "x · 2.11.1.9-Freelancer", 800),
     ];
     expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
+  });
+
+  /* A MÉDIA DA SUCESSORA TEM DE ENVELHECER. Dividir pelos meses em que ela se
+     MEXEU fazia um único pagamento valer para sempre: R$ 400 em julho
+     continuavam significando "R$ 400 por mês" em dezembro, e cinco meses de
+     R$ 350 sumiam do caixa com a tela verde. */
+  it("um pagamento só, meses atrás, não segura o alarme para sempre", () => {
+    const meses = ["2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"];
+    const pags = [
+      ...meses.map((c) => p(c, "x · 2.3.2.1-Limpeza Escritório", 350)),
+      p("2026-07", "x · 2.3.2.1.1-Limpeza Escritório", 400),
+    ];
+    // Em agosto ainda parece renumeração (R$ 400 em 2 meses = 200, mais da metade de 350... não):
+    expect(contasQuePararam(pags, "2026-12", nomeDe).map((c) => c.codigo)).toEqual(["2.3.2.1"]);
+  });
+
+  /* CÓDIGO NÃO É SIGNIFICADO, TAMBÉM AQUI. O crédito da sucessora era somado
+     por CÓDIGO: o dinheiro de uma conta alheia que usa o mesmo número entrava
+     como se fosse dela. */
+  it("conta alheia no mesmo número não vira crédito da sucessora", () => {
+    const pags = [
+      ...tresMeses("2.1.12-Comissão Interna", 4000),
+      p("2026-07", "x · 2.1.11.1-Comissão interna", 200),
+      p("2026-08", "x · 2.1.11.1-Comissão interna", 200),
+      // Outra conta, MESMO número — o contador reaproveita.
+      p("2026-07", "x · 2.1.11.1-Diária", 9000),
+      p("2026-08", "x · 2.1.11.1-Diária", 9000),
+    ];
+    const r = contasQuePararam(pags, "2026-08", nomeDe);
+    expect(r.map((c) => c.codigo)).toEqual(["2.1.12"]);
+    expect(r[0].sucessora?.mediaMensal).toBe(200);
+  });
+
+  it("com várias sucessoras, o rótulo é o da MAIOR e diz que há outras", () => {
+    const pags = [
+      ...tresMeses("2.11.1-Freelancer", 2000),
+      p("2026-07", "x · 2.11.1.1-Freelancer A", 10),
+      p("2026-07", "x · 2.11.1.2-Freelancer B", 800),
+    ];
+    const r = contasQuePararam(pags, "2026-08", nomeDe);
+    expect(r[0].sucessora?.rotulo).toBe("2.11.1.2-Freelancer B (+1 outra(s))");
+    expect(r[0].sucessora?.mediaMensal).toBe(405);
   });
 
   it("conta que virou pai de subcontas não é conta parada", () => {

@@ -11,7 +11,19 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
   const arquivos: any[] = [];
   const rpcs: any[] = [];
   const admin = {
-    rpc: async (nome: string, args: any) => { rpcs.push({ nome, args }); return { data: { ok: true, versao: 2 }, error: null }; },
+    /* O `rpc` IMITA O BANCO onde a resposta importa.
+       Ele devolvia `{ok:true,versao:2}` fixo — e por isso um teste podia
+       afirmar "o dinheiro do sócio não sai" enquanto o `setCfg` real devolvia
+       a config inteira: `rh_mesclar_config` faz `returning config`. Controle
+       que não pode falhar não é controle. */
+    rpc: async (nome: string, args: any) => {
+      rpcs.push({ nome, args });
+      if (nome === "rh_mesclar_config") {
+        const atual = (rows.find((r: any) => r.id === true)?.config ?? {}) as Record<string, unknown>;
+        return { data: { ...atual, ...(args?.p_patch ?? {}) }, error: null };
+      }
+      return { data: { ok: true, versao: 2 }, error: null };
+    },
     auth: { getUser: async () => ({ data: { user: { id: "auth-ficticio" } }, error: null }) },
     storage: { from: () => ({
       upload: async (...args: any[]) => { arquivos.push({ acao: "upload", args }); return { error: null }; },

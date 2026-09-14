@@ -125,6 +125,43 @@ describe("vazamentos fechados em 07/09/2026", () => {
     expect(master.body.config.config.lancamentosSocio).toHaveLength(1);
   });
 
+  /* A RESPOSTA DO setCfg REABRIA A PORTA QUE O getCfg FECHOU. `rh_mesclar_config`
+     faz `returning config` — devolve a linha INTEIRA depois da mesclagem. Um
+     ADMIN_RH que gravasse uma cor recebia os lançamentos societários de volta
+     no corpo da resposta, e nem precisava montar pedido: puxar o plano do ERP
+     dispara `salvarCfg({ultimoPlanoMubi})` sozinho. */
+  it("o setCfg também não devolve o dinheiro do sócio na resposta", async () => {
+    const config = { empresaNome: "Impresilk", lancamentosSocio: [{ id: "m1", socioId: "leonardo-goncalves", competencia: "2026-08", rotulo: "Retirada extra", valor: 30000 }] };
+    const rh = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [{ id: true, config }] });
+    const r = await rh.call({ action: "setCfg", patch: { empresaCidade: "Montes Claros" } });
+    expect(r.status).toBe(200);
+    expect(r.body.config.lancamentosSocio).toBeUndefined();
+    expect(r.body.config.empresaCidade).toBe("Montes Claros");
+    // O master recebe inteiro.
+    const m = servidorRh({ perfil: "ADMIN_RH", pessoa: "leonardo-goncalves", rows: [{ id: true, config }] });
+    const rm = await m.call({ action: "setCfg", patch: { empresaCidade: "Montes Claros" } });
+    expect(rm.body.config.lancamentosSocio).toHaveLength(1);
+  });
+
+  /* QUEM NÃO LÊ TAMBÉM NÃO APAGA. `rh_aplicar_retrato` SUBSTITUI a linha da
+     config pela que o cliente manda — e o cliente manda a config local, que
+     desde a poda já vem sem a chave. "Enviar tudo" de um ADMIN_RH apagaria os
+     lançamentos do dono em silêncio. */
+  it("'Enviar tudo' de quem não é master não apaga os lançamentos do sócio", async () => {
+    const guardados = [{ id: "m1", socioId: "leonardo-goncalves", competencia: "2026-08", rotulo: "Retirada extra", valor: 30000 }];
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [{ id: true, config: { empresaNome: "Impresilk", lancamentosSocio: guardados } }] });
+    await s.call({ action: "aplicarRetrato", dados: {}, rev: 1, substituir: true, config: { empresaNome: "Impresilk" } });
+    const retrato = s.rpcs.find((r) => r.nome === "rh_aplicar_retrato");
+    expect(retrato?.args.p_config.lancamentosSocio).toEqual(guardados);
+  });
+
+  it("o master pode reescrever os lançamentos pelo 'Enviar tudo'", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "leonardo-goncalves", rows: [{ id: true, config: { lancamentosSocio: [{ id: "velho" }] } }] });
+    await s.call({ action: "aplicarRetrato", dados: {}, rev: 1, substituir: true, config: { lancamentosSocio: [{ id: "novo" }] } });
+    const retrato = s.rpcs.find((r) => r.nome === "rh_aplicar_retrato");
+    expect(retrato?.args.p_config.lancamentosSocio).toEqual([{ id: "novo" }]);
+  });
+
   it("quem não pode ler os lançamentos do sócio também não pode gravá-los", async () => {
     // Como a leitura passou a omitir a chave, um cliente que devolvesse a
     // config inteira APAGARIA os lançamentos sem querer. Recusa explícita, e

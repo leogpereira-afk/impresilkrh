@@ -354,6 +354,26 @@ describe("conta × descrição", () => {
     expect(r.map((a) => a.conserto?.para).sort()).toEqual(["Plano de Saúde", "Vale Transporte"]);
   });
 
+  /* O CONSERTO NÃO PODE VIRAR O ERRO DA VARREDURA SEGUINTE. O conserto grava
+     tipo + `tipoTravado`; se a regra `classificacao` não conhecer a trava, os
+     mesmos lançamentos voltam como ERRO com conserto para o tipo ANTIGO — e o
+     mesmo botão que arrumou desfaz. Era circular, e em dinheiro. */
+  it("lançamento com tipo travado não volta como 'tipo não bate com a conta'", () => {
+    const antes = pg({ id: "t1", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-02-20", descricao: "Adiantamento Colaborador · 2.1.1-Salário" });
+    expect(achado(auditarLancamentos([antes], [ana], { hoje: HOJE }), "conta-contradiz-descricao")).toHaveLength(1);
+    // Depois de aplicar exatamente o que a tela grava:
+    const depois = { ...antes, tipo: "Adiantamento", tipoTravado: true } as typeof antes;
+    const r = auditarLancamentos([depois], [ana], { hoje: HOJE });
+    expect(achado(r, "classificacao")).toHaveLength(0);
+    expect(achado(r, "conta-contradiz-descricao")).toHaveLength(0);
+  });
+
+  it("sem a trava, a divergência com a conta continua sendo erro", () => {
+    // A trava é a decisão de alguém; sem ela, a conta do ERP manda.
+    const p1 = pg({ id: "t2", tipo: "Adiantamento", competencia: "2026-02", dataPagamento: "2026-02-20", descricao: "Pagamento salario · 2.1.1-Salário" });
+    expect(achado(auditarLancamentos([p1], [ana], { hoje: HOJE }), "classificacao")).toHaveLength(1);
+  });
+
   it("descrição que combina com a conta não vira achado", () => {
     const p = pg({ id: "a2", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-03-05", descricao: "Pagamento salario · 2.1.1-Salário" });
     expect(achado(auditarLancamentos([p], [ana], { hoje: HOJE }), "conta-contradiz-descricao")).toHaveLength(0);
@@ -379,6 +399,22 @@ describe("ainda não saiu do caixa", () => {
 });
 
 describe("conta que ninguém reconhece", () => {
+  /* O grupo é por CONTA e o tipo gravado varia dentro dele: `classificarPagamento`
+     lê a descrição além da conta. Afirmar um tipo só — e que todos ficam em
+     "Outros" — é a tela falando do que não mediu. */
+  it("o detalhe lista os tipos que existem no grupo, e só conta os que estão em Outros", () => {
+    const conta = "2.1.11-Honorários Adicionais";
+    const ps = [
+      pg({ id: "d1", tipo: "Adiantamento", valor: 1000, descricao: `Adiantamento · ${conta}` }),
+      pg({ id: "d2", tipo: "Outros", valor: 2000, descricao: `Hora extra · ${conta}` }),
+      pg({ id: "d3", tipo: "Salário", valor: 3000, descricao: `Pagamento · ${conta}` }),
+    ];
+    const r = achado(auditarLancamentos(ps, [ana], { hoje: new Date(2026, 8, 14) }), "conta-desconhecida");
+    expect(r).toHaveLength(1);
+    expect(r[0].detalhe).toContain('"Adiantamento", "Outros", "Salário"');
+    expect(r[0].detalhe).toContain('1 em "Outros"');
+  });
+
   const HOJE = new Date(2026, 8, 14);
   it("uma linha por CONTA, não por lançamento", () => {
     // O contador renomeou 2.1.11 (era Horas Extras) para "Honorários

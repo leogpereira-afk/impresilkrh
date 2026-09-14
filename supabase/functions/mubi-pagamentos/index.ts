@@ -65,18 +65,23 @@ async function planoDeReferencia(): Promise<{ competencia: string | null; contas
    A régua de uma porta de dados não é o cargo de quem lidera equipe; é quem
    pode ver aquele dado. Liderar equipe não é ver a folha dela.
    (Conferência dos 8 sistemas, 16/08/2026.) */
-async function ehGestao(req: Request): Promise<boolean> {
+/** O gestor master — o único que vê dinheiro de sócio. Mesma régua do `sync`. */
+const MASTER_COLAB_ID = Deno.env.get("RH_MASTER_COLAB_ID") || "leonardo-goncalves";
+
+async function ehGestao(req: Request): Promise<{ ok: boolean; master: boolean }> {
+  const recusa = { ok: false, master: false };
   const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
-  if (!m) return false;
+  if (!m) return recusa;
   const { data, error } = await admin.auth.getUser(m[1]);
-  if (error || !data?.user) return false;
+  if (error || !data?.user) return recusa;
   /* `ativo` TAMBEM, e nao so o cargo. A coluna nasceu em 17/08/2026 e o `sync`
      passou a exigi-la no mesmo dia -- estas duas irmas ficaram para tras, e uma
      trava que vale em metade das portas nao e trava: quem fosse desligado
      continuava entrando por aqui com o cargo antigo. */
   const { data: perfil } = await admin.from("perfis")
-    .select("perfil, ativo").eq("user_id", data.user.id).maybeSingle();
-  return perfil?.perfil === "ADMIN_RH" && perfil?.ativo !== false;
+    .select("perfil, ativo, colaborador_id").eq("user_id", data.user.id).maybeSingle();
+  const ok = perfil?.perfil === "ADMIN_RH" && perfil?.ativo !== false;
+  return { ok, master: ok && perfil?.colaborador_id === MASTER_COLAB_ID };
 }
 
 // Plano de contas do Mubisys → tipo de pagamento do RH.
@@ -312,7 +317,8 @@ Deno.serve(async (req) => {
   if (!MUBI_KEY || !MUBI_TOKEN) {
     return json({ erro: "Integração com o Mubisys não configurada (faltam as credenciais no servidor)." }, 503);
   }
-  if (!(await ehGestao(req))) return json({ erro: "Não autorizado." }, 401);
+  const quem = await ehGestao(req);
+  if (!quem.ok) return json({ erro: "Não autorizado." }, 401);
 
   try {
     const corpo = req.method === "POST" ? await req.json().catch(() => ({})) : {};
@@ -395,8 +401,18 @@ Deno.serve(async (req) => {
      * carrega é barulho — um vazamento é silêncio. */
     const socio = await lerVinculosSocioConta(admin);
     if (socio.falhou) throw new Error("Não foi possível conferir os vínculos societários do RH.");
+    /* O MASTER RECEBE A CONTA DO SÓCIO — senão a puxada APAGA o dinheiro dele.
+     *
+     * Cortar a conta apontada para todo mundo tinha um efeito que eu não vi ao
+     * escrever a guarda: `mesclarPlano` apaga do mês as linhas de origem "erp"
+     * que a puxada nova não trouxe. Como a conta some da resposta, a linha
+     * gravada (R$ 60.745,30 de setembro, por exemplo) é destruída na
+     * sincronização seguinte — e some do card do próprio dono, que é a única
+     * tela que existe para mostrá-la.
+     * Esconder de quem não pode ver é o objetivo; esconder do dono é perder
+     * dado. A porta de dados (`sync`) continua cortando para os outros. */
     const ehDeSocio = (codigo: string, nome: string, equivaleA?: string) =>
-      contaApontadaAoSocio({ codigo, nome, equivaleA }, socio.vinculos);
+      !quem.master && contaApontadaAoSocio({ codigo, nome, equivaleA }, socio.vinculos);
 
     if (escopo === "plano") {
       // O plano de REFERÊNCIA: o mês mais recente que veio do contador (não do

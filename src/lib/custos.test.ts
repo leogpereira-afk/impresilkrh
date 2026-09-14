@@ -303,6 +303,23 @@ describe("classeDaConta — a classe vem do código de referência quando o cont
     // O contador reaproveita número: 2.11.2.2 pode ser "Munk" noutro mês.
     expect(contaEhConfidencial({ codigo: "2.11.2.2", nome: "Munk" }, vinc)).toBe(false);
   });
+  /* O CARD DO SÓCIO LIA UMA CHAVE SÓ. Com o apontamento no formato antigo (só
+     o código, que existe na config real), `contaEhConfidencial` tirava a conta
+     do rateio e `confidencialDoMes` não a punha em card nenhum: o dinheiro
+     sumia da tela inteira, inclusive para o dono. */
+  it("o card do sócio acha a conta pelas mesmas chaves que o resto do sistema", () => {
+    const plano = [
+      { id: "a", competencia: "2026-07", codigo: "2.11.2.2", nome: "Leonardo", valor: 28105.64, folha: true },
+    ] as never as ContaPlano[];
+    const cards = [{ id: "leonardo", titulo: "Leonardo", prefixos: ["2.14.2."] }];
+    const soCodigo = { "2.11.2.2": "leonardo" };
+    expect(contaEhConfidencial({ codigo: "2.11.2.2", nome: "Leonardo" }, soCodigo)).toBe(true);
+    expect(confidencialDoMes(plano, "2026-07", cards, soCodigo)[0].total).toBe(28105.64);
+    // E pela chave nova também.
+    const porNome = { [chaveContaSocio("2.11.2.2", "Leonardo")]: "leonardo" };
+    expect(confidencialDoMes(plano, "2026-07", cards, porNome)[0].total).toBe(28105.64);
+  });
+
   it("sem o mapa, nada muda — a régua velha continua valendo", () => {
     expect(contaEhConfidencial({ codigo: "2.11.2.2", nome: "Leonardo" })).toBe(false);
   });

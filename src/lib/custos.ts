@@ -36,10 +36,19 @@ export type ContaComEquivalencia = { codigo: string; equivaleA?: string; nome?: 
  * vínculos aqui. Vale nas duas numerações, e "nenhum" é resposta explícita de
  * que a conta NÃO é de sócio — não some por engano o que o dono já olhou.
  */
-const apontadaAoSocio = (p: ContaComEquivalencia, vinculos: Record<string, string>): boolean => {
-  // PRECEDÊNCIA, não "qualquer uma serve": a primeira chave com resposta
-  // decide, da mais específica para a mais solta. Espelho de
-  // supabase/functions/_shared/socioConta.ts, e o teste cobre as duas.
+/**
+ * QUEM É O DONO APONTADO DESTA CONTA — a escada de chaves, num lugar só.
+ *
+ * PRECEDÊNCIA, não "qualquer uma serve": a primeira chave com resposta decide,
+ * da mais específica para a mais solta. Espelho de
+ * supabase/functions/_shared/socioConta.ts, e o teste cobre as duas.
+ *
+ * É exportada porque a tela que DESENHA o card do sócio (`confidencialDoMes`)
+ * também precisa dela: ela lia só a chave `codigo|nome`, então uma conta
+ * apontada no formato antigo (só o código) sumia do rateio E não entrava em
+ * card nenhum — dinheiro escondido de todos, inclusive do dono.
+ */
+export const donoApontado = (p: ContaComEquivalencia, vinculos: Record<string, string>): string | undefined => {
   const chaves = [
     chaveContaSocio(p.codigo, p.nome ?? ""),
     p.equivaleA ? chaveContaSocio(p.equivaleA, p.nome ?? "") : "",
@@ -47,9 +56,14 @@ const apontadaAoSocio = (p: ContaComEquivalencia, vinculos: Record<string, strin
   ];
   for (const k of chaves) {
     const dono = k ? vinculos[k] : undefined;
-    if (dono) return dono !== NAO_E_DE_SOCIO;
+    if (dono) return dono;
   }
-  return false;
+  return undefined;
+};
+
+const apontadaAoSocio = (p: ContaComEquivalencia, vinculos: Record<string, string>): boolean => {
+  const dono = donoApontado(p, vinculos);
+  return !!dono && dono !== NAO_E_DE_SOCIO;
 };
 
 /** Confidencial em qualquer das duas numerações — ou porque o dono apontou. */
@@ -256,7 +270,10 @@ export function confidencialDoMes(
      de qualquer outro. Sem a segunda metade, uma conta vinculada continuaria
      também no card do prefixo antigo e o dinheiro apareceria duas vezes. */
   const doCard = (p: ContaPlano, card: { id: string; prefixos: string[] }) => {
-    const escolhido = vinculos[chaveContaSocio(p.codigo, p.nome)];
+    // A MESMA escada de chaves do resto do sistema (`donoApontado`). Aqui lia
+    // só `codigo|nome`: apontamento no formato antigo (só o código) tirava a
+    // conta do rateio e não a punha em card nenhum — some para todo mundo.
+    const escolhido = donoApontado(p, vinculos);
     // QUALQUER valor apontado desliga o prefixo. É o que dá o terceiro estado:
     // NAO_E_DE_SOCIO ("nenhum") não é id de card nenhum, então a conta sai de
     // TODOS — é o "remover" da tela. Não escrevi um `!== NAO_E_DE_SOCIO` aqui:

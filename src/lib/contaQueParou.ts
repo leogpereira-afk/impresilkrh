@@ -128,20 +128,17 @@ export function contasQuePararam(
      junho com a comissão de julho e chamaria isso de uma conta só. */
   const porConta = new Map<string, {
     codigo: string; nome: string; rotulo: string; comps: Set<string>; total: number;
+    /* QUANTO em cada mês — por CONTA (código+nome), não por código.
+       Estava chaveado só pelo código, e o contador reaproveita número: o
+       dinheiro de "Diária" em 2.1.11.1 entrava no crédito da sucessora
+       "Comissão interna" no mesmo número, e R$ 3.800/mês sumiam em silêncio
+       porque uma conta alheia usava a numeração. */
+    porMes: Map<string, number>;
     ultimoPorPessoa: Map<string, string>;
   }>();
   /* Onde cada nome apareceu, sob que código. É com isto que se distingue "a
      conta parou" de "a conta mudou de número". */
   const ondeApareceu = new Map<string, { codigo: string; comp: string }[]>();
-  /* Última competência com movimento, por código — para ver se um FILHO passou
-     a receber quando o pai parou (detalhamento, não sumiço). */
-  const movimentoPorCodigo = new Map<string, string>();
-  /* QUANTO cada código moveu em cada mês. Sem o valor não dá para separar "a
-     conta mudou de número" de "a conta mudou de número e secou": as duas
-     guardas abaixo só olhavam se houve movimento, e um centavo calava o
-     alarme de uma conta de R$ 1.478/mês. */
-  const valorPorCodigoMes = new Map<string, Map<string, number>>();
-  const rotuloPorCodigo = new Map<string, string>();
 
   for (const p of pagamentos) {
     const comp = String(p.competencia ?? "");
@@ -153,11 +150,13 @@ export function contasQuePararam(
     const chave = codigo + "|" + nome;
 
     const x = porConta.get(chave) ?? {
-      codigo, nome, rotulo: plano, comps: new Set<string>(), total: 0, ultimoPorPessoa: new Map<string, string>(),
+      codigo, nome, rotulo: plano, comps: new Set<string>(), total: 0,
+      porMes: new Map<string, number>(), ultimoPorPessoa: new Map<string, string>(),
     };
     const eraUltima = x.comps.size ? [...x.comps].sort().slice(-1)[0] : "";
     x.comps.add(comp);
     x.total = arred(x.total + (Number(p.valor) || 0));
+    x.porMes.set(comp, arred((x.porMes.get(comp) ?? 0) + (Number(p.valor) || 0)));
     // Guarda o rótulo mais recente: o contador renomeia, e o nome novo ajuda
     // mais a reconhecer a conta do que o antigo.
     if (comp >= eraUltima) x.rotulo = plano;
@@ -173,35 +172,38 @@ export function contasQuePararam(
       lista.push({ codigo, comp });
       ondeApareceu.set(nome, lista);
     }
-    const antesCod = movimentoPorCodigo.get(codigo);
-    if (!antesCod || comp > antesCod) movimentoPorCodigo.set(codigo, comp);
-    const porMes = valorPorCodigoMes.get(codigo) ?? new Map<string, number>();
-    porMes.set(comp, arred((porMes.get(comp) ?? 0) + (Number(p.valor) || 0)));
-    valorPorCodigoMes.set(codigo, porMes);
-    if (!antesCod || comp >= antesCod) rotuloPorCodigo.set(codigo, plano);
   }
 
-  /** Média mensal que estes códigos trouxeram DEPOIS de `ultima`. */
-  const mediaDepois = (codigos: string[], ultima: string) => {
+  /**
+   * Quanto uma conta trouxe DEPOIS de `ultima`, por mês DECORRIDO.
+   *
+   * O divisor é o tempo que passou, não o número de meses em que ela se mexeu.
+   * Dividir pelos meses com movimento faz a média NUNCA ENVELHECER: um único
+   * pagamento de R$ 400 em julho continuava valendo "R$ 400 por mês" em
+   * dezembro e calava o alarme para sempre — o dinheiro tinha parado de vir
+   * cinco meses antes e a tela ficava verde.
+   */
+  const trazidoDepois = (chave: string, ultima: string) => {
     let total = 0;
-    const meses = new Set<string>();
-    for (const c of codigos) {
-      for (const [comp, v] of valorPorCodigoMes.get(c) ?? []) {
-        if (comp > ultima) { total += v; meses.add(comp); }
-      }
-    }
-    return meses.size ? arred(total / meses.size) : 0;
+    for (const [comp, v] of porConta.get(chave)?.porMes ?? []) if (comp > ultima && comp <= ate) total += v;
+    return total;
+  };
+  const mediaDepois = (chaves: string[], ultima: string) => {
+    const decorridos = Math.max(1, distanciaEmMeses(ultima, ate));
+    return arred(chaves.reduce((t, k) => t + trazidoDepois(k, ultima), 0) / decorridos);
   };
 
   /** O mesmo nome voltou depois, sob OUTRO código? Candidatas a sucessora. */
   const porRenumeracao = (nome: string, codigo: string, ultima: string) =>
-    [...new Set((ondeApareceu.get(nome) ?? []).filter((v) => v.codigo !== codigo && v.comp > ultima).map((v) => v.codigo))];
+    [...porConta.values()]
+      .filter((x) => x.nome === nome && x.codigo !== codigo && [...x.comps].some((c) => c > ultima))
+      .map((x) => x.codigo + "|" + x.nome);
 
   /** Um filho passou a receber depois que o pai parou? Candidatas a sucessora. */
   const porDetalhe = (codigo: string, ultima: string) =>
-    [...movimentoPorCodigo]
-      .filter(([outro, comp]) => outro !== codigo && outro.startsWith(codigo + ".") && comp > ultima)
-      .map(([outro]) => outro);
+    [...porConta.values()]
+      .filter((x) => x.codigo !== codigo && x.codigo.startsWith(codigo + ".") && [...x.comps].some((c) => c > ultima))
+      .map((x) => x.codigo + "|" + x.nome);
 
   const out: ContaParada[] = [];
   for (const x of porConta.values()) {
@@ -225,9 +227,19 @@ export function contasQuePararam(
     ])];
     const mediaNova = sucessoras.length ? mediaDepois(sucessoras, ultima) : 0;
     if (sucessoras.length && mediaNova >= media * FRACAO_QUE_CONTINUA) continue;
+    /* O RÓTULO É O DA MAIOR, e o valor é o de TODAS — dizer o nome da primeira
+       da lista com a soma de todas afirma um par (conta, valor) que não existe
+       em lugar nenhum do ERP e manda procurar a conta errada. */
+    const maior = [...sucessoras].sort((a2, b2) => trazidoDepois(b2, ultima) - trazidoDepois(a2, ultima))[0];
+    const nomeDaMaior = maior ? porConta.get(maior)?.rotulo ?? maior : "";
     out.push({
       ...(sucessoras.length
-        ? { sucessora: { rotulo: rotuloPorCodigo.get(sucessoras[0]) ?? sucessoras[0], mediaMensal: mediaNova } }
+        ? {
+            sucessora: {
+              rotulo: sucessoras.length > 1 ? `${nomeDaMaior} (+${sucessoras.length - 1} outra(s))` : nomeDaMaior,
+              mediaMensal: mediaNova,
+            },
+          }
         : {}),
       codigo: x.codigo,
       rotulo: x.rotulo || x.codigo,
