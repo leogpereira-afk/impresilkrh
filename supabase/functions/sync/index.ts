@@ -499,7 +499,17 @@ Deno.serve(async (req) => {
       case "getCfg": {
         const { data, error } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
         if (error) throw new Error("Não foi possível consultar a configuração.");
-        return json({ config: data ? { config: data.config } : null });
+        /* A CONFIG GLOBAL É LIDA POR QUALQUER UM QUE ENTRE — `getCfg` não
+           confere papel, de propósito: nome da empresa, cores e vínculos
+           precisam chegar em toda tela. Mas `lancamentosSocio` é DINHEIRO do
+           sócio escrito à mão (rótulo, competência e valor), e ele saía inteiro
+           para qualquer colaborador logado, junto com o resto.
+           Contagem pode, dinheiro não: a chave sai da resposta para quem não é
+           o master. Não é "esconder da tela" — a tela de Societárias já é só do
+           master; é fechar a porta de dados, que é por onde se pega tudo. */
+        const cfg = (data?.config ?? null) as Record<string, unknown> | null;
+        const semDinheiroDeSocio = cfg && !ehMaster ? (({ lancamentosSocio: _, ...resto }) => resto)(cfg) : cfg;
+        return json({ config: data ? { config: semDinheiroDeSocio } : null });
       }
       case "setCfg": {
         if (!ehAdmin) return json({ erro: "Configuração global é restrita ao RH." }, 403);
@@ -508,6 +518,15 @@ Deno.serve(async (req) => {
         // ela entra mesclada — nunca apaga uma chave que só outro aparelho tem.
         const patch = (body.patch ?? body.config ?? null) as Record<string, unknown> | null;
         if (!patch || typeof patch !== "object" || Array.isArray(patch)) return json({ erro: "Patch de configuração inválido." }, 400);
+        /* QUEM NÃO PODE LER TAMBÉM NÃO PODE GRAVAR. Como a leitura passou a
+           omitir `lancamentosSocio`, um cliente antigo que devolvesse a config
+           inteira APAGARIA os lançamentos do sócio sem querer — e um ADMIN_RH
+           qualquer podia reescrevê-los de propósito. A chave é recusada em vez
+           de descartada em silêncio: gravar "ok" sobre um pedido que não foi
+           cumprido é como a tela passou a mentir das outras vezes. */
+        if (!ehMaster && "lancamentosSocio" in patch) {
+          return json({ erro: "Os lançamentos societários são do gestor master." }, 403);
+        }
         const merged = await admin.rpc("rh_mesclar_config", { p_patch: patch });
         if (!merged.error) return json({ ok: true, config: merged.data });
         // Sem a função no banco (migração ainda não aplicada): lê, mescla e grava.

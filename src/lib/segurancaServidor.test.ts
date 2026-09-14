@@ -101,6 +101,43 @@ describe("vazamentos fechados em 07/09/2026", () => {
     // A chave antiga (só o código) também vale: é o que existe na config real.
     expect(r.body.registros.map((x: any) => x.registro.codigo)).toEqual(["2.7.2"]);
   });
+  /* A CONFIG GLOBAL É LIDA POR QUALQUER UM QUE ENTRE — `getCfg` não confere
+     papel, e é assim de propósito (nome da empresa, cores, vínculos). Só que
+     `lancamentosSocio` é dinheiro do sócio escrito à mão, e saía inteiro junto
+     com o resto: rótulo, competência e valor, para qualquer colaborador
+     logado. Contagem pode, dinheiro não. */
+  it("o dinheiro do sócio escrito à mão não sai pela config global", async () => {
+    const config = {
+      empresaNome: "Impresilk",
+      vinculosSocioConta: { "2.11.2.2|leonardo": "leonardo-goncalves" },
+      lancamentosSocio: [{ id: "m1", socioId: "leonardo-goncalves", competencia: "2026-08", rotulo: "Retirada extra", valor: 30000 }],
+    };
+    const comum = await servidorRh({ perfil: "COLABORADOR", pessoa: "ana", rows: [{ id: true, config }] }).call({ action: "getCfg" });
+    expect(comum.body.config.config.lancamentosSocio).toBeUndefined();
+    // O resto da config continua chegando — a tela precisa dela.
+    expect(comum.body.config.config.empresaNome).toBe("Impresilk");
+    expect(comum.body.config.config.vinculosSocioConta).toBeTruthy();
+    // Nem o ADMIN_RH: quem manda no dinheiro do sócio é o master.
+    const rh = await servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [{ id: true, config }] }).call({ action: "getCfg" });
+    expect(rh.body.config.config.lancamentosSocio).toBeUndefined();
+    // E o master lê inteiro.
+    const master = await servidorRh({ perfil: "ADMIN_RH", pessoa: "leonardo-goncalves", rows: [{ id: true, config }] }).call({ action: "getCfg" });
+    expect(master.body.config.config.lancamentosSocio).toHaveLength(1);
+  });
+
+  it("quem não pode ler os lançamentos do sócio também não pode gravá-los", async () => {
+    // Como a leitura passou a omitir a chave, um cliente que devolvesse a
+    // config inteira APAGARIA os lançamentos sem querer. Recusa explícita, e
+    // não descarte em silêncio: responder "ok" sem cumprir é mentir.
+    const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [{ id: true, config: {} }] });
+    const r = await s.call({ action: "setCfg", patch: { lancamentosSocio: [] } });
+    expect(r.status).toBe(403);
+    expect(s.escritas.filter((e) => e.table === "config_global")).toHaveLength(0);
+    // O master grava.
+    const m = servidorRh({ perfil: "ADMIN_RH", pessoa: "leonardo-goncalves", rows: [{ id: true, config: {} }] });
+    expect((await m.call({ action: "setCfg", patch: { lancamentosSocio: [] } })).status).toBe(200);
+  });
+
   it("lançamento societário (arrendamento/retirada) não sai para ADMIN_RH que não é o master", async () => {
     // A societária virou LANÇAMENTO também, e a porta só olhava o plano.
     const s = servidorRh({ perfil: "ADMIN_RH", pessoa: "rh-comum", rows: [
