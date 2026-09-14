@@ -157,7 +157,7 @@ describe("como corrigir", () => {
     // Prometer "automático" onde o botão não resolve é pior que não prometer:
     // a pessoa clica, nada muda, e ela perde a confiança no painel inteiro.
     const automaticas = Object.entries(COMO_CORRIGIR).filter(([, c]) => c.onde === "automatico").map(([r]) => r).sort();
-    expect(automaticas).toEqual(["classificacao", "competencia"]);
+    expect(automaticas).toEqual(["classificacao", "competencia", "conta-contradiz-descricao"]);
   });
 
   it("o achado de cadastro manda para a ficha, que é onde a data se acerta", () => {
@@ -313,5 +313,41 @@ describe("conta que já voltou não está parada", () => {
     // voltou em setembro — dizer "parou" seria mandar procurar o que já chegou.
     const r = auditarLancamentos(ps, [ana], { hoje: new Date(2026, 9, 7) });
     expect(achado(r, "conta-parou")).toHaveLength(0);
+  });
+});
+
+describe("conta × descrição", () => {
+  const HOJE = new Date(2026, 8, 14);
+  it("adiantamento lançado na conta de salário vira achado com conserto travado", () => {
+    // Fevereiro/2026 real: 27 títulos "Adiantamento Colaborador" na conta
+    // 2.1.1-Salário. O mês somou R$ 61.768,58 de salário e R$ 3.146,50 de
+    // adiantamento; o total estava certo, a divisão não.
+    const p = pg({ id: "a1", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-02-20", descricao: "Adiantamento Colaborador · 2.1.1-Salário" });
+    const a = achado(auditarLancamentos([p], [ana], { hoje: HOJE }), "conta-contradiz-descricao")[0];
+    expect(a.conserto).toEqual({ campo: "tipo", para: "Adiantamento", travar: true });
+    expect(a.gravidade).toBe("atencao");
+  });
+
+  it("descrição que combina com a conta não vira achado", () => {
+    const p = pg({ id: "a2", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-03-05", descricao: "Pagamento salario · 2.1.1-Salário" });
+    expect(achado(auditarLancamentos([p], [ana], { hoje: HOJE }), "conta-contradiz-descricao")).toHaveLength(0);
+  });
+});
+
+describe("ainda não saiu do caixa", () => {
+  const HOJE = new Date(2026, 8, 14);
+  it("título que vence depois de hoje entra num aviso só, com o total", () => {
+    const futuro = pg({ id: "f1", tipo: "Bônus", valor: 1500, competencia: "2026-09", dataPagamento: "2026-09-30" });
+    const aberto = pg({ id: "f2", tipo: "Arrendamento", valor: 5250, competencia: "2026-09", dataPagamento: "2026-09-10", statusErp: "PENDENTE" });
+    const pago = pg({ id: "f3", tipo: "Salário", valor: 1000, competencia: "2026-08", dataPagamento: "2026-09-05", statusErp: "PAGO" });
+    const r = achado(auditarLancamentos([futuro, aberto, pago], [ana], { hoje: HOJE }), "ainda-nao-pago");
+    expect(r).toHaveLength(1);
+    expect(r[0].pagamentoIds.sort()).toEqual(["f1", "f2"]);
+    expect(r[0].valor).toBe(6750);
+  });
+
+  it("folha toda paga não gera o aviso", () => {
+    const pago = pg({ id: "p9", tipo: "Salário", valor: 1000, competencia: "2026-08", dataPagamento: "2026-09-05", statusErp: "PAGO" });
+    expect(achado(auditarLancamentos([pago], [ana], { hoje: HOJE }), "ainda-nao-pago")).toHaveLength(0);
   });
 });

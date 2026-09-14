@@ -2741,7 +2741,15 @@ export default function Custos() {
                       for (const a of achados) {
                         const alvo = a.pagamentoIds[0];
                         if (!alvo || !a.conserto) continue;
-                        pagamentosColecao.atualizar(alvo, a.conserto.campo === "tipo" ? { tipo: a.conserto.para } : { competencia: a.conserto.para });
+                        pagamentosColecao.atualizar(
+                          alvo,
+                          a.conserto.campo === "tipo"
+                            // `travar` vem da regra: o conserto que contraria a
+                            // conta do ERP precisa sobreviver à importação
+                            // seguinte, senão volta todo mês.
+                            ? { tipo: a.conserto.para, ...(a.conserto.travar ? { tipoTravado: true } : {}) }
+                            : { competencia: a.conserto.para },
+                        );
                       }
                     });
                     toast(`${achados.length} lançamento(s) corrigido(s) pela auditoria.`, "sucesso");

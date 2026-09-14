@@ -26,12 +26,12 @@
 // (lib/tipoDoPlano), tipoSocietario (lib/societario), competenciaPagto
 // (lib/custos), noQuadroEm (lib/quadroNoMes).
 import type { Colaborador, Pagamento } from "@/data/types";
-import { competenciaFechada, competenciaPagto } from "./custos";
+import { classificarPagamento, competenciaFechada, competenciaPagto } from "./custos";
 import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio, tipoSocietario } from "./societario";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
 import { contasQuePararam } from "./contaQueParou";
-import { tituloPago } from "./mubiPagamentos";
+import { tituloPago, tituloEmAberto } from "./mubiPagamentos";
 
 export type RegraAuditoria =
   | "classificacao"
@@ -45,6 +45,8 @@ export type RegraAuditoria =
   | "sem-lancamento"
   | "sem-salario"
   | "casado-pelo-nome"
+  | "conta-contradiz-descricao"
+  | "ainda-nao-pago"
   | "conta-parou";
 
 export type Gravidade = "erro" | "atencao" | "aviso";
@@ -61,7 +63,18 @@ export interface AchadoAuditoria {
   detalhe: string;
   valor: number;
   /** Conserto seguro e determinístico, quando existe. */
-  conserto?: { campo: "tipo" | "competencia"; para: string };
+  conserto?: {
+    campo: "tipo" | "competencia";
+    para: string;
+    /**
+     * O conserto TEM de sobreviver à próxima importação.
+     *
+     * Vale para o tipo que vem da descrição contra a conta do ERP: a conta
+     * continua dizendo "Salário" lá, e sem a trava a importação seguinte
+     * desfaz o conserto — todo mês. Ver Pagamento.tipoTravado.
+     */
+    travar?: boolean;
+  };
 }
 
 export interface ResumoAuditoria {
@@ -114,6 +127,7 @@ export function auditarLancamentos(
   const achados: AchadoAuditoria[] = [];
   /** Lançamentos que acharam a pessoa pelo texto, não pela chave (CPF/ID). */
   const porTexto: Pagamento[] = [];
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
   const add = (a: AchadoAuditoria) => achados.push(a);
   const nomeDe = (id: string) => porId.get(id)?.nome ?? `(sem cadastro: ${id})`;
 
@@ -133,6 +147,23 @@ export function auditarLancamentos(
         add({ regra: "classificacao", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
           titulo: `Tipo não bate com a conta do ERP`, detalhe: `${nomeDe(p.colaboradorId)} · ${plano} ⇒ ${esperado}, gravado "${p.tipo}"`, valor: num(p.valor),
           conserto: { campo: "tipo", para: esperado } });
+      } else {
+        /* A CONTA DIZ UMA COISA E A DESCRIÇÃO DIZ OUTRA.
+           Em fevereiro/2026 o contador lançou o adiantamento de 27 pessoas na
+           conta 2.1.1-Salário: a descrição dizia "Adiantamento Colaborador" e o
+           nome da conta venceu. O mês ficou com R$ 61.768,58 de salário
+           (+R$ 28.751,61 sobre a média) e R$ 3.146,50 de adiantamento. O total
+           está certo; a divisão, não — e é a divisão que a folha desenha e que
+           outras regras leem ("mês sem salário", sugestão de salário).
+           Aqui a tela PERGUNTA em vez de decidir calado: mudar o tipo sozinho
+           seria trocar a régua do dinheiro por um palpite de texto. */
+        const pelaDescricao = classificarPagamento(plano, String(p.descricao ?? ""));
+        if (pelaDescricao !== esperado && pelaDescricao !== "Outros") {
+          add({ regra: "conta-contradiz-descricao", gravidade: "atencao", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
+            titulo: "A conta do ERP não combina com a descrição do título",
+            detalhe: `${nomeDe(p.colaboradorId)} · conta ${plano} ⇒ ${esperado}, mas a descrição diz ${pelaDescricao} ("${String(p.descricao ?? "").split("·")[0].trim()}")`,
+            valor: num(p.valor), conserto: { campo: "tipo", para: pelaDescricao, travar: true } });
+        }
       }
     }
 
@@ -284,6 +315,32 @@ export function auditarLancamentos(
     });
   }
 
+  /* AINDA NÃO SAIU DO CAIXA.
+     Olha a lista INTEIRA, não a filtrada: `pags` já exclui o que não está pago
+     (a auditoria responde pelo dinheiro que saiu), e era justamente por isso
+     que ninguém contava esses oito títulos — R$ 10.851,00 em arrendamento e
+     bônus vencendo dia 30, que as telas de custo somam como pagamento feito.
+     Um achado só: o que se faz com isso é olhar o caixa, não consertar
+     lançamento a lançamento. */
+  const previstos = pagamentos.filter((p) => {
+    if (!dentro(p.competencia)) return false;
+    const vence = String(p.dataPagamento ?? "").slice(0, 10);
+    return (vence && vence > hojeIso) || tituloEmAberto(p.statusErp);
+  });
+  if (previstos.length) {
+    const total = previstos.reduce((t, p) => t + num(p.valor), 0);
+    const maiores = [...previstos].sort((a, b) => num(b.valor) - num(a.valor)).slice(0, 3)
+      .map((p) => `${nomeDe(p.colaboradorId)} · ${p.tipo} ${num(p.valor).toFixed(2)} (vence ${String(p.dataPagamento ?? "").slice(0, 10)})`);
+    add({
+      regra: "ainda-nao-pago", gravidade: "aviso", colaboradorId: "",
+      pagamentoIds: previstos.map((p) => p.id),
+      competencias: [...new Set(previstos.map((p) => p.competencia))].sort(),
+      titulo: `${previstos.length} lançamento(s) ainda não saíram do caixa`,
+      detalhe: `${total.toFixed(2)} em títulos que vencem depois de hoje ou seguem em aberto no ERP — maiores: ${maiores.join(", ")}. Eles contam na folha da competência (é o mês a que pertencem), mas ainda não são dinheiro que saiu.`,
+      valor: total,
+    });
+  }
+
   /* CONTA QUE PAGAVA GENTE E PAROU.
      O Léo em 07/09/2026: "os últimos custos de limpeza não estão na ficha dos
      funcionários". A faxina parou em junho e nada ficou vermelho — a pessoa
@@ -353,6 +410,8 @@ export const ROTULO_REGRA: Record<RegraAuditoria, string> = {
   "sem-lancamento": "Mês no quadro sem lançamento",
   "sem-salario": "Mês sem salário",
   "casado-pelo-nome": "Ligado pelo nome, não pelo ID",
+  "conta-contradiz-descricao": "Conta × descrição",
+  "ainda-nao-pago": "Ainda não saiu do caixa",
   "conta-parou": "Conta que pagava gente e parou",
 };
 
@@ -473,6 +532,22 @@ export const COMO_CORRIGIR: Record<RegraAuditoria, ComoCorrigir> = {
       "Se continua sendo lançado, veja “Contas fora da folha” na prévia da busca: ela lista TODAS as contas que o filtro recusou no mês, com as que têm cara de nome de pessoa em cima.",
       "Achou o código novo? Avise — ele precisa entrar na lista de contas de folha. A tradução automática só reconhece conta renumerada DENTRO do mesmo grupo; conta que mudou de grupo (2.3.x virando 2.7.x, por exemplo) tem de ser dita à mão.",
       "Enquanto o código novo não for reconhecido, esse dinheiro não entra na ficha de ninguém — nem como custo do mês.",
+    ],
+  },
+  "conta-contradiz-descricao": {
+    causa: "O contador lançou o título numa conta que não combina com o que a descrição dele diz (o caso real: adiantamento lançado em 2.1.1-Salário).",
+    onde: "automatico",
+    passos: [
+      "Confira a descrição do título: se ela estiver certa, use o conserto automático — ele grava o tipo da descrição e TRAVA, para a próxima importação não desfazer.",
+      "Se a conta é que está certa, peça ao contador para corrigir a descrição no Mubisys e ignore o aviso.",
+    ],
+  },
+  "ainda-nao-pago": {
+    causa: "O título vence depois de hoje, ou continua em aberto no ERP: é previsão, não dinheiro que saiu.",
+    onde: "erp",
+    passos: [
+      "Nada a consertar no RH: o lançamento pertence à competência e conta na folha do mês.",
+      "Para o caixa, desconte estes valores — eles saem quando o título for pago.",
     ],
   },
   "casado-pelo-nome": {

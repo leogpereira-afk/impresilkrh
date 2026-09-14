@@ -530,3 +530,46 @@ describe("o removido volta", () => {
     expect(p.pulados).toEqual([{ id: "pg_up_1", motivo: "já desfeito" }]);
   });
 });
+
+describe("o Desfazer devolve tudo o que a aplicação escreveu", () => {
+  it("toda chave que patchDeAplicacao grava volta em patchDeDesfazer", () => {
+    // O esquecimento é sempre o mesmo: entra campo novo no patch de aplicação e
+    // ninguém lembra do outro lado. `casadoPor` ficou 24h assim, e é ele que a
+    // auditoria lê para avisar "ligado pelo nome, não pela chave".
+    const cheio = {
+      id: "p1", colaboradorId: "ana", competencia: "2026-06", tipo: "Salário", valor: 1000,
+      dataPagamento: "2026-07-05", descricao: "x", idMubi: "9", statusErp: "PAGO",
+      pagoEm: "2026-07-05", casadoPor: "cpf", tipoTravado: true,
+    } as unknown as Pagamento;
+    const aplicado = Object.keys(patchDeAplicacao(cheio, null));
+    const desfeito = Object.keys(patchDeDesfazer(cheio));
+    expect(aplicado.filter((k) => !desfeito.includes(k))).toEqual([]);
+  });
+
+  it("desfazer devolve a procedência que o lançamento tinha", () => {
+    const antes = { id: "p1", colaboradorId: "ana", competencia: "2026-06", tipo: "Salário", valor: 1000, dataPagamento: "2026-07-05", descricao: "x", casadoPor: "cpf" } as unknown as Pagamento;
+    expect(patchDeDesfazer(antes).casadoPor).toBe("cpf");
+    const semMarca = { ...antes, casadoPor: undefined } as unknown as Pagamento;
+    expect(patchDeDesfazer(semMarca).casadoPor).toBeNull();
+  });
+});
+
+describe("novo que já existe", () => {
+  const novo = (id: string, valor: number): Pagamento =>
+    ({ id, colaboradorId: "ana", competencia: "2026-06", tipo: "Salário", valor, dataPagamento: "2026-07-05", descricao: "x", idMubi: "9" }) as Pagamento;
+
+  it("a prévia aborta quando um 'novo' já está gravado", () => {
+    const diff = { iguais: [], alterados: [], novos: [novo("mubi-9", 1000)], ausentes: [] } as unknown as DiffPagamentos;
+    const fora = mudouSobAPrevia(diff, new Set(), [novo("mubi-9", 1500)]);
+    expect(fora).toEqual([{ id: "mubi-9", motivo: "já existe" }]);
+  });
+
+  it("se ele for aplicado assim mesmo, o Desfazer RESTAURA em vez de apagar", () => {
+    const diff = { iguais: [], alterados: [], novos: [novo("mubi-9", 1000)], ausentes: [] } as unknown as DiffPagamentos;
+    const r = retratoAntesDeAplicar(diff, new Set(), "2026-09-14T10:00:00Z", "x", [novo("mubi-9", 1500)]);
+    expect(r.tocados[0].antes?.valor).toBe(1500);
+    const p = planoDeDesfazer(r, [{ ...novo("mubi-9", 1000) }]);
+    expect(p.apagar).toEqual([]);
+    expect(p.restaurar.map((x) => x.valor)).toEqual([1500]);
+  });
+});

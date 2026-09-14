@@ -493,18 +493,35 @@ export function conciliarPagamentos(existentes: Pag[], novos: Pag[], janela?: Se
   //    duplicar tudo na primeira importação.
   const livres = existentes.filter((p) => !ehDoMubi(p) && !casados.has(p.id));
   const porLinha = multimap(livres, chaveSemTipo);
+  /* LINHAS QUE JÁ FORAM CASADAS NESTA RODADA. Serve para o filtro de ausentes
+     logo abaixo: manual sobrando numa linha que o ERP acabou de casar é
+     duplicata, não "lançamento de fora do ERP". */
+  const chavesCasadas = new Set<string>(existentes.filter((p) => casados.has(p.id)).map(chaveSemTipo));
   const novosFinal: Pag[] = [];
   for (const n of semPar) {
     const arr = porLinha.get(chaveSemTipo(n));
-    const antigo = arr && arr.length ? arr.pop()! : undefined;
-    if (!antigo) { novosFinal.push(n); continue; }
+    if (!arr || !arr.length) { novosFinal.push(n); continue; }
+    /* EMPATE NA MESMA LINHA: ADOTA O MANUAL. Antes era `arr.pop()` — sorteio
+       pela ordem do array. Em 08/09/2026 a rescisão da Camila (R$ 1.719,64,
+       mai/2026) tinha duas linhas iguais, uma manual e uma do ERP: o manual
+       perdeu o sorteio e, como manual não entra em "ausentes", virou órfão
+       mudo — contado duas vezes no mês e invisível na prévia para sempre.
+       O docstring de Pagamento.manual promete justamente esta adoção. */
+    const i = arr.findIndex(ehManual);
+    const antigo = arr.splice(i >= 0 ? i : arr.length - 1, 1)[0];
     casados.add(antigo.id);
+    chavesCasadas.add(chaveSemTipo(antigo));
     // Adotado: mantém o id do registro (não quebra referência nem sync) e passa
     // a carregar o idMubi. Daqui para frente casa por id, não por assinatura.
     alterados.push({ antigo, novo: { ...n, id: antigo.id } });
   }
 
-  const ausentes = existentes.filter((p) => !casados.has(p.id) && !ehManual(p));
+  /* `ehManual` blinda contra "sumiu do ERP" — não contra "tem um gêmeo que
+     acabou de ser casado". Quando a MESMA linha foi casada nesta rodada, o
+     manual que sobrou aparece, e o RH decide na tela. */
+  const ausentes = existentes.filter(
+    (p) => !casados.has(p.id) && (!ehManual(p) || chavesCasadas.has(chaveSemTipo(p))),
+  );
   return recortarAusentes({ iguais, alterados, novos: novosFinal, ausentes }, janela);
 }
 

@@ -408,6 +408,14 @@ export function patchDeDesfazer(antes: Pagamento): Partial<Pagamento> {
     idMubi: antes.idMubi ?? null,
     statusErp: antes.statusErp ?? null,
     pagoEm: antes.pagoEm ?? null,
+    /* TODO CAMPO QUE A APLICAÇÃO GRAVA TEM DE VOLTAR AQUI. `casadoPor` ficou
+       para trás: depois de aplicar e desfazer, o lançamento guardava a
+       procedência que a importação escreveu, e é esse campo que a auditoria lê
+       para avisar "ligado pelo nome, não pela chave". O teste
+       "toda chave de patchDeAplicacao volta no patchDeDesfazer" impede o
+       próximo esquecimento. */
+    casadoPor: antes.casadoPor ?? null,
+    tipoTravado: antes.tipoTravado ?? null,
   } as Partial<Pagamento>;
 }
 
@@ -435,7 +443,16 @@ export function retratoAntesDeAplicar(
     tocados.push({ id: antigo.id, antes, depois: { ...antes, ...patchDeAplicacao(novo, antes) } });
     comps.add(antigo.competencia); comps.add(novo.competencia);
   }
-  for (const n of diff.novos) { tocados.push({ id: n.id, antes: null, depois: n }); comps.add(n.competencia); }
+  for (const n of diff.novos) {
+    /* "NOVO" QUE JÁ EXISTE NÃO É NOVO. O id do título do ERP é determinístico
+       (`mubi-<id>`), e entre a busca e o clique o registro pode ter nascido por
+       outro caminho — outro aparelho, outra aba. O retrato gravava `antes:
+       null`, e o Desfazer APAGAVA um lançamento que já estava lá antes desta
+       aplicação. Com o `antes` do que está vivo, ele volta ao que era. */
+    const antes = vivo.get(n.id) ?? null;
+    tocados.push({ id: n.id, antes, depois: antes ? { ...antes, ...n } : n });
+    comps.add(n.competencia);
+  }
   for (const a of diff.ausentes) if (ausentesMarcados.has(a.id)) { tocados.push({ id: a.id, antes: vivo.get(a.id) ?? a, depois: null }); comps.add(a.competencia); }
   return { id: `desfazer_${agoraIso}`, em: agoraIso, competencias: [...comps].filter(Boolean).sort(), tocados, rotulo };
 }
@@ -449,9 +466,9 @@ export function retratoAntesDeAplicar(
  * na tela e ainda a esconde do "Desfazer": o retrato acharia que o "antes" era
  * o valor velho. Quem chama aborta e manda refazer a busca.
  */
-export function mudouSobAPrevia(diff: DiffPagamentos, ausentesMarcados: Set<string>, atuais: Pagamento[]): { id: string; motivo: "editado" | "sumiu" }[] {
+export function mudouSobAPrevia(diff: DiffPagamentos, ausentesMarcados: Set<string>, atuais: Pagamento[]): { id: string; motivo: "editado" | "sumiu" | "já existe" }[] {
   const vivo = new Map(atuais.map((p) => [p.id, p]));
-  const fora: { id: string; motivo: "editado" | "sumiu" }[] = [];
+  const fora: { id: string; motivo: "editado" | "sumiu" | "já existe" }[] = [];
   const conferir = (p: Pagamento) => {
     const atual = vivo.get(p.id);
     if (!atual) { fora.push({ id: p.id, motivo: "sumiu" }); return; }
@@ -460,6 +477,11 @@ export function mudouSobAPrevia(diff: DiffPagamentos, ausentesMarcados: Set<stri
   for (const { antigo } of diff.alterados) conferir(antigo);
   for (const { antigo } of diff.iguais) conferir(antigo);
   for (const a of diff.ausentes) if (ausentesMarcados.has(a.id)) conferir(a);
+  /* NOVO QUE NASCEU NO MEIO. O id do título do ERP é determinístico: entre a
+     busca e o clique, outro aparelho pode ter gravado o mesmo lançamento.
+     Gravá-lo como novo passa por cima do que já está lá — e o que está lá pode
+     ter sido editado à mão. A prévia aborta e manda buscar de novo. */
+  for (const n of diff.novos) if (vivo.has(n.id)) fora.push({ id: n.id, motivo: "já existe" });
   return fora;
 }
 

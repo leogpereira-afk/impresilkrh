@@ -319,3 +319,32 @@ describe("plano sem folha", () => {
     expect(s[1].individual).toBe(0);
   });
 });
+
+describe("duas linhas iguais: manual e do ERP", () => {
+  // O caso real: a rescisão da Camila (R$ 1.719,64, mai/2026) existia duas
+  // vezes — uma lançada à mão e uma vinda do ERP. O manual perdia o sorteio da
+  // adoção e, como manual não entra em "ausentes", sumia da prévia para sempre.
+  const linha = (over: Partial<Pagamento> & { id: string }): Pagamento =>
+    ({ colaboradorId: "camila", competencia: "2026-05", tipo: "Rescisão", valor: 1719.64, dataPagamento: "2026-06-11", descricao: "Rescisão Camila", ...over }) as Pagamento;
+  const manual = linha({ id: "pg_camila_resc", manual: true });
+  const doErp = linha({ id: "mubi-61458", idMubi: "61458" });
+  const titulo = linha({ id: "mubi-61458", idMubi: "61458", descricao: "Rescisão · 2.1.6-Rescisão" });
+
+  it("o manual é adotado, venha em que ordem vier", () => {
+    for (const existentes of [[manual, linha({ id: "outro" })], [linha({ id: "outro" }), manual]]) {
+      const r = conciliarPagamentos(existentes, [titulo], new Set(["2026-05"]));
+      expect(r.alterados.map((x) => x.antigo.id)).toEqual(["pg_camila_resc"]);
+    }
+  });
+
+  it("o gêmeo que sobra aparece em ausentes — mesmo sendo manual", () => {
+    const r = conciliarPagamentos([manual, doErp], [titulo], new Set(["2026-05"]));
+    // O do ERP casa por id; o manual, com a mesma linha, deixa de ser invisível.
+    expect(r.ausentes.map((x) => x.id)).toEqual(["pg_camila_resc"]);
+  });
+
+  it("manual SEM gêmeo continua fora de ausentes", () => {
+    const r = conciliarPagamentos([manual], [linha({ id: "mubi-1", idMubi: "1", competencia: "2026-06", dataPagamento: "2026-07-05" })], new Set(["2026-05", "2026-06"]));
+    expect(r.ausentes).toHaveLength(0);
+  });
+});
