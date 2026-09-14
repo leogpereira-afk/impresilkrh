@@ -21,6 +21,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { equivalenciasDeContas, ehConfidencialEquivalente } from "./renumeracao";
+import { chaveContaSocio, contaApontadaAoSocio } from "../../supabase/functions/_shared/socioConta";
 
 const fonte = fs.readFileSync(
   path.join(process.cwd(), "supabase/functions/mubi-pagamentos/index.ts"),
@@ -152,12 +153,12 @@ describe("societária não entra na folha nem traduzida", () => {
    * mostrou o defeito: apagando as guardas do servidor, o teste continuava
    * verde. Um controle que compara a coisa com ela mesma não detecta nada.
    */
-  const construirDecisor = (eq: ReturnType<typeof equivale>) => {
+  const construirDecisor = (eq: ReturnType<typeof equivale>, vinculosSocio: Record<string, string> = {}) => {
     const m = fonte.match(/const ehFolhaOuEquivalente = \(plano: string\) => \{[\s\S]*?\n    \};/);
     if (!m) throw new Error("ehFolhaOuEquivalente mudou de forma — reveja este teste.");
     const bloco = m[0].replace(/: string/g, "");
     const fabricar = new Function(
-      "codigoDoPlano", "ehConfidencialEquivalente", "eqFolha", "ehFolha", "codigoDeReferencia", "FOLHA_FORA_DO_21",
+      "codigoDoPlano", "ehConfidencialEquivalente", "eqFolha", "ehFolha", "codigoDeReferencia", "FOLHA_FORA_DO_21", "ehDeSocio",
       bloco + "\nreturn ehFolhaOuEquivalente;",
     );
     return fabricar(
@@ -167,9 +168,12 @@ describe("societária não entra na folha nem traduzida", () => {
       ehFolhaDoServidor,
       (codigo: string, mapa?: Map<string, string> | null) => (mapa && mapa.get(codigo)) || codigo,
       foraDo21(),
+      // A régua VERDADEIRA do apontamento, a mesma que a função importa.
+      (codigo: string, nome: string, equivaleA?: string) => contaApontadaAoSocio({ codigo, nome, equivaleA }, vinculosSocio),
     ) as (plano: string) => boolean;
   };
-  const decidir = (plano: string, eq: ReturnType<typeof equivale>) => construirDecisor(eq)(plano);
+  const decidir = (plano: string, eq: ReturnType<typeof equivale>, vinculosSocio: Record<string, string> = {}) =>
+    construirDecisor(eq, vinculosSocio)(plano);
 
   it("O CASO RUIM: conta 2.14 que traduz para uma conta de folha continua fora", () => {
     // O contador renumerou e hoje "Vale Transporte" está sob 2.14.9. A
@@ -206,6 +210,24 @@ describe("societária não entra na folha nem traduzida", () => {
        quando o alvo é uma linha que some sem barulho. */
     const m = fonte.match(/const eqFolha = equivalenciasDeContas\([^;]*\);/);
     expect(m?.[0]).toContain('prefixosConfidenciais: ["2.14"]');
+  });
+
+  /* O BURACO QUE FICOU ABERTO ATÉ 14/09/2026: a rota do PLANO escondia a conta
+     apontada ao sócio e a rota da FOLHA devolvia os títulos dela, com nome e
+     valor, para qualquer ADMIN_RH. O nome "Freelancer" ainda por cima faz a
+     conta passar por FOLHA_FORA_DO_21 e pelo vocabulário de pagamento a
+     pessoa — é a porta mais larga que havia. */
+  it("conta apontada ao sócio à mão não entra na folha, nem com nome de gente", () => {
+    const eq = equivale([{ codigo: "2.11.1", nome: "Freelancer" }], [{ codigo: "2.11.1", nome: "Freelancer" }]);
+    expect(decidir("2.11.1-Freelancer", eq)).toBe(true); // sem apontamento, é folha
+    const apontada = { [chaveContaSocio("2.11.1", "Freelancer")]: "leonardo" };
+    expect(decidir("2.11.1-Freelancer", eq, apontada)).toBe(false);
+  });
+
+  it("apontamento feito na numeração ANTIGA também fecha a folha de hoje", () => {
+    const eq = equivale([{ codigo: "2.14.2.2", nome: "Retiradas" }], [{ codigo: "2.1.99", nome: "Retiradas" }]);
+    const apontada = { [chaveContaSocio("2.14.2.2", "Retiradas")]: "leonardo" };
+    expect(decidir("2.1.99-Retiradas", eq, apontada)).toBe(false);
   });
 
   it("o que É folha continua entrando — a guarda não pode fechar demais", () => {

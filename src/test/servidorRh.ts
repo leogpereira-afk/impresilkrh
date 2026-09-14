@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+// O harness apaga os `import` do arquivo do servidor e injeta os símbolos aqui:
+// a régua compartilhada do apontamento ao sócio entra pela mesma porta.
+import { contaApontadaAoSocio, lerVinculosSocioConta } from "../../supabase/functions/_shared/socioConta";
 
 export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean } = {}) {
   let handler: (req: Request) => Promise<Response>;
@@ -50,6 +53,7 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
     Deno: { env: { get: (k: string) => (k === "RH_MASTER_COLAB_ID" ? undefined : "ficticio") }, serve: (fn: any) => { handler = fn; } },
     json: (data: any, status = 200) => new Response(JSON.stringify(data), { status }), preflight: () => null,
     Response, Request, Blob, console, Date, crypto,
+    contaApontadaAoSocio, lerVinculosSocioConta,
   });
   return { escritas, arquivos, rpcs, async call(body: any) {
     const r = await handler(new Request("http://rh-teste.local", { method: "POST", headers: { authorization: "Bearer ficticio" }, body: JSON.stringify(body) }));

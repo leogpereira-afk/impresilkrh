@@ -274,6 +274,13 @@ export default function Custos() {
   // O divisor é o quadro DAQUELE mês, não o de hoje (pedido do Léo, 07/09/2026).
   const nColab = useMemo(() => quantosNoQuadro(d.colaboradores, compAtiva, pagamentos as Pagamento[]), [d.colaboradores, compAtiva, pagamentos]);
   const mapaClasse = useMemo(() => classeMap(classificacaoCustos), [classificacaoCustos]);
+  /* A CONTA QUE O DONO APONTOU AO SÓCIO É CONFIDENCIAL AQUI TAMBÉM (14/09/2026).
+     A porta de dados já respeita este mapa; a tela não respeitava, e o editor
+     de Classificação continuava oferecendo 2.11.2.2 ("Leonardo") com valor
+     para qualquer ADMIN_RH. Passa junto em toda pergunta de confidencialidade. */
+  // useMemo: `?? {}` cria objeto novo a cada render e derrubaria a memória de
+  // todo cálculo que depende dele.
+  const vinculosSocio = useMemo(() => config.vinculosSocioConta ?? {}, [config.vinculosSocioConta]);
 
   // ---------- Uploads ----------
   const hojeIso = new Date().toISOString().slice(0, 7);
@@ -423,12 +430,12 @@ export default function Custos() {
         toast(`O ERP não tem título nenhum vencendo em ${compLabelLongo(compUpload)}.`, "erro");
         return;
       }
-      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse, r.equivalencias);
+      const montado = montarPlanoDoErp(r.contas, compUpload, mapaClasse, r.equivalencias, vinculosSocio);
       const doMes = planoContas.filter((p: ContaPlano) => p.competencia === compUpload);
       setPlanoPrev({
         competencia: compUpload,
         contas: montado.contas,
-        comparacao: compararPlano(doMes, montado.contas, { ocultarConfidenciais: !ehMaster(sessao) }),
+        comparacao: compararPlano(doMes, montado.contas, { ocultarConfidenciais: !ehMaster(sessao), vinculosSocio }),
         titulos: r.titulos,
         incompleta: r.incompleta,
         pessoais: montado.pessoais,
@@ -457,7 +464,7 @@ export default function Custos() {
       setBuscandoPlano(`Trazendo ${compLabel(comp)} do Mubisys…`);
       const r = await buscarPlanoCompleto(comp);
       if (r.incompleta) return "incompleto";
-      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse, r.equivalencias);
+      const montado = montarPlanoDoErp(r.contas, comp, mapaClasse, r.equivalencias, vinculosSocio);
       const base = planoColecao.items as ContaPlano[];
       if (competenciaEhDoContador(base, comp)) return "contador";
       salvarCfg({ ultimoPlanoMubi: { competencia: comp, em: new Date().toISOString(), contas: montado.contas.length } });
@@ -512,7 +519,7 @@ export default function Custos() {
        do ERP que não vieram nesta puxada — de propósito, para a renumeração do
        contador não deixar lixo. Só que uma puxada parcial apagaria a folha de
        um mês que estava certo, e ninguém veria. */
-    if (puxadaPerdeuAFolha(planoContas as ContaPlano[], contas, competencia, (p) => classeDaConta(p, mapaClasse))) {
+    if (puxadaPerdeuAFolha(planoContas as ContaPlano[], contas, competencia, (p) => classeDaConta(p, mapaClasse, vinculosSocio))) {
       toast(
         `Esta puxada de ${compLabel(competencia)} não trouxe nenhuma conta de folha, e o mês já tem. Aplicar apagaria a folha que está gravada — puxe de novo.`,
         "erro",
@@ -1224,16 +1231,16 @@ export default function Custos() {
 
   // ---------- Seção 2: custos coletivos (rateio) ----------
   const totais = useMemo(
-    () => totaisDoMes(planoContas, mapaClasse, compAtiva, nColab),
-    [planoContas, mapaClasse, compAtiva, nColab],
+    () => totaisDoMes(planoContas, mapaClasse, compAtiva, nColab, vinculosSocio),
+    [planoContas, mapaClasse, compAtiva, nColab, vinculosSocio],
   );
   const totalColetivo = totais.individual + totais.rateio;
   const divisor = rateioPorPessoa && nColab > 0 ? nColab : 1;
 
   // ---------- Seção 3: evolução mês a mês ----------
   const serie = useMemo(
-    () => serieCustos(planoContas, mapaClasse, (c) => quantosNoQuadro(d.colaboradores, c, pagamentos as Pagamento[])),
-    [planoContas, mapaClasse, d.colaboradores, pagamentos],
+    () => serieCustos(planoContas, mapaClasse, (c) => quantosNoQuadro(d.colaboradores, c, pagamentos as Pagamento[]), vinculosSocio),
+    [planoContas, mapaClasse, d.colaboradores, pagamentos, vinculosSocio],
   );
   // Meses cujo plano existe mas não traz nenhuma conta de folha: a coluna
   // Individual mostra "—" e o quadro amarelo explica.
@@ -1246,13 +1253,13 @@ export default function Custos() {
   const folhasEditor = useMemo(
     () =>
       folhasDoMes(planoContas, compAtiva)
-        .filter((p: ContaPlano) => !contaEhConfidencial(p))
+        .filter((p: ContaPlano) => !contaEhConfidencial(p, vinculosSocio))
         .sort((a: ContaPlano, b: ContaPlano) => b.valor - a.valor),
-    [planoContas, compAtiva],
+    [planoContas, compAtiva, vinculosSocio],
   );
 
   const definirClasse = (conta: ContaPlano, classe: ClasseCusto) => {
-    if (contaEhConfidencial(conta)) return; // não reclassificar confidenciais
+    if (contaEhConfidencial(conta, vinculosSocio)) return; // não reclassificar confidenciais
     // As classes vivem na numeração do CONTADOR. Conta que chegou do ERP com
     // código renumerado grava pela referência (equivaleA) — gravar pelo código
     // novo mudava a classe de OUTRA conta nos meses do contador (07/09/2026).
@@ -3337,7 +3344,7 @@ export default function Custos() {
             </p>
             {folhasEditor.map((c: ContaPlano) => {
               // A mesma régua do rateio (classeDaConta): pela referência quando renumerou.
-              const classeAtual = classeDaConta(c, mapaClasse);
+              const classeAtual = classeDaConta(c, mapaClasse, vinculosSocio);
               return (
                 <div
                   key={c.codigo}

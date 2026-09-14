@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { projetarOrdem } from '../../supabase/functions/_shared/performanceOS';
+import { contaApontadaAoSocio, lerVinculosSocioConta } from '../../supabase/functions/_shared/socioConta';
 
 const compilar=(nome:string)=>ts.transpileModule(readFileSync(`supabase/functions/${nome}/index.ts`,'utf8').replace(/^import .*;\s*$/gm,''),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
 const codigos={leitura:compilar('rh-performance'),sync:compilar('sync')};
@@ -19,7 +20,7 @@ function ambiente(perfil='ADMIN_RH',linhas:Linha[]=[],falhaPCP=false,ativo=true,
     const q={select:()=>q,eq:(campo:string,valor:unknown)=>{if(tabela!=='perfis')lista=lista.filter(l=>l[campo as keyof Linha]===valor);return q;},in:(campo:string,valores:unknown[])=>{lista=lista.filter(l=>valores.includes(l[campo as keyof Linha]));return q;},order:()=>q,limit:(n:number)=>{limite=n;return q;},range:()=>q,gt:(_campo:string,valor:string)=>{lista=lista.filter(l=>l.id>valor);return q;},maybeSingle:()=>{individual=true;return q;},then:(resolve:(r:unknown)=>unknown)=>Promise.resolve(resolve({data:tabela==='perfis'?{colaborador_id:'pessoa-teste',perfil,ativo}:tabela==='config_global'?{config:{}}:individual?lista[0]??null:lista.slice(0,limite),error:tabela==='pcp_registros'&&falhaPCP?{message:'erro de teste'}:null}))};
     return q;
   }};
-  runInNewContext(codigos[modo],{Deno:{env:{get:()=>''},serve:(h:typeof handler)=>{handler=h;}},createClient:()=>admin,projetarOrdem,preflight:()=>null,json:(b:unknown,status=200)=>new Response(JSON.stringify(b),{status}),console:{...console,warn:vi.fn()},crypto,Request,Response,Date,Set,Map,URL,Uint8Array,atob,btoa});
+  runInNewContext(codigos[modo],{Deno:{env:{get:()=>''},serve:(h:typeof handler)=>{handler=h;}},createClient:()=>admin,projetarOrdem,contaApontadaAoSocio,lerVinculosSocioConta,preflight:()=>null,json:(b:unknown,status=200)=>new Response(JSON.stringify(b),{status}),console:{...console,warn:vi.fn()},crypto,Request,Response,Date,Set,Map,URL,Uint8Array,atob,btoa});
   return {rpc,tabelas,chamar:(body:unknown,token='teste')=>handler(new Request('https://rh.test/sync',{method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify(body)}))};
 }
 const ordem=(id:string,data='2026-09-12T15:00:00Z'):Linha=>({id,colecao:'os',apagado:false,atualizado_em:data,registro:{numero:id,finalizadaEm:data,cliente:'Cliente de teste',equipe:['Equipe de teste'],cpf:'NÃO PUBLICAR',telefone:'NÃO PUBLICAR',checkout:{gps:{latitude:1}}}});

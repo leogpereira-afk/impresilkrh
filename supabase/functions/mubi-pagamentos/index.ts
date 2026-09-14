@@ -18,6 +18,7 @@ import { incluirPagamentoNaConferencia, prepararReferenciasPessoas } from "../_s
 // ============================================================================
 import { json, preflight } from "../_shared/cors.ts";
 import { decidirPaginacao } from "../_shared/paginacao.ts";
+import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
 import { codigoDeReferencia, ehConfidencialEquivalente, equivalenciasDeContas, serializar, type ContaRef } from "../_shared/renumeracao.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -379,6 +380,24 @@ Deno.serve(async (req) => {
       }
     }
 
+    /* O APONTAMENTO DO DONO VALE NAS DUAS ROTAS (14/09/2026).
+     *
+     * O corte societário desta função era o literal "2.14" mais a
+     * equivalência. Desde julho as retiradas vivem em 2.11.x e quem as
+     * identifica é o dono, à mão, em `config.vinculosSocioConta` — mapa que a
+     * porta de dados (`sync`) já respeita desde 08/09 e esta aqui não
+     * consultava. Resultado: a rota do PLANO escondia a conta e a rota da
+     * FOLHA devolvia os títulos dela, com nome e valor, para qualquer
+     * ADMIN_RH.
+     *
+     * Falha de leitura RECUSA o pedido, em vez de servir sem o mapa: sem ele
+     * não dá para separar conta de sócio de conta pública, e uma tela que não
+     * carrega é barulho — um vazamento é silêncio. */
+    const socio = await lerVinculosSocioConta(admin);
+    if (socio.falhou) throw new Error("Não foi possível conferir os vínculos societários do RH.");
+    const ehDeSocio = (codigo: string, nome: string, equivaleA?: string) =>
+      contaApontadaAoSocio({ codigo, nome, equivaleA }, socio.vinculos);
+
     if (escopo === "plano") {
       // O plano de REFERÊNCIA: o mês mais recente que veio do contador (não do
       // ERP). É contra ele que a numeração de hoje é reconhecida pelo nome —
@@ -400,8 +419,9 @@ Deno.serve(async (req) => {
         if (!plano) continue;
         const codigo = codigoDoPlano(plano);
         if (!codigo) continue;
-        if (codigo === "2.14" || codigo.startsWith("2.14.")) { societarias.contas.add(codigo); societarias.titulos += 1; continue; }
-        const x = contas.get(codigo) ?? { codigo, nome: plano.split("-").slice(1).join("-").trim() || codigo, quantos: 0, valor: 0 };
+        const nomeDaConta = plano.split("-").slice(1).join("-").trim();
+        if (codigo === "2.14" || codigo.startsWith("2.14.") || ehDeSocio(codigo, nomeDaConta)) { societarias.contas.add(codigo); societarias.titulos += 1; continue; }
+        const x = contas.get(codigo) ?? { codigo, nome: nomeDaConta || codigo, quantos: 0, valor: 0 };
         x.quantos += 1;
         x.valor = Math.round((x.valor + (num(i.valor_pagamento) || num(i.valor_titulo))) * 100) / 100;
         contas.set(codigo, x);
@@ -409,7 +429,9 @@ Deno.serve(async (req) => {
       const eq = equivalenciasDeContas(referencia.contas, [...contas.values()], { prefixosConfidenciais: ["2.14"] });
       eq.referencia = referencia.competencia;
       for (const [codigo, c] of [...contas]) {
-        if (ehConfidencialEquivalente(c, ["2.14"], eq)) { societarias.contas.add(codigo); societarias.titulos += c.quantos; contas.delete(codigo); }
+        // Também pela numeração TRADUZIDA: o apontamento pode ter sido feito
+        // no código antigo, e a equivalência é quem liga os dois.
+        if (ehConfidencialEquivalente(c, ["2.14"], eq) || ehDeSocio(c.codigo, c.nome, codigoDeReferencia(c.codigo, eq.mapa))) { societarias.contas.add(codigo); societarias.titulos += c.quantos; contas.delete(codigo); }
       }
       return json({
         competencia,
@@ -474,7 +496,9 @@ Deno.serve(async (req) => {
        * dois nunca disparam sozinhos — `ehConfidencialEquivalente` já cobre o
        * código de hoje, o código traduzido E o nome sem par. Guarda que nunca
        * dispara parece proteção e não é: alguém confia nela depois. */
-      if (ehConfidencialEquivalente({ codigo: c, nome: plano.split("-").slice(1).join("-").trim() }, ["2.14"], eqFolha)) return false;
+      const nomeDaConta = plano.split("-").slice(1).join("-").trim();
+      if (ehConfidencialEquivalente({ codigo: c, nome: nomeDaConta }, ["2.14"], eqFolha)) return false;
+      if (ehDeSocio(c, nomeDaConta, codigoDeReferencia(c, eqFolha.mapa))) return false;
       if (ehFolha(plano)) return true;
       const antigo = codigoDeReferencia(c, eqFolha.mapa);
       if (!antigo || antigo === c) return false;
@@ -496,7 +520,9 @@ Deno.serve(async (req) => {
       const plano = String(i.plano_contas ?? "");
       const codigo = codigoDoPlano(plano);
       // Mantém o limite de acesso societário existente, nas duas numerações.
-      const confidencial = ehConfidencialEquivalente({ codigo, nome: plano.split("-").slice(1).join("-").trim() }, ["2.14"], eqFolha);
+      const nomeDaConta = plano.split("-").slice(1).join("-").trim();
+      const confidencial = ehConfidencialEquivalente({ codigo, nome: nomeDaConta }, ["2.14"], eqFolha)
+        || ehDeSocio(codigo, nomeDaConta, codigoDeReferencia(codigo, eqFolha.mapa));
       return incluirPagamentoNaConferencia(i, referencias, ehFolhaOuEquivalente(plano), confidencial);
     };
     const folha = itens.filter(participaDaConferencia);

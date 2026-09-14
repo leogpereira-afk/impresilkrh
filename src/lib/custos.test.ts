@@ -2,7 +2,7 @@
 // (R$ 62.576,49) quando a mesma planilha subiu duas vezes. A regra de subir de
 // novo sem duplicar fica travada por teste.
 import { describe, it, expect } from "vitest";
-import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes, classeDaConta, contaEhConfidencial, planoSemIndividual, serieCustos, classeMap } from "./custos";
+import { conciliarPagamentos, classificarPagamento, conferirCompetencia, competenciasComDados, confidencialDoMes, folhasDoMes, classeDaConta, contaEhConfidencial, planoSemIndividual, serieCustos, classeMap, chaveContaSocio, NAO_E_DE_SOCIO, totaisDoMes } from "./custos";
 import type { ClassificacaoConta, ContaPlano, Pagamento } from "@/data/types";
 
 const pg = (over: Partial<Pagamento> = {}): Pagamento =>
@@ -285,6 +285,41 @@ describe("classeDaConta — a classe vem do código de referência quando o cont
     expect(classeDaConta({ codigo: "2.11.2.2", equivaleA: "2.14.2.2" }, m)).toBe("confidencial");
     expect(contaEhConfidencial({ codigo: "2.14.1.2" })).toBe(true);
     expect(contaEhConfidencial({ codigo: "2.11.2.2" })).toBe(false);
+  });
+
+  /* O CASO REAL: em julho o contador tirou a retirada do Leonardo de 2.14 e o
+     dono apontou a conta ao card do sócio à mão. Sem esta régua, a tela
+     continuava mostrando a conta — com nome e valor — para qualquer ADMIN_RH,
+     enquanto a porta de dados já a escondia. */
+  const vinc = { [chaveContaSocio("2.11.2.2", "Leonardo")]: "leonardo", [chaveContaSocio("2.3.1", "Aluguel")]: NAO_E_DE_SOCIO };
+  it("conta apontada ao sócio à mão é confidencial, mesmo fora do 2.14", () => {
+    expect(contaEhConfidencial({ codigo: "2.11.2.2", nome: "Leonardo" }, vinc)).toBe(true);
+    expect(classeDaConta({ codigo: "2.11.2.2", nome: "Leonardo" }, m, vinc)).toBe("confidencial");
+  });
+  it('"nenhum" é o dono dizendo que NÃO é de sócio — a conta continua pública', () => {
+    expect(contaEhConfidencial({ codigo: "2.3.1", nome: "Aluguel" }, vinc)).toBe(false);
+  });
+  it("o apontamento é por código+nome: o mesmo número com outro nome não é do sócio", () => {
+    // O contador reaproveita número: 2.11.2.2 pode ser "Munk" noutro mês.
+    expect(contaEhConfidencial({ codigo: "2.11.2.2", nome: "Munk" }, vinc)).toBe(false);
+  });
+  it("sem o mapa, nada muda — a régua velha continua valendo", () => {
+    expect(contaEhConfidencial({ codigo: "2.11.2.2", nome: "Leonardo" })).toBe(false);
+  });
+  it("a conta que o rateio mostra some quando o dono aponta ao sócio", () => {
+    // `contasRateio` é lista que a tela desenha, com nome e valor.
+    const plano = [
+      { id: "a", competencia: "2026-07", codigo: "2.1.14", nome: "Contribuição Sindical", valor: 100, folha: true },
+      { id: "b", competencia: "2026-07", codigo: "2.11.2.2", nome: "Leonardo", valor: 28105.64, folha: true },
+    ];
+    const mm = classeMap([
+      { id: "1", codigo: "2.1.14", nome: "x", classe: "rateio" },
+      { id: "2", codigo: "2.11.2.2", nome: "Leonardo", classe: "rateio" },
+    ] as never);
+    expect(totaisDoMes(plano as never, mm, "2026-07", 10).rateio).toBe(28205.64);
+    const t = totaisDoMes(plano as never, mm, "2026-07", 10, vinc);
+    expect(t.rateio).toBe(100);
+    expect(t.contasRateio.map((c) => c.codigo)).toEqual(["2.1.14"]);
   });
 });
 

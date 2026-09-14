@@ -11,6 +11,7 @@
 // ============================================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json, preflight } from "../_shared/cors.ts";
+import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
 
 const PAGINA = 150;
 
@@ -188,18 +189,19 @@ Deno.serve(async (req) => {
   const ehMaster = sessao.colaborador_id === MASTER_COLAB_ID;
   /* O apontamento de conta ao sócio, feito à mão na tela de Societárias. Só é
      lido para quem NÃO é master — quem é master vê tudo mesmo, e uma consulta
-     a menos por pedido. Falha na leitura não abre a porta: sem o mapa, vale o
-     literal 2.14 e o resto passa, então o erro é registrado e seguimos. */
+     a menos por pedido.
+
+     FALHA DE LEITURA AQUI ABRE UMA FRESTA, e a escolha é consciente: sem o
+     mapa vale só o literal 2.14, então uma conta apontada à mão passaria
+     enquanto o config estiver fora do ar. Derrubar TODA a sincronização do RH
+     por uma leitura de config é pior, e a fresta é estreita e registrada. A
+     porta do ERP (`mubi-pagamentos`) escolhe o contrário — lá uma tela que não
+     carrega é barulho, e o pedido é recusado. */
   let vinculosSocioConta: Record<string, string> = {};
   if (!ehMaster) {
-    try {
-      const { data } = await admin.from("config_global").select("config").eq("id", true).maybeSingle();
-      const cfg = (data?.config ?? {}) as Record<string, unknown>;
-      const v = cfg.vinculosSocioConta;
-      if (v && typeof v === "object") vinculosSocioConta = v as Record<string, string>;
-    } catch (e) {
-      console.error("sync: não consegui ler vinculosSocioConta", e);
-    }
+    const r = await lerVinculosSocioConta(admin);
+    if (r.falhou) console.error("sync: sigo sem o mapa de vínculos societários — vale só o literal 2.14");
+    vinculosSocioConta = r.vinculos;
   }
   const contaConfidencial = (r: any) => {
     const bate = (c: unknown) => typeof c === "string" && (c === "2.14" || c.startsWith("2.14."));
@@ -209,21 +211,12 @@ Deno.serve(async (req) => {
        apontou essas contas ao sócio à mão — `config.vinculosSocioConta`, com a
        chave "codigo|nome". A porta só conhecia o literal e entregava
        R$ 157.314,37 a qualquer ADMIN_RH. Agora ela consulta o apontamento. */
-    const codigo = String(r?.codigo ?? "").trim();
-    // Duas formas da chave convivem na config real: a antiga só com o código e
-    // a nova com código|nome (o contador reaproveita número, e o nome desempata).
-    // A porta aceita as duas — o que existe em produção tem de ser respeitado.
-    const dono = vinculosSocioConta[`${codigo}|${normalizarNome(r?.nome)}`] ?? vinculosSocioConta[codigo];
-    return !!dono && dono !== "nenhum";
+    /* A régua do apontamento mora em `_shared/socioConta.ts`. Ela ESTAVA
+       copiada aqui, e a cópia é o defeito: a porta do ERP respondia outra
+       coisa sobre a mesma conta. Duas formas da chave convivem na config real
+       (só código, e código|nome) e a régua compartilhada aceita as duas. */
+    return contaApontadaAoSocio({ codigo: r?.codigo, nome: r?.nome, equivaleA: r?.equivaleA }, vinculosSocioConta);
   };
-  /* A CHAVE do apontamento é código+nome, e o nome vem normalizado (o contador
-     escreve "Retiradas Leonardo" e "RETIRADAS  LEONARDO"). Cópia da régua de
-     src/lib/custos.ts (chaveContaSocio) — se uma mudar, a outra precisa mudar
-     junto, e é por isso que o teste do servidor cobre as duas. */
-  function normalizarNome(v: unknown): string {
-    return String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  }
   /* Societária também virou LANÇAMENTO (tipo Arrendamento/Retirada), e a porta
      só olhava o plano de contas: R$ 54.544,69 de retirada e arrendamento saíam
      para qualquer ADMIN_RH pela coleção `pagamentos`. */

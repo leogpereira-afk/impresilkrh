@@ -20,11 +20,41 @@ export const classeDe = (codigo: string, m: Map<string, ClasseCusto>): ClasseCus
   ehContaConfidencial(codigo) ? "confidencial" : (m.get(codigo) ?? "ignorar");
 
 /** Conta com o código de HOJE e, se o contador renumerou, o de referência. */
-export type ContaComEquivalencia = { codigo: string; equivaleA?: string };
+export type ContaComEquivalencia = { codigo: string; equivaleA?: string; nome?: string };
 
-/** Confidencial em qualquer das duas numerações. */
-export const contaEhConfidencial = (p: ContaComEquivalencia): boolean =>
-  ehContaConfidencial(p.codigo) || (!!p.equivaleA && ehContaConfidencial(p.equivaleA));
+/**
+ * O APONTAMENTO À MÃO TAMBÉM É CONFIDENCIAL (14/09/2026).
+ *
+ * O prefixo 2.14 é a régua estrutural, e ela não alcança o caso real: em
+ * julho o contador moveu as retiradas do Leonardo para 2.11.2.2 e o dono
+ * apontou a conta ao card do sócio à mão (`config.vinculosSocioConta`). A
+ * porta de dados já respeita esse apontamento desde a correção do `sync`; a
+ * TELA não — e por isso a conta continuava aparecendo no editor de
+ * Classificação e no rateio de qualquer ADMIN_RH, com valor.
+ *
+ * Uma pergunta, uma régua: quem quer saber se a conta é confidencial passa os
+ * vínculos aqui. Vale nas duas numerações, e "nenhum" é resposta explícita de
+ * que a conta NÃO é de sócio — não some por engano o que o dono já olhou.
+ */
+const apontadaAoSocio = (p: ContaComEquivalencia, vinculos: Record<string, string>): boolean => {
+  // PRECEDÊNCIA, não "qualquer uma serve": a primeira chave com resposta
+  // decide, da mais específica para a mais solta. Espelho de
+  // supabase/functions/_shared/socioConta.ts, e o teste cobre as duas.
+  const chaves = [
+    chaveContaSocio(p.codigo, p.nome ?? ""),
+    p.equivaleA ? chaveContaSocio(p.equivaleA, p.nome ?? "") : "",
+    p.codigo,
+  ];
+  for (const k of chaves) {
+    const dono = k ? vinculos[k] : undefined;
+    if (dono) return dono !== NAO_E_DE_SOCIO;
+  }
+  return false;
+};
+
+/** Confidencial em qualquer das duas numerações — ou porque o dono apontou. */
+export const contaEhConfidencial = (p: ContaComEquivalencia, vinculos: Record<string, string> = {}): boolean =>
+  ehContaConfidencial(p.codigo) || (!!p.equivaleA && ehContaConfidencial(p.equivaleA)) || apontadaAoSocio(p, vinculos);
 
 /**
  * A classe de uma conta gravada. As classes são guardadas pelo código do plano
@@ -33,8 +63,8 @@ export const contaEhConfidencial = (p: ContaComEquivalencia): boolean =>
  * "2.1.14 Contribuição Sindical" (numeração nova) caía em Alimentação (o que
  * 2.1.14 era na numeração velha) — 07/09/2026.
  */
-export const classeDaConta = (p: ContaComEquivalencia, m: Map<string, ClasseCusto>): ClasseCusto =>
-  contaEhConfidencial(p) ? "confidencial" : (m.get(p.equivaleA ?? p.codigo) ?? (p.equivaleA ? m.get(p.codigo) : undefined) ?? "ignorar");
+export const classeDaConta = (p: ContaComEquivalencia, m: Map<string, ClasseCusto>, vinculos: Record<string, string> = {}): ClasseCusto =>
+  contaEhConfidencial(p, vinculos) ? "confidencial" : (m.get(p.equivaleA ?? p.codigo) ?? (p.equivaleA ? m.get(p.codigo) : undefined) ?? "ignorar");
 
 export function competenciasPlano(plano: ContaPlano[]): string[] {
   return [...new Set(plano.map((p) => p.competencia))].sort();
@@ -117,13 +147,17 @@ export interface TotaisMes {
   contasRateio: ContaPlano[];
 }
 
-export function totaisDoMes(plano: ContaPlano[], m: Map<string, ClasseCusto>, comp: string, nColab: number): TotaisMes {
+export function totaisDoMes(plano: ContaPlano[], m: Map<string, ClasseCusto>, comp: string, nColab: number, vinculos: Record<string, string> = {}): TotaisMes {
   const folhas = folhasDoMes(plano, comp);
-  const contasIndividual = folhas.filter((p) => classeDaConta(p, m) === "individual").sort((a, b) => b.valor - a.valor);
-  const contasRateio = folhas.filter((p) => classeDaConta(p, m) === "rateio").sort((a, b) => b.valor - a.valor);
+  /* `vinculos` vai junto porque `contasIndividual`/`contasRateio` SÃO LISTAS
+     QUE A TELA MOSTRA, com nome e valor. Uma conta apontada ao sócio que já
+     tinha classe gravada de antes continuaria aparecendo no rateio público. */
+  const classe = (p: ContaPlano) => classeDaConta(p, m, vinculos);
+  const contasIndividual = folhas.filter((p) => classe(p) === "individual").sort((a, b) => b.valor - a.valor);
+  const contasRateio = folhas.filter((p) => classe(p) === "rateio").sort((a, b) => b.valor - a.valor);
   const individual = contasIndividual.reduce((s, p) => s + p.valor, 0);
   const rateio = contasRateio.reduce((s, p) => s + p.valor, 0);
-  const encargo = folhas.filter((p) => classeDaConta(p, m) === "encargo").reduce((s, p) => s + p.valor, 0);
+  const encargo = folhas.filter((p) => classe(p) === "encargo").reduce((s, p) => s + p.valor, 0);
   return { individual, rateio, rateioPorColab: nColab > 0 ? rateio / nColab : 0, encargo, contasIndividual, contasRateio };
 }
 
@@ -135,14 +169,14 @@ export function totaisDoMes(plano: ContaPlano[], m: Map<string, ClasseCusto>, co
  * setembro: quanto mais para trás, mais errado, justamente no gráfico onde se
  * olha tendência. Ver lib/quadroNoMes.
  */
-export function serieCustos(plano: ContaPlano[], m: Map<string, ClasseCusto>, nColabDe: (comp: string) => number) {
+export function serieCustos(plano: ContaPlano[], m: Map<string, ClasseCusto>, nColabDe: (comp: string) => number, vinculos: Record<string, string> = {}) {
   return competenciasPlano(plano).map((comp) => {
     const n = nColabDe(comp);
-    const t = totaisDoMes(plano, m, comp, n);
+    const t = totaisDoMes(plano, m, comp, n, vinculos);
     return {
       competencia: comp, nome: compLabel(comp), individual: t.individual, rateio: t.rateio,
       rateioPorColab: t.rateioPorColab, nColab: n, medioIndividual: n > 0 ? t.individual / n : 0,
-      semIndividual: planoSemIndividual(plano, m, comp),
+      semIndividual: planoSemIndividual(plano, m, comp, vinculos),
     };
   });
 }
@@ -156,10 +190,10 @@ export function serieCustos(plano: ContaPlano[], m: Map<string, ClasseCusto>, nC
  * mostrava "R$ 0,00" na coluna Individual, do mesmo jeito que mostraria um mês
  * em que ninguém custou nada. Zero não é resultado.
  */
-export function planoSemIndividual(plano: ContaPlano[], m: Map<string, ClasseCusto>, comp: string): boolean {
+export function planoSemIndividual(plano: ContaPlano[], m: Map<string, ClasseCusto>, comp: string, vinculos: Record<string, string> = {}): boolean {
   const doMes = plano.filter((p) => p.competencia === comp);
   if (doMes.length === 0) return false;
-  return !doMes.some((p) => classeDaConta(p, m) === "individual");
+  return !doMes.some((p) => classeDaConta(p, m, vinculos) === "individual");
 }
 
 /** Valor de `vinculosSocioConta` que significa "esta conta não é de sócio nenhum". */

@@ -189,13 +189,15 @@ export function montarPlanoDoErp(
   competencia: string,
   classes: Map<string, ClasseCusto>,
   eq: Equivalencias | null = null,
+  /** `config.vinculosSocioConta`: conta apontada ao sócio à mão também é societária. */
+  vinculosSocio: Record<string, string> = {},
 ): PlanoMontado {
   const out: PlanoMontado = { contas: [], pessoais: [], societarias: [], naoReconhecidas: [], renumeradas: 0, semPar: [] };
   for (const c of contas) {
     if (!c.codigo || !Number.isFinite(c.valor)) continue;
     if (!CODIGO_VALIDO.test(c.codigo)) { out.naoReconhecidas.push(c); continue; }
     // Confidencial em QUALQUER numeração — e, sem par, pelo nome (na dúvida, esconde).
-    if (ehConfidencialEquivalente(c, PREFIXOS_SOCIETARIOS, eq) || contaEhConfidencial({ codigo: c.codigo })) { out.societarias.push(c); continue; }
+    if (ehConfidencialEquivalente(c, PREFIXOS_SOCIETARIOS, eq) || contaEhConfidencial({ codigo: c.codigo, nome: c.nome, equivaleA: codigoDeReferencia(c.codigo, eq?.mapa) }, vinculosSocio)) { out.societarias.push(c); continue; }
     // O código pelo qual se CLASSIFICA é o de referência: as classes são
     // guardadas pela numeração do contador.
     const ref = codigoDeReferencia(c.codigo, eq?.mapa);
@@ -303,14 +305,14 @@ export interface ComparacaoPlano {
  * importa quando o mês já tem a planilha do contador: ele lança provisão (FGTS,
  * férias) que não existe em contas a pagar.
  */
-export function compararPlano(atual: ContaPlano[], novo: ContaPlano[], opcoes: { ocultarConfidenciais?: boolean } = {}): ComparacaoPlano {
+export function compararPlano(atual: ContaPlano[], novo: ContaPlano[], opcoes: { ocultarConfidenciais?: boolean; vinculosSocio?: Record<string, string> } = {}): ComparacaoPlano {
   const antes = new Map(atual.map((c) => [c.codigo, c]));
   const depois = new Map(novo.map((c) => [c.codigo, c]));
   let confidenciaisOcultas = 0;
   const codigos = [...new Set([...antes.keys(), ...depois.keys()])]
     .filter((codigo) => {
       const conta = antes.get(codigo) ?? depois.get(codigo)!;
-      if (opcoes.ocultarConfidenciais && contaEhConfidencial(conta)) { confidenciaisOcultas++; return false; }
+      if (opcoes.ocultarConfidenciais && contaEhConfidencial(conta, opcoes.vinculosSocio ?? {})) { confidenciaisOcultas++; return false; }
       return true;
     })
     .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
@@ -330,7 +332,7 @@ export function compararPlano(atual: ContaPlano[], novo: ContaPlano[], opcoes: {
       estado,
     };
   });
-  const visivel = (c: ContaPlano) => !(opcoes.ocultarConfidenciais && contaEhConfidencial(c));
+  const visivel = (c: ContaPlano) => !(opcoes.ocultarConfidenciais && contaEhConfidencial(c, opcoes.vinculosSocio ?? {}));
   const soma = (xs: ContaPlano[]) => Math.round(xs.filter((c) => c.folha && visivel(c)).reduce((s, c) => s + c.valor, 0) * 100) / 100;
   const somemLinhas = linhas.filter((l) => l.estado === "some");
   const ehPai = (codigo: string) => antes.get(codigo)?.folha === false;
