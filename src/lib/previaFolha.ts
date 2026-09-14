@@ -49,6 +49,25 @@ export function diffAplicavel(diff: DiffPagamentos, excluidos?: Set<string>): Di
 
 export const NATUREZAS_SILENCIOSAS = new Set<Natureza>(["texto", "conta", "renumeracao", "adocao"]);
 
+/**
+ * O QUE A APLICAÇÃO GRAVOU, em partes legíveis — para o histórico e o aviso.
+ *
+ * Mora aqui porque o histórico é a ÚNICA memória do que aconteceu, e ele
+ * contava `g.itens.length`: o grupo inteiro, incluindo as linhas que a pessoa
+ * desmarcou (elas continuam na lista de propósito, para ela ver o que
+ * recusou). A linha dizia "12 valor" e a gravação mexia em 4 — e depois não
+ * havia como saber qual dos dois números era verdade.
+ *
+ * `novos` e `removidos` já chegam contados do diff filtrado.
+ */
+export function partesAplicadas(grupos: GrupoAlterado[], excluidos: Set<string>, novos: number, removidos: number): string[] {
+  return grupos
+    .map((g) => ({ n: g.itens.filter((i) => !excluidos.has(i.antigo.id)).length, natureza: g.natureza }))
+    .filter((g) => g.n > 0)
+    .map((g) => `${g.n} ${g.natureza}`)
+    .concat(novos ? [`${novos} novos`] : [], removidos ? [`${removidos} removidos`] : []);
+}
+
 export interface ItemAlterado {
   antigo: Pagamento;
   novo: Pagamento;

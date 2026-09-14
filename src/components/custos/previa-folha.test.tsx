@@ -234,3 +234,66 @@ describe("aceitar algumas, rejeitar outras", () => {
     expect(document.body.textContent).toContain("2 de 2 marcadas para aplicar");
   });
 });
+
+describe("o placar conta o que vai ser gravado", () => {
+  /* A TELA MENTIA NO NÚMERO MAIS VISÍVEL. Desmarcar linhas não mexia no
+     placar "novas": ele somava a lista inteira, inclusive o que a pessoa
+     acabou de recusar. Quem desmarcou 1 dos 2 novos lia "2 novas · R$ 1.500"
+     e aplicava 1 · R$ 1.000. */
+  let container: HTMLDivElement;
+  let root: Root;
+  const novoA = pg({ id: "mubi-20", tipo: "Salário", valor: 1000 });
+  const novoB = pg({ id: "mubi-21", tipo: "Adiantamento", valor: 500 });
+  const troca = { antigo: pg({ id: "mubi-22", valor: 900 }), novo: pg({ id: "mubi-22", valor: 950 }) };
+  const desenhar = (excluidos: Set<string>) => {
+    const resumo = resumoDaPrevia({
+      diff: { iguais: [], alterados: [troca], novos: [novoA, novoB], ausentes: [] },
+      gravados: [troca.antigo], janela: new Set(["2026-07"]), ausentesMarcados: new Set(),
+      colaboradorPor: (id) => pessoas[id], tiposEncargo: ["FGTS", "INSS"], hoje: new Date(2026, 8, 7),
+      excluidos,
+    });
+    act(() => {
+      root.render(
+        <PreviaFolha
+          resumo={resumo} iguais={0} cobertura={{ truncado: false, pedidas: ["2026-07"], lidas: ["2026-07"], falhas: [] }}
+          nomeDe={(id) => pessoas[id]?.nome ?? id}
+          ausentesMarcados={new Set()} onMarcarAusente={() => {}} onMarcarBloco={() => {}}
+          excluidos={excluidos} onExcluir={() => {}} onExcluirBloco={() => {}}
+          confirmados={new Set() as never} onConfirmar={() => {}}
+          salarios={[]} salariosMarcados={new Set()} onMarcarSalario={() => {}} cpfs={[]}
+          onAplicar={() => {}} onCancelar={() => {}}
+        />,
+      );
+    });
+  };
+
+  beforeEach(() => { container = document.createElement("div"); document.body.appendChild(container); act(() => { root = createRoot(container); }); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); });
+
+  // O rótulo mora num <p> dentro do cartão; o cartão é o pai dele.
+  const placar = (rotulo: string) => {
+    const alvo = [...document.body.querySelectorAll("p")].find((p) => p.textContent?.trim() === rotulo);
+    return alvo?.parentElement?.textContent ?? "";
+  };
+
+  it("com tudo marcado, o placar mostra os dois novos e a soma cheia", () => {
+    desenhar(new Set());
+    expect(placar("novas")).toContain("2");
+    expect(placar("novas")).toContain("1.500,00");
+  });
+
+  it("desmarcar um novo tira do número E da soma", () => {
+    desenhar(new Set(["mubi-21"]));
+    const p = placar("novas");
+    expect(p).toContain("1.000,00");
+    expect(p).not.toContain("1.500,00");
+    expect(p).toContain("1 desmarcada(s)");
+  });
+
+  it("desmarcar uma alteração tira do placar 'alteradas'", () => {
+    desenhar(new Set(["mubi-22"]));
+    expect(placar("alteradas")).toContain("1 desmarcada(s)");
+    // E o total das alteradas marcadas é zero — a única que havia foi recusada.
+    expect(placar("alteradas").startsWith("0")).toBe(true);
+  });
+});

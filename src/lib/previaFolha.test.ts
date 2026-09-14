@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chaveDoAlarme, classificarAlterados, diffAplicavel, mudouSobAPrevia, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo, patchDeAplicacao } from "./previaFolha";
+import { chaveDoAlarme, classificarAlterados, diffAplicavel, mudouSobAPrevia, partesAplicadas, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar, type EntradaResumo, type ItemAlterado, patchDeAplicacao } from "./previaFolha";
 import { chefeDasMudancas, mudancas, type DiffPagamentos } from "./custos";
 import type { Colaborador, Pagamento, RetratoFolha } from "@/data/types";
 
@@ -571,5 +571,29 @@ describe("novo que já existe", () => {
     const p = planoDeDesfazer(r, [{ ...novo("mubi-9", 1000) }]);
     expect(p.apagar).toEqual([]);
     expect(p.restaurar.map((x) => x.valor)).toEqual([1500]);
+  });
+});
+
+describe("o histórico conta o que foi gravado, não o que foi oferecido", () => {
+  /* O histórico é a ÚNICA memória do que a aplicação fez. Ele lia
+     `g.itens.length` — o grupo inteiro, com as linhas desmarcadas dentro —
+     então dizia "3 valor" onde a gravação mexeu em 1. */
+  const item = (id: string): ItemAlterado => ({
+    antigo: { id, colaboradorId: "ana", competencia: "2026-07", tipo: "Salário", valor: 100 } as Pagamento,
+    novo: { id, colaboradorId: "ana", competencia: "2026-07", tipo: "Salário", valor: 200 } as Pagamento,
+    muds: [], natureza: "valor",
+  });
+  const grupos = [{ natureza: "valor" as const, itens: [item("a"), item("b"), item("c")], deltaValor: 0 }];
+
+  it("sem nada desmarcado, conta o grupo inteiro", () => {
+    expect(partesAplicadas(grupos, new Set(), 2, 1)).toEqual(["3 valor", "2 novos", "1 removidos"]);
+  });
+
+  it("o desmarcado não entra na conta", () => {
+    expect(partesAplicadas(grupos, new Set(["b", "c"]), 0, 0)).toEqual(["1 valor"]);
+  });
+
+  it("grupo inteiro desmarcado some da linha em vez de aparecer como zero", () => {
+    expect(partesAplicadas(grupos, new Set(["a", "b", "c"]), 0, 0)).toEqual([]);
   });
 });

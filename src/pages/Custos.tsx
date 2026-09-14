@@ -41,7 +41,7 @@ import { TotalEquipe } from "@/components/custos/total-equipe";
 import { EncargosEstimados } from "@/components/custos/encargos-estimados";
 import { VinculosSalvos } from "@/components/custos/vinculos-salvos";
 import { resumoDaEquipe, pesoDaPessoa, porPessoaNoMes, type PessoaNoMes } from "@/lib/provisaoEquipe";
-import { diffAplicavel, mudouSobAPrevia, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
+import { diffAplicavel, mudouSobAPrevia, partesAplicadas, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -954,10 +954,9 @@ export default function Custos() {
     if (retrato.tocados.length > 0) recuperacoesColecao.criarOuAtualizar(retrato);
 
     // 2) O lote mecânico — UMA linha no histórico, com a faixa e o que mudou.
-    const partes = resumoPrev.grupos.map((g) => `${g.itens.length} ${g.natureza}`).concat(
-      diff.novos.length ? [`${diff.novos.length} novos`] : [],
-      removidos.length ? [`${removidos.length} removidos`] : [],
-    );
+    // Conta o que foi GRAVADO, não o que foi oferecido — a régua mora na lib,
+    // com teste, porque o histórico é a única memória do que aconteceu.
+    const partes = partesAplicadas(resumoPrev.grupos, excluidos, diff.novos.length, removidos.length);
     emLote(`Aplicou a folha do ERP · ${faixa} · ${partes.join(" · ") || "nada"}`, () => {
       const nd = (x?: string) => (x ?? "").trim();
       for (const { antigo, novo } of diff.iguais) {
@@ -1245,6 +1244,11 @@ export default function Custos() {
   // Meses cujo plano existe mas não traz nenhuma conta de folha: a coluna
   // Individual mostra "—" e o quadro amarelo explica.
   const mesesSemFolhaNoPlano = useMemo(() => serie.filter((x) => x.semIndividual).map((x) => x.competencia), [serie]);
+  /* O MÊS ABERTO É UM DESSES? A tabela da evolução já mostrava "—" para eles,
+     mas os cartões do mesmo mês mostravam R$ 0,00 — a mesma tela dizendo
+     "desconhecido" numa metade e "zero" na outra, e o cartão é o que se lê
+     primeiro. Zero não é resultado. */
+  const semFolhaNaComp = useMemo(() => mesesSemFolhaNoPlano.includes(compAtiva), [mesesSemFolhaNoPlano, compAtiva]);
 
   // ---------- Editor de classificação ----------
   // Contas societárias confidenciais (2.14.*) NUNCA aparecem no editor de
@@ -1853,11 +1857,19 @@ export default function Custos() {
               )
             ) : (
               <div className="space-y-4">
+                {/* O "—" tem de vir com o porquê, senão vira defeito de tela. */}
+                {semFolhaNaComp && (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+                    <b>O plano de {compLabelLongo(compAtiva)} veio sem a folha.</b> Nenhuma conta deste mês cai no custo individual das pessoas,
+                    então o individual e o total aparecem como “—”, e não como R$ 0,00. O rateio abaixo é real. A folha por pessoa não depende
+                    disto — ela está em “Financeiro do RH”, que lê os pagamentos.
+                  </p>
+                )}
                 <div className="grid gap-4 md:grid-cols-3">
                   <StatCard
                     label="Custo médio / colaborador"
-                    value={formatBRL(nColab > 0 ? totais.individual / nColab : 0)}
-                    hint={`Individual ÷ ${nColab} ativos`}
+                    value={semFolhaNaComp ? "—" : formatBRL(nColab > 0 ? totais.individual / nColab : 0)}
+                    hint={semFolhaNaComp ? "O plano deste mês veio sem a folha" : `Individual ÷ ${nColab} ativos`}
                     accent="brand"
                     icon={<Users className="h-4 w-4" />}
                     title="Ver os ativos que entram no divisor"
@@ -1865,8 +1877,8 @@ export default function Custos() {
                   />
                   <StatCard
                     label="Total custos de colaboradores"
-                    value={formatBRL(totalColetivo)}
-                    hint="Individual + rateio"
+                    value={semFolhaNaComp ? "—" : formatBRL(totalColetivo)}
+                    hint={semFolhaNaComp ? `Só o rateio veio: ${formatBRL(totais.rateio)}` : "Individual + rateio"}
                     accent="gold"
                     icon={<Wallet className="h-4 w-4" />}
                   />
@@ -1888,15 +1900,19 @@ export default function Custos() {
                   <CardBody>
                     <div className="mb-2 flex items-center justify-between text-sm">
                       <span className="flex items-center gap-2 text-slate-600">
-                        <span className="h-2.5 w-2.5 rounded-full bg-brand" /> Individual {formatBRL(totais.individual)}
+                        <span className="h-2.5 w-2.5 rounded-full bg-brand" /> Individual {semFolhaNaComp ? "—" : formatBRL(totais.individual)}
                       </span>
                       <span className="flex items-center gap-2 text-slate-600">
                         Rateio {formatBRL(totais.rateio)} <span className="h-2.5 w-2.5 rounded-full bg-gold" />
                       </span>
                     </div>
-                    <Progress value={totalColetivo > 0 ? (totais.individual / totalColetivo) * 100 : 0} />
+                    {/* Sem o individual, a divisão não é "0% individual": é uma
+                        conta que não dá para fazer. A barra some com a régua. */}
+                    {!semFolhaNaComp && <Progress value={totalColetivo > 0 ? (totais.individual / totalColetivo) * 100 : 0} />}
                     <p className="mt-2 text-xs text-slate-400">
-                      {totalColetivo > 0
+                      {semFolhaNaComp
+                        ? "O plano deste mês não trouxe conta de folha, então a divisão individual × rateio não dá para fazer — não é 0% individual, é desconhecido."
+                        : totalColetivo > 0
                         ? `${Math.round((totais.individual / totalColetivo) * 100)}% individual · ${Math.round((totais.rateio / totalColetivo) * 100)}% rateio`
                         : "Sem custos no período."}
                     </p>
@@ -1943,7 +1959,7 @@ export default function Custos() {
                               </td>
                               <td className="td text-right font-medium text-slate-800">{formatBRL(c.valor / divisor)}</td>
                               <td className="td text-right text-slate-500">
-                                {totalColetivo > 0 ? `${((c.valor / totalColetivo) * 100).toFixed(1)}%` : "—"}
+                                {totalColetivo > 0 && !semFolhaNaComp ? `${((c.valor / totalColetivo) * 100).toFixed(1)}%` : "—"}
                               </td>
                             </tr>
                           ))}
@@ -1951,7 +1967,7 @@ export default function Custos() {
                             <td className="td font-semibold text-brand-ink">Total de rateio</td>
                             <td className="td text-right font-semibold text-brand-ink">{formatBRL(totais.rateio / divisor)}</td>
                             <td className="td text-right text-slate-500">
-                              {totalColetivo > 0 ? `${((totais.rateio / totalColetivo) * 100).toFixed(1)}%` : "—"}
+                              {totalColetivo > 0 && !semFolhaNaComp ? `${((totais.rateio / totalColetivo) * 100).toFixed(1)}%` : "—"}
                             </td>
                           </tr>
                         </tbody>

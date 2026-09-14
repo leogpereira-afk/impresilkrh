@@ -113,6 +113,9 @@ export function PreviaFolha({
   ];
   const escolhidos = idsEscolhiveis.filter((id) => !excluidos.has(id)).length;
   const novosFora = resumo.novos.filter((n) => excluidos.has(n.id)).length;
+  const novosMarcados = resumo.novos.filter((n) => !excluidos.has(n.id));
+  const alteradasMarcadas = resumo.grupos.reduce((s, g) => s + g.itens.filter((i) => !excluidos.has(i.antigo.id)).length, 0);
+  const alteradasFora = resumo.grupos.reduce((s, g) => s + g.itens.length, 0) - alteradasMarcadas;
 
   const soCpf = resumo.contaNoBotao + resumo.silenciosos + salariosMarcados.size === 0 && cpfs.length > 0;
   const rotuloBotao = nadaAFazer
@@ -245,9 +248,17 @@ export function PreviaFolha({
         {/* Placar */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Placar n={iguais} rotulo="iguais" tom="text-slate-600" borda="border-slate-200 bg-slate-50/60" />
-          <Placar n={resumo.grupos.reduce((s, g) => s + g.itens.length, 0)} rotulo="alteradas" tom="text-blue-700" borda="border-blue-200 bg-blue-50/60"
-            sub={resumo.grupos.map((g) => `${g.itens.length} ${g.natureza === "renumeracao" ? "conta" : ROTULO_CAMPO[g.natureza as Mudanca["campo"]] ?? g.natureza}`).join(" · ")} />
-          <Placar n={resumo.novos.length} rotulo="novas" tom="text-green-700" borda="border-green-200 bg-green-50/60" sub={formatBRL(resumo.novos.reduce((s, p) => s + (Number(p.valor) || 0), 0))} />
+          {/* O PLACAR CONTA O QUE VAI SER GRAVADO. Ele somava a lista inteira,
+              inclusive o que a pessoa acabou de desmarcar: desmarcar 100 dos
+              140 novos não mexia no "140 novas · R$ 61 mil". O que foi
+              recusado aparece ao lado, em letra menor, em vez de sumir. */}
+          <Placar n={alteradasMarcadas} rotulo="alteradas" tom="text-blue-700" borda="border-blue-200 bg-blue-50/60"
+            sub={[
+              resumo.grupos.map((g) => `${g.itens.filter((i) => !excluidos.has(i.antigo.id)).length} ${g.natureza === "renumeracao" ? "conta" : ROTULO_CAMPO[g.natureza as Mudanca["campo"]] ?? g.natureza}`).join(" · "),
+              alteradasFora ? `${alteradasFora} desmarcada(s)` : "",
+            ].filter(Boolean).join(" · ")} />
+          <Placar n={novosMarcados.length} rotulo="novas" tom="text-green-700" borda="border-green-200 bg-green-50/60"
+            sub={[formatBRL(novosMarcados.reduce((s, p) => s + (Number(p.valor) || 0), 0)), novosFora ? `${novosFora} desmarcada(s)` : ""].filter(Boolean).join(" · ")} />
           <Placar n={resumo.ausentes.comIdErp.length + resumo.ausentes.semId.length + resumo.ausentes.semDono.length + resumo.ausentes.foraDaFolha.length + resumo.ausentes.emAberto.length} rotulo="não vieram" tom="text-amber-700" borda="border-amber-200 bg-amber-50/60"
             sub={[resumo.ausentes.comIdErp.length ? `${resumo.ausentes.comIdErp.length} do ERP` : "", resumo.ausentes.semId.length ? `${resumo.ausentes.semId.length} de planilha` : "", resumo.ausentes.semDono.length ? `${resumo.ausentes.semDono.length} sem dono` : "", resumo.ausentes.foraDaFolha.length ? `${resumo.ausentes.foraDaFolha.length} fora da lista` : "", resumo.ausentes.emAberto.length ? `${resumo.ausentes.emAberto.length} não pago(s)` : ""].filter(Boolean).join(" · ")} />
         </div>
