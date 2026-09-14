@@ -26,7 +26,7 @@
 // (lib/tipoDoPlano), tipoSocietario (lib/societario), competenciaPagto
 // (lib/custos), noQuadroEm (lib/quadroNoMes).
 import type { Colaborador, Pagamento } from "@/data/types";
-import { classificarPagamento, competenciaFechada, competenciaPagto } from "./custos";
+import { competenciaFechada, competenciaPagto } from "./custos";
 import { noQuadroEm } from "./quadroNoMes";
 import { ehSocio, tipoSocietario } from "./societario";
 import { planoDaDescricao, tipoDoPlanoErp } from "./tipoDoPlano";
@@ -95,6 +95,20 @@ export interface ResumoAuditoria {
    Pior: o quadro verde logo acima, que filtra as verbas, NÃO listava essa
    pessoa — dois blocos da mesma tela davam respostas opostas sobre a mesma
    ficha. A constante existia desde o início e nunca tinha sido usada. */
+/**
+ * Palavras que, na DESCRIÇÃO do título, dizem sozinhas que dinheiro é aquele.
+ *
+ * Curta de propósito: cada linha aqui vira pergunta na tela do dono, e regra
+ * que pergunta demais deixa de ser lida. Fora ficaram as ambíguas — "plantão"
+ * (a casa lança ora como diária, ora como hora extra) e "rescisão" (o FGTS
+ * rescisório é FGTS e a descrição diz rescisão).
+ */
+const MARCADORES_DA_DESCRICAO: [RegExp, string][] = [
+  [/adiantamento/, "Adiantamento"],
+  [/vale ?transporte|\bvt\b/, "Vale Transporte"],
+  [/\bamil\b|unimed|plano de sa[uú]de/, "Plano de Saúde"],
+];
+
 const TIPOS_DE_QUEM_SAIU = new Set(["Rescisão", "Férias", "13º Salário", "FGTS", "INSS"]);
 /** O que conta como "recebeu o mês": sem isso o mês da pessoa está pela metade. */
 const TIPOS_DE_MES_FECHADO = new Set(["Salário", "Rescisão", "Férias"]);
@@ -127,6 +141,10 @@ export function auditarLancamentos(
   const achados: AchadoAuditoria[] = [];
   /** Lançamentos que acharam a pessoa pelo texto, não pela chave (CPF/ID). */
   const porTexto: Pagamento[] = [];
+  /** Conta do ERP que nenhuma regra reconhece → os lançamentos que caíram nela. */
+  const desconhecidas = new Map<string, Pagamento[]>();
+  /** Conta × descrição: "conta ⇒ tipo, mas a descrição diz X" → os lançamentos. */
+  const contradizem = new Map<string, { plano: string; esperado: string; marcado: string; ps: Pagamento[] }>();
   const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
   const add = (a: AchadoAuditoria) => achados.push(a);
   const nomeDe = (id: string) => porId.get(id)?.nome ?? `(sem cadastro: ${id})`;
@@ -141,8 +159,12 @@ export function auditarLancamentos(
     if (plano) {
       const esperado = tipoSocietario(plano, c) ?? tipoDoPlanoErp(plano, "Outros");
       if (esperado === "Outros") {
-        add({ regra: "conta-desconhecida", gravidade: "atencao", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
-          titulo: `Conta que nenhuma regra reconhece`, detalhe: `${nomeDe(p.colaboradorId)} · ${plano} · gravado como "${p.tipo}"`, valor: num(p.valor) });
+        // UM ACHADO POR CONTA, não por lançamento: quando o contador renomeia
+        // uma conta, ela deixa de ser reconhecida de uma vez para o histórico
+        // inteiro. "2.1.11-Horas Extras" virou "Honorários Adicionais" e trouxe
+        // 184 lançamentos (R$ 35.575,43) — 184 linhas iguais pedindo a mesma
+        // decisão. O agrupamento é feito depois do laço.
+        (desconhecidas.get(plano) ?? desconhecidas.set(plano, []).get(plano)!).push(p);
       } else if (esperado !== p.tipo) {
         add({ regra: "classificacao", gravidade: "erro", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
           titulo: `Tipo não bate com a conta do ERP`, detalhe: `${nomeDe(p.colaboradorId)} · ${plano} ⇒ ${esperado}, gravado "${p.tipo}"`, valor: num(p.valor),
@@ -154,15 +176,29 @@ export function auditarLancamentos(
            nome da conta venceu. O mês ficou com R$ 61.768,58 de salário
            (+R$ 28.751,61 sobre a média) e R$ 3.146,50 de adiantamento. O total
            está certo; a divisão, não — e é a divisão que a folha desenha e que
-           outras regras leem ("mês sem salário", sugestão de salário).
-           Aqui a tela PERGUNTA em vez de decidir calado: mudar o tipo sozinho
-           seria trocar a régua do dinheiro por um palpite de texto. */
-        const pelaDescricao = classificarPagamento(plano, String(p.descricao ?? ""));
-        if (pelaDescricao !== esperado && pelaDescricao !== "Outros") {
-          add({ regra: "conta-contradiz-descricao", gravidade: "atencao", colaboradorId: p.colaboradorId, pagamentoIds: [p.id], competencias: [p.competencia],
-            titulo: "A conta do ERP não combina com a descrição do título",
-            detalhe: `${nomeDe(p.colaboradorId)} · conta ${plano} ⇒ ${esperado}, mas a descrição diz ${pelaDescricao} ("${String(p.descricao ?? "").split("·")[0].trim()}")`,
-            valor: num(p.valor), conserto: { campo: "tipo", para: pelaDescricao, travar: true } });
+           outras regras leem.
+
+           A RÉGUA É ESTREITA DE PROPÓSITO. Comparar com `classificarPagamento`
+           inteiro deu 144 achados, quase todos falsos: aquela função lê plano +
+           descrição juntos e com outra precedência, então "Pagamento
+           Colaborador" numa conta de 13º saía como "a descrição diz Salário", e
+           todo plantão em conta de Diária saía como "diz Horas Extras". Aqui só
+           entram marcadores INEQUÍVOCOS lidos na descrição sozinha — na base
+           real, 31 achados, e os 29 de fevereiro entre eles.
+
+           A tela PERGUNTA em vez de decidir calada: trocar o tipo sozinho seria
+           substituir a régua do dinheiro por um palpite de texto. */
+        const texto = String(p.descricao ?? "").split("·")[0].trim().toLowerCase();
+        const marcado = MARCADORES_DA_DESCRICAO.find(([rx]) => rx.test(texto))?.[1];
+        if (marcado && marcado !== p.tipo) {
+          /* UM ACHADO POR (CONTA → TIPO), não por lançamento. Os 29
+             adiantamentos de fevereiro na conta de salário são UMA decisão —
+             29 linhas iguais só fariam o dono clicar 29 vezes no mesmo "sim".
+             O agrupamento é feito depois do laço. */
+          const chave = `${plano}|${p.tipo}|${marcado}`;
+          const balde = contradizem.get(chave) ?? { plano, esperado, marcado, ps: [] };
+          balde.ps.push(p);
+          contradizem.set(chave, balde);
         }
       }
     }
@@ -312,6 +348,40 @@ export function auditarLancamentos(
       titulo: `${porTexto.length} lançamento(s) ligados pelo nome, não pela chave`,
       detalhe: `${pessoas.length} pessoa(s), ${total.toFixed(2)} no total — maiores: ${maiores.join(", ")}. O título do ERP veio sem CPF, então a pessoa foi achada pelo texto: nome do favorecido ou nome dentro da descrição. Nome repete e vem cortado em 30 letras; a chave (CPF, ou "ID 000000" na descrição) não. Peça no Mubisys o preenchimento do favorecido com CPF.`,
       valor: total,
+    });
+  }
+
+  /* CONTA QUE NENHUMA REGRA RECONHECE — uma linha por CONTA. */
+  for (const [plano, ps] of desconhecidas) {
+    const total = ps.reduce((t, p) => t + num(p.valor), 0);
+    const comps = [...new Set(ps.map((p) => p.competencia))].sort();
+    const textos = [...new Set(ps.map((p) => String(p.descricao ?? "").split("·")[0].trim()).filter(Boolean))].slice(0, 3);
+    add({
+      regra: "conta-desconhecida", gravidade: "atencao", colaboradorId: ps.length === 1 ? ps[0].colaboradorId : "",
+      pagamentoIds: ps.map((p) => p.id), competencias: comps,
+      titulo: `Conta que nenhuma regra reconhece: ${plano}`,
+      detalhe: `${ps.length} lançamento(s) de ${new Set(ps.map((p) => p.colaboradorId)).size} pessoa(s), ${total.toFixed(2)}, de ${comps[0]} a ${comps[comps.length - 1]} — gravados como "${ps[0].tipo}". As descrições dizem: ${textos.join(" · ")}. Diga que tipo é na Classificação dos tipos (aba Sincronização); enquanto ninguém disser, eles ficam em "Outros" e fora da base de encargos.`,
+      valor: total,
+    });
+  }
+
+  /* A CONTA DIZ UMA COISA E A DESCRIÇÃO DIZ OUTRA — uma linha por (conta →
+     tipo que a descrição marca). Cada linha é uma decisão só, e o conserto
+     automático vale para todos os lançamentos dela. */
+  for (const { plano, esperado, marcado, ps } of contradizem.values()) {
+    const total = ps.reduce((t, p) => t + num(p.valor), 0);
+    const comps = [...new Set(ps.map((p) => p.competencia))].sort();
+    const textos = [...new Set(ps.map((p) => String(p.descricao ?? "").split("·")[0].trim()).filter(Boolean))].slice(0, 3);
+    const quem = ps.length === 1 ? `${nomeDe(ps[0].colaboradorId)} · ` : `${ps.length} lançamento(s) de ${new Set(ps.map((p) => p.colaboradorId)).size} pessoa(s), ${total.toFixed(2)}, ${comps.length === 1 ? `em ${comps[0]}` : `de ${comps[0]} a ${comps[comps.length - 1]}`} · `;
+    add({
+      regra: "conta-contradiz-descricao", gravidade: "atencao",
+      colaboradorId: ps.length === 1 ? ps[0].colaboradorId : "",
+      pagamentoIds: ps.map((p) => p.id), competencias: comps,
+      titulo: "A conta do ERP não combina com a descrição do título",
+      /* `esperado` É o tipo gravado: esta regra só olha o que a conta e o tipo
+         já concordam — a divergência é a descrição. */
+      detalhe: `${quem}conta ${plano} ⇒ ${esperado}, mas a descrição diz ${marcado} ("${textos.join('" · "')}")`,
+      valor: total, conserto: { campo: "tipo", para: marcado, travar: true },
     });
   }
 

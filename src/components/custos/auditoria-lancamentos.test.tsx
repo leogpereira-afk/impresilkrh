@@ -203,13 +203,17 @@ describe("Auditoria — localizar e abrir listas longas", () => {
     const linhas: Pagamento[] = Array.from({ length: 27 }, (_, i) => ({
       id: `conta-${i}`,
       colaboradorId: "ana",
-      competencia: "2026-08",
+      competencia: "2026-09",
       tipo: "Salário",
       valor: i + 1,
-      dataPagamento: "2026-09-05",
+      dataPagamento: "2026-09-05", // dia 5 ⇒ competência 2026-08, não 2026-09
       idMubi: String(300 + i),
       statusErp: "PAGO",
-      descricao: `Lançamento financeiro ${i} · 2.9.99-Conta nova`,
+      // COMPETÊNCIA, e não conta desconhecida: a busca e o "Mostrar todas" só
+      // têm o que fazer numa REGRA QUE RENDE UMA LINHA POR LANÇAMENTO. A conta
+      // que ninguém reconhece passou a vir agrupada (uma linha por conta), e
+      // com ela este teste media a lista de um item só.
+      descricao: `Lançamento financeiro ${i} · 2.1.1-Salário`,
     } as Pagamento));
 
     act(() => { root.render(<AuditoriaLancamentos pagamentos={linhas} colaboradores={pessoa} onCorrigir={() => {}} />); });
@@ -225,10 +229,13 @@ describe("Auditoria — localizar e abrir listas longas", () => {
     });
     expect(container.textContent).toContain("1 achado(s) exibido(s) de 27");
 
-    const grupo = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("Conta não reconhecida"));
+    const grupo = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("Competência ≠ vencimento"));
     expect(grupo).toBeTruthy();
     act(() => { grupo!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
-    expect(container.textContent).toContain("Conta nova");
+    // O achado do "26" é o de 27,00 (valor = i + 1) — e é o único visível.
+    // (Sem o "R$": o Intl separa o símbolo do número com espaço fino.)
+    expect(container.textContent).toContain("27,00");
+    expect(container.textContent).not.toContain("26,00");
 
     act(() => {
       setInputValue("");
@@ -237,6 +244,7 @@ describe("Auditoria — localizar e abrir listas longas", () => {
     expect(verTodas).toBeTruthy();
     act(() => { verTodas!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
     expect(container.textContent).toContain("Todas as linhas deste alerta estão visíveis.");
-    expect(container.textContent).toContain("Conta nova");
+    expect(container.textContent).toContain("26,00");
+    expect(container.textContent).toContain("27,00");
   });
 });

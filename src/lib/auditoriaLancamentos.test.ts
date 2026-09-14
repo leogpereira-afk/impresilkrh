@@ -328,6 +328,32 @@ describe("conta × descrição", () => {
     expect(a.gravidade).toBe("atencao");
   });
 
+  it("a mesma troca em várias pessoas é UM achado, com todos os lançamentos dentro", () => {
+    // É por isso que o agrupamento existe: em fevereiro foram 29 linhas
+    // pedindo a mesma decisão. Uma linha por lançamento faria o dono clicar 29
+    // vezes no mesmo "sim" — e o conserto automático, que só mexia no primeiro
+    // id, deixaria 28 para trás.
+    const bia = col({ id: "bia", nome: "Bia" });
+    const adi = (id: string, quem: string, valor: number) =>
+      pg({ id, colaboradorId: quem, valor, tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-02-20", descricao: "Adiantamento Colaborador · 2.1.1-Salário" });
+    const r = achado(auditarLancamentos([adi("a1", "ana", 500), adi("a2", "bia", 300), adi("a3", "ana", 200)], [ana, bia], { hoje: HOJE }), "conta-contradiz-descricao");
+    expect(r).toHaveLength(1);
+    expect(r[0].pagamentoIds.sort()).toEqual(["a1", "a2", "a3"]);
+    expect(r[0].valor).toBe(1000);
+    expect(r[0].conserto).toEqual({ campo: "tipo", para: "Adiantamento", travar: true });
+    expect(r[0].detalhe).toContain("3 lançamento(s) de 2 pessoa(s)");
+  });
+
+  it("marcadores diferentes são decisões diferentes, cada um no seu achado", () => {
+    // Agrupar tudo numa linha só seria o erro oposto: o conserto automático
+    // carimba UM tipo, e "vale transporte" não é "plano de saúde".
+    const vt = pg({ id: "v1", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-02-20", descricao: "Vale Transporte · 2.1.1-Salário" });
+    const amil = pg({ id: "v2", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-02-20", descricao: "AMIL · 2.1.1-Salário" });
+    const r = achado(auditarLancamentos([vt, amil], [ana], { hoje: HOJE }), "conta-contradiz-descricao");
+    expect(r).toHaveLength(2);
+    expect(r.map((a) => a.conserto?.para).sort()).toEqual(["Plano de Saúde", "Vale Transporte"]);
+  });
+
   it("descrição que combina com a conta não vira achado", () => {
     const p = pg({ id: "a2", tipo: "Salário", competencia: "2026-02", dataPagamento: "2026-03-05", descricao: "Pagamento salario · 2.1.1-Salário" });
     expect(achado(auditarLancamentos([p], [ana], { hoje: HOJE }), "conta-contradiz-descricao")).toHaveLength(0);
@@ -349,5 +375,28 @@ describe("ainda não saiu do caixa", () => {
   it("folha toda paga não gera o aviso", () => {
     const pago = pg({ id: "p9", tipo: "Salário", valor: 1000, competencia: "2026-08", dataPagamento: "2026-09-05", statusErp: "PAGO" });
     expect(achado(auditarLancamentos([pago], [ana], { hoje: HOJE }), "ainda-nao-pago")).toHaveLength(0);
+  });
+});
+
+describe("conta que ninguém reconhece", () => {
+  const HOJE = new Date(2026, 8, 14);
+  it("uma linha por CONTA, não por lançamento", () => {
+    // O contador renomeou 2.1.11 (era Horas Extras) para "Honorários
+    // Adicionais": 184 lançamentos de uma vez, todos pedindo a mesma decisão.
+    const na = (id: string, valor: number, comp: string, texto: string) =>
+      pg({ id, valor, competencia: comp, tipo: "Outros", descricao: `${texto} · 2.1.11-Honorários Adicionais` });
+    const ps = [na("h1", 100, "2026-01", "HORA EXTRA"), na("h2", 200, "2026-02", "Hora extra 100%"), na("h3", 300, "2026-03", "PLANTÃO")];
+    const r = achado(auditarLancamentos(ps, [ana], { hoje: HOJE }), "conta-desconhecida");
+    expect(r).toHaveLength(1);
+    expect(r[0].valor).toBe(600);
+    expect(r[0].pagamentoIds).toHaveLength(3);
+    expect(r[0].titulo).toContain("2.1.11-Honorários Adicionais");
+    expect(r[0].detalhe).toContain("HORA EXTRA");
+  });
+
+  it("duas contas desconhecidas viram duas linhas", () => {
+    const a1 = pg({ id: "x1", tipo: "Outros", descricao: "x · 2.9.9-Conta Nova" });
+    const a2 = pg({ id: "x2", tipo: "Outros", descricao: "y · 2.8.8-Outra Conta" });
+    expect(achado(auditarLancamentos([a1, a2], [ana], { hoje: HOJE }), "conta-desconhecida")).toHaveLength(2);
   });
 });

@@ -108,6 +108,12 @@ export function AuditoriaLancamentos({
   // "Atenção" nunca aplica, escondido, um conserto de erro que ficou fora da
   // tela.
   const consertaveis = visiveis.filter((a) => a.conserto);
+  /* O NÚMERO QUE O BOTÃO MOSTRA É O DE LANÇAMENTOS, não o de achados. Desde
+     que os achados repetidos passaram a vir agrupados (29 adiantamentos de
+     fevereiro numa linha só), "Corrigir 3" mudaria 33 lançamentos — a tela
+     diria um número e o banco outro. */
+  const linhas = (as: AchadoAuditoria[]) => as.reduce((t, a) => t + a.pagamentoIds.length, 0);
+  const aConsertar = linhas(consertaveis);
   const porRegra = useMemo(() => {
     const m = new Map<RegraAuditoria, AchadoAuditoria[]>();
     for (const a of visiveis) m.set(a.regra, [...(m.get(a.regra) ?? []), a]);
@@ -126,7 +132,7 @@ export function AuditoriaLancamentos({
         action={
           consertaveis.length > 0 ? (
             <button type="button" className="btn-primary" onClick={() => setConfirmar(true)}>
-              <Wand2 className="h-4 w-4" /> Corrigir {consertaveis.length} automático(s)
+              <Wand2 className="h-4 w-4" /> Corrigir {aConsertar} automático(s)
             </button>
           ) : undefined
         }
@@ -224,7 +230,7 @@ export function AuditoriaLancamentos({
                       </ol>
                       {c.onde === "automatico" && consertaveis.length > 0 && (
                         <button type="button" className="btn-outline mt-2 h-8 py-0 text-xs" onClick={() => setConfirmar(true)}>
-                          <Wand2 className="h-3.5 w-3.5" /> Corrigir {consertaveis.length} automático(s)
+                          <Wand2 className="h-3.5 w-3.5" /> Corrigir {aConsertar} automático(s)
                         </button>
                       )}
                     </div>
@@ -409,9 +415,9 @@ export function AuditoriaLancamentos({
         {confirmar && (
           <ConfirmDialog
             aberto
-            titulo={`Corrigir ${consertaveis.length} lançamento(s)?`}
-            mensagem={`Só o que é determinístico: ${consertaveis.filter((a) => a.conserto?.campo === "tipo").length} tipo(s) pelo nome da conta e ${consertaveis.filter((a) => a.conserto?.campo === "competencia").length} competência(s) pela regra 16→15. Cadastro e vínculo não são tocados. Fica no histórico e pode ser revisto lançamento a lançamento.`}
-            textoConfirmar={`Corrigir ${consertaveis.length}`}
+            titulo={`Corrigir ${aConsertar} lançamento(s)?`}
+            mensagem={`Só o que é determinístico: ${linhas(consertaveis.filter((a) => a.conserto?.campo === "tipo"))} tipo(s) pelo nome da conta e ${linhas(consertaveis.filter((a) => a.conserto?.campo === "competencia"))} competência(s) pela regra 16→15. Cadastro e vínculo não são tocados. Fica no histórico e pode ser revisto lançamento a lançamento.`}
+            textoConfirmar={`Corrigir ${aConsertar}`}
             perigo={false}
             onConfirmar={() => { setConfirmar(false); onCorrigir(consertaveis); }}
             onFechar={() => setConfirmar(false)}

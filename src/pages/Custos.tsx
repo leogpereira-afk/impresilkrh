@@ -2735,13 +2735,20 @@ export default function Custos() {
                     toast(`${propostas.length} pessoa(s) marcada(s) como inativa(s) com a data do último mês em que receberam.`, "sucesso");
                   }}
                   onCorrigir={(achados) => {
-                    const tipos = achados.filter((a) => a.conserto?.campo === "tipo");
-                    const comps = achados.filter((a) => a.conserto?.campo === "competencia");
-                    emLote(`Auditoria: corrigiu ${tipos.length} tipo(s) e ${comps.length} competência(s)`, () => {
+                    // Conta LANÇAMENTOS, não achados: um achado agrupado leva
+                    // dezenas de linhas junto, e o histórico tem de dizer
+                    // quantas mudaram de verdade.
+                    const linhas = (as: typeof achados) => as.reduce((t, a) => t + a.pagamentoIds.length, 0);
+                    const tipos = linhas(achados.filter((a) => a.conserto?.campo === "tipo"));
+                    const comps = linhas(achados.filter((a) => a.conserto?.campo === "competencia"));
+                    emLote(`Auditoria: corrigiu ${tipos} tipo(s) e ${comps} competência(s)`, () => {
                       for (const a of achados) {
-                        const alvo = a.pagamentoIds[0];
-                        if (!alvo || !a.conserto) continue;
-                        pagamentosColecao.atualizar(
+                        if (!a.conserto) continue;
+                        // TODOS os lançamentos do achado, não só o primeiro: um
+                        // achado pode reunir 29 linhas que pedem a mesma
+                        // decisão (o adiantamento de fevereiro na conta de
+                        // salário), e consertar uma só deixaria 28 para trás.
+                        for (const alvo of a.pagamentoIds) pagamentosColecao.atualizar(
                           alvo,
                           a.conserto.campo === "tipo"
                             // `travar` vem da regra: o conserto que contraria a
@@ -2752,7 +2759,7 @@ export default function Custos() {
                         );
                       }
                     });
-                    toast(`${achados.length} lançamento(s) corrigido(s) pela auditoria.`, "sucesso");
+                    toast(`${tipos + comps} lançamento(s) corrigido(s) pela auditoria.`, "sucesso");
                   }}
                 />
 
