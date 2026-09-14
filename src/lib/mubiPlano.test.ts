@@ -1,6 +1,6 @@
 import { equivalenciasDeContas } from "./renumeracao";
 import { describe, expect, it } from "vitest";
-import { compararPlano, competenciaEhDoContador, ehContaPessoal, juntarContas, mesclarPlano, montarPlanoDoErp, type ContaMubi, puxadaPerdeuAFolha } from "./mubiPlano";
+import { compararPlano, competenciaEhDoContador, ehContaPessoal, juntarContas, juntarEquivalencias, mesclarPlano, montarPlanoDoErp, type ContaMubi, puxadaPerdeuAFolha } from "./mubiPlano";
 import type { ClasseCusto, ContaPlano } from "@/data/types";
 
 const c = (codigo: string, valor: number, nome = codigo, quantos = 1): ContaMubi => ({ codigo, nome, valor, quantos });
@@ -223,5 +223,45 @@ describe("puxada que perdeu a folha", () => {
     const atual = [cp("2026-06", "2.1.1")];
     const novo = [cp("2026-07", "2.1.14")];
     expect(puxadaPerdeuAFolha(atual, novo, "2026-07", classe)).toBe(false);
+  });
+});
+
+describe("a equivalência é a de TODAS as páginas", () => {
+  /* O servidor calcula a equivalência com as contas daquela PÁGINA; o cliente
+     guardava só a da página 1 e jogava o resto fora. Conta que só aparece na
+     página 3 ficava sem `equivaleA` e era classificada pelo código novo — que
+     na numeração velha significa outra coisa. */
+  const pag1 = {
+    referencia: "2026-06",
+    itens: [{ novo: "2.1.14", antigo: "2.2.2", nome: "contribuicao sindical", como: "grupo" as const }],
+    semPar: [{ codigo: "2.9.9", nome: "Conta nova" }],
+    nomesConfidenciais: ["leonardo"],
+  };
+  const pag2 = {
+    referencia: "2026-06",
+    itens: [{ novo: "2.9.9", antigo: "2.1.9.1", nome: "inss", como: "nome-unico" as const }],
+    semPar: [{ codigo: "2.7.7", nome: "Outra nova" }],
+    nomesConfidenciais: ["leonardo", "pedro"],
+  };
+
+  it("junta os itens das páginas, sem repetir", () => {
+    const r = juntarEquivalencias([pag1, pag2])!;
+    expect(r.itens.map((i) => i.novo).sort()).toEqual(["2.1.14", "2.9.9"]);
+    expect(new Map(r.itens.map((i) => [i.novo, i.antigo])).get("2.9.9")).toBe("2.1.9.1");
+  });
+
+  it("quem achou par em ALGUMA página sai de semPar", () => {
+    // 2.9.9 era "sem par" na página 1 e casou na 2 — dizer que não tem par
+    // mandaria a pessoa classificar à mão uma conta já resolvida.
+    const r = juntarEquivalencias([pag1, pag2])!;
+    expect(r.semPar.map((c) => c.codigo)).toEqual(["2.7.7"]);
+  });
+
+  it("os nomes confidenciais se somam — na dúvida, esconde", () => {
+    expect(juntarEquivalencias([pag1, pag2])!.nomesConfidenciais.sort()).toEqual(["leonardo", "pedro"]);
+  });
+
+  it("sem página nenhuma com equivalência, devolve null (e não um objeto vazio que parece resposta)", () => {
+    expect(juntarEquivalencias([null, undefined])).toBe(null);
   });
 });

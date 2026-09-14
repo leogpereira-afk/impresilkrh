@@ -21,7 +21,7 @@ import { supabase, FN_MUBI_PAGAMENTOS } from "@/lib/supabase";
 import { idConta } from "@/data/planoContas";
 import type { ClasseCusto, ContaPlano } from "@/data/types";
 import { contaEhConfidencial } from "@/lib/custos";
-import { codigoDeReferencia, desserializar, ehConfidencialEquivalente, type Equivalencias, type EquivalenciasSerializadas } from "@/lib/renumeracao";
+import { codigoDeReferencia, desserializar, ehConfidencialEquivalente, type ContaRef, type Equivalencia, type Equivalencias, type EquivalenciasSerializadas } from "@/lib/renumeracao";
 import { tipoDoPlanoErp } from "@/lib/tipoDoPlano";
 
 export interface ContaMubi {
@@ -90,6 +90,44 @@ export function juntarContas(listas: ContaMubi[][]): ContaMubi[] {
   return [...m.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true }));
 }
 
+/**
+ * A EQUIVALÊNCIA DE TODAS AS PÁGINAS, e não só a da primeira.
+ *
+ * O servidor calcula a equivalência com as contas DAQUELA PÁGINA contra o
+ * plano de referência inteiro — ele não tem o mês todo na mão sem buscar tudo
+ * de novo a cada página. O cliente guardava só a resposta da página 1 e jogava
+ * o resto fora: conta que só aparece na página 3 ficava sem `equivaleA`, era
+ * classificada pelo código NOVO, e caía na classe que aquele número tinha na
+ * numeração velha — que é exatamente o defeito que a equivalência existe para
+ * consertar ("2.1.14 era Alimentação e virou Contribuição Sindical").
+ *
+ * A união resolve o caso comum. O que ela NÃO resolve, e fica dito: se os
+ * irmãos de um grupo caem em páginas diferentes, o passo "grupo" pode falhar
+ * nas duas e a conta fica em `semPar` — a tela mostra isso, não some calado.
+ *
+ * `nomesConfidenciais` é lido do plano de referência, igual em toda página; a
+ * união é inofensiva. `semPar` perde quem achou par em ALGUMA página.
+ */
+export function juntarEquivalencias(paginas: (EquivalenciasSerializadas | null | undefined)[]): EquivalenciasSerializadas | null {
+  const vivas = paginas.filter(Boolean) as EquivalenciasSerializadas[];
+  if (vivas.length === 0) return null;
+  const itens = new Map<string, Equivalencia>();
+  const semPar = new Map<string, ContaRef>();
+  const nomes = new Set<string>();
+  for (const e of vivas) {
+    for (const i of e.itens) if (!itens.has(i.novo)) itens.set(i.novo, i);
+    for (const c of e.semPar) if (!semPar.has(c.codigo)) semPar.set(c.codigo, c);
+    for (const n of e.nomesConfidenciais) nomes.add(n);
+  }
+  for (const codigo of itens.keys()) semPar.delete(codigo);
+  return {
+    referencia: vivas.find((e) => e.referencia)?.referencia ?? null,
+    itens: [...itens.values()],
+    semPar: [...semPar.values()],
+    nomesConfidenciais: [...nomes],
+  };
+}
+
 /** O mês inteiro, página a página, com progresso e cancelamento. */
 export async function buscarPlanoCompleto(
   competencia: string,
@@ -100,7 +138,7 @@ export async function buscarPlanoCompleto(
   const paginas: ContaMubi[][] = [];
   let titulos = 0;
   let societariasOmitidas = 0;
-  let equivalencias: Equivalencias | null = null;
+  const equivalenciasPorPagina: (EquivalenciasSerializadas | null | undefined)[] = [];
   let pagina = 1;
   let totalPaginas = 1;
   let incompleta = false;
@@ -111,14 +149,17 @@ export async function buscarPlanoCompleto(
     paginas.push(r.contas);
     titulos += r.totalTitulosNoMes || 0;
     societariasOmitidas += r.societariasOmitidas?.titulos ?? 0;
-    if (!equivalencias && r.equivalencias) equivalencias = desserializar(r.equivalencias);
+    equivalenciasPorPagina.push(r.equivalencias);
     totalPaginas = r.paginas || 1;
     aoProgredir?.(pagina, totalPaginas);
     if (!r.temMais) break;
     pagina++;
     if (pagina > TETO_PAGINAS) { incompleta = true; break; }
   }
-  return { contas: juntarContas(paginas), titulos, paginas: totalPaginas, incompleta, societariasOmitidas, equivalencias };
+  return {
+    contas: juntarContas(paginas), titulos, paginas: totalPaginas, incompleta, societariasOmitidas,
+    equivalencias: desserializar(juntarEquivalencias(equivalenciasPorPagina)),
+  };
 }
 
 /**
