@@ -147,9 +147,13 @@ describe("mudou de número não é parou", () => {
     // 2.1.11-Horas Extras (R$ 44.904 no ano) → 2.1.11.6-Hora Extra. Aqui DUAS
     // guardas cobrem: o plural e o pai/filho. Por isso o teste abaixo isola o
     // plural — senão eu estaria provando uma regra com a outra.
+    // O VALOR DA SUCESSORA IMPORTA (14/09/2026): este teste trazia R$ 1.598 no
+    // lugar de R$ 7.000/mês e mesmo assim exigia silêncio — ou seja, exigia
+    // que o sumiço de R$ 5.400/mês passasse batido. Renumeração de verdade
+    // leva o dinheiro junto; nos dados reais a sucessora traz de 76% a 407%.
     const pags = [
       ...tresMeses("2.1.11-Horas Extras", 7000),
-      p("2026-07", "x · 2.1.11.6-Hora Extra", 1598.55),
+      p("2026-07", "x · 2.1.11.6-Hora Extra", 7598.55),
     ];
     expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
   });
@@ -158,13 +162,38 @@ describe("mudou de número não é parou", () => {
     // Código de outro galho de propósito: se o plural falhar, nada mais salva.
     const pags = [
       ...tresMeses("2.1.11-Horas Extras", 7000),
-      p("2026-07", "x · 2.4.9-Hora Extra", 1598.55),
+      p("2026-07", "x · 2.4.9-Hora Extra", 6598.55),
+    ];
+    expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
+  });
+
+  /* A GUARDA NÃO PODE SER UM CHEQUE EM BRANCO. Ela existia como "alguém se
+     mexeu depois?" — um centavo numa conta filha calava o alarme de uma conta
+     de milhares. É o jeito mais silencioso de perder dinheiro: a conta
+     continua no plano, some do caixa, e a tela diz que está tudo bem. */
+  it("sucessora que traz um fio de dinheiro NÃO cala o alarme", () => {
+    const pags = [
+      ...tresMeses("2.11.1-Freelancer", 1478),
+      p("2026-07", "x · 2.11.1.9-Freelancer", 90),
+    ];
+    const r = contasQuePararam(pags, "2026-08", nomeDe);
+    expect(r.map((c) => c.codigo)).toEqual(["2.11.1"]);
+    // E o achado já vem com a explicação: continuou, mas magra.
+    expect(r[0].sucessora?.rotulo).toBe("2.11.1.9-Freelancer");
+    expect(r[0].sucessora?.mediaMensal).toBe(90);
+  });
+
+  it("sucessora que mantém o dinheiro cala, e o achado nem aparece", () => {
+    const pags = [
+      ...tresMeses("2.11.1-Freelancer", 1478),
+      p("2026-07", "x · 2.11.1.9-Freelancer", 800),
     ];
     expect(contasQuePararam(pags, "2026-08", nomeDe)).toEqual([]);
   });
 
   it("conta que virou pai de subcontas não é conta parada", () => {
-    // 2.11.1-Freelancer parou em abril; 2.11.1.1 e 2.11.1.2 começaram depois.
+    // 2.11.1-Freelancer parou em abril; 2.11.1.1 e 2.11.1.2 começaram depois —
+    // e o filho traz MAIS do que o pai trazia, que é como uma conta vira pai.
     const pags = [
       ...["2026-02", "2026-03", "2026-04"].map((c) => p(c, "x · 2.11.1-Freelancer", 1300)),
       p("2026-07", "x · 2.11.1.2-Pedro Ramos Pereira", 6704.25),
@@ -191,7 +220,9 @@ describe("mudou de número não é parou", () => {
     const pags = [
       ...tresMeses("2.3.2.1-Limpeza Escritório", 350),
       ...tresMeses("2.1.12-Comissão Interna", 4000),
-      p("2026-07", "x · 2.1.11.1-Comissão interna", 1593.62),
+      // A comissão mudou de número LEVANDO O DINHEIRO — é isso que faz dela
+      // renumeração e não sumiço (nos dados reais ela voltou com 149%).
+      p("2026-07", "x · 2.1.11.1-Comissão interna", 5593.62),
       p("2026-07", "x · 2.1.1-Salário", 33186.84),
     ];
     // Das duas que sumiram do plano velho, só a limpeza é notícia.

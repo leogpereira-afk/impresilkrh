@@ -442,8 +442,13 @@ export function auditarLancamentos(
       add({
         regra: "conta-parou", gravidade: c.mesesParada >= 2 ? "erro" : "atencao",
         colaboradorId: "", pagamentoIds: [], competencias: [c.primeiraComp, c.ultimaComp],
-        titulo: `${c.rotulo} parou de vir`,
-        detalhe: `Vinha em ${c.meses} mês(es), última vez em ${c.ultimaComp} — ${c.mesesParada} mês(es) atrás. Média de ${c.mediaMensal.toFixed(2)} por mês${c.pessoas.length ? `, para ${c.pessoas.slice(0, 3).join(", ")}` : ""}. A conta não voltou sob outro número com o mesmo nome — se voltou, foi com nome trocado também, ou a casa parou de pagar.`,
+        titulo: c.sucessora ? `${c.rotulo} continuou com outro número, mas encolheu` : `${c.rotulo} parou de vir`,
+        /* DUAS HISTÓRIAS DIFERENTES, E MANDAR PROCURAR A ERRADA CUSTA TEMPO:
+           ou a conta sumiu (procure o título no ERP), ou ela mudou de número e
+           o dinheiro encolheu (a conta nova está aí, menor). */
+        detalhe: c.sucessora
+          ? `Vinha em ${c.meses} mês(es), última vez em ${c.ultimaComp} — média de ${c.mediaMensal.toFixed(2)} por mês${c.pessoas.length ? `, para ${c.pessoas.slice(0, 3).join(", ")}` : ""}. O mesmo dinheiro passou a vir por ${c.sucessora.rotulo}, mas só ${c.sucessora.mediaMensal.toFixed(2)} por mês — ${Math.round((1 - c.sucessora.mediaMensal / (c.mediaMensal || 1)) * 100)}% a menos. Confira se o resto foi para outra conta ou se a casa passou a pagar menos.`
+          : `Vinha em ${c.meses} mês(es), última vez em ${c.ultimaComp} — ${c.mesesParada} mês(es) atrás. Média de ${c.mediaMensal.toFixed(2)} por mês${c.pessoas.length ? `, para ${c.pessoas.slice(0, 3).join(", ")}` : ""}. A conta não voltou sob outro número com o mesmo nome — se voltou, foi com nome trocado também, ou a casa parou de pagar.`,
         valor: c.mediaMensal,
       });
     }

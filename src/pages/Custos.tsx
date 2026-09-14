@@ -41,6 +41,7 @@ import { TotalEquipe } from "@/components/custos/total-equipe";
 import { EncargosEstimados } from "@/components/custos/encargos-estimados";
 import { VinculosSalvos } from "@/components/custos/vinculos-salvos";
 import { resumoDaEquipe, pesoDaPessoa, porPessoaNoMes, type PessoaNoMes } from "@/lib/provisaoEquipe";
+import { normalizarNome } from "@/lib/renumeracao";
 import { diffAplicavel, mudouSobAPrevia, partesAplicadas, patchDeAplicacao, patchDeDesfazer, planoDeDesfazer, resumoDaPrevia, retratoAntesDeAplicar } from "@/lib/previaFolha";
 import { variacaoMensal, sinaisDaCompetencia, type Sinal, type Tom } from "@/lib/custosResumo";
 import { StatCard } from "@/components/ui/stat-card";
@@ -3665,11 +3666,23 @@ function CustoGlobalFuncionarios({
 
           {/* Custos extras (coletivos) em destaque, separados da folha por pessoa */}
           {(() => {
-            const acha = (cod: string) => grupos.find((g) => g.cod === cod);
+            /* CÓDIGO NÃO É SIGNIFICADO. Isto escolhia a conta pelo NÚMERO e
+               escrevia o rótulo à mão: 2.1.14 = "Alimentação". O contador
+               renumerou o plano em jul/2026 e 2.1.14 passou a ser Contribuição
+               Sindical — o cartão continuava dizendo "Alimentação" com o valor
+               do sindicato, e ninguém tinha como desconfiar.
+               Agora a conta é achada pelo NOME que o ERP manda, e o rótulo é o
+               nome dela: se o contador renomear, o cartão acompanha; se a
+               conta não existir no mês, o cartão não aparece. */
             const extras = [
-              { c: acha("2.1.14"), label: "Alimentação", accent: "green" as const },
-              { c: acha("2.1.15"), label: "Confraternização", accent: "amber" as const },
-            ].filter((x) => x.c);
+              { rx: /aliment|refei|cesta|lanche/, accent: "green" as const },
+              { rx: /confratern|festa|comemora|evento/, accent: "amber" as const },
+            ]
+              .map(({ rx, accent }) => ({ c: grupos.find((g) => rx.test(normalizarNome(g.nome))), accent }))
+              .filter((x) => x.c)
+              .map((x) => ({ ...x, label: x.c!.nome }))
+              // Uma conta que casa com as duas réguas viraria dois cartões iguais.
+              .filter((x, i, todos) => todos.findIndex((y) => y.c!.cod === x.c!.cod) === i);
             if (extras.length === 0) return null;
             return (
               <div className="mb-5">
@@ -3677,7 +3690,7 @@ function CustoGlobalFuncionarios({
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {extras.map((x) => (
                     <StatCard
-                      key={x.label}
+                      key={x.c!.cod}
                       label={x.label}
                       value={formatBRL(x.c!.valor)}
                       accent={x.accent}

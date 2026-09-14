@@ -44,7 +44,29 @@ export interface ContaParada {
   mediaMensal: number;
   /** Quem costumava receber por essa conta, do mais recente para trás. */
   pessoas: string[];
+  /**
+   * A conta que assumiu o lugar desta — quando existe e traz MENOS.
+   *
+   * Sucessora que traz o mesmo tanto cala o alarme (é renumeração, não
+   * sumiço). Sucessora que traz um fio de dinheiro não cala: o que ela conta
+   * é outra história ("continuou, mas caiu de R$ 1.478 para R$ 90"), e é essa
+   * a frase que a tela precisa dizer para a pessoa não sair procurando o que
+   * não sumiu.
+   */
+  sucessora?: { rotulo: string; mediaMensal: number };
 }
+
+/**
+ * Quanto a sucessora precisa trazer para o sumiço não ser notícia.
+ *
+ * As guardas "mudou de número" e "virou detalhe" olhavam só se ALGUÉM se
+ * mexeu depois — qualquer valor servia, um centavo bastava para calar o
+ * alarme de uma conta de R$ 1.478/mês. Nos dados reais de set/2026 as quatro
+ * contas caladas trazem 76%, 132%, 149% e 407% do que traziam antes: metade é
+ * um corte folgado, que não muda nenhum alarme de hoje e fecha a porta do fio
+ * de dinheiro.
+ */
+export const FRACAO_QUE_CONTINUA = 0.5;
 
 /* O ERP cola o plano no fim da descrição: "Faxina · 2.3.2.1-Limpeza Escritório".
    É de lá que sai a conta de cada lançamento — o registro não guarda o código
@@ -114,6 +136,12 @@ export function contasQuePararam(
   /* Última competência com movimento, por código — para ver se um FILHO passou
      a receber quando o pai parou (detalhamento, não sumiço). */
   const movimentoPorCodigo = new Map<string, string>();
+  /* QUANTO cada código moveu em cada mês. Sem o valor não dá para separar "a
+     conta mudou de número" de "a conta mudou de número e secou": as duas
+     guardas abaixo só olhavam se houve movimento, e um centavo calava o
+     alarme de uma conta de R$ 1.478/mês. */
+  const valorPorCodigoMes = new Map<string, Map<string, number>>();
+  const rotuloPorCodigo = new Map<string, string>();
 
   for (const p of pagamentos) {
     const comp = String(p.competencia ?? "");
@@ -147,19 +175,33 @@ export function contasQuePararam(
     }
     const antesCod = movimentoPorCodigo.get(codigo);
     if (!antesCod || comp > antesCod) movimentoPorCodigo.set(codigo, comp);
+    const porMes = valorPorCodigoMes.get(codigo) ?? new Map<string, number>();
+    porMes.set(comp, arred((porMes.get(comp) ?? 0) + (Number(p.valor) || 0)));
+    valorPorCodigoMes.set(codigo, porMes);
+    if (!antesCod || comp >= antesCod) rotuloPorCodigo.set(codigo, plano);
   }
 
-  /** O mesmo nome voltou depois, sob OUTRO código? Então foi renumeração. */
-  const renumerou = (nome: string, codigo: string, ultima: string) =>
-    (ondeApareceu.get(nome) ?? []).some((v) => v.codigo !== codigo && v.comp > ultima);
-
-  /** Um filho passou a receber depois que o pai parou? Então virou detalhe. */
-  const virouDetalhe = (codigo: string, ultima: string) => {
-    for (const [outro, comp] of movimentoPorCodigo) {
-      if (outro !== codigo && outro.startsWith(codigo + ".") && comp > ultima) return true;
+  /** Média mensal que estes códigos trouxeram DEPOIS de `ultima`. */
+  const mediaDepois = (codigos: string[], ultima: string) => {
+    let total = 0;
+    const meses = new Set<string>();
+    for (const c of codigos) {
+      for (const [comp, v] of valorPorCodigoMes.get(c) ?? []) {
+        if (comp > ultima) { total += v; meses.add(comp); }
+      }
     }
-    return false;
+    return meses.size ? arred(total / meses.size) : 0;
   };
+
+  /** O mesmo nome voltou depois, sob OUTRO código? Candidatas a sucessora. */
+  const porRenumeracao = (nome: string, codigo: string, ultima: string) =>
+    [...new Set((ondeApareceu.get(nome) ?? []).filter((v) => v.codigo !== codigo && v.comp > ultima).map((v) => v.codigo))];
+
+  /** Um filho passou a receber depois que o pai parou? Candidatas a sucessora. */
+  const porDetalhe = (codigo: string, ultima: string) =>
+    [...movimentoPorCodigo]
+      .filter(([outro, comp]) => outro !== codigo && outro.startsWith(codigo + ".") && comp > ultima)
+      .map(([outro]) => outro);
 
   const out: ContaParada[] = [];
   for (const x of porConta.values()) {
@@ -168,11 +210,25 @@ export function contasQuePararam(
     const ultima = comps[comps.length - 1];
     const parada = distanciaEmMeses(ultima, ate);
     if (parada < 1) continue; // ainda está vindo
-    // O dinheiro não parou — mudou de número. Acusar isso enche a tela de
-    // alarme falso e enterra o achado que importa. Foram 4 dos 9 no caso real.
-    if (x.nome && renumerou(x.nome, x.codigo, ultima)) continue;
-    if (virouDetalhe(x.codigo, ultima)) continue;
+    const media = arred(x.total / comps.length);
+    /* O DINHEIRO MUDOU DE NÚMERO OU SECOU? Acusar renumeração enche a tela de
+       alarme falso (foram 4 dos 9 no caso real) — mas calar porque alguém se
+       mexeu, sem olhar QUANTO, esconde a conta que continuou existindo e
+       parou de trazer. Sucessora que mantém o dinheiro cala o alarme;
+       sucessora magra vira parte do achado. */
+    // Sem o Set, a conta que é filha E tem o mesmo nome entra duas vezes e o
+    // dinheiro dela conta em dobro — bastava isso para a sucessora magra
+    // passar da régua.
+    const sucessoras = [...new Set([
+      ...(x.nome ? porRenumeracao(x.nome, x.codigo, ultima) : []),
+      ...porDetalhe(x.codigo, ultima),
+    ])];
+    const mediaNova = sucessoras.length ? mediaDepois(sucessoras, ultima) : 0;
+    if (sucessoras.length && mediaNova >= media * FRACAO_QUE_CONTINUA) continue;
     out.push({
+      ...(sucessoras.length
+        ? { sucessora: { rotulo: rotuloPorCodigo.get(sucessoras[0]) ?? sucessoras[0], mediaMensal: mediaNova } }
+        : {}),
       codigo: x.codigo,
       rotulo: x.rotulo || x.codigo,
       meses: comps.length,
