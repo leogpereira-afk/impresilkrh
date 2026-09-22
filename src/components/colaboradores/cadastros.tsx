@@ -11,6 +11,9 @@ import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import { retratoDaPessoa } from "@/lib/retratoDaPessoa";
 import { formatCPF, formatDate } from "@/lib/format";
 import { idPessoa } from "@/lib/identidade";
+import { erroDatasCadastro } from "@/lib/edicaoCadastro";
+import { ConferenciaMubi } from "./conferencia-mubi";
+import type { CampoConferido, FichaRh } from "@/lib/conferenciaMubiRh";
 import {
   aproximarCadastros, quemFica, avaliarExclusao, planoDeTransferencia, planoDeExclusao,
   orfaosDeCadastro, referenciasAPessoa, contarPorFicha, nomeNormalizado,
@@ -126,7 +129,7 @@ function LinhaFicha({
 }
 
 export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) => void }) {
-  const { items: colaboradores, remover } = useColecao("colaboradores");
+  const { items: colaboradores, remover, atualizar } = useColecao("colaboradores");
   // Reativas de propósito: são as coleções que mudam os números desta tela.
   const { items: pagamentos } = useColecao("pagamentos");
   const { items: status } = useColecao("status");
@@ -141,6 +144,36 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
   const [transferindo, setTransferindo] = useState<{ de: FichaResumo; para: FichaResumo } | null>(null);
 
   const nomeStatus = (id?: string | null) => status.find((s) => s.id === id)?.nome ?? (id || "—");
+
+  /**
+   * Aplica UMA divergência da conferência com o Mubisys — um campo, uma pessoa.
+   *
+   * Nunca em massa: na primeira rodada real, cinco admissões divergiam e em
+   * nenhuma dava para saber de fora qual lado valia. Quem decide é quem conhece
+   * a pessoa, linha a linha.
+   *
+   * Passa pelo MESMO validador de datas da ficha (`erroDatasCadastro`): o ERP
+   * pode mandar uma admissão anterior ao nascimento, e o freio tem de ser o
+   * mesmo das duas portas.
+   */
+  const aplicarDoMubisys = (colaboradorId: string, campo: CampoConferido, valor: string) => {
+    const antes = (colaboradores as Colaborador[]).find((c) => c.id === colaboradorId);
+    if (!antes) return;
+    const patch: Partial<Colaborador> =
+      campo === "Admissão" ? { dataAdmissao: valor }
+      : campo === "Desligamento" ? { dataDesligamento: valor }
+      : campo === "CPF" ? { cpf: valor }
+      : { telefone: valor };
+    const erro = erroDatasCadastro({ ...antes, ...patch }, antes);
+    if (erro) { toast(erro, "erro"); return; }
+    atualizar(colaboradorId, patch);
+    setVersao((v) => v + 1);
+    registrarAcaoManual(
+      `Conferência com o Mubisys: ${campo} de ${antes.nome}`,
+      `de "${String(antes[campo === "Admissão" ? "dataAdmissao" : campo === "Desligamento" ? "dataDesligamento" : campo === "CPF" ? "cpf" : "telefone"] ?? "—")}" para "${valor}"`,
+    );
+    toast(`${campo} de ${antes.nome} atualizado com o valor do Mubisys.`);
+  };
 
   const contagens = useMemo(
     () => contarPorFicha(colaboradores as Colaborador[], retratoDaPessoa()),
@@ -373,6 +406,17 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
 
   return (
     <div className="space-y-4">
+      {/* Conferência com o ERP em cima: é a que acha divergência de dado que JÁ
+          está preenchido — admissão, CPF, telefone —, que é pior que campo
+          vazio, porque o vazio se vê e o divergente não. */}
+      <ConferenciaMubi
+        fichas={(colaboradores as Colaborador[]).filter((c) => !c.ehDirecao).map((c): FichaRh => ({
+          id: c.id, nome: c.nome, cpf: c.cpf,
+          dataAdmissao: c.dataAdmissao, dataDesligamento: c.dataDesligamento, telefone: c.telefone,
+        }))}
+        onAplicar={aplicarDoMubisys}
+      />
+
       <Card idPersistencia="cadastros:repetidos">
         <CardHeader
           title="Fichas repetidas"
