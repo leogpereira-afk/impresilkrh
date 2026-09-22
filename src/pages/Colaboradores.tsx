@@ -2,7 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, FileDown, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, FileDown, FileText, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -15,7 +15,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio } from "@/lib/dominio";
 import { quadroPorSituacao, presenteHoje, chaveDeStatus, ausenciasDe } from "@/lib/quadroPorSituacao";
 import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
+import { colaboradoresVisiveis, ehRH, podeVerDadosSensiveis, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { TIPOS_ENCARGO, corDoTipo, competenciaLabel } from "@/lib/folha";
@@ -334,6 +334,58 @@ export default function Colaboradores() {
     }
   };
 
+  /**
+   * Baixa a FICHA COMPLETA de cada pessoa da lista filtrada.
+   *
+   * Pedido do Léo (22/09/2026): "o cadastro quero com tudo que tem preenchido
+   * dele". É outro documento, não outra visão da mesma tabela: 62 campos não
+   * cabem em colunas, então vira uma ficha por pessoa, com só o que está
+   * preenchido.
+   *
+   * As permissões são as MESMAS da ficha na tela — `podeVerDadosSensiveis`
+   * mascara salário e faixa, `podeVerGestao` tira perfil, humor, motivação,
+   * risco e potencial (e nunca libera para a própria pessoa). O papel não pode
+   * mostrar o que a tela esconde.
+   */
+  const [baixandoFichas, setBaixandoFichas] = useState(false);
+  const exportarFichas = async () => {
+    setBaixandoFichas(true);
+    try {
+      const { exportarFichasPdf } = await import("@/lib/colaboradoresPdf");
+      const r = await exportarFichasPdf({
+        lista,
+        visao: "cadastro",
+        noEscopo: escopo.filter((c) => !c.ehDirecao).length,
+        totalCadastro: d.colaboradores.length,
+        quem: d.colabById.get(sessao?.colaboradorId ?? "")?.nome,
+        fmtDinheiro: formatBRL,
+        permissaoDe: (c) => ({
+          sensiveis: podeVerDadosSensiveis(sessao, c.id),
+          gestao: podeVerGestao(sessao, c.id, d.colaboradores),
+        }),
+        filtros: {
+          busca,
+          areas: [...chips].map((id) => d.nomeArea(id)).filter(Boolean),
+          status: fStatus ? d.nomeStatus(fStatus) : "",
+          cardSelecionado: foco === "indisponiveis" ? "só indisponíveis" : foco?.startsWith("st:") ? `só ${d.nomeStatus(foco.slice(3))}` : "",
+          incluiInativos: mostrarInativos,
+        },
+        apoio: {
+          nomeCargo: (c) => d.nomeCargo(c),
+          nomeArea: (id) => d.nomeArea(id ?? undefined),
+          nomeNivel: (id) => d.nomeNivel(id ?? undefined),
+          nomeStatus: (id) => d.nomeStatus(id ?? undefined),
+          nomeDe: (id) => d.colabById.get(id)?.nome ?? "",
+        },
+      });
+      toast(`${r.linhas} ficha(s) no arquivo.`);
+    } catch (e) {
+      toast(`Não consegui gerar as fichas (${e instanceof Error ? e.message : "erro"}).`, "erro");
+    } finally {
+      setBaixandoFichas(false);
+    }
+  };
+
   // Comparador da coluna escolhida. Nome é o desempate em tudo, para a lista
   // nunca "dançar" entre pessoas com o mesmo valor.
   const comparar = useCallback(
@@ -471,7 +523,15 @@ export default function Colaboradores() {
           disabled={lista.length === 0 || baixandoPdf}
           title="Baixa a lista filtrada em PDF, com as mesmas colunas que a tela está mostrando"
         >
-          <FileDown className="h-4 w-4" /> {baixandoPdf ? "Gerando…" : "Baixar PDF"}
+          <FileDown className="h-4 w-4" /> {baixandoPdf ? "Gerando…" : "PDF da lista"}
+        </button>
+        <button
+          className="btn-outline"
+          onClick={() => void exportarFichas()}
+          disabled={lista.length === 0 || baixandoFichas}
+          title="Uma ficha por pessoa, com TODOS os campos preenchidos do cadastro — respeitando o que o seu acesso permite ver"
+        >
+          <FileText className="h-4 w-4" /> {baixandoFichas ? "Gerando…" : "Fichas completas"}
         </button>
         {ehRH(sessao) && (
           <button className="btn-primary" onClick={() => setNovo(true)}>

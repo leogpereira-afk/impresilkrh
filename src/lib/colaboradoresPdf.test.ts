@@ -14,8 +14,11 @@ import {
   descreverCobertura,
   descreverFiltros,
   linhaDoColaborador,
+  camposDaFicha,
   montarColaboradoresPdf,
+  montarFichasPdf,
   nomeDoArquivo,
+  omissoesDaFicha,
   type ApoioDaLinha,
 } from "./colaboradoresPdf";
 import type { Colaborador } from "@/data/types";
@@ -25,6 +28,7 @@ const apoio: ApoioDaLinha = {
   nomeArea: (a) => (a === "prod" ? "Produção" : ""),
   nomeNivel: (n) => (n === "jr" ? "Júnior" : ""),
   nomeStatus: (s) => (s === "ativo" ? "Ativo" : s === "inativo" ? "Desligado" : ""),
+  nomeDe: (id) => (id === "pedro-ramos" ? "Pedro Ramos" : ""),
 };
 
 const pessoa = (extra: Partial<Colaborador> = {}): Colaborador =>
@@ -215,5 +219,159 @@ describe("o PDF sai mesmo", () => {
     const r = await montarColaboradoresPdf(pedido({ lista: muitos }));
     expect(r.linhas).toBe(120);
     expect(r.doc.getNumberOfPages()).toBeGreaterThan(1);
+  });
+});
+
+/* A FICHA COMPLETA (22/09/2026).
+ *
+ * Pedido do Léo depois de ver a lista de 9 colunas: "o cadastro quero com tudo
+ * que tem preenchido dele".
+ *
+ * Duas coisas podem dar errado aqui, e as duas são graves: o papel mostrar MAIS
+ * do que a tela mostra (vazamento), ou mostrar MENOS sem avisar (uma ficha sem
+ * salário se lê como "não tem salário", que é afirmação falsa sobre a pessoa).
+ * Os testes começam por essas duas.
+ */
+const TUDO = {
+  cpf: "14807012345", apelido: "barbara", dataNascimento: "1995-06-02", sexo: "Feminino",
+  cnh: "AB", cidade: "Contagem", enderecoRua: "Rua das Flores", enderecoNumero: "120",
+  enderecoBairro: "Centro", enderecoCep: "32000-000", conjugeNome: "João", qtdFilhos: 2,
+  matriculaEsocial: "0001", valeTransporte: true, salario: 2800, adicionais: 300,
+  refMin: 2400, refMax: 3200, enquadramento: "Dentro",
+  perfilComportamental: "Sanguíneo", humor: "Motivado", motivacao: 80,
+  riscoSaida: "Baixo", potencial: "Alto", pontosFortes: "Organização",
+  contatoEmergencia: { nome: "Maria", parentesco: "Mãe", telefone: "(31) 98888-7777" },
+  filhos: [{ nome: "Ana", nascimento: "2018-04-02" }],
+} as Partial<Colaborador>;
+
+const achar = (gs: ReturnType<typeof camposDaFicha>, rotulo: string) =>
+  gs.flatMap((g) => g.campos).find(([r]) => r === rotulo)?.[1];
+
+describe("a ficha não mostra mais do que a tela", () => {
+  it("O CASO RUIM: sem permissão, salário e faixa saem MASCARADOS, não em claro", () => {
+    const g = camposDaFicha(pessoa(TUDO), apoio, { sensiveis: false, gestao: true }, (n) => `R$ ${n}`);
+    expect(achar(g, "Salário")).toBe("•••••");
+    expect(achar(g, "Faixa do cargo")).toBe("•••••");
+    // E o valor não pode reaparecer em campo nenhum. (Comparo VALOR a valor:
+    // procurar "3200" no JSON inteiro acusava o CEP 32000-000 — asserção
+    // larga demais, que falhava por coincidência de dígitos.)
+    const valores = g.flatMap((x) => x.campos).map(([, v]) => v);
+    expect(valores).not.toContain("R$ 2800");
+    expect(valores).not.toContain("R$ 2400 a R$ 3200");
+  });
+
+  it("O CASO RUIM: sem permissão de gestão, o bloco inteiro não existe", () => {
+    // Perfil, humor, motivação, risco e potencial nunca vão para o próprio
+    // colaborador — a régua da tela diz isso e o papel obedece.
+    const g = camposDaFicha(pessoa(TUDO), apoio, { sensiveis: true, gestao: false });
+    expect(g.find((x) => x.grupo === "Gestão de pessoas")).toBeUndefined();
+    expect(JSON.stringify(g)).not.toContain("Sanguíneo");
+    expect(JSON.stringify(g)).not.toContain("Alto");
+  });
+
+  it("com permissão, os dois blocos aparecem inteiros", () => {
+    const g = camposDaFicha(pessoa(TUDO), apoio, { sensiveis: true, gestao: true }, (n) => `R$ ${n}`);
+    expect(achar(g, "Salário")).toBe("R$ 2800");
+    expect(achar(g, "Faixa do cargo")).toBe("R$ 2400 a R$ 3200");
+    expect(achar(g, "Perfil comportamental")).toBe("Sanguíneo");
+    expect(achar(g, "Motivação")).toBe("80%");
+  });
+});
+
+describe("o que a permissão tirou é DITO, não calado", () => {
+  it("avisa quando havia remuneração e o acesso não deixou ver", () => {
+    const r = omissoesDaFicha(pessoa(TUDO), { sensiveis: false, gestao: true });
+    expect(r).toContain("remuneração");
+  });
+
+  it("avisa quando havia dado de gestão e o acesso não deixou ver", () => {
+    const r = omissoesDaFicha(pessoa(TUDO), { sensiveis: true, gestao: false });
+    expect(r).toContain("gestão de pessoas");
+  });
+
+  it("NÃO inventa aviso quando o campo simplesmente não estava preenchido", () => {
+    // Avisar "há remuneração que você não vê" numa ficha que não tem salário
+    // seria mentira na direção contrária — e ensinaria a ignorar o aviso.
+    const vazio = pessoa({ salario: undefined, adicionais: undefined, refMin: undefined, refMax: undefined });
+    expect(omissoesDaFicha(vazio, { sensiveis: false, gestao: false })).toBe("");
+  });
+
+  it("com acesso total, não há aviso nenhum", () => {
+    expect(omissoesDaFicha(pessoa(TUDO), { sensiveis: true, gestao: true })).toBe("");
+  });
+});
+
+describe("só o que está preenchido", () => {
+  const perm = { sensiveis: true, gestao: true };
+
+  it("campo vazio NÃO vira linha — 40 travessões escondem os 12 dados que existem", () => {
+    const g = camposDaFicha(pessoa({ email: "", telefone: "", cpf: "" }), apoio, perm);
+    const rotulos = g.flatMap((x) => x.campos).map(([r]) => r);
+    expect(rotulos).not.toContain("E-mail");
+    expect(rotulos).not.toContain("CPF");
+  });
+
+  it("grupo sem nada preenchido some inteiro, nem como título vazio", () => {
+    const g = camposDaFicha(pessoa({ conjugeNome: "", qtdFilhos: 0, filhos: [] }), apoio, perm);
+    expect(g.find((x) => x.grupo === "Família")).toBeUndefined();
+  });
+
+  it("os compostos viram texto legível, não [object Object]", () => {
+    const g = camposDaFicha(pessoa(TUDO), apoio, perm);
+    expect(achar(g, "Contato de emergência")).toBe("Maria · Mãe · (31) 98888-7777");
+    expect(achar(g, "Nomes dos filhos")).toBe("Ana · 02/04/2018");
+    expect(achar(g, "Endereço")).toBe("Rua das Flores, 120");
+    expect(JSON.stringify(g)).not.toContain("object Object");
+  });
+
+  it("gestor e padrinho saem pelo NOME, não pelo id", () => {
+    const g = camposDaFicha(pessoa({ gestorId: "pedro-ramos" }), apoio, perm);
+    expect(achar(g, "Gestor")).toBe("Pedro Ramos");
+  });
+
+  it("zero filhos não é 'preenchido' — mas vale transporte 'não' é", () => {
+    const g = camposDaFicha(pessoa({ qtdFilhos: 0, valeTransporte: false }), apoio, perm);
+    expect(achar(g, "Filhos")).toBeUndefined();
+    expect(achar(g, "Vale transporte")).toBe("Não");
+  });
+});
+
+describe("as fichas saem em papel", () => {
+  it("uma página por pessoa, mais a capa", async () => {
+    const r = await montarFichasPdf({
+      lista: [pessoa(TUDO), pessoa({ id: "b", nome: "José Adilando Pereira", cpf: "98765432100" })],
+      visao: "cadastro", apoio, noEscopo: 2, totalCadastro: 93,
+      agora: new Date("2026-09-22T13:40:00.000Z"),
+      permissaoDe: () => ({ sensiveis: true, gestao: true }),
+      fmtDinheiro: (n) => `R$ ${n},00`,
+    });
+    // Capa + pelo menos uma folha por pessoa. A ficha muito preenchida ocupa
+    // duas, então o piso é 3 e não um número fixo.
+    expect(r.doc.getNumberOfPages()).toBeGreaterThanOrEqual(3);
+    expect(r.arquivo).toContain("fichas");
+    expect(r.doc.output("datauristring").startsWith("data:application/pdf")).toBe(true);
+  });
+
+  it("ficha sem nada preenchido não vira folha muda", async () => {
+    const r = await montarFichasPdf({
+      lista: [{ id: "x", nome: "Só o Nome" } as Colaborador],
+      visao: "cadastro", apoio: { ...apoio, nomeCargo: () => "", nomeArea: () => "", nomeNivel: () => "", nomeStatus: () => "" },
+      noEscopo: 1, totalCadastro: 1,
+      agora: new Date("2026-09-22T13:40:00.000Z"),
+      permissaoDe: () => ({ sensiveis: true, gestao: true }),
+    });
+    expect(r.doc.getNumberOfPages()).toBe(2);
+  });
+
+  it("mais gente, mais folhas — ninguém fica de fora do maço", async () => {
+    const base = {
+      visao: "cadastro" as const, apoio, noEscopo: 9, totalCadastro: 93,
+      agora: new Date("2026-09-22T13:40:00.000Z"),
+      permissaoDe: () => ({ sensiveis: true, gestao: true }),
+    };
+    const tres = await montarFichasPdf({ ...base, lista: Array.from({ length: 3 }, (_, i) => pessoa({ id: `p${i}` })) });
+    const nove = await montarFichasPdf({ ...base, lista: Array.from({ length: 9 }, (_, i) => pessoa({ id: `p${i}` })) });
+    expect(nove.doc.getNumberOfPages()).toBeGreaterThan(tres.doc.getNumberOfPages());
+    expect(nove.linhas).toBe(9);
   });
 });
