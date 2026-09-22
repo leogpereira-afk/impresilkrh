@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   conferirComMubisys,
+  cpfValido,
   dataIso,
   lerListaMubisys,
   resumoDaConferencia,
@@ -106,12 +107,24 @@ describe("a conferência não decide quem está certo", () => {
     const d = de("victor").divergencias.find((x) => x.campo === "Admissão")!;
     expect(d.noRh).toBe("2026-08-10");
     expect(d.noMubisys).toBe("2026-03-02");
-    expect(Object.keys(d)).toEqual(["campo", "noRh", "noMubisys"]);
+    // E fica VISÍVEL, mas sem botão: o Léo decidiu não mexer na admissão
+    // (22/09). Decisão tomada não é defeito — mas apagar a informação seria
+    // esconder que os dois sistemas discordam em cinco meses.
+    expect(d.naoAplicavel).toContain("fica como está");
   });
 
   it("quem bate não vira divergência", () => {
-    expect(de("adilson").divergencias).toHaveLength(0);
-    expect(de("charles").divergencias).toHaveLength(0);
+    expect(de("adilson").divergencias.filter((d) => !d.falta)).toHaveLength(0);
+    expect(de("charles").divergencias.filter((d) => !d.falta)).toHaveLength(0);
+  });
+
+  it("campo VAZIO no RH entra como 'falta', não como discordância", () => {
+    // Completar o que falta é metade do trabalho de uma conferência. Antes só
+    // entrava quando os dois lados tinham valor, então vazio nunca aparecia.
+    const d = de("charles").divergencias.find((x) => x.campo === "Telefone")!;
+    expect(d.falta).toBe(true);
+    expect(d.noRh).toBe("");
+    expect(d.naoAplicavel).toBeUndefined();
   });
 
   it("o Dermeval casa pelo NOME e a divergência é o CPF", () => {
@@ -119,8 +132,17 @@ describe("a conferência não decide quem está certo", () => {
     // no RH" e outra "só no Mubisys" — e o documento divergente sumia.
     const p = de("dermeval");
     expect(p.casadoPor).toBe("nome");
-    expect(p.divergencias.map((d) => d.campo)).toEqual(["CPF"]);
-    expect(p.divergencias[0].noMubisys).toBe("965640246-9");
+    expect(p.divergencias.map((d) => d.campo)).toContain("CPF");
+    const cpf = p.divergencias.find((d) => d.campo === "CPF")!;
+    expect(cpf.noMubisys).toBe("965640246-9");
+  });
+
+  it("O CASO RUIM: CPF quebrado do ERP NÃO pode ser aplicado sobre o bom", () => {
+    // O do Dermeval tem 10 dígitos no Mubisys. "Usar o do Mubisys" ali
+    // trocaria um documento bom por um inválido — aqui quem está errado é o
+    // ERP, e a tela precisa dizer isso em vez de oferecer o botão.
+    const cpf = de("dermeval").divergencias.find((d) => d.campo === "CPF")!;
+    expect(cpf.naoAplicavel).toContain("10 dígitos");
   });
 
   it("casamento por ID é declarado como tal — o resto é palpite e a tela precisa saber", () => {
@@ -140,9 +162,11 @@ describe("a conferência não decide quem está certo", () => {
 
   it("o resumo conta tudo, inclusive o que não deu para ler", () => {
     const comLixo = conferirComMubisys(fichas, lerListaMubisys(REAL + "\nZé Ninguém sem nada"));
-    expect(resumoDaConferencia(comLixo)).toContain("1 linha(s) não entendida(s)");
-    expect(resumoDaConferencia(comLixo)).toContain("2 com divergência");
-    expect(resumoDaConferencia(comLixo)).toContain("1 só no RH");
+    const r = resumoDaConferencia(comLixo);
+    expect(r).toContain("1 linha(s) não entendida(s)");
+    expect(r).toContain("faltando no RH");
+    expect(r).toContain("em que discordam");
+    expect(r).toContain("1 só no RH");
   });
 });
 
@@ -157,6 +181,17 @@ describe("as peças soltas", () => {
   it("ficha sem CPF não casa por id e não estoura", () => {
     const c = conferirComMubisys([{ id: "x", nome: "Adilson Barbosa Fonseca" }], lerListaMubisys(REAL));
     expect(c.pares[0].casadoPor).toBe("nome");
-    expect(c.pares[0].divergencias.find((d) => d.campo === "CPF")).toBeUndefined();
+    // O CPF entra como FALTA (o RH não tem, o ERP tem) — e dá para preencher.
+    const cpf = c.pares[0].divergencias.find((d) => d.campo === "CPF")!;
+    expect(cpf.falta).toBe(true);
+    expect(cpf.naoAplicavel).toBeUndefined();
+  });
+
+  it("cpfValido só aceita 11 dígitos", () => {
+    expect(cpfValido("083.421.036-33")).toBe(true);
+    expect(cpfValido("08342103633")).toBe(true);
+    expect(cpfValido("965640246-9")).toBe(false);
+    expect(cpfValido("")).toBe(false);
+    expect(cpfValido(null)).toBe(false);
   });
 });

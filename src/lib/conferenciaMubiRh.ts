@@ -133,8 +133,24 @@ export interface Divergencia {
   campo: CampoConferido;
   noRh: string;
   noMubisys: string;
-  /** A conferência não decide quem está certo — só mostra os dois lados. */
+  /** Vazio no RH e preenchido no ERP: é só completar, não é discordância. */
+  falta: boolean;
+  /**
+   * Por que este valor NÃO pode ser aplicado. Vazio = pode.
+   *
+   * Duas razões, as duas de 22/09/2026:
+   *  - admissão: o Léo decidiu não mexer. A diferença continua VISÍVEL (uma é
+   *    de cinco meses), só não tem botão — decisão tomada não é defeito, mas
+   *    apagar a informação seria esconder.
+   *  - CPF malformado: o do Dermeval está no Mubisys com 10 dígitos. Aplicar
+   *    trocaria um documento bom por um quebrado — aqui o ERP é que está
+   *    errado, não o RH.
+   */
+  naoAplicavel?: string;
 }
+
+/** Um CPF de gente tem 11 dígitos. O do Dermeval no Mubisys tem 10. */
+export const cpfValido = (v: unknown) => soDigitos(v).length === 11;
 
 export interface ParConferido {
   ficha: FichaRh;
@@ -203,25 +219,41 @@ export function conferirComMubisys(fichas: FichaRh[], leitura: LeituraMubisys): 
     }
     usadas.add(ficha.id);
     const div: Divergencia[] = [];
+    /* A régua vale para os dois casos: RH vazio (falta) e RH diferente
+       (discordam). Antes só entrava quando os DOIS lados tinham valor, então
+       campo vazio no RH nunca aparecia — e completar o que falta é metade do
+       trabalho de uma conferência. */
     const rhCpf = soDigitos(ficha.cpf);
     const mubiCpf = soDigitos(m.cpf);
-    if (rhCpf && mubiCpf && rhCpf !== mubiCpf) {
-      div.push({ campo: "CPF", noRh: String(ficha.cpf ?? ""), noMubisys: m.cpf });
+    if (mubiCpf && rhCpf !== mubiCpf) {
+      div.push({
+        campo: "CPF",
+        noRh: String(ficha.cpf ?? ""),
+        noMubisys: m.cpf,
+        falta: !rhCpf,
+        ...(cpfValido(m.cpf) ? {} : { naoAplicavel: `o CPF do Mubisys tem ${mubiCpf.length} dígitos — aqui quem está errado é o ERP` }),
+      });
     }
     const adm = dataIso(m.admissao);
     const rhAdm = String(ficha.dataAdmissao ?? "").slice(0, 10);
-    if (adm && rhAdm && adm !== rhAdm) {
-      div.push({ campo: "Admissão", noRh: rhAdm, noMubisys: adm });
+    if (adm && adm !== rhAdm) {
+      div.push({
+        campo: "Admissão",
+        noRh: rhAdm,
+        noMubisys: adm,
+        falta: !rhAdm,
+        naoAplicavel: "a admissão fica como está — fica visível só para você saber que os dois sistemas discordam",
+      });
     }
     const des = dataIso(m.demissao);
     const rhDes = String(ficha.dataDesligamento ?? "").slice(0, 10);
     if (des !== rhDes && (des || rhDes)) {
-      div.push({ campo: "Desligamento", noRh: rhDes, noMubisys: des });
+      div.push({ campo: "Desligamento", noRh: rhDes, noMubisys: des, falta: !rhDes });
     }
     const rhTel = soDigitos(ficha.telefone);
     const mubiTel = soDigitos(m.telefone).replace(/^55/, "");
-    if (rhTel && mubiTel && rhTel.slice(-8) !== mubiTel.slice(-8)) {
-      div.push({ campo: "Telefone", noRh: String(ficha.telefone ?? ""), noMubisys: m.telefone });
+    if (mubiTel && rhTel.slice(-8) !== mubiTel.slice(-8)) {
+      div.push({ campo: "Telefone", noRh: String(ficha.telefone ?? ""), noMubisys: m.telefone, falta: !rhTel });
     }
     pares.push({ ficha, mubi: m, casadoPor, divergencias: div });
   }
@@ -236,9 +268,12 @@ export function conferirComMubisys(fichas: FichaRh[], leitura: LeituraMubisys): 
 
 /** A frase de resumo — o que a tela mostra antes de qualquer lista. */
 export function resumoDaConferencia(c: Conferencia): string {
-  const comDiv = c.pares.filter((p) => p.divergencias.length > 0).length;
+  const todas = c.pares.flatMap((p) => p.divergencias);
+  const faltam = todas.filter((d) => d.falta).length;
+  const discordam = todas.filter((d) => !d.falta).length;
   const partes = [`${c.pares.length} conferido(s)`];
-  if (comDiv) partes.push(`${comDiv} com divergência`);
+  if (faltam) partes.push(`${faltam} campo(s) faltando no RH`);
+  if (discordam) partes.push(`${discordam} campo(s) em que discordam`);
   if (c.soNoRh.length) partes.push(`${c.soNoRh.length} só no RH`);
   if (c.soNoMubisys.length) partes.push(`${c.soNoMubisys.length} só no Mubisys`);
   if (c.naoLidas.length) partes.push(`${c.naoLidas.length} linha(s) não entendida(s)`);

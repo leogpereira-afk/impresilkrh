@@ -20,7 +20,7 @@ Demerval Vieira 965640246-9 20/01/2026 Designer +55 (38) 99107-5055 R$ 2.140,00 
 Victor Douglas Lopes Siqueira 159.382.836-55 02/03/2026 Operador de Comunicação Visual +55 (38) 99872-0852 R$ 1.872,50 R$ 1.878,46 Produção`;
 
 const FICHAS: FichaRh[] = [
-  { id: "adilson", nome: "Adilson Barbosa Fonseca", cpf: "08342103633", dataAdmissao: "2014-01-13" },
+  { id: "adilson", nome: "Adilson Barbosa Fonseca", cpf: "08342103633", dataAdmissao: "2014-01-13", telefone: "(38) 99940-7547" },
   { id: "victor", nome: "Victor Douglas Lopes Siqueira", cpf: "15938283655", dataAdmissao: "2026-08-10" },
   { id: "dermeval", nome: "Demerval Vieira", cpf: "21378946960", dataAdmissao: "2026-01-20" },
   { id: "osmane", nome: "Osmane Vinicius Nepomuceno Oliveira", cpf: "12986531695" },
@@ -102,7 +102,7 @@ describe("ConferenciaMubi", () => {
 
   it("o botão aplica UM campo de UMA pessoa, com o valor do ERP", () => {
     desenhar(COLADO);
-    const botoes = [...container.querySelectorAll("button")].filter((b) => /usar o do Mubisys/.test(b.textContent ?? ""));
+    const botoes = [...container.querySelectorAll("button")].filter((b) => /(usar|preencher) (o )?com o do Mubisys|usar o do Mubisys/.test(b.textContent ?? ""));
     expect(botoes.length).toBeGreaterThan(0);
     act(() => botoes[0].dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(aplicados).toHaveLength(1);
@@ -130,6 +130,31 @@ describe("ConferenciaMubi", () => {
   it("o resumo conta antes de qualquer lista", () => {
     desenhar(COLADO);
     expect(texto()).toMatch(/3 conferido\(s\)/);
-    expect(texto()).toMatch(/2 com divergência/);
+    expect(texto()).toMatch(/faltando no RH/);
+    expect(texto()).toMatch(/em que discordam/);
+  });
+
+  it("O CASO RUIM: admissão aparece SEM botão, com o motivo escrito", () => {
+    // O Léo decidiu não mexer (22/09). A diferença de cinco meses continua na
+    // tela — esconder seria pior —, mas sem oferta de gravar.
+    desenhar(COLADO);
+    expect(texto()).toContain("a admissão fica como está");
+    const linhas = [...container.querySelectorAll("tr")].filter((tr) => /Admissão/.test(tr.textContent ?? ""));
+    expect(linhas.length).toBeGreaterThan(0);
+    for (const tr of linhas) expect(tr.querySelector("button")).toBeNull();
+  });
+
+  it("O CASO RUIM: CPF quebrado do ERP não ganha botão de aplicar", () => {
+    desenhar(COLADO);
+    expect(texto()).toContain("10 dígitos");
+    const linhas = [...container.querySelectorAll("tr")].filter((tr) => /CPF/.test(tr.textContent ?? ""));
+    for (const tr of linhas) expect(tr.querySelector("button")).toBeNull();
+  });
+
+  it("campo que falta no RH é marcado como falta, e o botão diz 'preencher'", () => {
+    desenhar(COLADO);
+    expect(texto()).toContain("falta no RH");
+    const preencher = [...container.querySelectorAll("button")].filter((b) => /preencher com o do Mubisys/.test(b.textContent ?? ""));
+    expect(preencher.length).toBeGreaterThan(0);
   });
 });

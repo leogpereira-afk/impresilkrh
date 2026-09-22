@@ -84,7 +84,7 @@ export function ConferenciaMubi({
               </div>
             )}
 
-            <Secao titulo="Discordam" vazio="Nenhuma divergência — os dois cadastros batem.">
+            <Secao titulo="Para conferir" vazio="Nada a completar nem a conferir — os dois cadastros batem.">
               {conf.pares
                 .filter((p) => p.divergencias.length > 0)
                 .map((p) => (
@@ -103,7 +103,14 @@ export function ConferenciaMubi({
                       <tbody>
                         {p.divergencias.map((d) => (
                           <tr key={d.campo}>
-                            <td className="py-1 pr-3 text-slate-500">{d.campo}</td>
+                            <td className="py-1 pr-3 text-slate-500">
+                              {d.campo}
+                              {d.falta && (
+                                <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
+                                  falta no RH
+                                </span>
+                              )}
+                            </td>
                             <td className="py-1 pr-3 tabular-nums text-slate-700">
                               RH: <strong>{d.noRh || "—"}</strong>
                             </td>
@@ -111,15 +118,21 @@ export function ConferenciaMubi({
                               Mubisys: <strong>{d.noMubisys || "—"}</strong>
                             </td>
                             <td className="py-1 text-right">
-                              {onAplicar && d.noMubisys && (
+                              {/* Sem botão quando não se aplica — e com o
+                                  MOTIVO ao lado. Botão desabilitado sem
+                                  explicação faz quem lê achar que a tela
+                                  quebrou; o motivo é o que ensina. */}
+                              {d.naoAplicavel ? (
+                                <span className="text-[11px] italic text-slate-400">{d.naoAplicavel}</span>
+                              ) : onAplicar && d.noMubisys ? (
                                 <button
                                   type="button"
                                   onClick={() => onAplicar(p.ficha.id, d.campo, d.noMubisys)}
                                   className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-600 transition hover:border-brand hover:text-brand"
                                 >
-                                  usar o do Mubisys
+                                  {d.falta ? "preencher com o do Mubisys" : "usar o do Mubisys"}
                                 </button>
-                              )}
+                              ) : null}
                             </td>
                           </tr>
                         ))}
