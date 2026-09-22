@@ -2,7 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
+import { Search, Plus, Users, ChevronRight, ChevronDown, Building2, LayoutGrid, Rows3, ArrowDownAZ, Download, FileDown, UserCheck, HeartPulse, Hourglass, CalendarOff, AlertTriangle, Handshake } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -17,6 +17,7 @@ import { quadroPorSituacao, presenteHoje, chaveDeStatus, ausenciasDe } from "@/l
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerGestao } from "@/lib/rbac";
 import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
+import { useToast } from "@/components/ui/toast";
 import { TIPOS_ENCARGO, corDoTipo, competenciaLabel } from "@/lib/folha";
 import { foraDaExperiencia, explicar as explicarForaDaExperiencia, type ForaDaExperiencia } from "@/lib/foraDaExperiencia";
 import { situacaoExperiencia, type SituacaoExperiencia } from "@/lib/clt";
@@ -97,6 +98,7 @@ function ThOrdenavel({
 
 export default function Colaboradores() {
   const sessao = useSessao();
+  const toast = useToast();
   const d = useDominio();
   const [busca, setBusca] = useState("");
   const [paramsStatus, setParamsStatus] = useSearchParams();
@@ -285,6 +287,53 @@ export default function Colaboradores() {
     URL.revokeObjectURL(url);
   };
 
+  /**
+   * Baixa a lista FILTRADA em PDF (pedido do Léo, 22/09/2026: "ver em lista e
+   * baixar os dados via PDF para usar em outras coisas").
+   *
+   * As colunas são as MESMAS da tela — muda a visão no Select, muda o papel.
+   * E o documento carrega o que a tela dizia por ele: o recorte que produziu a
+   * lista e quantos ficaram de fora, por filtro e por acesso. Um PDF de 12
+   * pessoas com cara de quadro inteiro é o pior resultado possível, e é o caso
+   * normal, porque quem exporta quase sempre exportou filtrado.
+   */
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
+  const exportarPdf = async () => {
+    setBaixandoPdf(true);
+    try {
+      const { exportarColaboradoresPdf } = await import("@/lib/colaboradoresPdf");
+      await exportarColaboradoresPdf({
+        lista,
+        visao: visaoLinha,
+        noEscopo: escopo.filter((c) => !c.ehDirecao).length,
+        totalCadastro: d.colaboradores.length,
+        competencia: visaoLinha === "custo" ? competenciaLabel(mesCusto) : undefined,
+        quem: d.colabById.get(sessao?.colaboradorId ?? "")?.nome,
+        filtros: {
+          busca,
+          areas: [...chips].map((id) => d.nomeArea(id)).filter(Boolean),
+          status: fStatus ? d.nomeStatus(fStatus) : "",
+          cardSelecionado: foco === "indisponiveis" ? "só indisponíveis" : foco?.startsWith("st:") ? `só ${d.nomeStatus(foco.slice(3))}` : "",
+          incluiInativos: mostrarInativos,
+        },
+        apoio: {
+          nomeCargo: (c) => d.nomeCargo(c),
+          nomeArea: (id) => d.nomeArea(id ?? undefined),
+          nomeNivel: (id) => d.nomeNivel(id ?? undefined),
+          nomeStatus: (id) => d.nomeStatus(id ?? undefined),
+          custoDe: (c) => {
+            const x = custoPorColab.get(c.id);
+            return x ? { total: formatBRL(x.total), lancamentos: x.n } : undefined;
+          },
+        },
+      });
+    } catch (e) {
+      toast(`Não consegui gerar o PDF (${e instanceof Error ? e.message : "erro"}).`, "erro");
+    } finally {
+      setBaixandoPdf(false);
+    }
+  };
+
   // Comparador da coluna escolhida. Nome é o desempate em tudo, para a lista
   // nunca "dançar" entre pessoas com o mesmo valor.
   const comparar = useCallback(
@@ -415,6 +464,14 @@ export default function Colaboradores() {
         {ehRH(sessao) && <Link className="btn-outline" to="/painel-controle?aba=cadastros">Conferir cadastros</Link>}
         <button className="btn-outline" onClick={exportarCsv} disabled={lista.length === 0} title="Exporta a lista filtrada para CSV">
           <Download className="h-4 w-4" /> Exportar CSV
+        </button>
+        <button
+          className="btn-outline"
+          onClick={() => void exportarPdf()}
+          disabled={lista.length === 0 || baixandoPdf}
+          title="Baixa a lista filtrada em PDF, com as mesmas colunas que a tela está mostrando"
+        >
+          <FileDown className="h-4 w-4" /> {baixandoPdf ? "Gerando…" : "Baixar PDF"}
         </button>
         {ehRH(sessao) && (
           <button className="btn-primary" onClick={() => setNovo(true)}>
