@@ -11,16 +11,29 @@ import type { Colaborador } from "@/data/types";
 
 // Drill-down: torna gráficos/indicadores clicáveis. Ao clicar, abre uma listagem
 // analítica com os NOMES dos colaboradores que compõem aquela métrica.
+type ColunaExtra = { titulo: string; render: (c: Colaborador) => React.ReactNode };
+
 export function useDrill() {
-  const [estado, setEstado] = useState<{ titulo: string; subtitulo?: string; lista: Colaborador[] } | null>(null);
+  const [estado, setEstado] = useState<{
+    titulo: string;
+    subtitulo?: string;
+    lista: Colaborador[];
+    colunaExtra?: ColunaExtra;
+  } | null>(null);
   return {
-    abrir: (titulo: string, lista: Colaborador[], subtitulo?: string) => setEstado({ titulo, subtitulo, lista }),
+    /* `colunaExtra` troca a coluna de Status por outra coisa -- em Onboarding e
+       offboarding, o DIA em que a experiência de cada um termina. A coluna já
+       existia no DrillModal, mas não dava para pedi-la por aqui, então a
+       listagem que mais precisava dela era justamente a que não podia usá-la. */
+    abrir: (titulo: string, lista: Colaborador[], subtitulo?: string, colunaExtra?: ColunaExtra) =>
+      setEstado({ titulo, subtitulo, lista, colunaExtra }),
     fechar: () => setEstado(null),
     props: {
       aberto: !!estado,
       titulo: estado?.titulo ?? "",
       subtitulo: estado?.subtitulo,
       colaboradores: estado?.lista ?? [],
+      colunaExtra: estado?.colunaExtra,
       onFechar: () => setEstado(null),
     },
   };

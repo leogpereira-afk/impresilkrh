@@ -19,7 +19,7 @@ import {
   FileText,
   Trophy,
   Sparkles,
-  Users, Pencil, Trash2, Archive, PackageOpen, UserCheck,
+  Users, Pencil, Trash2, Archive, PackageOpen, UserCheck, Hourglass,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -40,6 +40,8 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir, ehRH } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import { fimDaExperiencia } from "@/lib/clt";
+import { quemEstaEmExperiencia, proximoFimDeExperiencia } from "@/lib/emExperiencia";
+import { ColunaFimExperiencia } from "@/components/integracao/coluna-experiencia";
 import { HOJE } from "@/data/_gen";
 import type { Tarefa } from "@/data/types";
 
@@ -147,6 +149,15 @@ export default function Integracao() {
     };
   }, [tarefasEscopo, idsEscopo]);
 
+  /* EXPERIÊNCIA É ONBOARDING. Ordem do Léo (23/09/2026): "a experiência ainda
+     faz parte do onboarding". O checklist acabar não encerra a integração --
+     quem terminou as caixinhas na primeira semana segue em contrato de
+     experiência por até 90 dias, e é o fim dele que fecha a jornada.
+     A conta mora em lib/emExperiencia, a mesma que a tela de Colaboradores usa:
+     duas telas contando por conta própria acabam discordando em silêncio. */
+  const emExperiencia = useMemo(() => quemEstaEmExperiencia(escopo), [escopo]);
+  const fimMaisProximo = proximoFimDeExperiencia(emExperiencia);
+
   const drill = useDrill();
 
   // Converte um conjunto de colaboradorIds em colaboradores (ignora ausentes).
@@ -159,9 +170,12 @@ export default function Integracao() {
     () => [
       { nome: "Admissão em andamento", valor: resumo.onAndamento, cor: "#16334f" },
       { nome: "Admissão concluída", valor: resumo.onConcluidos, cor: "#16a34a" },
+      /* Mesmo azul do status "Em experiência" no cadastro (data/status.ts):
+         a barra e o selo da ficha falam da mesma coisa. */
+      { nome: "Em experiência", valor: emExperiencia.length, cor: "#2563eb" },
       { nome: "Desligamento", valor: resumo.offTotal, cor: "#d97706" },
     ],
-    [resumo],
+    [resumo, emExperiencia],
   );
 
   const abrirJornada = (nome: string) => {
@@ -176,6 +190,19 @@ export default function Integracao() {
         "Admissões concluídas",
         colabsDe(resumo.idsConcluidos),
         "Admissões com checklist 100% concluído",
+      );
+    else if (nome === "Em experiência")
+      drill.abrir(
+        "Em contrato de experiência",
+        emExperiencia.map((x) => x.c),
+        "A experiência é a última etapa do onboarding: ela termina, a integração acabou. Estes nomes também aparecem nos cartões de admissão.",
+        {
+          titulo: "Termina em",
+          /* Procurar por id em vez de confiar na ordem: o DrillModal recebe
+             Colaborador[] cru, então é aqui que a data volta a ser ligada à
+             pessoa -- e é a MESMA que entrou na conta do cartão. */
+          render: (c) => <ColunaFimExperiencia pessoa={emExperiencia.find((e) => e.c.id === c.id)} />,
+        },
       );
     else if (nome === "Desligamento")
       drill.abrir(
@@ -208,8 +235,8 @@ export default function Integracao() {
   return (
     <div>
       <PageHeader
-        title="Admissão e desligamento"
-        description="A jornada de cada colaborador — da documentação à integração com a equipe — e o desligamento, passo a passo."
+        title="Onboarding e offboarding"
+        description="A jornada de cada colaborador, da documentação ao fim do contrato de experiência, e o desligamento passo a passo."
       >
         {ehRH(sessao) && propostaDocs.length > 0 && <button className="btn-outline" onClick={() => { setDocsSelecionados(new Set()); setRevisarDocs(true); }}>Revisar documentos padrão ({propostaDocs.length})</button>}
         {gere && (
@@ -225,7 +252,7 @@ export default function Integracao() {
 
       {/* O próprio StatCard já é o botão — reaproveita o mesmo drill das barras
           do gráfico para não haver dois caminhos com regras diferentes. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Admissões em andamento"
           value={resumo.onAndamento}
@@ -242,6 +269,15 @@ export default function Integracao() {
           accent="green"
           onClick={() => abrirJornada("Admissão concluída")}
           title="Ver quem já concluiu o processo de admissão"
+        />
+        <StatCard
+          label="Em experiência"
+          value={emExperiencia.length}
+          icon={<Hourglass className="h-5 w-5" />}
+          accent="blue"
+          hint={fimMaisProximo || "Ninguém em contrato de experiência hoje"}
+          onClick={() => abrirJornada("Em experiência")}
+          title="Ver quem está em contrato de experiência e o dia em que cada um termina"
         />
         <StatCard
           label="Desligamentos"

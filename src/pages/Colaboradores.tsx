@@ -20,7 +20,7 @@ import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { TIPOS_ENCARGO, corDoTipo, competenciaLabel } from "@/lib/folha";
 import { foraDaExperiencia, explicar as explicarForaDaExperiencia, type ForaDaExperiencia } from "@/lib/foraDaExperiencia";
-import { situacaoExperiencia, type SituacaoExperiencia } from "@/lib/clt";
+import { quemEstaEmExperiencia } from "@/lib/emExperiencia";
 import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
 import type { Colaborador, Pagamento } from "@/data/types";
@@ -193,14 +193,10 @@ export default function Colaboradores() {
   //
   // Quem separa urgente de tranquilo é a COR do cartão e o "decidir!", não a
   // presença na lista. Estar em experiência é um fato; ser urgente é um juízo.
-  const emExperiencia = useMemo(
-    () => escopo
-      .filter((c) => !c.ehDirecao && !ehInativo(c))
-      .map((c) => ({ c, sit: situacaoExperiencia(c), marcado: c.statusId === "experiencia" }))
-      .filter((x): x is { c: Colaborador; sit: SituacaoExperiencia; marcado: boolean } => !!x.sit)
-      .sort((a, b) => a.sit.diasParaFim - b.sit.diasParaFim),
-    [escopo],
-  );
+  /* A conta saiu daqui para lib/emExperiencia: a tela de Onboarding e
+     offboarding passou a mostrar os mesmos números, e duas telas contando por
+     conta própria acabam discordando sem ninguém ser avisado. */
+  const emExperiencia = useMemo(() => quemEstaEmExperiencia(escopo), [escopo]);
 
   // Sem data de admissão, situacaoExperiencia() devolve null e a pessoa some de
   // TODA conta da CLT — não entra no bloco acima, não gera férias — e nada na

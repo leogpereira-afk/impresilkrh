@@ -55,7 +55,7 @@ const NAV: ItemNav[] = [
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/ponto", label: "Ponto, ausências e advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },
-  { href: "/integracao", label: "Admissão e desligamento", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
+  { href: "/integracao", label: "Onboarding e offboarding", icon: ClipboardList, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/sst", label: "Saúde e segurança", icon: HardHat, perfis: GESTAO, grupo: "Pessoas" },
   // Estrutura e financeiro — estrutura e dinheiro. (A Folha Variável virou aba dentro de
   // "Ponto, ausências e advertências", junto do Ponto do mês.)

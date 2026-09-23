@@ -41,7 +41,7 @@ export const APELIDOS: Record<string, string[]> = {
   "/performance": ["performance", "bonificacao", "bonus", "instaladores", "entregas", "produtividade"],
   "/custos": ["folha", "salario", "pagamento", "custo", "adiantamento"],
   "/ferias": ["ferias", "descanso"],
-  "/integracao": ["onboarding", "offboarding", "admissao", "desligamento", "checklist"],
+  "/integracao": ["onboarding", "offboarding", "admissao", "desligamento", "checklist", "experiencia", "contrato de experiencia", "efetivacao"],
   "/colaboradores": ["funcionario", "gente", "equipe", "quadro", "pessoal"],
   "/cargos": ["cargo", "funcao", "descricao de cargo"],
   "/carreira": ["salario", "faixa", "plano de carreira", "promocao"],
