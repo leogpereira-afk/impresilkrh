@@ -320,7 +320,7 @@ export default function Desempenho() {
       />
 
       {/* O próprio StatCard é o botão (o wrapper virava botão dentro de botão). */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard
           label="Avaliados"
           value={comNota.length}
@@ -514,7 +514,7 @@ function NoveBox({
                               )
                           : undefined
                       }
-                      className={`flex min-w-0 flex-col rounded-xl border p-3 text-left transition sm:min-h-[176px] ${corCelula(idxDes, idxPot)} ${
+                      className={`flex min-w-0 flex-col rounded-xl border p-3 text-left transition sm:min-h-[8rem] ${corCelula(idxDes, idxPot)} ${
                         temPessoas
                           ? "cursor-pointer hover:shadow-md hover:ring-2 hover:ring-brand/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                           : "cursor-default"

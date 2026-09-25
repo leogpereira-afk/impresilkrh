@@ -728,7 +728,7 @@ export default function Colaboradores() {
       {/* Cards do quadro — clicáveis: filtram a lista abaixo.
           Um por status presente COM gente (na ordem do próprio status), mais
           Indisponíveis e Desligados. Status novo entra sozinho. */}
-      <div className="mb-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="mb-2 rh-stats">
         {([
           ...quadro.presentes.map((g) => ({
             key: `st:${g.statusId}`,
@@ -766,16 +766,16 @@ export default function Colaboradores() {
                     : `Filtrar por ${label.toLowerCase()}`
               }
               className={cn(
-                "flex items-center gap-3 rounded-2xl border bg-white p-4 text-left shadow-soft transition",
+                "flex items-center gap-3 rounded-2xl border bg-white p-3 text-left shadow-soft transition",
                 ativoCard ? "border-brand ring-1 ring-brand/40" : "border-slate-200/70",
                 semNinguem ? "cursor-default opacity-70" : !ativoCard && "hover:border-slate-300 hover:shadow-md",
               )}
             >
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: comAlfa(tint, "1a") }}>
-                <Icon className="h-5 w-5" style={{ color: tint }} />
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: comAlfa(tint, "1a") }}>
+                <Icon className="h-4 w-4" style={{ color: tint }} />
               </span>
               <div className="min-w-0">
-                <p className="text-2xl font-bold leading-none text-slate-800">{valor}</p>
+                <p className="text-xl font-bold leading-none text-slate-800">{valor}</p>
                 <p className="mt-1 truncate text-xs text-slate-500">{label}{ativoCard && " · filtrando"}</p>
                 {nota && <p className="truncate text-[10px] text-slate-400">{nota}</p>}
               </div>
@@ -1076,7 +1076,7 @@ export default function Colaboradores() {
                 <button
                   type="button"
                   onClick={() => toggleArea(area.id)}
-                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition hover:bg-slate-50/60"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60"
                 >
                   <span className="flex items-center gap-3">
                     {aberta ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}

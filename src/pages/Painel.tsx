@@ -445,8 +445,8 @@ export default function Painel() {
         <p className="mt-2 text-xs text-slate-500">Pendências do quadro atual. Ausência de registros não comprova regularidade.</p>
       </div>
       {sessao?.perfil === "ADMIN_RH" && (
-        <details className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
-          <summary className="mb-4 cursor-pointer font-semibold">Pagamentos da equipe · {rotuloPeriodo}</summary>
+        <details className="group mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <summary className="cursor-pointer font-semibold group-open:mb-4">Pagamentos da equipe · {rotuloPeriodo}</summary>
           {pagsPeriodo.length === 0 ? (
             <Card>
               <CardHeader title={`Folha de pagamento · ${rotuloPeriodo}`} icon={<Wallet className="h-[18px] w-[18px]" />} />
@@ -456,7 +456,7 @@ export default function Painel() {
             </Card>
           ) : (
           <>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid items-start gap-4 lg:grid-cols-3">
             <StatCard
               label={`Folha paga · ${rotuloPeriodo}`}
               value={formatBRL(folhaTotal)}
@@ -564,7 +564,7 @@ export default function Painel() {
         </details>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard
           label="Pessoas na empresa" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Quadro atual · inclui experiência e freelancer configurados como ativos"
           title="Ver quem está no quadro"
@@ -685,11 +685,11 @@ export default function Painel() {
           <CardBody className="space-y-3">
             <button
               type="button"
-              className="w-full rounded-lg border border-slate-100 px-3 py-3 text-left transition-colors hover:bg-slate-50/60"
+              className="w-full rounded-lg border border-slate-100 px-3 py-2 text-left transition-colors hover:bg-slate-50/60"
               onClick={() => drill.abrir("Em treinamento", emTreinamento, "Colaboradores com treinamento em aberto")}
             >
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-semibold tracking-tight text-brand-ink">{emTreinamento.length}</span>
+                <span className="text-xl font-semibold tracking-tight text-brand-ink">{emTreinamento.length}</span>
                 <span className="mb-1 text-xs text-slate-400">colaborador(es)</span>
               </div>
               <p className="mt-1 text-xs text-slate-500">Em treinamento</p>
@@ -965,7 +965,7 @@ function PainelPessoal() {
       {/* Os 3 primeiros ficam sem clique de propósito: são dados do próprio usuário — não há
           lista nesta tela para filtrar nem outras pessoas por trás do número. Já "Documentos a
           vencer" é uma CONTAGEM de itens, então leva direto à aba onde eles estão listados. */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard label="Cargo" value={<span className="text-base">{d.nomeCargo(c)}</span>} icon={<Users className="h-5 w-5" />} accent="brand" hint={`Nível ${d.nomeNivel(c.nivelId)}`} />
         {/* Há lista por trás deste número, sim: os períodos na aba Férias. */}
         <StatCard label="Dias livres de férias" value={saldoFerias===null ? "Conferir histórico" : `${saldoFerias} dias`} icon={<Palmtree className="h-5 w-5" />} accent="green" hint={resumoFerias.referencia ? "Direito a confirmar; reservas descontadas" : "Nos aquisitivos registrados; reservas descontadas"}

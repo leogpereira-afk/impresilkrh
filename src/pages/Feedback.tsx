@@ -210,12 +210,12 @@ export default function Feedback() {
               onClick={() => setFoco(ativo ? null : chave)}
               title={vazio ? "Ninguém nesta situação" : ativo ? "Clique para limpar o filtro" : `Ver só: ${rot.toLowerCase()}`}
               className={cn(
-                "rounded-2xl border bg-white p-4 text-left transition",
+                "rounded-2xl border bg-white p-3 text-left transition",
                 ativo ? "border-brand ring-2 ring-brand/20" : "border-slate-200",
                 vazio ? "cursor-default opacity-50" : "hover:shadow-md",
               )}
             >
-              <p className={cn("text-2xl font-semibold tabular-nums", cor)}>{valor}</p>
+              <p className={cn("text-xl font-semibold tabular-nums", cor)}>{valor}</p>
               <p className="mt-0.5 text-xs text-slate-500">{rot}</p>
             </button>
           );

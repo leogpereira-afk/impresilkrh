@@ -288,7 +288,7 @@ export function ViagensPainel() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard label="Viagens no mês" value={doMes.length} icon={<Plane className="h-5 w-5" />} accent="brand" hint="Iniciadas neste mês" onClick={() => alternarFoco("mesQtd")} ativo={foco === "mesQtd"} title="Ver na tabela só as viagens iniciadas neste mês" />
         <StatCard label="Gasto no mês" value={formatBRL(gastoMes)} icon={<Wallet className="h-5 w-5" />} accent="gold" hint="Soma das diárias" onClick={() => alternarFoco("mesValor")} ativo={foco === "mesValor"} title="Ver na tabela as viagens que formam o gasto do mês" />
         <StatCard label="Em andamento" value={emAndamento} icon={<MapPin className="h-5 w-5" />} accent="amber" hint="Equipe em campo" onClick={() => alternarFoco("Em andamento")} ativo={foco === "Em andamento"} title="Ver na tabela só quem está em campo" />

@@ -149,7 +149,7 @@ export default function Vagas() {
         </button>
       </PageHeader>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 rh-stats">
         <StatCard label="Vagas abertas" value={nAbertas} icon={<Briefcase className="h-5 w-5" />} accent="brand"
           onClick={() => alternarFoco("abertas")} ativo={foco === "abertas"} title="Ver só as vagas abertas e em triagem" />
         <StatCard label="Candidatos" value={candidatos.length} icon={<Users className="h-5 w-5" />} accent="blue"
@@ -183,7 +183,7 @@ export default function Vagas() {
               const media = lista.length ? lista.reduce((s, c) => s + (c.nota ?? 0), 0) / lista.filter((c) => c.nota != null).length : 0;
               return (
                 <Card key={v.id} className="overflow-hidden">
-                  <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+                  <div className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <button type="button" onClick={() => toggle(v.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                       {aberta ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
                       <Briefcase className="h-4 w-4 shrink-0 text-brand" />
@@ -272,7 +272,7 @@ export default function Vagas() {
                         </button>
                       </div>
                       {lista.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-400">Nenhum candidato ainda. Adicione o primeiro currículo.</p>
+                        <p className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-4 text-center text-sm text-slate-400">Nenhum candidato ainda. Adicione o primeiro currículo.</p>
                       ) : (
                         <div className="space-y-2">
                           {visiveis.map((c) => {

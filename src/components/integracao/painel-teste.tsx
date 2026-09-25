@@ -58,7 +58,7 @@ export function PainelTeste({ podeEditar }: { podeEditar: boolean }) {
 
   return (
     <div>
-      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+      <div className="mb-4 rh-stats">
         <StatCard label="Em teste agora" value={emAndamento} icon={<Clock className="h-5 w-5" />} accent="amber" hint="Sem último dia marcado" />
         <StatCard label="Aprovados" value={aprovados} icon={<CheckCircle2 className="h-5 w-5" />} accent="brand" hint="Seguiram para contratação" />
         <StatCard label="Registros incompletos" value={pendentes} icon={<AlertTriangle className="h-5 w-5" />} accent="gold" hint="Falta fechar ou confirmar pagamento" />

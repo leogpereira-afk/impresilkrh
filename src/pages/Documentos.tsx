@@ -94,14 +94,14 @@ function DocumentosInstitucionais() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {grupos.map((grupo) => (
         <section key={grupo.categoria}>
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand">
             <span className="h-3 w-0.5 rounded-full bg-gold" />
             {grupo.categoria}
           </h2>
-          <div className="space-y-6">
+          <div className="space-y-4">
             {grupo.docs.map((doc) => (
               <DocumentoCard key={doc.id} doc={doc} />
             ))}
@@ -336,7 +336,7 @@ function Repositorio() {
   return (
     <div className="space-y-6">
       {/* Resumo */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard
           label="Total de documentos"
           value={items.length}
@@ -420,7 +420,7 @@ function Repositorio() {
           icon={<FolderOpen className="h-8 w-8" />}
         />
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {grupos.map((grupo) => (
             <section key={grupo.categoria}>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand">
@@ -428,7 +428,7 @@ function Repositorio() {
                 {grupo.categoria}
                 <Badge variant="neutral">{grupo.arquivos.length}</Badge>
               </h2>
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {grupo.arquivos.map((arq) => (
                   <ArquivoCard
                     key={arq.id}

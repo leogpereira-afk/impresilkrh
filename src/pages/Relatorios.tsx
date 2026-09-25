@@ -642,7 +642,7 @@ export default function Relatorios() {
           cada número abre o detalhe de QUEM o compõe (drill-down). O onClick vai
           direto no StatCard — o <button> que embrulhava virava botão dentro de
           botão agora que o próprio card é um <button>. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard
           label="Pessoas na empresa"
           value={indicadores.headcount}
@@ -660,7 +660,7 @@ export default function Relatorios() {
         />
         <StatCard
           label="Salários cadastrados hoje"
-          value={<span className="text-xl">{formatBRL(indicadores.folha)}</span>}
+          value={formatBRL(indicadores.folha)}
           icon={<Wallet className="h-5 w-5" />}
           accent="gold"
           hint="Soma dos salários ativos"
@@ -675,9 +675,7 @@ export default function Relatorios() {
         />
         <StatCard
           label="Salário cadastral médio"
-          value={
-            <span className="text-xl">{formatBRL(indicadores.custoMedio)}</span>
-          }
+          value={formatBRL(indicadores.custoMedio)}
           icon={<Coins className="h-5 w-5" />}
           accent="blue"
           hint="Salário médio por colaborador"
@@ -735,13 +733,13 @@ export default function Relatorios() {
             {/* Em cima: salário de carteira (contrato) × folha real paga no período */}
             <div className="grid gap-3 sm:grid-cols-2">
               {/* As duas maiores cifras da tela e nenhuma abria quem as compõe. */}
-              <button type="button" className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50/40" title="Ver os ativos que somam este salário de carteira" onClick={() => drill.abrir("Salário de carteira · ativos", ativos, `${formatBRL(indicadores.folha)} · ${ativos.length} ativo(s)`)}>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Salário de carteira (contrato) · atual</p>
+              <button type="button" className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-left transition hover:border-brand-200 hover:bg-brand-50/40" title="Ver os ativos que somam este salário de carteira" onClick={() => drill.abrir("Salário de carteira · ativos", ativos, `${formatBRL(indicadores.folha)} · ${ativos.length} ativo(s)`)}>
+                <p className="text-xs text-slate-400">Salário de carteira (contrato) · atual</p>
                 <p className="mt-0.5 text-2xl font-semibold text-gold-700">{formatBRL(indicadores.folha)}</p>
                 <p className="text-xs text-slate-400">Soma dos salários registrados dos ativos</p>
               </button>
-              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
-                <p className="text-xs uppercase tracking-wide text-slate-400">
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+                <p className="text-xs text-slate-400">
                   Folha real · {baseFolha === "caixa" ? "caixa" : "competência"} · {rotuloPeriodo}
                 </p>
                 <p className="mt-0.5 text-2xl font-semibold text-brand-ink">{formatBRL(folhaAtual.total)}</p>
@@ -862,7 +860,7 @@ export default function Relatorios() {
                 </table>
               </div>
             ) : (
-              <div className="p-5">
+              <div className="p-4">
                 <EmptyState title="Sem dados por área" />
               </div>
             )}
@@ -883,7 +881,7 @@ export default function Relatorios() {
           />
           <CardBody className="p-0">
             {desempenhoSetor.mediaGeral == null ? (
-              <div className="p-5">
+              <div className="p-4">
                 <EmptyState title="Sem notas lançadas" description="Lance avaliações no módulo Desempenho para ver a média por setor." />
               </div>
             ) : (
@@ -1068,7 +1066,7 @@ export default function Relatorios() {
             icon={<Clock className="h-[18px] w-[18px]" />}
           />
           <CardBody>
-            <BarrasColoridas data={tempoDeCasa} onItemClick={drillTempoCasa} />
+            <BarrasColoridas data={tempoDeCasa} altura={200} onItemClick={drillTempoCasa} />
           </CardBody>
         </Card>
       </div>

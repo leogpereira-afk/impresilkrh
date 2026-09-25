@@ -475,7 +475,7 @@ function CalendarioGeral() {
               const noMes = dt.getMonth() === mes;
               const evs = noMes ? (porDia.get(dt.getDate()) ?? []) : [];
               return (
-                <button type="button" key={i} disabled={!noMes} aria-pressed={noMes && diaSelecionado === dt.getDate()} aria-label={`${dt.getDate()} de ${MESES_PT[dt.getMonth()]}: ${evs.length} evento(s)`} onClick={() => abrirDia(dt.getDate())} className={cn("min-w-0 text-left transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand min-h-[88px] border-b border-r border-slate-100 p-1.5", !noMes && "bg-slate-50/40", ehHoje(dt) && "bg-brand-50/50", noMes && diaSelecionado === dt.getDate() && "ring-2 ring-inset ring-brand")}>
+                <button type="button" key={i} disabled={!noMes} aria-pressed={noMes && diaSelecionado === dt.getDate()} aria-label={`${dt.getDate()} de ${MESES_PT[dt.getMonth()]}: ${evs.length} evento(s)`} onClick={() => abrirDia(dt.getDate())} className={cn("min-w-0 text-left transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand min-h-[72px] border-b border-r border-slate-100 p-1.5", !noMes && "bg-slate-50/40", ehHoje(dt) && "bg-brand-50/50", noMes && diaSelecionado === dt.getDate() && "ring-2 ring-inset ring-brand")}>
                   <div className={cn("mb-1 text-xs font-medium", noMes ? "text-slate-600" : "text-slate-300", ehHoje(dt) && "font-bold text-brand")}>{dt.getDate()}</div>
                   <div className="space-y-0.5">
                     {evs.slice(0, 3).map((e, j) => (

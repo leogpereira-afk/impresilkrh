@@ -198,7 +198,7 @@ export default function Treinamento() {
       </PageHeader>
 
       {/* Indicadores — clicáveis (drill nas pessoas) */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         {/* O próprio StatCard já vira botão acessível — nada de <button> por fora (botão dentro de botão). */}
         {/* Card zerado fica sem onClick de propósito: sem onClick o StatCard volta a ser uma <div>
             comum, então ninguém clica num número 0 para receber uma lista vazia. */}
@@ -234,6 +234,7 @@ export default function Treinamento() {
             ) : (
               <BarrasColoridas
                 data={porTipo}
+                altura={200}
                 onItemClick={(nome) => {
                   const regs = lista.filter((t) => t.tipo === nome);
                   if (regs.length) drillRegs(`Treinamento ${nome}`, regs);
@@ -255,6 +256,7 @@ export default function Treinamento() {
             ) : (
               <BarrasColoridas
                 data={porStatus}
+                altura={200}
                 onItemClick={(nome) => {
                   const regs = lista.filter((t) => t.status === nome);
                   if (regs.length) drillRegs(`Treinamentos: ${nome}`, regs);
@@ -412,7 +414,7 @@ export default function Treinamento() {
           pessoas quer falar com as seis, e procurar nome por nome numa lista de
           trinta é o que faz a conversa não acontecer. */}
       {turmas.length > 0 && (
-        <Card className="mb-6">
+        <Card className="mt-6">
           <CardHeader
             title="Turmas"
             subtitle="Quem fez o mesmo treinamento junto"
@@ -496,7 +498,7 @@ export default function Treinamento() {
                   <button
                     type="button"
                     onClick={() => drill.abrir(`Pendente: ${g.titulo}`, g.pessoas, `${g.pessoas.length} pessoa(s) precisam deste treinamento`)}
-                    className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition hover:bg-slate-50"
+                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-slate-50"
                   >
                     <span
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"

@@ -140,7 +140,7 @@ export function EncargosEstimados({
           }
         />
         <CardBody>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rh-stats">
             <StatCard
               label={mesDoDeposito
                 ? `${olhandoOutroAno ? "Depósito de" : "Depositar em"} ${compLabel(mesDoDeposito.competencia)}`

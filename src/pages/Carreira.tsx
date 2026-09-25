@@ -201,7 +201,7 @@ export default function Carreira() {
               <button
                 type="button"
                 onClick={() => drill.abrir(`Nível ${n.codigo} · ${n.senioridade}`, ativosNivel, `${ativosNivel.length} colaborador(es) ativo(s) neste nível`)}
-                className="group flex w-full flex-col p-4 text-left transition-colors hover:bg-slate-50/70"
+                className="group flex w-full flex-col p-3 text-left transition-colors hover:bg-slate-50/70"
                 title={`Ver colaboradores no nível ${n.codigo}`}
               >
                 <div className="flex items-center gap-2">
@@ -244,17 +244,17 @@ export default function Carreira() {
 
           {cargo ? (
             <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 p-4">
+              <div className="rounded-xl border border-slate-200 p-3">
                 <p className="text-xs uppercase tracking-wide text-slate-400">{podeVerSalario ? "Base atual" : `Faixa N${nivelAtual}`}</p>
-                <p className="mt-1 text-2xl font-semibold text-brand-ink">{baseAtual != null ? formatBRL(baseAtual) : "—"}</p>
+                <p className="mt-1 text-xl font-semibold text-brand-ink">{baseAtual != null ? formatBRL(baseAtual) : "—"}</p>
                 <p className="text-xs text-slate-400">{podeVerSalario && colab?.salario != null ? "Salário atual" : "Referência da faixa"}</p>
               </div>
               <div className="flex items-center justify-center">
                 <div className="flex items-center gap-2 text-slate-400"><ArrowRight className="h-6 w-6" /></div>
               </div>
-              <div className="rounded-xl border border-gold-200 bg-gold-50/50 p-4">
+              <div className="rounded-xl border border-gold-200 bg-gold-50/50 p-3">
                 <p className="text-xs uppercase tracking-wide text-gold-700">Faixa N{nivelAlvo}</p>
-                <p className="mt-1 text-2xl font-semibold text-gold-700">{valorAlvoFaixa != null ? formatBRL(valorAlvoFaixa) : "—"}</p>
+                <p className="mt-1 text-xl font-semibold text-gold-700">{valorAlvoFaixa != null ? formatBRL(valorAlvoFaixa) : "—"}</p>
                 {delta != null && (
                   <p className={`text-xs font-medium ${delta >= 0 ? "text-green-600" : "text-red-600"}`}>
                     {delta >= 0 ? "+" : ""}{formatBRL(delta)} ({deltaPct != null ? formatPercent(deltaPct) : "—"})

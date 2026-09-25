@@ -252,7 +252,7 @@ export default function Integracao() {
 
       {/* O próprio StatCard já é o botão — reaproveita o mesmo drill das barras
           do gráfico para não haver dois caminhos com regras diferentes. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="rh-stats">
         <StatCard
           label="Admissões em andamento"
           value={resumo.onAndamento}
@@ -302,7 +302,7 @@ export default function Integracao() {
           <CardBody>
             <BarrasColoridas
               data={dadosJornada}
-              altura={240}
+              altura={160}
               onItemClick={abrirJornada}
             />
           </CardBody>
@@ -623,7 +623,7 @@ function PainelChecklist({
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {gruposOrdenados.map((g) => (
           <div
             key={`${tipo}-${g.colaboradorId}`}

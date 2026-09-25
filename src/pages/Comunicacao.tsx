@@ -31,28 +31,28 @@ export default function Comunicacao() {
       />
 
       {/* Modelo operacional */}
-      <div className="mb-6 grid gap-4 lg:grid-cols-3">
-        <Card className="p-5">
+      <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <Card className="p-4">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
               <Compass className="h-5 w-5" />
             </span>
             <h3 className="text-sm font-semibold text-slate-800">Princípios</h3>
           </div>
-          <p className="mt-3 text-sm text-slate-600">Clareza · Fluxo · Canal correto</p>
+          <p className="mt-2 text-sm text-slate-600">Clareza · Fluxo · Canal correto</p>
           <p className="mt-1 text-xs text-slate-400">
             Toda comunicação começa com objetivo claro, segue um fluxo definido e usa o canal certo.
           </p>
         </Card>
 
-        <Card className="p-5">
+        <Card className="p-4">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
               <Radio className="h-5 w-5" />
             </span>
             <h3 className="text-sm font-semibold text-slate-800">Canais oficiais</h3>
           </div>
-          <ul className="mt-3 space-y-1.5">
+          <ul className="mt-2 space-y-1.5">
             {CANAIS.map((c) => (
               <li key={c.rotulo} className="flex items-center gap-2 text-sm text-slate-600">
                 <span className="mt-px h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
@@ -64,14 +64,14 @@ export default function Comunicacao() {
           </ul>
         </Card>
 
-        <Card className="p-5">
+        <Card className="p-4">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-100 text-gold-700">
               <Timer className="h-5 w-5" />
             </span>
             <h3 className="text-sm font-semibold text-slate-800">Prazos de resposta</h3>
           </div>
-          <ul className="mt-3 space-y-1.5">
+          <ul className="mt-2 space-y-1.5">
             {SLAS.map((s) => (
               <li key={s.rotulo} className="flex items-center justify-between gap-2 text-sm">
                 <span className="text-slate-600">{s.rotulo}</span>

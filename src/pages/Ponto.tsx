@@ -2081,7 +2081,7 @@ function AbaAdvertencias({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard label="Total de advertências" value={lista.length} icon={<ShieldAlert className="h-5 w-5" />} accent="brand" hint="No seu escopo"
           onClick={() => setFiltroTipo(null)} ativo={filtroTipo === null} title="Mostrar todas" />
         <StatCard label="Verbais" value={porTipo.Verbal} icon={<MessageSquareWarning className="h-5 w-5" />} accent="blue" hint="Orientação registrada"
@@ -2105,6 +2105,7 @@ function AbaAdvertencias({
             <BarrasVerticais
               data={rankingChart}
               cor="#dc2626"
+              altura={220}
               onItemClick={(nome) => {
                 const alvo = ranking.find((r) => primeiroNome(r.nome) === nome);
                 if (alvo) abrirDrill(alvo.id);
@@ -2496,7 +2497,7 @@ function AbaAbsenteismo({
         </CardBody>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="rh-stats">
         <StatCard label="Ausências no período" value={total} icon={<CalendarRange className="h-5 w-5" />} accent="brand" hint={`${diaData(de)} – ${diaData(ate)}`}
           onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todas as ausências do período" />
         <StatCard label="Faltas não justificadas" value={faltasNaoJust} icon={<CalendarX2 className="h-5 w-5" />} accent="red" hint="Sem justificativa"
@@ -2581,7 +2582,7 @@ function AbaAbsenteismo({
           {porTipo.length === 0 ? (
             <EmptyState title="Sem dados no período" description="Nenhuma ausência registrada no intervalo selecionado." icon={<BarChart3 className="h-8 w-8" />} />
           ) : (
-            <BarrasColoridas data={porTipo} onItemClick={abrirPorTipo} />
+            <BarrasColoridas data={porTipo} onItemClick={abrirPorTipo} altura={200} />
           )}
         </CardBody>
       </Card>

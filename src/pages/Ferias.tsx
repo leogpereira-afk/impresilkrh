@@ -62,7 +62,7 @@ export default function Ferias() {
       </div>
       <p className="text-xs text-slate-500">{base.length} pessoas no quadro neste filtro · atualização por calendário em {formatDate(hoje)}. Os cartões contam pessoas; uma pessoa pode ter férias atuais e futuras.</p>
     </div>
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <div className="rh-stats">
       <StatCard label="De férias agora" value={grupos.agora.length} icon={<Palmtree className="h-5 w-5" />} accent="green" hint="Pessoas fora hoje" ativo={foco==='agora'} onClick={()=>alternar('agora')} />
       <StatCard label="Com férias agendadas" value={grupos.agendada.length} icon={<CalendarPlus className="h-5 w-5" />} hint="Pessoas com saídas futuras" ativo={foco==='agendada'} onClick={()=>alternar('agendada')} />
       <StatCard label="Prazos para conferir" value={grupos.prazos.length} icon={<CalendarClock className="h-5 w-5" />} accent="amber" hint="Até 60 dias, encerrados ou gozo após o prazo" ativo={foco==='prazos'} onClick={()=>alternar('prazos')} />
@@ -78,7 +78,7 @@ export default function Ferias() {
       <CardBody><div id="controle-ferias" className="space-y-3">
         {!visiveis.length && <EmptyState title="Nenhuma pessoa neste filtro" description="Ajuste a busca, a área ou o cartão selecionado." icon={<Search className="h-8 w-8" />} />}
         {visiveis.map(l=><div key={l.c.id} className="rounded-xl border border-slate-200 overflow-hidden">
-          <div className="p-4 grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto] lg:items-center">
+          <div className="p-4 grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto] md:items-center">
             <div className="min-w-0"><LinkFicha id={l.c.id}>{l.c.nome}</LinkFicha><p className="text-xs text-slate-500">{d.areas.find(a=>a.id===l.c.areaId)?.nome??'Área não informada'}</p></div>
             <div className="text-sm space-y-1"><p className={l.agora?'font-semibold text-emerald-700':'text-slate-700'}>{l.proxima.texto}</p>
               <p className="text-slate-500">{l.resumo.disponivel===null?'Saldo a conferir':`${l.resumo.disponivel} dias livres${l.resumo.referencia?' · direito a confirmar':''}`} · {l.resumo.agendados} dias reservados</p>

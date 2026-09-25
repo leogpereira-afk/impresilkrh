@@ -1254,7 +1254,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
               </table>
             </div>
         </SecaoColapsavel>
-        <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1">
           <Card><CardBody><p className="text-xs uppercase tracking-wide text-slate-400">Total em {competenciaLabelLongo(compSel)}</p><p className="mt-1 text-2xl font-semibold text-green-700">{formatBRL(totalMes)}</p></CardBody></Card>
           <Card><CardBody>
             <p className="text-xs uppercase tracking-wide text-slate-400">Ganho médio por mês</p>
@@ -1302,10 +1302,10 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
                 <tfoot><tr className="border-t-2 border-slate-200"><td className="td font-semibold text-brand-ink">Total no ano</td><td className="td text-right text-base font-semibold text-green-700 tabular-nums">{formatBRL(totalAno)}</td><td className="td" /></tr></tfoot>
               </table>
             </div>
-            <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-1">
               <div className="rounded-xl border border-green-100 bg-green-50/50 px-4 py-3">
                 <p className="text-xs uppercase tracking-wide text-green-700">Total recebido em {anoSel}</p>
-                <p className="mt-0.5 text-3xl font-bold text-green-700">{formatBRL(totalAno)}</p>
+                <p className="mt-0.5 text-2xl font-bold text-green-700">{formatBRL(totalAno)}</p>
                 <p className="mt-1 text-xs text-slate-500">{mesesNoAno} mês(es) com pagamento</p>
               </div>
               <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
@@ -1333,7 +1333,7 @@ export function AbaFinanceiro({ c, sens }: { c: import("@/data/types").Colaborad
                 pessoa, não dinheiro que ela recebeu. Somado junto, o "recebido"
                 de um mês de rescisão inflava milhares de reais. */}
             {encargosAno > 0 && (
-              <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 lg:col-span-3">
                 <strong className="text-slate-700">{formatBRL(encargosAno)}</strong> em FGTS/INSS no ano — encargo da empresa, <strong>não</strong> entra no que a pessoa recebeu.
               </p>
             )}

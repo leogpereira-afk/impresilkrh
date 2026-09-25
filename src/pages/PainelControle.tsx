@@ -181,7 +181,7 @@ function ConfidencialSecao() {
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         {cards.map((card) => (
-          <div key={card.id} className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white">
+          <div key={card.id} className="rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
             <p className="text-sm font-semibold">{card.titulo}</p>
             <p className="mt-0.5 text-xs text-slate-400">{compLabelLongo(compSel)}</p>
             <div className="mt-3 overflow-x-auto">
@@ -714,7 +714,7 @@ function AvaliacaoSecao() {
             <EmptyState title="Nenhum ciclo de avaliação" description="Sem ciclo aberto, o módulo Desempenho não tem onde lançar as notas." icon={<Award className="h-8 w-8" />} acao={<button className="btn-primary" onClick={novoCiclo}>Criar o primeiro ciclo</button>} />
           )}
           {(ciclos as CicloAvaliacao[]).map((c) => (
-            <div key={c.id} className="rounded-lg border border-slate-100 p-4">
+            <div key={c.id} className="rounded-lg border border-slate-100 p-3">
               <div className="mb-3 flex items-center justify-between">
                 <p className="font-medium text-slate-700">{c.nome}</p>
                 <button type="button" onClick={() => alternarCiclo(c)} title={c.status === "Aberto" ? "Encerrar este ciclo" : "Reabrir este ciclo"}>
@@ -791,7 +791,7 @@ function MarcaSecao() {
 // Detalhes completos em LOGIN.md.
 function GuiaLoginReal() {
   return (
-    <details className="group border-b border-slate-100 bg-slate-50/40 px-5 py-2.5">
+    <details className="group border-b border-slate-100 bg-slate-50/40 px-4 py-2.5">
       <summary className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-800">
         <KeyRound className="h-4 w-4 shrink-0 text-brand" />
         {MODO_JWT
@@ -907,7 +907,7 @@ function UsuariosSecao() {
         action={<button className="btn-outline" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo usuário</button>}
       />
 
-      <div className="border-y border-slate-100 bg-gold-50/40 px-5 py-2.5">
+      <div className="border-y border-slate-100 bg-gold-50/40 px-4 py-2.5">
         <p className="flex items-start gap-2 text-xs text-slate-600">
           <ShieldCheck className="mt-px h-4 w-4 shrink-0 text-gold-600" />
           As permissões definem exatamente quais módulos ficam visíveis para cada usuário. Use <strong>Acesso total</strong> para liberar tudo (recomendado para o nível Administrador de RH).
@@ -915,7 +915,7 @@ function UsuariosSecao() {
       </div>
 
       {MODO_JWT && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-green-50/50 px-5 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-green-50/50 px-4 py-2.5">
           <p className="flex items-start gap-2 text-xs text-slate-600">
             <ShieldCheck className="mt-px h-4 w-4 shrink-0 text-green-600" />
             <span><strong>Login real ativo.</strong> A senha de cada usuário é guardada com segurança no servidor. Ao salvar um usuário com senha, ela já é ativada lá. Para enviar de uma vez as senhas já cadastradas, use “Migrar senhas”.</span>

@@ -61,7 +61,7 @@ export function TotalEquipe({
       <CardBody>
         <div className="grid gap-4">
           {/* ---- o mês ---- */}
-          <div className="rounded-xl border border-brand/15 bg-brand/[0.04] p-4">
+          <div className="rounded-xl border border-brand/15 bg-brand/[0.04] p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {comEncargos ? "Custo estimado do mês (c/ provisões)" : "Custo pago do mês"}
             </p>
@@ -71,7 +71,7 @@ export function TotalEquipe({
               type="button"
               onClick={() => onAbrirMes?.(resumo.competencia)}
               disabled={!onAbrirMes || resumo.pessoas === 0}
-              className="mt-1 block text-left text-3xl font-semibold tabular-nums text-brand-ink hover:underline disabled:cursor-default disabled:no-underline"
+              className="mt-1 block text-left text-2xl font-semibold tabular-nums text-brand-ink hover:underline disabled:cursor-default disabled:no-underline"
               title={resumo.pessoas ? "Ver custo estimado por pessoa (com provisões)" : undefined}
             >
               {formatBRL(principal)}
@@ -84,7 +84,7 @@ export function TotalEquipe({
                 <> <strong className="font-semibold text-amber-700">{formatBRL(resumo.emAberto)} ainda em aberto no ERP</strong> — fora dos totais acima; ainda não saiu do caixa.</>
               )}
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="mt-3 rh-stats">
               <StatCard label="Pago à equipe" value={formatBRL(resumo.pago)} icon={<Users className="h-4 w-4" />} accent="blue" onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />
               <StatCard label="Provisões" value={formatBRL(resumo.provisoes)} icon={<PiggyBank className="h-4 w-4" />} accent="gold" hint={`sobre ${formatBRL(resumo.base)}`} title="Provisão do mês: FGTS, 13º e férias sobre a base, mais o FGTS lançado de verdade. Quanto SEPARAR por mês para os acertos está na aba Encargos estimados — lá o mês pela metade vale pela média, então os dois números não são o mesmo." />
               <StatCard label="Média por pessoa" value={formatBRL(resumo.pessoas > 0 ? principal / resumo.pessoas : 0)} icon={<TrendingUp className="h-4 w-4" />} accent="brand" hint={`${resumo.pessoas} pessoa(s)`} onClick={resumo.pessoas ? () => onAbrirMes?.(resumo.competencia) : undefined} />

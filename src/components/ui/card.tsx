@@ -96,20 +96,29 @@ export function CardHeader({
       </div>
     </>
   );
+  /* A SETA DE RECOLHER NÃO QUEBRA LINHA (25/09/2026). O título tinha base de
+     12rem e o cabeçalho quebrava linha para caber: num cartão estreito (três
+     gráficos lado a lado com a barra lateral aberta) a seta sozinha descia
+     para uma linha própria, e cada cartão ganhava ~30px vazios em cima do
+     conteúdo. A base de 12rem existe para proteger o título de BOTÕES de ação
+     -- sem ação, só há a seta, e ela cabe sempre à direita. */
+  const temAcao = action != null && action !== false;
+  const baseDoTitulo = temAcao ? "flex-[1_1_12rem]" : "flex-1";
   return (
     <div
       className={cn(
-        "flex flex-wrap items-start justify-between gap-3 px-5 py-4",
+        "flex items-start justify-between gap-3 px-4 py-3",
+        temAcao && "flex-wrap",
         (!ctx || ctx.aberto) && "border-b border-slate-100",
         className,
       )}
     >
       {ctx ? (
-        <button type="button" onClick={ctx.alternar} aria-expanded={ctx.aberto} className="flex min-w-0 flex-[1_1_12rem] items-start gap-3 text-left">
+        <button type="button" onClick={ctx.alternar} aria-expanded={ctx.aberto} className={cn("flex min-w-0 items-start gap-3 text-left", baseDoTitulo)}>
           {interior}
         </button>
       ) : (
-        <div className="flex min-w-0 flex-[1_1_12rem] items-start gap-3">{interior}</div>
+        <div className={cn("flex min-w-0 items-start gap-3", baseDoTitulo)}>{interior}</div>
       )}
       <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
         {action}
@@ -137,7 +146,7 @@ export function CardBody({
 }) {
   const ctx = useContext(ColapsoCtx);
   if (ctx && !ctx.aberto) return null; // recolhido → esconde o corpo
-  return <div className={cn("p-5", className)}>{children}</div>;
+  return <div className={cn("p-4", className)}>{children}</div>;
 }
 
 // Mantido por compatibilidade (ficha do colaborador). Como o Card já é recolhível,
@@ -174,8 +183,9 @@ export function SecaoColapsavel({
   const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((o) => !o));
   return (
     <Card className={className} colapsavel={false}>
-      <div className={cn("flex flex-wrap items-start justify-between gap-3 px-5 py-4", aberto && "border-b border-slate-100")}>
-        <button type="button" onClick={alternar} aria-expanded={aberto} className="flex min-w-0 flex-[1_1_12rem] items-start gap-3 text-left">
+      {/* Mesma regra do CardHeader: sem ação, a seta fica na linha do título. */}
+      <div className={cn("flex items-start justify-between gap-3 px-4 py-3", action != null && action !== false && "flex-wrap", aberto && "border-b border-slate-100")}>
+        <button type="button" onClick={alternar} aria-expanded={aberto} className={cn("flex min-w-0 items-start gap-3 text-left", action != null && action !== false ? "flex-[1_1_12rem]" : "flex-1")}>
           {icon && <div className="mt-0.5 text-brand">{icon}</div>}
           <div className="min-w-0 break-words">
             <h3 className="text-sm font-semibold text-slate-800">{title}</h3>

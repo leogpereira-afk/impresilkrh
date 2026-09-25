@@ -1504,7 +1504,7 @@ export default function Custos() {
                 acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Conferir importações</button>}
               />
             ) : (
-              <div className="space-y-8">
+              <div className="space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-slate-500">Toda a equipe em {compLabelLongo(compAtiva)}: o que foi pago, o rateio dos custos coletivos e a leitura contábil.</p>
                   <button type="button" className="btn-outline" onClick={() => setEditorAberto(true)}>
@@ -1533,7 +1533,7 @@ export default function Custos() {
                       : `${pct ? pct + " · " : ""}${motores}${parcela}${cautela}`;
                   const todosMotores = variacao.motores.map((m) => `${m.tipo}: ${m.delta > 0 ? "+" : "−"}${formatBRL(Math.abs(m.delta))}`).join("\n");
                   return (
-                    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="mb-6 rh-stats">
                       <StatCard
                         label="Custo pago no mês"
                         value={formatBRL(pagoMes)}
@@ -1745,7 +1745,7 @@ export default function Custos() {
                         Léo, 07/09/2026): os quatro números primeiro, a lista
                         por tipo na largura toda — cabe mais e lê melhor. */}
                     {/* Destaques do mês */}
-                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <div className="rh-stats">
                       <StatCard label="Total pago no mês" value={formatBRL(totalMes)} accent="brand" icon={<Wallet className="h-4 w-4" />} hint={compLabelLongo(compAtiva)} />
                       <StatCard
                         label="Colaboradores pagos"
@@ -1895,7 +1895,7 @@ export default function Custos() {
                     disto — ela está em “Financeiro do RH”, que lê os pagamentos.
                   </p>
                 )}
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="rh-stats">
                   <StatCard
                     label="Custo médio / colaborador"
                     value={semFolhaNaComp ? "—" : formatBRL(nColab > 0 ? totais.individual / nColab : 0)}
@@ -1973,7 +1973,7 @@ export default function Custos() {
                   />
                   <CardBody className="p-0">
                     {totais.contasRateio.length === 0 ? (
-                      <div className="p-5">
+                      <div className="p-4">
                         <EmptyState title="Nenhuma conta de rateio" description="Classifique contas como “Rateio para todos” no editor." />
                       </div>
                     ) : (
@@ -2079,7 +2079,7 @@ export default function Custos() {
                 acao={<button type="button" className="btn-outline" onClick={() => setAba("sync")}><RefreshCw className="h-4 w-4" /> Conferir importações</button>}
               />
             ) : (
-              <div className="space-y-8">
+              <div className="space-y-6">
           {/* ===================== custo individual por colaborador =====================
               A aba é só do colaborador (pedido de 06/09/2026): a ficha do mês e
               o histórico dele. O que é de todos — folha geral, rateio, evolução
@@ -2206,7 +2206,7 @@ export default function Custos() {
                     icon={<Coins className="h-8 w-8" />}
                   />
                 ) : (
-                  <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="grid gap-4 lg:grid-cols-2">
                     {/* Tabela por tipo */}
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -2285,7 +2285,7 @@ export default function Custos() {
                           entra. Sem isto, ver "encargos sobre o bruto (R$ 20.418)"
                           ao lado de um custo pago de R$ 25.788 não explicava os
                           R$ 5.370 do meio, que são justamente faxina e empreita. */}
-                      <div className="rounded-xl border border-slate-200/70 bg-white p-4">
+                      <div className="rounded-xl border border-slate-200/70 bg-white p-3">
                         <div className="flex items-baseline justify-between">
                           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total recebido no mês</p>
                           <p className="text-lg font-semibold text-green-700 tabular-nums">{formatBRL(recebido.totalRecebido)}</p>
@@ -2311,7 +2311,7 @@ export default function Custos() {
                           </p>
                         )}
                       </div>
-                      <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
+                      <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-3">
                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
                           Encargos estimados sobre o bruto ({formatBRL(bruto)})
                         </p>
@@ -2385,7 +2385,7 @@ export default function Custos() {
                 )}
 
                 {/* Destaque: custo total mensal do colaborador */}
-                <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-brand px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-brand px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-white/70">
                       Custo mensal da pessoa
@@ -2396,7 +2396,7 @@ export default function Custos() {
                       {colabSel ? <Link to={`/colaboradores/${colabSel.id}`} className="font-medium underline decoration-white/40 underline-offset-2 hover:decoration-white">{colabSel.nome}</Link> : "—"} · {comEncargos ? "custo estimado (com reservas)" : "custo pago"}
                     </p>
                   </div>
-                  <p className="text-3xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
+                  <p className="text-2xl font-semibold tracking-tight">{formatBRL(custoTotalColab)}</p>
                 </div>
               </CardBody>
             </Card>
@@ -3697,14 +3697,14 @@ function CustoGlobalFuncionarios({
         <CardBody>
           {/* Lado a lado: folha real (por pessoa) × custo global (contábil) */}
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Folha real (por pessoa)</p>
-              <p className="mt-1 text-2xl font-bold text-slate-800">{formatBRL(folhaReal)}</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-medium text-slate-400">Folha real (por pessoa)</p>
+              <p className="mt-1 text-xl font-bold text-slate-800">{formatBRL(folhaReal)}</p>
               <p className="mt-0.5 text-xs text-slate-500">O que foi pago a cada colaborador — a folha geral do mês, logo acima.</p>
             </div>
-            <div className="rounded-2xl border border-brand/30 bg-brand/5 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-brand">Custo global (contábil)</p>
-              <p className="mt-1 text-2xl font-bold text-brand-ink">{formatBRL(total)}</p>
+            <div className="rounded-2xl border border-brand/30 bg-brand/5 p-3">
+              <p className="text-xs font-medium text-brand">Custo global (contábil)</p>
+              <p className="mt-1 text-xl font-bold text-brand-ink">{formatBRL(total)}</p>
               <p className="mt-0.5 text-xs text-slate-500">Grupo {PREFIXO_FUNCIONARIOS}* do plano — bate com o "Funcionários" no DRE.</p>
             </div>
           </div>
@@ -3740,7 +3740,7 @@ function CustoGlobalFuncionarios({
             return (
               <div className="mb-5">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Custos extras (coletivos) — não vão para a folha por pessoa</p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rh-stats">
                   {extras.map((x) => (
                     <StatCard
                       key={x.c!.cod}

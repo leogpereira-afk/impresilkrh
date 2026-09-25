@@ -775,7 +775,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="mb-4 rh-stats">
         <StatCard label="Agendadas" value={agendadas} icon={<Clock className="h-5 w-5" />} accent="blue" hint="Na fila de envio"
           onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Ver só os envios ainda na fila" />
         <StatCard label="Enviadas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados"
@@ -785,7 +785,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
         <StatCard label="Total de contatos" value={contatos.filter((c) => contatoAtivo(c, saiu)).length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Quem ainda está na empresa" />
       </div>
 
-      <div className="mb-4 flex items-center justify-end">
+      <div className="mb-4 flex items-center justify-end empty:hidden">
         {podeEditar && (
           <button className="btn-primary" onClick={abrirNovo}>
             <Send className="h-4 w-4" /> Agendar envio

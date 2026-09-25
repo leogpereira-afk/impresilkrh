@@ -74,7 +74,7 @@ export default function LGPD() {
         description="Trilha local de acessos a dados sensíveis."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="rh-stats">
         <StatCard label="Total de acessos" value={acessos.length} icon={<Eye className="h-5 w-5" />} accent="brand" hint="Registrados na trilha abaixo" />
         <StatCard label="Acessos a dados sensíveis" value={totalSensiveis} icon={<FileSearch className="h-5 w-5" />} accent={totalSensiveis ? "amber" : "green"} hint="Visualizações de CPF, salário e dados familiares" />
         <StatCard

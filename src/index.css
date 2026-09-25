@@ -75,6 +75,45 @@ textarea {
     min-width: 0;
     @apply rounded-2xl border border-slate-200/60 bg-white shadow-card transition-shadow duration-300;
   }
+  /* A FILEIRA DE CARTÕES DE NÚMERO (25/09/2026).
+     As fileiras usavam breakpoints de TELA: "grid-cols-2 lg:grid-cols-4". Com a
+     barra lateral aberta numa janela de 1100px sobram ~810px, e 4 colunas davam
+     cartões de ~190px com o rótulo quebrado em duas linhas. Pior: abaixo de
+     1024px a barra some e ficavam 2 colunas de 460px, com o número num canto
+     e o resto vazio -- o "muito espaço vazio" do pedido.
+     auto-fit decide pelo espaço que SOBRA para a fileira: cabe um cartão de
+     8.75rem, entra mais uma coluna. E recolhe as colunas vazias, então uma
+     fileira de 3 cartões ocupa a largura toda em vez de deixar um buraco.
+     POR QUE 8.75rem E NÃO 10rem: com 10rem, nos notebooks de 1280 e 1366px
+     (sobram 920 a 1006px) cabiam 5 colunas -- o Painel ficava 5+5+1, com um
+     cartão sozinho na última fileira, e o SST deixava o alarme "Sem exame
+     nenhum" isolado em 5+1. Com 8.75rem cabem 6 (6+5 e 6 numa linha só), e
+     a 1024px 4 cartões ficam 4 e não 3+1. Medido na revisão de 25/09/2026. */
+  .rh-stats {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.75rem), 1fr));
+  }
+  /* No celular, SEMPRE duas colunas. Num Android de 360px, ou dentro de um
+     cartão com margem, sobra pouco para o auto-fit decidir sozinho -- e os
+     números viravam uma pilha de uma coluna, cada um com a largura toda e o
+     resto vazio. Duas colunas era o que a maioria das telas já tinha. */
+  @media (max-width: 639px) {
+    .rh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  /* O NÚMERO SE AJUSTA À LARGURA DO CARTÃO. Numa fileira de 6 colunas o
+     cartão tem ~140px, e "R$ 150.000,00" em 20px não cabe: ou vazava a borda
+     (o R$ vem com espaço não separável) ou quebrava no meio do número. Aqui
+     o tamanho é 14% da largura do próprio cartão, entre 16 e 20px: cartão
+     largo mostra o número cheio; cartão estreito, um pouco menor, mas inteiro.
+     container-type exige que a largura do cartão venha de fora -- vem: todo
+     StatCard mora numa grade (conferido em 25/09/2026). */
+  .rh-stat {
+    container-type: inline-size;
+  }
+  .rh-stat-valor {
+    font-size: clamp(1rem, 14cqi, 1.25rem);
+  }
   .card-hover {
     @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover;
   }

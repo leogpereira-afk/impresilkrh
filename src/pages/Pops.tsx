@@ -62,7 +62,7 @@ export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
       )}
 
       <Card className="mb-6">
-        <CardBody className="flex items-start gap-3 p-5">
+        <CardBody className="flex items-start gap-3">
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
             <ClipboardCheck className="h-5 w-5" />
           </span>
@@ -94,7 +94,7 @@ export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
                   onClick={() => alternar(pop.id)}
                   aria-expanded={aberto}
                   aria-controls={`pop-corpo-${pop.id}`}
-                  className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left transition hover:bg-slate-50"
+                  className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
                 >
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 text-brand">
