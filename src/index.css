@@ -341,8 +341,135 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 /* Títulos azuis; subtítulos e itens mantêm os tons neutros. */
 :root { --rh-title: #2453a5; }
 .dark { --rh-title: #9abaff; }
-main h1, main h2, main h3, .rh-sidebar .nav-section { color: var(--rh-title); }
+main h1, main h2, main h3 { color: var(--rh-title); }
 .rh-sidebar { background-color: var(--surface); }
+
+/* ============================================================================
+   BARRA LATERAL NO PADRÃO DA CENTRAL DO LÉO (25/09/2026).
+   Medidas copiadas da lateral da Central (index.html + refinamento.css +
+   painel-compacto.css): 218px de largura, item de 36px com fonte 13px, título
+   de grupo pequeno e cinza, item ativo com fundo claro da marca e barra de 3px
+   à esquerda. A cor do ativo é a da casa (o navy do botão principal), não o
+   azul da Central. A gaveta do celular usa os mesmos itens; o comportamento
+   dela (abrir, fechar, prender o foco) não muda.
+   ============================================================================ */
+:root {
+  --rh-nav-texto: #64748b; /* o cinza de texto secundário da casa (slate-500) */
+  --rh-nav-forte: #1d1d1f; /* o texto principal */
+  --rh-nav-marca: var(--brand-primary);
+  --rh-nav-marca-cl: #eef3f8; /* brand-50 */
+}
+.dark {
+  --rh-nav-texto: #98a4b6;
+  --rh-nav-forte: #e8eef6;
+  --rh-nav-marca: #8fb4d6;
+  --rh-nav-marca-cl: rgba(143, 180, 214, 0.16);
+}
+/* Presa na altura da tela, dentro do fluxo: a largura mora só aqui (antes era
+   fixa com 288px e o conteúdo empurrado por um padding de mesma medida). */
+.rh-side {
+  position: sticky;
+  top: 0;
+  width: 218px;
+  flex: 0 0 218px;
+  height: 100vh;
+  padding: 18px 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.rh-side-marca {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 8px 14px;
+}
+.rh-nav { scrollbar-width: thin; }
+/* Título de grupo: continua sendo o botão que recolhe o grupo. */
+.rh-nav-titulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 22px;
+  margin: 14px 0 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--rh-nav-texto);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.rh-nav-grupo:first-child > .rh-nav-titulo { margin-top: 0; }
+.rh-nav-titulo:hover { color: var(--rh-nav-forte); }
+.rh-nav-seta {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--rh-nav-texto);
+  transition: transform 0.2s;
+}
+.rh-nav-conta {
+  border-radius: 999px;
+  background: var(--bg);
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+.rh-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  color: var(--rh-nav-texto);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: left;
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.rh-nav-item:hover { background: var(--bg); color: var(--rh-nav-forte); }
+.rh-nav-item.sub { padding-left: 26px; }
+.rh-nav-item.ativo {
+  background: var(--rh-nav-marca-cl);
+  color: var(--rh-nav-marca);
+  font-weight: 600;
+  box-shadow: inset 3px 0 var(--rh-nav-marca);
+}
+.rh-nav-item.destaque { background: #c2a14d; color: #fff; }
+.rh-nav-item.destaque:hover,
+.rh-nav-item.destaque.ativo { background: #896c2d; color: #fff; box-shadow: none; }
+/* Contorno por dentro: a lista rola, e um contorno por fora seria cortado. */
+.rh-nav-item:focus-visible,
+.rh-nav-titulo:focus-visible { outline: 2px solid var(--rh-nav-marca); outline-offset: -2px; }
+.rh-nav-ic {
+  display: flex;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  font-size: 15px;
+  line-height: 1;
+}
+.rh-nav-ic svg { width: 18px; height: 18px; }
+.rh-nav-rotulo { flex: 1; min-width: 0; }
+/* Régua de dedo da casa: 44px para navegação, 40px para controle. */
+@media (pointer: coarse) {
+  .rh-nav-item { min-height: 44px; }
+  .rh-nav-titulo { min-height: 40px; }
+}
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -359,7 +486,6 @@ main h1, main h2, main h3, .rh-sidebar .nav-section { color: var(--rh-title); }
   html, body { background: #fff !important; color: #0f172a !important; }
   .rh-sidebar, header, .no-print, [data-menu-rh], .btn-primary, .btn-outline, .btn-ghost { display: none !important; }
   main { max-width: none !important; padding: 0 !important; margin: 0 !important; animation: none !important; }
-  .lg\:pl-72 { padding-left: 0 !important; }
   .card, .rounded-2xl, .rounded-xl { break-inside: avoid; box-shadow: none !important; }
   .sticky { position: static !important; }
   .overflow-x-auto, .overflow-y-auto, .max-h-80 { overflow: visible !important; max-height: none !important; }

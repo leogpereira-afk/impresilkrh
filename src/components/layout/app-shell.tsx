@@ -112,22 +112,27 @@ const EMOJIS: Record<string, string> = {
  * é isso que estar no escopo do módulo garante.
  */
 function NavConteudo({
-  itensVisiveis, recolhidos, alternarGrupo, caminho, aoNavegar,
+  itensVisiveis, recolhidos, alternarGrupo, caminho, aoNavegar, className,
 }: {
   itensVisiveis: ItemNav[];
   recolhidos: Set<string>;
   alternarGrupo: (grupo: string) => void;
   caminho: string;
   aoNavegar: () => void;
+  /** Espaçamento de fora: a lateral fixa já tem o recuo dela; a gaveta do celular não. */
+  className?: string;
 }) {
+  /* O desenho dos itens mora em index.css (.rh-nav-*), no padrão da lateral da
+     Central do Léo: 13px, 36px de altura, título de grupo discreto e o item
+     ativo com fundo claro da marca e barra de 3px à esquerda. */
   return (
-    <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+    <nav className={cn("rh-nav min-h-0 flex-1 overflow-y-auto", className)}>
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
         if (!itens.length) return null;
         const recolhido = recolhidos.has(grupo);
         return (
-          <div key={grupo}>
+          <div key={grupo} className="rh-nav-grupo">
             {/* O título do grupo virou botão: em tela baixa (ou com o menu
                 inteiro liberado) a barra passa de 20 itens e o rodapé fica
                 fora de alcance. Recolher o que não se usa encurta a lista, e
@@ -136,13 +141,13 @@ function NavConteudo({
               type="button"
               onClick={() => alternarGrupo(grupo)}
               aria-expanded={!recolhido}
-              className="nav-section mb-1 flex min-h-9 w-full items-center gap-2 rounded-lg px-3 text-xs font-bold uppercase tracking-[0.12em] transition hover:bg-slate-100"
+              className="rh-nav-titulo"
             >
-              <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform duration-200", !recolhido && "rotate-90")} />
               <span className="flex-1 text-left">{grupo}</span>
               {/* Quantos itens sumiram: um grupo recolhido sem contador some da
                   cabeça de quem usa e vira "o sistema perdeu a tela". */}
-              {recolhido && <span className="rounded-full bg-slate-100 px-1.5 text-xs tracking-normal text-slate-600">{itens.length}</span>}
+              {recolhido && <span className="rh-nav-conta">{itens.length}</span>}
+              <ChevronRight aria-hidden="true" className={cn("rh-nav-seta", !recolhido && "rotate-90")} />
             </button>
             <div className={cn("space-y-0.5", recolhido && "hidden")}>
               {itens.map((item) => {
@@ -154,21 +159,14 @@ function NavConteudo({
                     to={item.href}
                     onClick={aoNavegar}
                     className={cn(
-                      "group flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-[14px] font-semibold leading-snug transition-all duration-200 active:scale-[0.98]",
-                      item.sub && "!pl-7 text-[14px]", // subitem aninhado (ex.: sob Colaboradores)
-                      // Sidebar navy: item em destaque = pílula dourada; ativo = realce
-                      // claro translúcido; inativo = texto claro com hover suave.
-                      item.destaque
-                        ? ativo
-                          ? "bg-gold-600 text-white shadow-sm"
-                          : "bg-gold text-white shadow-sm hover:bg-gold-500"
-                        : ativo
-                          ? "bg-emerald-50 text-slate-800 shadow-[inset_3px_0_0_#28796a]"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-800",
+                      "rh-nav-item",
+                      item.sub && "sub", // subitem aninhado (ex.: sob Colaboradores)
+                      item.destaque && "destaque", // pílula dourada
+                      ativo && "ativo",
                     )}
                   >
-                    {EMOJIS[item.href.slice(1)] ? <span aria-hidden="true" className="w-5 shrink-0 text-center text-lg">{EMOJIS[item.href.slice(1)]}</span> : <Icon className="h-5 w-5 shrink-0" />}
-                    <span className="flex-1">{item.label}</span>
+                    <span aria-hidden="true" className="rh-nav-ic">{EMOJIS[item.href.slice(1)] ?? <Icon />}</span>
+                    <span className="rh-nav-rotulo">{item.label}</span>
                   </NavLink>
                 );
               })}
@@ -180,12 +178,13 @@ function NavConteudo({
   );
 }
 
-function Rodape({ user, aoSair }: {
+function Rodape({ user, aoSair, className }: {
   user: { nome: string; perfil: Perfil; foto: string | null };
   aoSair: () => void;
+  className?: string;
 }) {
   return (
-    <div className="space-y-2 border-t border-slate-200 p-3">
+    <div className={cn("space-y-2 border-t border-slate-200 p-3", className)}>
       <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
         <Avatar nome={user.nome} foto={user.foto} size="sm" />
         <div className="min-w-0 flex-1">
@@ -289,12 +288,15 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-[var(--bg)]">
-      <aside className="rh-sidebar fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="flex h-20 items-center justify-center border-b border-slate-100 px-5">
-          <Logo variant="color" className="h-12" />
+      {/* Lateral no padrão da Central do Léo: 218px, presa na altura da tela
+          (sticky, dentro do fluxo) em vez de fixa com o conteúdo empurrado por
+          padding. Assim a largura mora num lugar só (.rh-side, em index.css). */}
+      <aside className="rh-sidebar rh-side z-30 hidden flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="rh-side-marca">
+          <Logo variant="color" className="h-12 max-w-[190px]" />
         </div>
         <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
-        <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} />
+        <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} className="mt-3 px-0 pb-0 pt-3" />
       </aside>
 
       {aberto && (
@@ -307,7 +309,7 @@ export function AppShell() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
+            <NavConteudo className="px-3 py-3" itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
             <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} />
           </aside>
         </div>
@@ -321,7 +323,7 @@ export function AppShell() {
         onFechar={() => setBuscando(false)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-72">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
           <button onClick={() => setAberto(true)} className="btn-ghost min-h-11 min-w-11 p-1.5 lg:hidden" aria-label="Abrir menu">
             <Menu className="h-5 w-5" />
