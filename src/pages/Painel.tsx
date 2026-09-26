@@ -389,10 +389,36 @@ export default function Painel() {
 
   return (
     <div>
+      {/* O filtro de período mora no cabeçalho (25/09/2026). Antes era um cartão
+          inteiro, com rótulo "PERÍODO" em caixa alta, só para dois selects e uma
+          caixinha: ~80px de altura para quase nada. Os selects se explicam
+          sozinhos ("Setembro", "2026") e têm aria-label. */}
       <PageHeader
         title={`Painel de RH`}
         description={sessao?.perfil === "GESTOR" ? "Visão da sua equipe (hierarquia recursiva)." : "Visão geral do quadro de colaboradores da Impresilk."}
-      />
+      >
+        <Select value={filtroMes} onChange={(e) => setFiltroMes(Number(e.target.value))} className="w-36" aria-label="Mês">
+          <option value={0}>Ano inteiro</option>
+          {MESES_PT.map((nome, i) => (
+            <option key={i} value={i + 1}>{nome}</option>
+          ))}
+        </Select>
+        <Select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))} className="w-24" aria-label="Ano">
+          {anosDisponiveis.map((ano) => (
+            <option key={ano} value={ano}>{ano}</option>
+          ))}
+        </Select>
+        <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={incluirInativos}
+            onChange={(e) => setIncluirInativos(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+          />
+          Incluir inativos
+          {inativos.length > 0 && <span className="text-xs text-slate-400">({inativos.length})</span>}
+        </label>
+      </PageHeader>
 
       {lembreteNr && nrsAlerta.length > 0 && (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
@@ -412,41 +438,24 @@ export default function Painel() {
         </div>
       )}
 
-      {/* ---------- Filtro por mês/ano + inativos (v3) ---------- */}
-      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Período</span>
-        <Select value={filtroMes} onChange={(e) => setFiltroMes(Number(e.target.value))} className="w-40" aria-label="Mês">
-          <option value={0}>Ano inteiro</option>
-          {MESES_PT.map((nome, i) => (
-            <option key={i} value={i + 1}>{nome}</option>
-          ))}
-        </Select>
-        <Select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))} className="w-28" aria-label="Ano">
-          {anosDisponiveis.map((ano) => (
-            <option key={ano} value={ano}>{ano}</option>
-          ))}
-        </Select>
-        <label className="ml-auto flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={incluirInativos}
-            onChange={(e) => setIncluirInativos(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
-          />
-          Incluir inativos
-          {inativos.length > 0 && <span className="text-xs text-slate-400">({inativos.length})</span>}
-        </label>
-      </div>
 
-      <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-        <h2 className="font-semibold text-slate-800">Pendências para conferir</h2>
-        <p className="mt-1 text-sm text-slate-600">{avaliacoesPendentes.length} pessoa(s) sem avaliação no ciclo · {docsAlerta.length} documento(s) com prazo · {nrsAlerta.length} certificação(ões) com prazo.</p>
-        <div className="mt-3 flex flex-wrap gap-2"><Link className="btn-outline" to="/desempenho">Avaliações</Link><Link className="btn-outline" to="/sst">Saúde e segurança</Link>{sessao?.perfil === 'ADMIN_RH' && <Link className="btn-outline" to="/custos?aba=sync">Conferir pagamentos</Link>}</div>
-        <p className="mt-2 text-xs text-slate-500">Pendências do quadro atual. Ausência de registros não comprova regularidade.</p>
+      {/* PENDÊNCIAS NUMA FAIXA (25/09/2026). Era um bloco de ~200px: título, a
+          frase com os três números, três botões que levavam às mesmas telas e
+          uma nota. Agora cada número É o link para onde ele se resolve. A nota
+          fica -- "ausência de registro não comprova regularidade" é o que
+          impede ler um zero como "está tudo em dia". Links com 40px de altura,
+          a régua de toque da casa. */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2">
+        <span className="mr-1 text-sm font-semibold text-amber-900">Pendências</span>
+        <Link className="rh-pendencia" to="/desempenho"><strong>{avaliacoesPendentes.length}</strong> sem avaliação</Link>
+        <Link className="rh-pendencia" to="/sst"><strong>{docsAlerta.length}</strong> documento(s) com prazo</Link>
+        <Link className="rh-pendencia" to="/sst?aba=certificacoes"><strong>{nrsAlerta.length}</strong> NR(s) com prazo</Link>
+        {sessao?.perfil === 'ADMIN_RH' && <Link className="rh-pendencia" to="/custos?aba=sync">Conferir pagamentos</Link>}
+        <span className="basis-full text-[11px] text-slate-500 sm:ml-auto sm:basis-auto">Quadro atual. Ausência de registro não comprova regularidade.</span>
       </div>
       {sessao?.perfil === "ADMIN_RH" && (
-        <details className="group mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <summary className="cursor-pointer font-semibold group-open:mb-4">Pagamentos da equipe · {rotuloPeriodo}</summary>
+        <details className="group mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-800 group-open:mb-4">Pagamentos da equipe · {rotuloPeriodo}</summary>
           {pagsPeriodo.length === 0 ? (
             <Card>
               <CardHeader title={`Folha de pagamento · ${rotuloPeriodo}`} icon={<Wallet className="h-[18px] w-[18px]" />} />

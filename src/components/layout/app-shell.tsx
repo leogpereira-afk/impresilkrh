@@ -395,8 +395,8 @@ export function AppShell() {
           </div>
         </Modal>
 
-        <main id="conteudo-rh" key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
-          {telaAtual && <nav aria-label="Localização" className="no-print mb-3 flex items-center gap-1.5 text-xs text-slate-500"><span>{telaAtual.grupo}</span><ChevronRight className="h-3 w-3" /><span className="font-medium text-slate-700">{telaAtual.label}</span></nav>}
+        <main id="conteudo-rh" key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-4 sm:px-6 lg:px-8">
+          {telaAtual && <nav aria-label="Localização" className="no-print mb-1.5 flex items-center gap-1.5 text-xs text-slate-500"><span>{telaAtual.grupo}</span><ChevronRight className="h-3 w-3" /><span className="font-medium text-slate-700">{telaAtual.label}</span></nav>}
           {rotaBloqueada ? (
             <EmptyState
               title="Acesso restrito"
