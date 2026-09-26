@@ -5,8 +5,6 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
 import { Campo, Input, Select } from '@/components/ui/form';
-import { LinkFicha } from '@/components/ui/link-ficha';
-import { EmptyState } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { useColecao } from '@/lib/store';
 import { useDominio, noQuadro } from '@/lib/dominio';
@@ -17,6 +15,8 @@ import { useHoje } from '@/lib/useHoje';
 import { dataFerias, estadoFerias, resumoFeriasPessoa, prazoPeriodoFerias } from '@/lib/feriasPeriodos';
 import { proximaFerias } from '@/lib/feriasContagem';
 import { DetalheFerias } from '@/components/ferias/detalhe-ferias';
+import { CartaoPessoaFerias } from '@/components/ferias/cartao-pessoa';
+import { Avatar, EmptyState } from '@/components/ui/misc';
 import { HistoricoFerias } from '@/components/ferias/historico-ferias';
 import { FormularioFerias } from '@/components/ferias/formulario-ferias';
 import { ResumoFerias } from '@/components/ferias/resumo-ferias';
@@ -69,25 +69,22 @@ export default function Ferias() {
       <StatCard label="Histórico a conferir" value={grupos.conferir.length} icon={<ShieldAlert className="h-5 w-5" />} accent="amber" hint="Direito não confirmado ou informação incompleta" ativo={foco==='conferir'} onClick={()=>alternar('conferir')} />
     </div>
     {agenda.length>0 && <Card><CardHeader title="Próximas saídas e retornos" subtitle="Movimentos mais próximos das pessoas no filtro" /><CardBody>
-      <div className="grid gap-2 md:grid-cols-2">{agenda.slice(0,6).map(x=><button key={x.f.id} className="rounded-lg border border-slate-200 p-3 text-left hover:bg-slate-50" onClick={()=>{setFoco('');setExpandida(x.c.id);document.getElementById('controle-ferias')?.scrollIntoView({behavior:'smooth'});}}>
-        <span className="block font-medium text-slate-800 break-words">{x.c.nome}</span><span className="text-sm text-slate-500">{x.estado==='Agendada'?'Sai em':'Retorna em'} {formatDate(x.data)} · {x.estado==='Agendada'?`retorno ${formatDate(x.f.dataRetorno)}`:'de férias agora'}</span>
+      <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr))]">{agenda.slice(0,6).map(x=><button key={x.f.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50" onClick={()=>{setFoco('');setExpandida(x.c.id);document.getElementById('controle-ferias')?.scrollIntoView({behavior:'smooth'});}}>
+        <Avatar nome={x.c.nome} foto={x.c.fotoDataUrl} size="sm" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-slate-800">{x.c.nome}</span>
+          <span className="block text-xs text-slate-500"><span className={x.estado==='Agendada'?'font-medium text-blue-700':'font-medium text-emerald-700'}>{x.estado==='Agendada'?'Sai em':'Retorna em'} {formatDate(x.data)}</span> · {x.estado==='Agendada'?`retorno ${formatDate(x.f.dataRetorno)}`:'de férias agora'}</span>
+        </span>
       </button>)}</div>
       {agenda.length>6 && <p className="mt-3 text-xs text-slate-500">Mais {agenda.length-6} movimentos na lista de pessoas abaixo.</p>}
     </CardBody></Card>}
     <Card colapsavel={false}><CardHeader title="Controle de férias" subtitle={`${visiveis.length} de ${base.length} pessoas${foco?' · filtro do cartão ativo':''}`} action={foco?<button className="btn-outline" onClick={()=>setFoco('')}>Mostrar todas</button>:undefined} />
-      <CardBody><div id="controle-ferias" className="space-y-3">
+      <CardBody><div id="controle-ferias" className="space-y-2">
         {!visiveis.length && <EmptyState title="Nenhuma pessoa neste filtro" description="Ajuste a busca, a área ou o cartão selecionado." icon={<Search className="h-8 w-8" />} />}
         {visiveis.map(l=><div key={l.c.id} className="rounded-xl border border-slate-200 overflow-hidden">
-          <div className="p-4 grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_auto] md:items-center">
-            <div className="min-w-0"><LinkFicha id={l.c.id}>{l.c.nome}</LinkFicha><p className="text-xs text-slate-500">{d.areas.find(a=>a.id===l.c.areaId)?.nome??'Área não informada'}</p></div>
-            <div className="text-sm space-y-1"><p className={l.agora?'font-semibold text-emerald-700':'text-slate-700'}>{l.proxima.texto}</p>
-              <p className="text-slate-500">{l.resumo.disponivel===null?'Saldo a conferir':`${l.resumo.disponivel} dias livres${l.resumo.referencia?' · direito a confirmar':''}`} · {l.resumo.agendados} dias reservados</p>
-              {l.prazos.length>0 && <p className="text-amber-800">{l.prazos.length} aquisitivo(s) com prazo para conferir</p>}
-            </div>
-            <div className="flex flex-wrap gap-2"><button className="btn-outline" aria-expanded={expandida===l.c.id} aria-label={`Ver férias de ${l.c.nome}`} onClick={()=>setExpandida(atual=>atual===l.c.id?null:l.c.id)}><ChevronDown className="h-4 w-4" /> Detalhes</button>
-              {podeEditar && <button className="btn-outline" aria-label={`Programar férias de ${l.c.nome}`} onClick={()=>setPessoa(l.c.id)}><CalendarPlus className="h-4 w-4" /> Programar</button>}
-            </div>
-          </div>
+          <CartaoPessoaFerias id={l.c.id} nome={l.c.nome} foto={l.c.fotoDataUrl} area={d.areas.find(a=>a.id===l.c.areaId)?.nome??'Área não informada'} dados={l}
+            acoes={<><button className="btn-outline px-3" aria-expanded={expandida===l.c.id} aria-label={`Ver férias de ${l.c.nome}`} onClick={()=>setExpandida(atual=>atual===l.c.id?null:l.c.id)}><ChevronDown className={`h-4 w-4 transition-transform ${expandida===l.c.id?'rotate-180':''}`} /> Detalhes</button>
+              {podeEditar && <button className="btn-outline px-3" aria-label={`Programar férias de ${l.c.nome}`} onClick={()=>setPessoa(l.c.id)}><CalendarPlus className="h-4 w-4" /> Programar</button>}</>} />
           {expandida===l.c.id && <div className="border-t border-slate-200 bg-slate-50 p-4 space-y-4"><ResumoFerias registros={l.registros} />
             <DetalheFerias colaboradorId={l.c.id} nome={l.c.nome} registros={l.registros} podeEditar={podeEditar} aoEditar={setEditando} aoExcluir={setExcluindo} />
           </div>}
