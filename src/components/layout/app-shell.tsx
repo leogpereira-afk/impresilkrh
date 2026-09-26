@@ -178,31 +178,6 @@ function NavConteudo({
   );
 }
 
-function Rodape({ user, aoSair, className }: {
-  user: { nome: string; perfil: Perfil; foto: string | null };
-  aoSair: () => void;
-  className?: string;
-}) {
-  return (
-    <div className={cn("space-y-2 border-t border-slate-200 p-3", className)}>
-      <div className="flex items-center gap-3 rounded-lg px-1 py-1.5">
-        <Avatar nome={user.nome} foto={user.foto} size="sm" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-700">{user.nome}</p>
-          <p className="truncate text-xs text-slate-400">{PERFIL_LABEL[user.perfil]}</p>
-        </div>
-        <button
-          onClick={aoSair}
-          className="btn-ghost min-h-11 min-w-11 p-2 text-slate-500 hover:text-red-600"
-          title="Sair"
-        >
-          <LogOut className="h-[18px] w-[18px]" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function AppShell() {
   const [opcoes, setOpcoes] = useState(false);
   const location = useLocation();
@@ -296,7 +271,10 @@ export function AppShell() {
           <Logo variant="color" className="h-12 max-w-[190px]" />
         </div>
         <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
-        <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} className="mt-3 px-0 pb-0 pt-3" />
+        {/* Sem rodapé com nome e Sair (26/09/2026): o Léo apontou que isso já
+            está na barra de cima -- nome, perfil, foto e Sair a partir de 640px;
+            no celular, pelo "Mais opções" (Opções da conta > Sair do sistema).
+            Duas saídas iguais só roubavam espaço do menu. */}
       </aside>
 
       {aberto && (
@@ -310,7 +288,6 @@ export function AppShell() {
               </button>
             </div>
             <NavConteudo className="px-3 py-3" itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
-            <Rodape user={user} aoSair={() => { logoutAuth(); navigate("/login"); }} />
           </aside>
         </div>
       )}
