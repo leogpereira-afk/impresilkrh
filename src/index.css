@@ -88,11 +88,16 @@ textarea {
      (sobram 920 a 1006px) cabiam 5 colunas -- o Painel ficava 5+5+1, com um
      cartão sozinho na última fileira, e o SST deixava o alarme "Sem exame
      nenhum" isolado em 5+1. Com 8.75rem cabem 6 (6+5 e 6 numa linha só), e
-     a 1024px 4 cartões ficam 4 e não 3+1. Medido na revisão de 25/09/2026. */
+     a 1024px 4 cartões ficam 4 e não 3+1. Medido na revisão de 25/09/2026.
+     E POR QUE 9.6rem DESDE 26/09: a lateral encolheu de 288 para 218px e a
+     conta mudou -- a 1100px cabiam 5 e o Painel voltou a 5+5+1. Com 9.6rem,
+     medido com a lateral nova: 1024 e 1100 = 4+4+3; 1280 e 1366 = 6+5;
+     1440 = 7+4. Onze cartões não dividem certo em nenhuma coluna; a regra é
+     fugir do 5 nas larguras de notebook comuns. */
   .rh-stats {
     display: grid;
     gap: 0.75rem;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.75rem), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.6rem), 1fr));
   }
   /* No celular, SEMPRE duas colunas. Num Android de 360px, ou dentro de um
      cartão com margem, sobra pouco para o auto-fit decidir sozinho -- e os
