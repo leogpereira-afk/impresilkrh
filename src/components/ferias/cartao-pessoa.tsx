@@ -66,7 +66,7 @@ export function selosDaPessoa(l: DadosDoCartao): Selo[] {
   if (l.resumo.agendados > 0)
     s.push({ texto: `${l.resumo.agendados} ${l.resumo.agendados === 1 ? "dia reservado" : "dias reservados"}`, tom: "azul" });
   if (l.prazos.length > 0)
-    s.push({ texto: `${l.prazos.length} aquisitivo(s) com prazo`, tom: "ambar" });
+    s.push({ texto: `${l.prazos.length} aquisitivo(s) com prazo para conferir`, tom: "ambar" });
   return s;
 }
 
@@ -104,10 +104,10 @@ export function CartaoPessoaFerias({
   return (
     <div className="grid gap-2.5 px-3 py-2.5 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_auto] md:items-center">
       <div className="flex min-w-0 items-center gap-2.5">
-        <Avatar nome={nome} foto={foto} />
+        <span aria-hidden="true" className="shrink-0"><Avatar nome={nome} foto={foto} /></span>
         <div className="min-w-0">
           <LinkFicha id={id} className="block break-words font-medium leading-snug">{nome}</LinkFicha>
-          <p className="truncate text-xs text-slate-500">{area}</p>
+          <p className="break-words text-xs text-slate-500">{area}</p>
         </div>
       </div>
       <div className="min-w-0 space-y-1">

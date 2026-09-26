@@ -25,7 +25,8 @@ describe("o caso ruim: saldo desconhecido não vira zero", () => {
 
   it("o aviso de prazo não some quando há outros selos", () => {
     const s = selosDaPessoa(pessoa({ agendados: 10, prazos: 2 }));
-    expect(s.map((x) => x.texto)).toContain("2 aquisitivo(s) com prazo");
+    // "para conferir" é o pedido de ação: sem ele parece só um prazo correndo.
+    expect(s.map((x) => x.texto)).toContain("2 aquisitivo(s) com prazo para conferir");
     expect(s.find((x) => x.texto.includes("prazo"))!.tom).toBe("ambar");
   });
 });

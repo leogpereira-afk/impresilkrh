@@ -70,9 +70,9 @@ export default function Ferias() {
     </div>
     {agenda.length>0 && <Card><CardHeader title="Próximas saídas e retornos" subtitle="Movimentos mais próximos das pessoas no filtro" /><CardBody>
       <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr))]">{agenda.slice(0,6).map(x=><button key={x.f.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50" onClick={()=>{setFoco('');setExpandida(x.c.id);document.getElementById('controle-ferias')?.scrollIntoView({behavior:'smooth'});}}>
-        <Avatar nome={x.c.nome} foto={x.c.fotoDataUrl} size="sm" />
+        <span aria-hidden="true" className="shrink-0"><Avatar nome={x.c.nome} foto={x.c.fotoDataUrl} size="sm" /></span>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-slate-800">{x.c.nome}</span>
+          <span className="block break-words text-sm font-medium leading-snug text-slate-800">{x.c.nome}</span>
           <span className="block text-xs text-slate-500"><span className={x.estado==='Agendada'?'font-medium text-blue-700':'font-medium text-emerald-700'}>{x.estado==='Agendada'?'Sai em':'Retorna em'} {formatDate(x.data)}</span> · {x.estado==='Agendada'?`retorno ${formatDate(x.f.dataRetorno)}`:'de férias agora'}</span>
         </span>
       </button>)}</div>
