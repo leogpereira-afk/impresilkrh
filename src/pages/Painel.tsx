@@ -421,7 +421,7 @@ export default function Painel() {
       </PageHeader>
 
       {lembreteNr && nrsAlerta.length > 0 && (
-        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-amber-800">
@@ -454,15 +454,10 @@ export default function Painel() {
         <span className="basis-full text-[11px] text-slate-500 sm:ml-auto sm:basis-auto">Quadro atual. Ausência de registro não comprova regularidade.</span>
       </div>
       {sessao?.perfil === "ADMIN_RH" && (
-        <details className="group mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-800 group-open:mb-4">Pagamentos da equipe · {rotuloPeriodo}</summary>
+        <details className="group mb-4 rounded-xl border border-slate-200 bg-white px-4 open:pb-3">
+          <summary className="cursor-pointer py-3 text-sm font-semibold text-slate-800 group-open:mb-1">Pagamentos da equipe · {rotuloPeriodo}</summary>
           {pagsPeriodo.length === 0 ? (
-            <Card>
-              <CardHeader title={`Folha de pagamento · ${rotuloPeriodo}`} icon={<Wallet className="h-[18px] w-[18px]" />} />
-              <CardBody>
-                <EmptyState title="Sem pagamentos nesta competência" description="Escolha outro mês/ano no filtro acima para ver a folha real." />
-              </CardBody>
-            </Card>
+            <p className="text-sm text-slate-500"><span className="font-medium text-slate-600">Sem pagamentos nesta competência.</span> Escolha outro mês/ano no filtro acima para ver a folha real.</p>
           ) : (
           <>
           <div className="grid items-start gap-4 lg:grid-cols-3">
@@ -641,7 +636,7 @@ export default function Painel() {
         )}
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader title="Colaboradores por área" subtitle="Distribuição do quadro por área" icon={<Users className="h-[18px] w-[18px]" />} />
           <CardBody><BarrasVerticais data={porArea} onItemClick={(nome) => drill.abrir(`Área · ${nome}`, colabsPorArea(nome))} /></CardBody>
@@ -656,7 +651,7 @@ export default function Painel() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader title="Clima / Engajamento" subtitle="Humor declarado da equipe" icon={<Laugh className="h-[18px] w-[18px]" />} />
           <CardBody>
@@ -683,7 +678,7 @@ export default function Painel() {
       </div>
 
       {/* ---------- Treinamento (v3) ---------- */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader
             title="Treinamento"
@@ -713,7 +708,7 @@ export default function Painel() {
           <CardHeader title="O que precisa treinar" subtitle="Treinamentos pendentes por título" icon={<GraduationCap className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
             {topTreinos.length === 0 ? (
-              <EmptyState title={treinosEscopo.length ? "Sem pendências registradas" : "Sem dados de treinamento"} description={treinosEscopo.length ? "Não há pendências entre os treinamentos registrados. Confira se todos os cursos necessários foram cadastrados." : "Não há treinamentos registrados para conferir a capacitação da equipe."} icon={<ClipboardCheck className="h-8 w-8" />} />
+              <p className="text-sm text-slate-500"><span className="font-medium text-slate-600">{treinosEscopo.length ? "Sem pendências registradas." : "Sem dados de treinamento."}</span>{" "}{treinosEscopo.length ? "Não há pendências entre os treinamentos registrados. Confira se todos os cursos necessários foram cadastrados." : "Não há treinamentos registrados para conferir a capacitação da equipe."}</p>
             ) : (
               /* "Integração de Segurança — 7 pendente(s)" e nenhum jeito de
                  saber quem são os 7 para montar a turma. */
@@ -737,7 +732,7 @@ export default function Painel() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3" ref={refAlertas}>
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3" ref={refAlertas}>
         <Card className="lg:col-span-2">
           <CardHeader title="Alertas e pendências" subtitle="Conformidade de documentos, NRs e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
@@ -864,7 +859,7 @@ export default function Painel() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Risco de saída informado" subtitle="Cadastro atual · ausência de informação aparece separadamente" icon={<AlertTriangle className="h-[18px] w-[18px]" />} action={<Link to="/desempenho" className="text-xs font-medium text-brand hover:underline">Ver 9-Box →</Link>} />
           <CardBody>
@@ -988,7 +983,7 @@ function PainelPessoal() {
       </div>
 
       {meusPagamentos.length > 0 && (
-        <div className="mt-6">
+        <div className="mt-4">
           <Link to="/meu-perfil?tab=ganhos" className="block">
             <Card className="transition hover:-translate-y-0.5 hover:shadow-md">
               <CardBody className="flex flex-wrap items-center justify-between gap-4">
@@ -1007,7 +1002,7 @@ function PainelPessoal() {
         </div>
       )}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader title="Meu desempenho" subtitle={cicloNome} icon={<TrendingUp className="h-[18px] w-[18px]" />} />
           <CardBody>
@@ -1027,7 +1022,7 @@ function PainelPessoal() {
                 {minhaAval.planoAcao && <p className="text-sm text-slate-500">{minhaAval.planoAcao}</p>}
               </div>
             ) : (
-              <EmptyState title="Sem avaliação registrada" />
+              <p className="text-sm text-slate-500">Sem avaliação registrada.</p>
             )}
           </CardBody>
         </Card>
@@ -1035,7 +1030,7 @@ function PainelPessoal() {
           <CardHeader title="Meu PDI" subtitle="Plano de Desenvolvimento Individual" icon={<Target className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-3">
             {meusPdis.length === 0 ? (
-              <EmptyState title="Nenhum PDI ativo" />
+              <p className="text-sm text-slate-500">Nenhum PDI ativo.</p>
             ) : (
               meusPdis.map((p) => (
                 <div key={p.id}>

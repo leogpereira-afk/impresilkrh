@@ -919,20 +919,20 @@ export default function Colaboradores() {
         </div>
       </Card>
 
-      {lista.length > 0 && visao === 'lista' && <div className="grid gap-3 sm:hidden" aria-label="Pessoas encontradas">
+      {lista.length > 0 && visao === 'lista' && <div className="grid gap-2 sm:hidden" aria-label="Pessoas encontradas">
         <div className="flex gap-2"><Select aria-label="Ordenar pessoas" value={ordem.campo} onChange={e => setOrdem({ ...ordem, campo: e.target.value as CampoOrdem })}>
           <option value="nome">Nome</option><option value="status">Situação</option>
           {visaoLinha === 'cadastro' && <><option value="area">Área</option><option value="nivel">Nível</option><option value="tempo">Tempo de casa</option><option value="enquadramento">Enquadramento</option></>}
           {visaoLinha === 'custo' && <option value="custo">Custo do mês</option>}
           {visaoLinha === 'comportamental' && <><option value="perfil">Perfil</option><option value="motivacao">Motivação</option></>}
         </Select><button className="btn-outline shrink-0" aria-label="Inverter ordenação" onClick={() => setOrdem({ ...ordem, asc: !ordem.asc })}>{ordem.asc ? 'Crescente' : 'Decrescente'}</button></div>
-        {lista.map(c => <Link key={c.id} to={`/colaboradores/${c.id}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {lista.map(c => <Link key={c.id} to={`/colaboradores/${c.id}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
           <p className="break-words font-semibold text-slate-800">{c.nome}</p>
           <p className="mt-1 text-sm text-slate-600">{d.nomeCargo(c)} · {d.statusById.get(c.statusId ?? "")?.nome ?? 'Situação não informada'}</p>
-          {visaoLinha === 'cadastro' && <p className="mt-2 text-xs text-slate-500">{d.nomeArea(c.areaId)} · {d.nomeNivel(c.nivelId)} · {d.enquadrarColab(c)}</p>}
-          {visaoLinha === 'custo' && <p className="mt-2 text-sm">{competenciaLabel(mesCusto)}: {custoPorColab.has(c.id) ? formatBRL(custoPorColab.get(c.id)!.total) : 'Sem lançamentos'} · {custoPorColab.get(c.id)?.n ?? 0} lançamento(s)</p>}
-          {visaoLinha === 'comportamental' && <p className="mt-2 text-sm">{c.perfilComportamental || 'Perfil não informado'}{podeVerGestao(sessao, c.id, d.colaboradores) && c.motivacao != null ? ` · Motivação: ${c.motivacao}` : ''}</p>}
-          <span className="mt-2 block text-sm font-medium text-brand">Abrir ficha →</span>
+          {visaoLinha === 'cadastro' && <p className="mt-1 text-xs text-slate-500">{d.nomeArea(c.areaId)} · {d.nomeNivel(c.nivelId)} · {d.enquadrarColab(c)}</p>}
+          {visaoLinha === 'custo' && <p className="mt-1 text-sm">{competenciaLabel(mesCusto)}: {custoPorColab.has(c.id) ? formatBRL(custoPorColab.get(c.id)!.total) : 'Sem lançamentos'} · {custoPorColab.get(c.id)?.n ?? 0} lançamento(s)</p>}
+          {visaoLinha === 'comportamental' && <p className="mt-1 text-sm">{c.perfilComportamental || 'Perfil não informado'}{podeVerGestao(sessao, c.id, d.colaboradores) && c.motivacao != null ? ` · Motivação: ${c.motivacao}` : ''}</p>}
+          <span className="mt-1 block text-sm font-medium text-brand">Abrir ficha →</span>
         </Link>)}
       </div>}
 

@@ -193,7 +193,7 @@ export default function Carreira() {
       <PageHeader title="Carreira e salários" description="Régua de senioridade, tabela salarial por cargo e simulador de progressão." />
 
       {/* Régua de senioridade — clicável: abre os ativos do nível (todos os cargos) */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {d.niveis.map((n, i) => {
           const ativosNivel = ativosPorNivel.get(n.id) ?? [];
           return (
@@ -220,7 +220,7 @@ export default function Carreira() {
       </div>
 
       {/* Simulador */}
-      <Card className="mb-6">
+      <Card className="mb-4">
         <CardHeader title="Simulador de progressão" subtitle="Impacto salarial de subir de nível na faixa do cargo" icon={<Calculator className="h-[18px] w-[18px]" />} />
         <CardBody>
           <div className="grid gap-4 lg:grid-cols-4">
@@ -269,7 +269,7 @@ export default function Carreira() {
       </Card>
 
       {/* Trilha de evolução de cargo: gamificação (v3 item 11) */}
-      <Card className="mb-6">
+      <Card className="mb-4">
         <CardHeader
           title="Trilha de evolução de cargo"
           subtitle={`Etapas de evolução de ${colab ? colab.nome : "colaborador"}; a % evolui conforme você marca`}
@@ -290,11 +290,19 @@ export default function Carreira() {
           {!colab ? (
             <p className="text-sm text-slate-400">Selecione um colaborador no simulador acima para ver a trilha de evolução.</p>
           ) : totalEtapas === 0 ? (
-            <EmptyState
-              title="Sem trilha de evolução"
-              description={`${colab.nome} ainda não possui uma trilha. Crie a trilha padrão com etapas iniciais para começar a gamificação.`}
-              icon={<Route className="h-8 w-8" />}
-            />
+            /* Sem trilha: frase e botão NA MESMA LINHA (26/09/2026). Era uma
+               caixa vazia de ~150px e, embaixo dela, o botão num bloco à parte. */
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="min-w-[14rem] flex-1 text-sm text-slate-500">
+                <span className="font-medium text-slate-700">Sem trilha de evolução.</span>{" "}
+                {colab.nome} ainda não possui uma trilha. Crie a trilha padrão com etapas iniciais para começar a gamificação.
+              </p>
+              {ehRHFlag && (
+                <button type="button" className="btn-primary inline-flex shrink-0 items-center gap-1.5" onClick={criarTrilhaPadrao}>
+                  <Plus className="h-4 w-4" /> Criar trilha padrão
+                </button>
+              )}
+            </div>
           ) : (
             <div className="space-y-5">
               {/* Barra de progresso + destaque de promoção */}
@@ -378,13 +386,6 @@ export default function Carreira() {
             </div>
           )}
 
-          {ehRHFlag && colab && totalEtapas === 0 && (
-            <div className="mt-4 flex justify-center">
-              <button type="button" className="btn-primary inline-flex items-center gap-1.5" onClick={criarTrilhaPadrao}>
-                <Plus className="h-4 w-4" /> Criar trilha padrão
-              </button>
-            </div>
-          )}
         </CardBody>
       </Card>
 
@@ -396,7 +397,7 @@ export default function Carreira() {
             <thead className="border-y border-slate-100 bg-slate-50/50">
               <tr>
                 <th className="th">Cargo</th>
-                {["N1", "N2", "N3", "N4", "N5"].map((n) => <th key={n} className="th text-right">{n}</th>)}
+                {["N1", "N2", "N3", "N4", "N5"].map((n) => <th key={n} className="th px-2.5 text-right">{n}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -570,7 +571,7 @@ function FragmentCargo({
             <button
               type="button"
               onClick={() => onCargoNivel(cargo, `N${i + 1}`)}
-              className="w-full px-4 py-3 text-right tabular-nums text-slate-600 transition-colors hover:bg-brand-50/50 hover:text-brand"
+              className="w-full whitespace-nowrap px-2.5 py-3 text-right tabular-nums text-slate-600 transition-colors hover:bg-brand-50/50 hover:text-brand"
               title={`Ver colaboradores · ${cargo.nome} · N${i + 1}`}
             >
               {formatBRL(v)}

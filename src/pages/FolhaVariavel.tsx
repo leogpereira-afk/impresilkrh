@@ -145,7 +145,7 @@ export default function FolhaVariavel({ embutido = false }: { embutido?: boolean
             {inativos.length > 0 && <span className="text-xs text-slate-400">({inativos.length})</span>}
           </label>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="rh-stats min-w-[min(100%,28rem)] flex-1">
           <StatCard label="Total do mês" value={formatBRL(totalGeral)} icon={<Coins className="h-4 w-4" />} onClick={() => alternarFoco("comVerba")} ativo={foco === "comVerba"} title="Ver só quem tem verba lançada no mês" />
           <StatCard label="Aprovados" value={`${aprovados}/${escopo.length}`} icon={<ShieldCheck className="h-4 w-4" />} onClick={() => alternarFoco("aprovados")} ativo={foco === "aprovados"} title="Ver só as folhas já aprovadas" />
           <StatCard label="Colaboradores" value={String(escopo.length)} icon={<CheckCircle2 className="h-4 w-4" />} onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todos os colaboradores" />

@@ -330,18 +330,108 @@ function CalendarioGeral() {
 
   return (
     <div>
-      <PageHeader title="Calendário" description="Aniversários, vencimentos, pagamentos e férias. Clique na legenda para ver só um tipo.">
-        {gere && <button className="btn-primary" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo evento</button>}
-      </PageHeader>
-      <p className="mb-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Plantões e programação de serviços ficam na Produção (PCP). Este calendário é só de gente — os dois não conversam.</p>
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button className="btn-outline px-2" onClick={() => navMes(-1)} aria-label="Mês anterior"><ChevronLeft className="h-4 w-4" /></button>
-          <span className="min-w-[150px] text-center text-lg font-semibold text-brand-ink">{MESES_PT[mes]} {ano}</span>
-          <button className="btn-outline px-2" onClick={() => navMes(1)} aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button>
+      {/* O CALENDÁRIO SOBE (26/09/2026). Pedido do Léo: "essas informações em
+          cima estão desnecessárias, subir o calendário ao máximo que der". Saíram
+          a descrição e a nota sobre o PCP; o mês e as setas moram no cabeçalho,
+          ao lado do título; e a legenda (que também é o filtro) foi para baixo
+          do quadro. Com filtro ligado, uma linha curta em cima avisa. */}
+      <PageHeader title="Calendário">
+        <div className="flex items-center gap-1.5">
+          <button className="btn-outline min-h-10 min-w-10 px-2" onClick={() => navMes(-1)} aria-label="Mês anterior"><ChevronLeft className="h-4 w-4" /></button>
+          <span className="min-w-[9.5rem] text-center text-base font-semibold text-brand-ink">{MESES_PT[mes]} {ano}</span>
+          <button className="btn-outline min-h-10 min-w-10 px-2" onClick={() => navMes(1)} aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button>
           <button className="btn-ghost text-sm" onClick={() => { setMes(HOJE.getMonth()); setAno(HOJE.getFullYear()); setDiaSelecionado(null); }}>Hoje</button>
         </div>
+        {gere && <button className="btn-primary" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo evento</button>}
+      </PageHeader>
+
+      {/* Filtro ligado com a legenda lá embaixo: sem este aviso, o quadro
+          pareceria vazio de tudo que não é o tipo escolhido e ninguém saberia
+          por quê. */}
+      {foco.size > 0 && (
+        <p className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-slate-600">
+          <span>Mostrando só: <strong className="font-semibold text-brand-ink">{[...foco].join(", ")}</strong></span>
+          <button type="button" onClick={() => setFoco(new Set())} className="min-h-10 font-medium text-brand underline-offset-2 hover:underline">Ver todos</button>
+        </p>
+      )}
+
+      <ConfirmDialog
+        aberto={!!apagarTipo}
+        onFechar={() => setApagarTipo(null)}
+        onConfirmar={() => {
+          if (!apagarTipo) return;
+          salvarConfig({
+            tiposEventoPersonalizados: personalizados.filter((t) => t.nome !== apagarTipo),
+          });
+          /* salvarConfig só escreve NESTE navegador. Sem isto o tipo continuava
+             existindo nos outros aparelhos, e a próxima config que subisse de
+             qualquer máquina ressuscitava o que acabou de ser apagado. */
+          void enviarConfigNuvem();
+          /* Apagar um tipo que estava EM FOCO deixaria o quadro filtrado por um
+             nome que não tem mais selo: nada apareceria e não haveria onde
+             clicar para desfazer. */
+          setFoco((s) => esquecerTipo(s, apagarTipo));
+          toast(`Tipo "${apagarTipo}" apagado.`);
+          setApagarTipo(null);
+        }}
+        titulo="Apagar tipo de aviso"
+        mensagem={
+          apagarTipo ? (
+            <>
+              Apagar o tipo <span className="font-medium text-slate-700">{apagarTipo}</span>?
+              {/* Apagar o TIPO não apaga os eventos — eles ficam, só perdem a cor
+                  e a entrada na legenda. Dizer isso evita o medo de perder
+                  lançamento, e evita a surpresa de eles sumirem do filtro. */}
+              {(() => {
+                const usados = eventos.filter((e) => e.tipo === apagarTipo).length;
+                return usados > 0 ? (
+                  <>
+                    {" "}
+                    <span className="font-medium text-amber-700">
+                      {usados === 1 ? "1 evento usa" : `${usados} eventos usam`} este tipo.
+                    </span>{" "}
+                    Eles continuam no calendário, mas voltam a aparecer em cinza e sem filtro
+                    próprio.
+                  </>
+                ) : (
+                  " Nenhum evento usa este tipo."
+                );
+              })()}
+            </>
+          ) : (
+            ""
+          )
+        }
+      />
+
+      <Card className="mb-4">
+        <CardBody className="p-0">
+          <div className="grid grid-cols-7 border-b border-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            {DOW.map((x) => <div key={x} className="py-2">{x}</div>)}
+          </div>
+          <div className="grid grid-cols-7">
+            {celulas.map((dt, i) => {
+              const noMes = dt.getMonth() === mes;
+              const evs = noMes ? (porDia.get(dt.getDate()) ?? []) : [];
+              return (
+                <button type="button" key={i} disabled={!noMes} aria-pressed={noMes && diaSelecionado === dt.getDate()} aria-label={`${dt.getDate()} de ${MESES_PT[dt.getMonth()]}: ${evs.length} evento(s)`} onClick={() => abrirDia(dt.getDate())} className={cn("min-w-0 text-left transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand min-h-[72px] border-b border-r border-slate-100 p-1.5", !noMes && "bg-slate-50/40", ehHoje(dt) && "bg-brand-50/50", noMes && diaSelecionado === dt.getDate() && "ring-2 ring-inset ring-brand")}>
+                  <div className={cn("mb-1 text-xs font-medium", noMes ? "text-slate-600" : "text-slate-300", ehHoje(dt) && "font-bold text-brand")}>{dt.getDate()}</div>
+                  <div className="space-y-0.5">
+                    {evs.slice(0, 3).map((e, j) => (
+                      <div key={j} className="truncate rounded px-1 py-0.5 text-[10px] font-medium text-white" style={{ background: corDe(e.tipo, personalizados) }} title={`${e.titulo}${e.sub ? ` — ${e.sub}` : ""}`}>{e.titulo}</div>
+                    ))}
+                    {evs.length > 3 && <div className="px-1 text-[10px] font-medium text-slate-400">+{evs.length - 3} mais</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Legenda embaixo do quadro: ela é consulta (o que cada cor quer dizer)
+          e filtro -- nenhum dos dois precisa vir antes do mês. */}
+      <div className="mb-4" title="Clique num tipo para ver só ele">
         {/* A legenda É o filtro: clicar num selo mostra SÓ aquele tipo, e clicar
             em mais de um soma. Antes o clique escondia — para ver só os
             aniversários era preciso desligar os outros onze, um a um, e depois
@@ -415,80 +505,6 @@ function CalendarioGeral() {
           )}
         </div>
       </div>
-
-      <ConfirmDialog
-        aberto={!!apagarTipo}
-        onFechar={() => setApagarTipo(null)}
-        onConfirmar={() => {
-          if (!apagarTipo) return;
-          salvarConfig({
-            tiposEventoPersonalizados: personalizados.filter((t) => t.nome !== apagarTipo),
-          });
-          /* salvarConfig só escreve NESTE navegador. Sem isto o tipo continuava
-             existindo nos outros aparelhos, e a próxima config que subisse de
-             qualquer máquina ressuscitava o que acabou de ser apagado. */
-          void enviarConfigNuvem();
-          /* Apagar um tipo que estava EM FOCO deixaria o quadro filtrado por um
-             nome que não tem mais selo: nada apareceria e não haveria onde
-             clicar para desfazer. */
-          setFoco((s) => esquecerTipo(s, apagarTipo));
-          toast(`Tipo "${apagarTipo}" apagado.`);
-          setApagarTipo(null);
-        }}
-        titulo="Apagar tipo de aviso"
-        mensagem={
-          apagarTipo ? (
-            <>
-              Apagar o tipo <span className="font-medium text-slate-700">{apagarTipo}</span>?
-              {/* Apagar o TIPO não apaga os eventos — eles ficam, só perdem a cor
-                  e a entrada na legenda. Dizer isso evita o medo de perder
-                  lançamento, e evita a surpresa de eles sumirem do filtro. */}
-              {(() => {
-                const usados = eventos.filter((e) => e.tipo === apagarTipo).length;
-                return usados > 0 ? (
-                  <>
-                    {" "}
-                    <span className="font-medium text-amber-700">
-                      {usados === 1 ? "1 evento usa" : `${usados} eventos usam`} este tipo.
-                    </span>{" "}
-                    Eles continuam no calendário, mas voltam a aparecer em cinza e sem filtro
-                    próprio.
-                  </>
-                ) : (
-                  " Nenhum evento usa este tipo."
-                );
-              })()}
-            </>
-          ) : (
-            ""
-          )
-        }
-      />
-
-      <Card className="mb-6">
-        <CardBody className="p-0">
-          <div className="grid grid-cols-7 border-b border-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            {DOW.map((x) => <div key={x} className="py-2">{x}</div>)}
-          </div>
-          <div className="grid grid-cols-7">
-            {celulas.map((dt, i) => {
-              const noMes = dt.getMonth() === mes;
-              const evs = noMes ? (porDia.get(dt.getDate()) ?? []) : [];
-              return (
-                <button type="button" key={i} disabled={!noMes} aria-pressed={noMes && diaSelecionado === dt.getDate()} aria-label={`${dt.getDate()} de ${MESES_PT[dt.getMonth()]}: ${evs.length} evento(s)`} onClick={() => abrirDia(dt.getDate())} className={cn("min-w-0 text-left transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand min-h-[72px] border-b border-r border-slate-100 p-1.5", !noMes && "bg-slate-50/40", ehHoje(dt) && "bg-brand-50/50", noMes && diaSelecionado === dt.getDate() && "ring-2 ring-inset ring-brand")}>
-                  <div className={cn("mb-1 text-xs font-medium", noMes ? "text-slate-600" : "text-slate-300", ehHoje(dt) && "font-bold text-brand")}>{dt.getDate()}</div>
-                  <div className="space-y-0.5">
-                    {evs.slice(0, 3).map((e, j) => (
-                      <div key={j} className="truncate rounded px-1 py-0.5 text-[10px] font-medium text-white" style={{ background: corDe(e.tipo, personalizados) }} title={`${e.titulo}${e.sub ? ` — ${e.sub}` : ""}`}>{e.titulo}</div>
-                    ))}
-                    {evs.length > 3 && <div className="px-1 text-[10px] font-medium text-slate-400">+{evs.length - 3} mais</div>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </CardBody>
-      </Card>
 
       <div ref={agendaRef} className="scroll-mt-20">
       <Card colapsavel={false}>

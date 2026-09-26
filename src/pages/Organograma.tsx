@@ -99,7 +99,7 @@ function Node({ c, filhosPorGestor, colapsados, toggle, acoes }: {
 
   return (
     <li>
-      <div className="group flex items-center gap-2 rounded-lg py-1.5 pl-1 pr-2 transition hover:bg-slate-50">
+      <div className="group flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 transition hover:bg-slate-50">
         {/* Chevron de expandir/recolher (ocupa espaço fixo mesmo sem filhos) */}
         {temFilhos ? (
           <button
@@ -413,7 +413,7 @@ export default function Organograma() {
       </PageHeader>
 
       {/* Seletor de visão + filtro de ativos */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
           {([["hierarquia", "Hierarquia", GitBranch], ["area", "Por área", LayoutGrid], ["empresa", "Por empresa", Building2]] as const).map(([v, label, Icone]) => (
             <button
@@ -440,7 +440,7 @@ export default function Organograma() {
         </label>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-3 text-xs text-slate-500">
+      <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-500">
         <Legenda cor="bg-green-600" label="Fundadores" />
         <Legenda cor="bg-brand" label="Diretoria" />
         <Legenda cor="bg-teal-500" label="Gestores / Líderes" />
@@ -684,7 +684,7 @@ function PainelHierarquia() {
   const ordenados = [...d.colaboradores].sort((a, b) => a.nome.localeCompare(b.nome));
 
   return (
-    <Card className="mt-6">
+    <Card className="mt-4">
       <CardHeader title="Painel de hierarquia" subtitle="Redefina a quem cada pessoa se reporta (com proteção a ciclos)." icon={<Network className="h-[18px] w-[18px]" />} />
       <CardBody>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

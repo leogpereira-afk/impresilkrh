@@ -31,11 +31,11 @@ export default function Comunicacao() {
       />
 
       {/* Modelo operacional */}
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
         <Card className="p-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
-              <Compass className="h-5 w-5" />
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand/10 text-brand">
+              <Compass className="h-4 w-4" />
             </span>
             <h3 className="text-sm font-semibold text-slate-800">Princípios</h3>
           </div>
@@ -47,8 +47,8 @@ export default function Comunicacao() {
 
         <Card className="p-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
-              <Radio className="h-5 w-5" />
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand/10 text-brand">
+              <Radio className="h-4 w-4" />
             </span>
             <h3 className="text-sm font-semibold text-slate-800">Canais oficiais</h3>
           </div>
@@ -66,8 +66,8 @@ export default function Comunicacao() {
 
         <Card className="p-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-100 text-gold-700">
-              <Timer className="h-5 w-5" />
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gold-100 text-gold-700">
+              <Timer className="h-4 w-4" />
             </span>
             <h3 className="text-sm font-semibold text-slate-800">Prazos de resposta</h3>
           </div>
@@ -90,9 +90,9 @@ export default function Comunicacao() {
           icon={<Megaphone className="h-8 w-8" />}
         />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {guias.map((guia) => (
-            <Card key={guia.id}>
+            <Card key={guia.id} idPersistencia={`comunicacao:${guia.id}`}>
               <CardHeader
                 title={guia.titulo}
                 subtitle={guia.descricao}

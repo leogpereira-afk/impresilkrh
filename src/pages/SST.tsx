@@ -167,7 +167,7 @@ export default function SST() {
     setAbertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const abaProgramas = (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {programas.length === 0 ? (
         <EmptyState
           title="Nenhum programa cadastrado"
@@ -205,7 +205,7 @@ export default function SST() {
 
   const abaExames = (
     <div>
-      <div className="mb-6 rh-stats">
+      <div className="mb-4 rh-stats">
         <StatCard label="Total de exames" value={total} icon={<FileText className="h-5 w-5" />} accent="brand" onClick={() => setFocoExame(null)} ativo={focoExame === null} title="Mostrar todos os exames" />
         <StatCard label="Sem validade informada" value={semValidade} hint="Exames com prazo a conferir" icon={<FileText className="h-5 w-5" />} onClick={() => alternarFoco("Sem validade informada")} ativo={focoExame === "Sem validade informada"} />
         <StatCard label="Válidos" value={validos} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={focoExame === "Válido"} title="Ver só os exames válidos" />
@@ -226,7 +226,7 @@ export default function SST() {
       {/* A lista de quem não tem nada aparece ACIMA da tabela de exames: é o
           estado mais grave e o único que a tabela, por natureza, não mostra. */}
       {verSemExame && (
-        <Card className="mb-6 border-red-100">
+        <Card className="mb-4 border-red-100">
           <CardHeader
             title={`${semExame.length} ${semExame.length === 1 ? "pessoa" : "pessoas"} sem exame ocupacional`}
             subtitle="Sem ASO e sem exame periódico registrados — nem vencido"
@@ -803,7 +803,7 @@ function AbaCertificacoesNR() {
 
   return (
     <div>
-      <div className="mb-6 rh-stats">
+      <div className="mb-4 rh-stats">
         <StatCard label="Certificações" value={total} icon={<Award className="h-5 w-5" />} accent="brand" onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todas as certificações" />
         <StatCard label="Válidas" value={validas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={foco === "Válido"} title="Ver só as certificações válidas" />
         <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={foco === "A vencer"} title="Ver só as certificações a vencer" />
@@ -817,7 +817,7 @@ function AbaCertificacoesNR() {
           icon={<Award className="h-[18px] w-[18px]" />}
           action={gere ? <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={abrirNovo}><Plus className="h-4 w-4" /> Registrar NR</button> : undefined}
         />
-        <CardBody className="space-y-5">
+        <CardBody className="space-y-3">
           {porNR.length === 0 ? (
             /* Clicar no card "A vencer" com 0 esvazia a listagem: sem este aviso a tela
                dizia que não havia NR cadastrada e escondia as certificações vencidas. */

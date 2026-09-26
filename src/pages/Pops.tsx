@@ -36,24 +36,17 @@ export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
 
   return (
     <div>
-      {comoAba ? (
-        pops.length > 0 && (
-          <div className="mb-4 flex justify-end gap-2">
-            <button className="btn-outline px-3 py-1.5 text-xs" onClick={expandirTodos}>Expandir todos</button>
-            <button className="btn-ghost px-3 py-1.5 text-xs" onClick={recolherTodos}>Recolher todos</button>
-          </div>
-        )
-      ) : (
+      {!comoAba && (
         <PageHeader
           title="Procedimentos (POPs)"
           description="Procedimentos Operacionais Padrão."
         >
           {pops.length > 0 && (
             <>
-              <button className="btn-outline px-3 py-1.5 text-xs" onClick={expandirTodos}>
+              <button className="btn-outline min-h-10 px-3 py-1.5 text-xs" onClick={expandirTodos}>
                 Expandir todos
               </button>
-              <button className="btn-ghost px-3 py-1.5 text-xs" onClick={recolherTodos}>
+              <button className="btn-ghost min-h-10 px-3 py-1.5 text-xs" onClick={recolherTodos}>
                 Recolher todos
               </button>
             </>
@@ -61,21 +54,21 @@ export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
         </PageHeader>
       )}
 
-      <Card className="mb-6">
-        <CardBody className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
-            <ClipboardCheck className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-sm font-medium text-slate-700">
-              Todos os colaboradores devem ler e estar cientes dos POPs.
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Os procedimentos abaixo padronizam a execução e garantem qualidade e segurança.
-            </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-[1_1_20rem] items-start gap-2 rounded-lg border border-slate-200/70 bg-white px-3 py-2">
+          <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+          <p className="text-sm text-slate-700">
+            <span className="font-medium">Todos os colaboradores devem ler e estar cientes dos POPs.</span>{" "}
+            <span className="text-xs text-slate-500">Os procedimentos abaixo padronizam a execução e garantem qualidade e segurança.</span>
+          </p>
+        </div>
+        {comoAba && pops.length > 0 && (
+          <div className="ml-auto flex gap-2">
+            <button className="btn-outline min-h-10 px-3 py-1.5 text-xs" onClick={expandirTodos}>Expandir todos</button>
+            <button className="btn-ghost min-h-10 px-3 py-1.5 text-xs" onClick={recolherTodos}>Recolher todos</button>
           </div>
-        </CardBody>
-      </Card>
+        )}
+      </div>
 
       {pops.length === 0 ? (
         <EmptyState
@@ -84,7 +77,7 @@ export default function Pops({ comoAba = false }: { comoAba?: boolean } = {}) {
           icon={<BookOpen className="h-8 w-8" />}
         />
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {pops.map((pop) => {
             const aberto = abertos.has(pop.id);
             return (

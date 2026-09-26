@@ -121,8 +121,7 @@ export default function Cargos() {
         )}
       </PageHeader>
 
-      <Card className="mb-4">
-        <CardBody className="flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="relative min-w-[16rem] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
@@ -141,8 +140,7 @@ export default function Cargos() {
           <span className="text-sm text-slate-500">
             {lista.length} {lista.length === 1 ? "cargo" : "cargos"}
           </span>
-        </CardBody>
-      </Card>
+      </div>
 
       {lista.length === 0 ? (
         <EmptyState
@@ -151,7 +149,7 @@ export default function Cargos() {
           icon={<Briefcase className="h-8 w-8" />}
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {lista.map((c, i) => {
             const aberto = abertos.has(c.id);
             const ocupantes = ocupacao.get(c.id) ?? [];
@@ -165,11 +163,15 @@ export default function Cargos() {
             const preenchidos = BLOCOS.filter((b) => String(c[b.chave] ?? "").trim());
             return (
               <Card key={c.id} className="overflow-hidden">
+                {/* Editar e Apagar na MESMA linha do cargo (26/09/2026): eram uma
+                    faixa própria embaixo de cada cartão, ~40px x 23 cargos de
+                    rolagem para dois botões. */}
+                <div className="flex flex-wrap items-center">
                 <button
                   type="button"
                   onClick={() => alternar(c.id)}
                   aria-expanded={aberto}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60"
+                  className="flex min-w-[16rem] flex-1 items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60"
                 >
                   <span className="mt-0.5 w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{i + 1}</span>
                   {aberto
@@ -208,10 +210,10 @@ export default function Cargos() {
                     inválido — o navegador desmonta a marcação e o clique passa a
                     cair em lugar imprevisível. */}
                 {podeEditar && (
-                  <div className="flex justify-end border-t border-slate-100 px-4 py-1.5">
+                  <div className="ml-auto flex shrink-0 items-center gap-1 px-2 py-1">
                     <button
                       type="button"
-                      className="btn-ghost text-xs"
+                      className="btn-ghost min-h-10 text-xs"
                       onClick={() => setEditando(c)}
                       title={`Editar ${c.nome}`}
                     >
@@ -219,7 +221,7 @@ export default function Cargos() {
                     </button>
                     <button
                       type="button"
-                      className="btn-ghost text-xs text-red-500"
+                      className="btn-ghost min-h-10 text-xs text-red-500"
                       onClick={() => setApagando(c)}
                       title={`Apagar ${c.nome}`}
                     >
@@ -227,6 +229,7 @@ export default function Cargos() {
                     </button>
                   </div>
                 )}
+                </div>
 
                 {aberto && (
                   <CardBody className="border-t border-slate-100 pt-4">
@@ -314,7 +317,7 @@ export default function Cargos() {
           : ""}
       />
 
-      <Card className="mt-4">
+      <Card className="mt-4" idPersistencia="cargos:origem" abertoInicial={false}>
         <CardHeader title="De onde vem esta tela" icon={<Briefcase className="h-[18px] w-[18px]" />} />
         <CardBody>
           <p className="text-sm text-slate-600">

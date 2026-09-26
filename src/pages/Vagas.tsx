@@ -149,7 +149,7 @@ export default function Vagas() {
         </button>
       </PageHeader>
 
-      <div className="mb-6 rh-stats">
+      <div className="mb-4 rh-stats">
         <StatCard label="Vagas abertas" value={nAbertas} icon={<Briefcase className="h-5 w-5" />} accent="brand"
           onClick={() => alternarFoco("abertas")} ativo={foco === "abertas"} title="Ver só as vagas abertas e em triagem" />
         <StatCard label="Candidatos" value={candidatos.length} icon={<Users className="h-5 w-5" />} accent="blue"
@@ -458,22 +458,20 @@ function BancoTalentos({
 
   return (
     <>
-      <Card className="mb-4">
-        <CardBody className="flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[16rem] flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, origem ou anotação" className="pl-9" />
-          </div>
-          <Select value={area} onChange={(e) => setArea(e.target.value)} className="w-auto min-w-[12rem]">
-            <option value="">Todas as áreas de interesse</option>
-            {d.areas.filter((a) => a.id !== "direcao").map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
-          </Select>
-          <span className="text-sm text-slate-500">{filtrada.length} currículo(s)</span>
-          <button className="btn-outline" onClick={onNovo}>
-            <Plus className="h-4 w-4" /> Guardar currículo
-          </button>
-        </CardBody>
-      </Card>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[16rem] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, origem ou anotação" className="pl-9" />
+        </div>
+        <Select value={area} onChange={(e) => setArea(e.target.value)} className="w-auto min-w-[12rem]">
+          <option value="">Todas as áreas de interesse</option>
+          {d.areas.filter((a) => a.id !== "direcao").map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+        </Select>
+        <span className="text-sm text-slate-500">{filtrada.length} currículo(s)</span>
+        <button className="btn-outline" onClick={onNovo}>
+          <Plus className="h-4 w-4" /> Guardar currículo
+        </button>
+      </div>
 
       {filtrada.length === 0 ? (
         <EmptyState

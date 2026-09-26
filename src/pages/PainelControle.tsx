@@ -162,23 +162,21 @@ function ConfidencialSecao() {
   const totalGeral = cards.reduce((s, c) => s + c.total, 0);
   return (
     <div className="space-y-4">
-      <Card>
-        <CardBody className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white"><Lock className="h-5 w-5" /></span>
-            <div>
-              <p className="text-sm font-semibold text-brand-ink">Despesas societárias — confidencial</p>
-              <p className="text-xs text-slate-500">Visível apenas para a diretoria (você). Fora de todas as outras telas e do rateio.</p>
-            </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white"><Lock className="h-5 w-5" /></span>
+          <div>
+            <p className="text-sm font-semibold text-brand-ink">Despesas societárias — confidencial</p>
+            <p className="text-xs text-slate-500">Visível apenas para a diretoria (você). Fora de todas as outras telas e do rateio.</p>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-slate-500">Competência</span>
-            <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-44">
-              {comps.map((k) => <option key={k} value={k}>{compLabelLongo(k)}</option>)}
-            </Select>
-          </label>
-        </CardBody>
-      </Card>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-slate-500">Competência</span>
+          <Select value={compSel} onChange={(e) => setComp(e.target.value)} className="w-44">
+            {comps.map((k) => <option key={k} value={k}>{compLabelLongo(k)}</option>)}
+          </Select>
+        </label>
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {cards.map((card) => (
           <div key={card.id} className="rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
@@ -210,7 +208,7 @@ function ConfidencialSecao() {
 // ---------------- Estrutura: Áreas, Níveis, Status ----------------
 function Estrutura() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <AreasManager />
       <NiveisManager />
       <StatusManager />
@@ -239,7 +237,7 @@ function AreasManager() {
     <Card>
       <CardHeader title="Áreas" subtitle="Departamentos da empresa" icon={<Building2 className="h-[18px] w-[18px]" />}
         action={<button className="btn-outline" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Nova área</button>} />
-      <CardBody className="space-y-2">
+      <CardBody className="grid gap-2 lg:grid-cols-2">
         {[...items].sort((a, b) => a.ordem - b.ordem).map((a) => (
           <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2">
             <div className="min-w-0 flex-[1_1_10rem] break-words"><p className="text-sm font-medium text-slate-700">{a.nome}</p><p className="text-xs text-slate-400">{a.descricao}</p></div>
@@ -362,7 +360,7 @@ function StatusManager() {
               </strong>
               {": "}{faltando.map((f) => f.nome).join(", ")}. Enquanto faltar, nenhuma pessoa pode ser marcada assim.
             </p>
-            <button type="button" className="btn-outline ml-auto h-7 px-2 py-0 text-xs" onClick={repor}>
+            <button type="button" className="btn-outline ml-auto min-h-10 px-3 py-0 text-xs" onClick={repor}>
               <Plus className="h-3.5 w-3.5" /> Repor
             </button>
           </div>
@@ -513,7 +511,7 @@ function CargosSecao() {
 // ---------------- Conteúdo (RH) ----------------
 function ConteudoSecao() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <TiposEventoSecao />
       <ConteudoManager colecao="pops" titulo="Procedimentos (POPs)" subtitulo="Procedimentos operacionais padrão (Apêndice E)" comSla />
       <ConteudoManager colecao="comunicacao" titulo="Guias de Comunicação" subtitulo="Comunicação interna (Apêndice D)" />
@@ -701,13 +699,13 @@ function AvaliacaoSecao() {
   const { items: modelos, atualizar: atualizarModelo } = useColecao("modelosChecklist");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card>
         <CardHeader
           title="Ciclos de avaliação"
           subtitle="Pesos, regras de elegibilidade e qual ciclo está valendo"
           icon={<Award className="h-[18px] w-[18px]" />}
-          action={<button className="btn-outline h-8 px-3 py-0 text-xs" onClick={novoCiclo}><Plus className="h-4 w-4" /> Novo ciclo</button>}
+          action={<button className="btn-outline" onClick={novoCiclo}><Plus className="h-4 w-4" /> Novo ciclo</button>}
         />
         <CardBody className="space-y-4">
           {ciclos.length === 0 && (
@@ -761,10 +759,10 @@ function MarcaSecao() {
   const salvarCfg = (patch: Parameters<typeof salvarConfig>[0]) => { salvarConfig(patch); enviarConfigNuvem(); };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card>
         <CardHeader title="Identidade e empresa" icon={<Palette className="h-[18px] w-[18px]" />} />
-        <CardBody className="grid gap-3 sm:grid-cols-2">
+        <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
           <Campo label="Nome da empresa"><Input defaultValue={config.empresaNome} onBlur={(e) => { salvarCfg({ empresaNome: e.target.value }); toast("Salvo."); }} /></Campo>
           <Campo label="Cidade"><Input defaultValue={config.empresaCidade} onBlur={(e) => salvarCfg({ empresaCidade: e.target.value })} /></Campo>
           <Campo label="Cor primária"><input type="color" className="h-10 w-20 rounded border border-slate-300" value={config.corPrimaria} onChange={(e) => salvarCfg({ corPrimaria: e.target.value })} /></Campo>

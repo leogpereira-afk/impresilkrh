@@ -55,7 +55,7 @@ export default function Ferias() {
   return <div className="space-y-5">
     <PageHeader title="Férias" description="Agenda, saldo por aquisitivo e conferência do histórico"
       >{podeEditar?<button className="btn-primary" onClick={()=>setEscolher(true)}><CalendarPlus className="h-4 w-4" /> Programar férias</button>:undefined}</PageHeader>
-    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+    <div className="space-y-2">
       <div className="grid gap-3 sm:grid-cols-2">
         <Campo label="Buscar pessoa"><Input aria-label="Buscar pessoa" placeholder="Nome da pessoa" value={busca} onChange={e=>setBusca(e.target.value)} /></Campo>
         <Campo label="Área"><Select aria-label="Filtrar férias por área" value={area} onChange={e=>setArea(e.target.value)}><option value="">Todas as áreas</option>{d.areas.filter(a=>escopo.some(c=>c.areaId===a.id)).map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</Select></Campo>

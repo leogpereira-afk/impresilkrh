@@ -359,7 +359,7 @@ export default function Desempenho() {
         />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Card>
           <CardHeader
             title="Média de desempenho por setor"
@@ -368,7 +368,7 @@ export default function Desempenho() {
           />
           <CardBody>
             {comNota.length === 0 ? (
-              <EmptyState title="Sem notas lançadas" description="Lance avaliações na aba “Avaliações” para ver a média por setor." icon={<Gauge className="h-8 w-8" />} />
+              <p className="text-sm text-slate-500">Sem notas lançadas. Lance avaliações na aba “Avaliações” para ver a média por setor.</p>
             ) : (
               <div className="space-y-3">
                 {mediaPorSetor.map((s) => {
@@ -405,7 +405,7 @@ export default function Desempenho() {
         </Card>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual} abas={abas} />
       </div>
 
@@ -614,10 +614,7 @@ function NoveBox({
       />
       <CardBody>
         {retencao.emRisco.length === 0 ? (
-          <EmptyState
-            title="Nenhum colaborador em risco de retenção"
-            icon={<AlertTriangle className="h-8 w-8" />}
-          />
+          <p className="text-sm text-slate-500">Nenhum colaborador em risco de retenção.</p>
         ) : (
           <div className="space-y-3">
             {retencao.criticos.length > 0 && (
@@ -1211,7 +1208,7 @@ function AbaMetas({
         />
         <CardBody className="space-y-3">
           {metas.length === 0 ? (
-            <EmptyState title="Nenhuma meta cadastrada" icon={<Target className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Nenhuma meta cadastrada.</p>
           ) : (
             metas.map((m) => {
               const alvo = m.valorAlvo ?? 0;
@@ -1441,7 +1438,7 @@ function AbaPdi({
         />
         <CardBody className="space-y-3">
           {pdis.length === 0 ? (
-            <EmptyState title="Nenhum PDI cadastrado" icon={<GraduationCap className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Nenhum PDI cadastrado.</p>
           ) : (
             pdis.map((p) => (
               <div key={p.id} className="rounded-xl border border-slate-100 p-4">
@@ -1631,7 +1628,7 @@ function AbaFeedbacks({
         />
         <CardBody className="space-y-3">
           {feedbacks.length === 0 ? (
-            <EmptyState title="Nenhum feedback registrado" icon={<MessageSquare className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Nenhum feedback registrado.</p>
           ) : (
             feedbacks.map((f) => (
               <div key={f.id} className="rounded-xl border border-slate-100 p-4">
@@ -1795,8 +1792,8 @@ function AbaPesquisas() {
   const tipoNovo: TipoPesquisa = editar && !editar.id ? "Dinâmica" : "Pesquisa";
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="space-y-4">
+      <div className="rh-stats">
         <StatCard label="Pesquisas" value={surveys.length} icon={<ClipboardList className="h-5 w-5" />} accent="brand"
           title="Mostrar só as pesquisas" ativo={foco === "Pesquisa"} onClick={() => alternarFoco("Pesquisa")} />
         <StatCard label="Dinâmicas" value={dinamicas.length} icon={<Sparkles className="h-5 w-5" />} accent="gold"
@@ -1820,11 +1817,7 @@ function AbaPesquisas() {
           {surveysVisiveis.length === 0 ? (
             /* Com o cartão "Ativas" ligado o vazio pode ser do filtro — dizer que
                não há pesquisa nenhuma esconderia as que estão em rascunho. */
-            <EmptyState
-              title={foco === "Ativa" ? "Nenhuma pesquisa ativa" : "Nenhuma pesquisa"}
-              description={foco === "Ativa" ? "Clique de novo no cartão “Ativas” para ver todas as pesquisas." : "Crie pesquisas de clima, eNPS e pulse com suas perguntas."}
-              icon={<ClipboardList className="h-8 w-8" />}
-            />
+            <p className="text-sm text-slate-500">{foco === "Ativa" ? "Nenhuma pesquisa ativa. Clique de novo no cartão “Ativas” para ver todas as pesquisas." : "Nenhuma pesquisa. Crie pesquisas de clima, eNPS e pulse com suas perguntas."}</p>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {surveysVisiveis.map((p) => (
@@ -1846,11 +1839,7 @@ function AbaPesquisas() {
         />
         <CardBody>
           {dinamicasVisiveis.length === 0 ? (
-            <EmptyState
-              title={foco === "Ativa" ? "Nenhuma dinâmica ativa" : "Nenhuma dinâmica"}
-              description={foco === "Ativa" ? "Clique de novo no cartão “Ativas” para ver todas as dinâmicas." : "Cadastre dinâmicas com o roteiro da atividade."}
-              icon={<Sparkles className="h-8 w-8" />}
-            />
+            <p className="text-sm text-slate-500">{foco === "Ativa" ? "Nenhuma dinâmica ativa. Clique de novo no cartão “Ativas” para ver todas as dinâmicas." : "Nenhuma dinâmica. Cadastre dinâmicas com o roteiro da atividade."}</p>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {dinamicasVisiveis.map((p) => (

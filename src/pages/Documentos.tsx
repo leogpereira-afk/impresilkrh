@@ -94,14 +94,14 @@ function DocumentosInstitucionais() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {grupos.map((grupo) => (
         <section key={grupo.categoria}>
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand">
             <span className="h-3 w-0.5 rounded-full bg-gold" />
             {grupo.categoria}
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {grupo.docs.map((doc) => (
               <DocumentoCard key={doc.id} doc={doc} />
             ))}
@@ -115,7 +115,7 @@ function DocumentosInstitucionais() {
 function DocumentoCard({ doc }: { doc: DocumentoInstitucional }) {
   const ehEtica = doc.categoria === "Código de Ética";
   return (
-    <Card>
+    <Card idPersistencia={`doc-inst:${doc.id}`}>
       <CardHeader
         title={doc.titulo}
         subtitle={doc.descricao}
@@ -144,7 +144,7 @@ function DocumentoCard({ doc }: { doc: DocumentoInstitucional }) {
         )}
 
         {ehEtica && (
-          <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="mt-3 border-t border-slate-100 pt-3">
             <Link to="/aceites" className="btn-outline">
               <ShieldCheck className="h-4 w-4" /> Ir para aceite eletrônico
             </Link>
@@ -334,7 +334,7 @@ function Repositorio() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Resumo */}
       <div className="rh-stats">
         <StatCard
@@ -387,24 +387,22 @@ function Repositorio() {
       </div>
 
       {/* Barra de ações */}
-      <Card>
-        <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar por nome ou categoria…"
-              className="pl-9"
-            />
-          </div>
-          {podeGerir && (
-            <button className="btn-primary shrink-0" onClick={() => setNovo(true)}>
-              <Plus className="h-4 w-4" /> Adicionar documento
-            </button>
-          )}
-        </CardBody>
-      </Card>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome ou categoria…"
+            className="pl-9"
+          />
+        </div>
+        {podeGerir && (
+          <button className="btn-primary shrink-0" onClick={() => setNovo(true)}>
+            <Plus className="h-4 w-4" /> Adicionar documento
+          </button>
+        )}
+      </div>
 
       {/* Listagem por categoria */}
       {grupos.length === 0 ? (
@@ -420,7 +418,7 @@ function Repositorio() {
           icon={<FolderOpen className="h-8 w-8" />}
         />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {grupos.map((grupo) => (
             <section key={grupo.categoria}>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand">

@@ -295,11 +295,11 @@ export function ViagensPainel() {
         <StatCard label="Planejadas" value={planejadas} icon={<CalendarClock className="h-5 w-5" />} accent="blue" hint="Aguardando início" onClick={() => alternarFoco("Planejada")} ativo={foco === "Planejada"} title="Ver na tabela só as viagens planejadas" />
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader title="Gasto por colaborador" subtitle="Total de diárias por pessoa (exclui canceladas)" icon={<Wallet className="h-[18px] w-[18px]" />} />
         <CardBody>
           {gastoPorColab.length === 0 ? (
-            <EmptyState title="Sem dados de gasto" description="Nenhuma viagem registrada no seu escopo." icon={<Wallet className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Sem dados de gasto. Nenhuma viagem registrada no seu escopo.</p>
           ) : (
             /* O gráfico do ranking, 18 linhas abaixo, já abre a pessoa: duas
                barras iguais na mesma tela, uma clicando e a outra não. */
@@ -316,7 +316,7 @@ export function ViagensPainel() {
         </CardBody>
       </Card>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="Diárias por pessoa"
           subtitle="Quem mais se desloca: nº de viagens, dias e custo por colaborador"
@@ -324,7 +324,7 @@ export function ViagensPainel() {
         />
         <CardBody>
           {ranking.length === 0 ? (
-            <EmptyState title="Sem ranking disponível" description="Nenhuma viagem registrada no seu escopo." icon={<Trophy className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Sem ranking disponível. Nenhuma viagem registrada no seu escopo.</p>
           ) : (
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
@@ -376,7 +376,7 @@ export function ViagensPainel() {
         </CardBody>
       </Card>
 
-      <Card className="mt-6 overflow-hidden">
+      <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="Viagens e diárias"
           subtitle={`${listaFiltrada.length} viagem(ns) · ${formatBRL(totalGeral)} no total (sem canceladas)`}

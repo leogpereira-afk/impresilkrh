@@ -61,20 +61,51 @@ function useEstiloGrafico() {
   };
 }
 
+/* GRÁFICO SEM DADO VIRA UMA LINHA (26/09/2026).
+ * Medição das 45 telas do RH: "Clima por setor" e "Risco de saída" com 405px
+ * cada, "Média de desempenho por setor" com 247px -- eixos vazios da altura
+ * de um gráfico cheio, para dizer que não há nada. Pedido do Léo: "olha o
+ * tanto de espaço pra quase nada de informação, vamos compactar".
+ * Quando a lista vem vazia ou TODOS os valores são zero, o gráfico não tem o
+ * que desenhar: mostra uma linha curta. Valor negativo conta como dado. */
+export function temAlgumValor(valores: unknown[]): boolean {
+  return valores.some((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n !== 0;
+  });
+}
+
+/* Lista vazia e "tudo zero" NÃO são a mesma coisa: num mês sem admissão nem
+   desligamento, zero É a resposta. A frase padrão diz qual dos dois é. */
+export const textoVazio = (qtd: number, texto?: string) =>
+  texto ?? (qtd === 0 ? "Sem dados para mostrar." : "Todos os valores estão zerados.");
+
+export function GraficoVazio({ texto = "Sem dados para mostrar." }: { texto?: string }) {
+  return (
+    <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-3 text-center text-sm text-slate-500">
+      {texto}
+    </p>
+  );
+}
+
 export function BarrasVerticais({
   data,
   cor = "#16334f",
   altura = 260,
   moeda = false,
   onItemClick,
+  vazio,
 }: {
   data: { nome: string; valor: number }[];
   cor?: string;
   altura?: number;
   moeda?: boolean;
   onItemClick?: (nome: string) => void;
+  /** Frase quando não há o que desenhar. */
+  vazio?: string;
 }) {
   const t = useEstiloGrafico();
+  if (!temAlgumValor(data.map((d) => d.valor))) return <GraficoVazio texto={textoVazio(data.length, vazio)} />;
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <BarChart
@@ -119,14 +150,17 @@ export function BarrasDuplas({
   serieB,
   altura = 260,
   onItemClick,
+  vazio,
 }: {
   data: { nome: string; a: number; b: number }[];
   serieA: { nome: string; cor: string };
   serieB: { nome: string; cor: string };
   altura?: number;
   onItemClick?: (nome: string) => void;
+  vazio?: string;
 }) {
   const t = useEstiloGrafico();
+  if (!temAlgumValor(data.flatMap((d) => [d.a, d.b]))) return <GraficoVazio texto={textoVazio(data.length, vazio)} />;
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <BarChart
@@ -151,12 +185,15 @@ export function BarrasColoridas({
   data,
   altura = 260,
   onItemClick,
+  vazio,
 }: {
   data: { nome: string; valor: number; cor: string }[];
   altura?: number;
   onItemClick?: (nome: string) => void;
+  vazio?: string;
 }) {
   const t = useEstiloGrafico();
+  if (!temAlgumValor(data.map((d) => d.valor))) return <GraficoVazio texto={textoVazio(data.length, vazio)} />;
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <BarChart
@@ -183,12 +220,15 @@ export function Rosca({
   data,
   altura = 260,
   onItemClick,
+  vazio,
 }: {
   data: { nome: string; valor: number; cor: string }[];
   altura?: number;
   onItemClick?: (nome: string) => void;
+  vazio?: string;
 }) {
   const t = useEstiloGrafico();
+  if (!temAlgumValor(data.map((d) => d.valor))) return <GraficoVazio texto={textoVazio(data.length, vazio)} />;
   return (
     <ResponsiveContainer width="100%" height={altura}>
       <PieChart>

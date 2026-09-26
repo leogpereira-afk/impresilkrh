@@ -106,9 +106,19 @@ textarea {
      (o R$ vem com espaço não separável) ou quebrava no meio do número. Aqui
      o tamanho é 14% da largura do próprio cartão, entre 16 e 20px: cartão
      largo mostra o número cheio; cartão estreito, um pouco menor, mas inteiro.
-     container-type exige que a largura do cartão venha de fora -- vem: todo
-     StatCard mora numa grade (conferido em 25/09/2026). */
-  .rh-stat {
+     container-type exige que a largura do cartão venha de FORA. Em 25/09 eu
+     pus a regra em todo .rh-stat achando que todo cartão morava numa grade --
+     e em Ponto > Verbas variáveis a grade era item de um flex sem largura: com
+     o cartão sem largura própria, a fileira encolheu para 102px e cada cartão
+     para 26px, NO AR. Agora a regra só vale dentro de .rh-stats, cuja grade
+     sempre dá a largura aos filhos. Fora dela, cqi mede a tela e o clamp fica
+     no teto de 20px -- o tamanho de antes. */
+  /* E dentro de qualquer .grid: a grade dá largura definida aos filhos. O caso
+     que quebrou em 25/09 era uma grade DENTRO de um flex sem largura -- ela
+     virou .rh-stats com flex-1 e largura mínima. Sem isto, cartão de dinheiro
+     numa grade de 3 colunas (Custos) voltava a partir "R$ 150.000,00" no meio. */
+  .rh-stats > .rh-stat,
+  .grid > .rh-stat {
     container-type: inline-size;
   }
   .rh-stat-valor {

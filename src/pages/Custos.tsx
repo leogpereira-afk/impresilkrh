@@ -1484,7 +1484,7 @@ export default function Custos() {
               </button>
             )}
           </div>
-          <LegendaMeses />
+          {competencias.length > 0 && <LegendaMeses />}
         </div>
       )}
 
@@ -1879,11 +1879,10 @@ export default function Custos() {
                   </span>
                 </p>
               ) : (
-                <EmptyState
-                  title="Sem custos classificados nesta competência"
-                  description="Use “Classificar contas” para marcar contas como individual ou rateio."
-                  icon={<Layers className="h-8 w-8" />}
-                />
+                <p className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <Layers className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span><span className="font-medium text-slate-700">Sem custos classificados nesta competência.</span> Use “Classificar contas” para marcar contas como individual ou rateio.</span>
+                </p>
               )
             ) : (
               <div className="space-y-4">
@@ -1973,9 +1972,9 @@ export default function Custos() {
                   />
                   <CardBody className="p-0">
                     {totais.contasRateio.length === 0 ? (
-                      <div className="p-4">
-                        <EmptyState title="Nenhuma conta de rateio" description="Classifique contas como “Rateio para todos” no editor." />
-                      </div>
+                      <p className="p-4 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">Nenhuma conta de rateio.</span> Classifique contas como “Rateio para todos” no editor.
+                      </p>
                     ) : (
                       <div className="overflow-x-auto">
                       <table className="w-full">
@@ -2058,7 +2057,7 @@ export default function Custos() {
                     { rotulo: "Rateio", valorDe: (c) => serie.find((x) => x.competencia === c)?.rateio ?? null },
                     { rotulo: "Médio / colab.", valorDe: (c) => { const x = serie.find((y) => y.competencia === c); return !x || x.semIndividual ? null : x.medioIndividual; }, destaque: true },
                   ]}
-                  vazio={<EmptyState title="Sem histórico" description="Importe mais competências do plano de contas para ver a evolução." />}
+                  vazio={<p className="text-sm text-slate-500">Sem histórico. Importe mais competências do plano de contas para ver a evolução.</p>}
                 />
               </CardBody>
             </Card>
@@ -2430,7 +2429,7 @@ export default function Custos() {
                   selecionada={compAtiva}
                   onSelecionar={setComp}
                   rotuloValor="Recebido"
-                  vazio={<EmptyState title="Sem pagamentos para este colaborador" icon={<Coins className="h-8 w-8" />} />}
+                  vazio={<p className="text-sm text-slate-500">Sem pagamentos para este colaborador.</p>}
                 />
               </CardBody>
             </Card>
@@ -2538,7 +2537,7 @@ export default function Custos() {
           aba Importação e conferência (pedido de 06/09/2026): as outras abas ficam só com
           o que é do colaborador e só com o que é global. */}
       <div ref={atualizacaoRef} className="mb-6 scroll-mt-20">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4">
         <Card>
           <CardHeader
             title="Plano de Contas (custos coletivos)"
@@ -3650,22 +3649,22 @@ function CustoGlobalFuncionarios({
     // era um beco — o bloco sumia inteiro e só o seletor lá no topo trazia de
     // volta. Elas percorrem a mesma lista de meses do resto da tela.
     return (
-      <EmptyState
-        title={compAtiva ? `Sem plano de contas em ${compLabelLongo(compAtiva)}` : "Sem plano de contas importado"}
-        description="O custo global depende do plano de contas deste mês, que chega sozinho do Mubisys ao abrir o mês. Até lá este bloco fica indisponível, não zerado."
-        icon={<Layers className="h-10 w-10" />}
-        acao={
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button type="button" className="btn-outline" onClick={irParaSync}><RefreshCw className="h-4 w-4" /> Ver a sincronização</button>
-            <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        }
-      />
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <Layers className="h-4 w-4 shrink-0 text-slate-400" />
+        <p className="min-w-[14rem] flex-1 text-sm text-slate-600">
+          <span className="font-medium text-slate-700">{compAtiva ? `Sem plano de contas em ${compLabelLongo(compAtiva)}` : "Sem plano de contas importado"}.</span>{" "}
+          O custo global depende do plano de contas deste mês, que chega sozinho do Mubisys ao abrir o mês. Até lá este bloco fica indisponível, não zerado.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => irMes(-1)} disabled={idx <= 0} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Mês anterior" title="Mês anterior">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button type="button" className="btn-outline" onClick={irParaSync}><RefreshCw className="h-4 w-4" /> Ver a sincronização</button>
+          <button type="button" onClick={() => irMes(1)} disabled={idx < 0 || idx >= competencias.length - 1} className="btn-outline h-9 w-9 shrink-0 p-0 disabled:opacity-40" aria-label="Próximo mês" title="Próximo mês">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
     );
   }
 

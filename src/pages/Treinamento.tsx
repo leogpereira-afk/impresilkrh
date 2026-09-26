@@ -10,7 +10,7 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
-import { Avatar, EmptyState, Progress } from "@/components/ui/misc";
+import { Avatar, Progress } from "@/components/ui/misc";
 import { useToast } from "@/components/ui/toast";
 import { BarrasColoridas } from "@/components/charts/charts";
 import { useDrill, DrillModal } from "@/components/ui/drilldown";
@@ -221,7 +221,7 @@ export default function Treinamento() {
       </div>
 
       {/* Gráficos por tipo e por status */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
             title="Treinamentos por tipo"
@@ -230,7 +230,7 @@ export default function Treinamento() {
           />
           <CardBody>
             {porTipo.length === 0 ? (
-              <EmptyState title="Sem treinamentos" description="Nenhum treinamento registrado no seu escopo." icon={<BookOpen className="h-8 w-8" />} />
+              <p className="text-sm text-slate-500">Sem treinamentos. Nenhum treinamento registrado no seu escopo.</p>
             ) : (
               <BarrasColoridas
                 data={porTipo}
@@ -252,7 +252,7 @@ export default function Treinamento() {
           />
           <CardBody>
             {porStatus.length === 0 ? (
-              <EmptyState title="Sem treinamentos" description="Nenhum treinamento registrado no seu escopo." icon={<ListChecks className="h-8 w-8" />} />
+              <p className="text-sm text-slate-500">Sem treinamentos. Nenhum treinamento registrado no seu escopo.</p>
             ) : (
               <BarrasColoridas
                 data={porStatus}
@@ -268,7 +268,7 @@ export default function Treinamento() {
       </div>
 
       {/* Quem está em treinamento */}
-      <Card className="mt-6 overflow-hidden">
+      <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="Quem está em treinamento"
           subtitle={`${emTreinamento.length} treinamento(s)${verConcluidos ? " (incluindo concluídos)" : " em andamento ou pendentes"}, por prazo`}
@@ -285,7 +285,7 @@ export default function Treinamento() {
         />
         {emTreinamento.length === 0 ? (
           <CardBody>
-            <EmptyState title="Ninguém em treinamento" description={lista.length ? "Todos os treinamentos do seu escopo estão concluídos." : "Nenhum treinamento registrado para conferir a capacitação."} icon={<CheckCircle2 className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Ninguém em treinamento. {lista.length ? "Todos os treinamentos do seu escopo estão concluídos." : "Nenhum treinamento registrado para conferir a capacitação."}</p>
           </CardBody>
         ) : (
           <div className="overflow-x-auto">
@@ -414,7 +414,7 @@ export default function Treinamento() {
           pessoas quer falar com as seis, e procurar nome por nome numa lista de
           trinta é o que faz a conversa não acontecer. */}
       {turmas.length > 0 && (
-        <Card className="mt-6">
+        <Card className="mt-4">
           <CardHeader
             title="Turmas"
             subtitle="Quem fez o mesmo treinamento junto"
@@ -482,7 +482,7 @@ export default function Treinamento() {
       )}
 
       {/* O que precisa treinar (pendentes agrupados por título) */}
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="O que precisa treinar"
           subtitle="Treinamentos pendentes agrupados"
@@ -490,7 +490,7 @@ export default function Treinamento() {
         />
         <CardBody>
           {precisaTreinar.length === 0 ? (
-            <EmptyState title="Nada pendente" description="Não há treinamentos pendentes no seu escopo." icon={<CheckCircle2 className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Nada pendente. Não há treinamentos pendentes no seu escopo.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {precisaTreinar.map((g) => (

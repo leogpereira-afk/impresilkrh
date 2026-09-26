@@ -81,7 +81,7 @@ export default function Mensagens() {
         description="Gerencie contatos e modelos e organize a fila de envios da comunicação interna."
       />
 
-      <p className="mb-6 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2 text-xs text-slate-500">
+      <p className="mb-3 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2 text-xs text-slate-500">
         <Info className="h-3.5 w-3.5 shrink-0 text-blue-500" />
         Use o botão do WhatsApp em cada contato para enviar já, com o texto do modelo pronto. O disparo automático em massa
         (sem abrir o WhatsApp) depende de contratar um serviço de mensageria.
@@ -306,7 +306,7 @@ function AbaContatos({ podeEditar }: { podeEditar: boolean }) {
           {/* Ler "Liderança · 6" e ter de digitar "Liderança" na busca à mão
               para ver quem são os 6. Agora o selo é o filtro. */}
           {resumoGrupos.map(([grupo, qtd]) => (
-            <button key={grupo} type="button" onClick={() => setBusca(busca === grupo ? "" : grupo)} title={`Ver só os contatos de ${grupo}`}>
+            <button key={grupo} type="button" className="inline-flex min-h-10 items-center" onClick={() => setBusca(busca === grupo ? "" : grupo)} title={`Ver só os contatos de ${grupo}`}>
               <Badge variant={busca === grupo ? "info" : "neutral"}>{grupo} · {qtd}</Badge>
             </button>
           ))}
@@ -775,19 +775,18 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
 
   return (
     <div>
-      <div className="mb-4 rh-stats">
-        <StatCard label="Agendadas" value={agendadas} icon={<Clock className="h-5 w-5" />} accent="blue" hint="Na fila de envio"
-          onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Ver só os envios ainda na fila" />
-        <StatCard label="Enviadas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados"
-          onClick={() => alternarFoco("Enviada")} ativo={foco === "Enviada"} title="Ver só os envios já disparados" />
-        {/* Sem clique: os contatos não estão nesta aba e a aba de Contatos não pode
-            ser aberta de fora — o número aqui é só referência da base. */}
-        <StatCard label="Total de contatos" value={contatos.filter((c) => contatoAtivo(c, saiu)).length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Quem ainda está na empresa" />
-      </div>
-
-      <div className="mb-4 flex items-center justify-end empty:hidden">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="rh-stats min-w-0 flex-[1_1_28rem]">
+          <StatCard label="Agendadas" value={agendadas} icon={<Clock className="h-5 w-5" />} accent="blue" hint="Na fila de envio"
+            onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Ver só os envios ainda na fila" />
+          <StatCard label="Enviadas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados"
+            onClick={() => alternarFoco("Enviada")} ativo={foco === "Enviada"} title="Ver só os envios já disparados" />
+          {/* Sem clique: os contatos não estão nesta aba e a aba de Contatos não pode
+              ser aberta de fora — o número aqui é só referência da base. */}
+          <StatCard label="Total de contatos" value={contatos.filter((c) => contatoAtivo(c, saiu)).length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Quem ainda está na empresa" />
+        </div>
         {podeEditar && (
-          <button className="btn-primary" onClick={abrirNovo}>
+          <button className="btn-primary ml-auto shrink-0" onClick={abrirNovo}>
             <Send className="h-4 w-4" /> Agendar envio
           </button>
         )}

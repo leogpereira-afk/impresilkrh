@@ -144,7 +144,7 @@ export default function Freelancers() {
         description="Gerencie os contratos de freelancer. A participação no quadro é conferida no cadastro da pessoa em Colaboradores."
       >
         {podeEditar && (
-          <button className="btn-primary" onClick={() => abrirForm({ ...VAZIO, contratoInicio: diaLocalISO() })}>
+          <button className="btn-primary whitespace-nowrap" onClick={() => abrirForm({ ...VAZIO, contratoInicio: diaLocalISO() })}>
             <Plus className="h-4 w-4" /> Novo contrato
           </button>
         )}

@@ -226,7 +226,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <Link to="/colaboradores" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand">
           <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Voltar para colaboradores</span><span className="sm:hidden">Voltar</span>
         </Link>
@@ -270,8 +270,8 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
         </div>
       )}
 
-      <Card className="mb-6">
-        <CardBody className="flex flex-wrap items-center gap-4">
+      <Card className="mb-3">
+        <CardBody className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <div className="flex w-full min-w-0 items-center gap-4 sm:w-auto sm:min-w-[20rem] sm:flex-1">
           <div className="relative shrink-0">
             <Avatar nome={c.nome} foto={c.fotoDataUrl} size="lg" />
@@ -559,7 +559,7 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
         </CardBody>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader title="Histórico e saldo de férias" icon={<Palmtree className="h-[18px] w-[18px]" />} />
           <CardBody>
@@ -654,9 +654,9 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
     [{ valor: "", rotulo: vazio }].concat(arr.map((x) => ({ valor: x, rotulo: x })));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-start gap-4 lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
       <SecaoColapsavel title="Dados pessoais" subtitle={edit ? "Clique em um valor para editar" : undefined} icon={<IdCard className="h-[18px] w-[18px]" />}>
-          <dl className="grid grid-cols-2 gap-4">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
             <CampoEditavel
               label="CPF" exibicao={sens ? formatCPF(c.cpf) : maskCPF(c.cpf)} valor={c.cpf ?? ""}
               editavel={editSens} placeholder="Somente números" dica="11 dígitos"
@@ -761,7 +761,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
           )}
       </SecaoColapsavel>
 
-      <SecaoColapsavel title="Dados profissionais" subtitle={edit ? "Clique em um valor para editar" : undefined} icon={<Briefcase className="h-[18px] w-[18px]" />}>
+      <SecaoColapsavel className="lg:row-span-2" title="Dados profissionais" subtitle={edit ? "Clique em um valor para editar" : undefined} icon={<Briefcase className="h-[18px] w-[18px]" />}>
           {/* O par status × datas é o que decide de quais MESES a pessoa faz
               parte. A auditoria dos lançamentos de 07/09/2026 achou 11 fichas
               contraditórias, e enquanto elas não são corrigidas a ficha de custo
@@ -779,7 +779,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               Ou apague a data, ou mude o status — do jeito que está, ela sai do quadro a partir do mês seguinte a essa data.
             </p>
           )}
-          <dl className="grid grid-cols-2 gap-4">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
             <CampoEditavel
               label="Cargo" exibicao={d.nomeCargo(c)} valor={c.cargoId ?? ""} tipo="select" editavel={edit}
               opcoes={[{ valor: "", rotulo: "—" }].concat(cargosDaArea.map((x) => ({ valor: x.id, rotulo: x.nome })))}
@@ -906,7 +906,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               opcoes={lista(CATEGORIAS_CNH, "Não informado")} onSalvar={(v) => gravar({ cnh: v })}
             />
           </dl>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {/* Estas duas datas movem prazos legais: a admissão comanda férias e
                 contrato de experiência; o início no cargo, o tempo de casa no
                 cargo. Corrigir uma delas era motivo de abrir o cadastro inteiro. */}
@@ -937,7 +937,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
             </div>
           </div>
           {cargo && (
-            <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3">
+            <div className="mt-3 rounded-lg bg-slate-50 px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Faixa salarial do cargo</p>
               <div className="mt-2 flex items-end justify-between gap-1">
                 {cargo.faixas.map((v, i) => (
@@ -953,8 +953,8 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
           )}
       </SecaoColapsavel>
 
-      <SecaoColapsavel className="lg:col-span-2" title="Clima & estilo" subtitle={edit ? "Clique em um valor para editar" : "Engajamento, estilo de aprendizagem e enquadramento na empresa"} icon={<Smile className="h-[18px] w-[18px]" />}>
-          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <SecaoColapsavel title="Clima & estilo" subtitle={edit ? "Clique em um valor para editar" : "Engajamento, estilo de aprendizagem e enquadramento na empresa"} icon={<Smile className="h-[18px] w-[18px]" />}>
+          <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
             <CampoEditavel
               label="Humor / engajamento" exibicao={<HumorIndicador humor={c.humor} tamanho="lg" />} valor={c.humor ?? ""}
               tipo="select" editavel={edit} opcoes={lista(HUMORES)} onSalvar={(v) => gravar({ humor: v })}
@@ -987,7 +987,7 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
     : delta < -2 ? `Em queda · ${Math.abs(delta)} pontos abaixo da medição anterior.`
     : "Estável em relação à medição anterior.";
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid items-start gap-4 lg:grid-cols-3">
       <SecaoColapsavel
         className="lg:col-span-2"
         title="Perfil comportamental"
@@ -1028,7 +1028,7 @@ function AbaComportamental({ c }: { c: import("@/data/types").Colaborador }) {
               </div>
             </div>
           ) : (
-            <EmptyState title="Motivação não informada" description="Ainda não há medição de motivação para este colaborador." icon={<Activity className="h-8 w-8" />} />
+            <div className="text-sm text-slate-500"><p className="font-medium text-slate-500">Motivação não informada</p><p className="mt-0.5 text-xs">Ainda não há medição de motivação para este colaborador.</p></div>
           )}
       </SecaoColapsavel>
 
@@ -1803,7 +1803,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
     .slice().sort((a, b) => (parseData(b.criadoEm)?.getTime() ?? 0) - (parseData(a.criadoEm)?.getTime() ?? 0));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <SecaoColapsavel title="Avaliação de desempenho" subtitle={cicloNome}>
           {aval ? (
             <div className="space-y-2 text-sm">
@@ -1820,10 +1820,10 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
                   : <div className="rounded bg-slate-50 px-3 py-2 text-xs text-slate-500">Promoção para {aval.proximoNivel} já efetivada.</div>
               )}
             </div>
-          ) : <EmptyState title="Sem avaliação" />}
+          ) : <p className="text-sm text-slate-500">Sem avaliação</p>}
       </SecaoColapsavel>
       <SecaoColapsavel title="PDI" subtitle="Plano de Desenvolvimento Individual" bodyClassName="space-y-3">
-          {meusPdis.length === 0 ? <EmptyState title="Sem PDI" /> : meusPdis.map((p) => (
+          {meusPdis.length === 0 ? <p className="text-sm text-slate-500">Sem PDI</p> : meusPdis.map((p) => (
             <div key={p.id}>
               <div className="mb-1 flex justify-between text-sm"><span className="font-medium text-slate-700">{p.competencia}</span><span className="text-slate-400">{p.progresso}%</span></div>
               <Progress value={p.progresso} />
@@ -1832,12 +1832,12 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
           ))}
       </SecaoColapsavel>
       <SecaoColapsavel title="Metas" bodyClassName="space-y-2">
-          {minhasMetas.length === 0 ? <EmptyState title="Sem metas individuais" /> : minhasMetas.map((m) => (
+          {minhasMetas.length === 0 ? <p className="text-sm text-slate-500">Sem metas individuais</p> : minhasMetas.map((m) => (
             <div key={m.id} className="flex items-center justify-between text-sm"><span className="text-slate-700">{m.titulo}</span><span className="text-slate-400">{m.valorAtual}/{m.valorAlvo}{m.unidade}</span></div>
           ))}
       </SecaoColapsavel>
       <SecaoColapsavel title="Feedbacks" bodyClassName="space-y-3">
-          {meusFb.length === 0 ? <EmptyState title="Sem feedbacks" /> : meusFb.map((f) => (
+          {meusFb.length === 0 ? <p className="text-sm text-slate-500">Sem feedbacks</p> : meusFb.map((f) => (
             <div key={f.id} className="rounded-lg border border-slate-100 px-3 py-2">
               <div className="mb-1 flex items-center justify-between gap-2"><Badge variant={f.tipo === "Positivo" ? "success" : f.tipo === "Desenvolvimento" ? "warning" : "info"}>{f.tipo}</Badge><span className="truncate text-xs text-slate-400">{d.nomeColab(f.autorId)}{f.criadoEm ? ` · ${formatDate(f.criadoEm)}` : ""}</span></div>
               <p className="text-sm text-slate-600">{f.conteudo}</p>

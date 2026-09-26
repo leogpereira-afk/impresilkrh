@@ -26,7 +26,7 @@ export function PageHeader({
           <p className="mt-0.5 text-sm text-slate-500">{description}</p>
         )}
       </div>
-      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
+      {children && <div className="flex flex-wrap items-center gap-2 sm:justify-end">{children}</div>}
     </div>
   );
 }

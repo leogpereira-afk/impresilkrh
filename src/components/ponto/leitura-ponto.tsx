@@ -48,7 +48,7 @@ export function LeituraPonto({ pontos, nome, abrir }: { pontos: Ponto[]; nome: (
         </div>
       </div>
       <p className="mb-3 flex flex-wrap gap-3 text-[11px] text-slate-500"><span>Verde: normais</span><span>Azul: extras</span><span>* Detalhe parcial · clique no dia para abrir</span></p>
-      <div className="divide-y divide-slate-100">{leitura.pessoas.map(p => <button key={p.ponto.id} type="button" onClick={() => abrir(p.ponto)} className="flex w-full flex-wrap items-center justify-between gap-2 py-3 text-left hover:bg-slate-50">
+      <div className="divide-y divide-slate-100">{leitura.pessoas.map(p => <button key={p.ponto.id} type="button" onClick={() => abrir(p.ponto)} className="flex w-full flex-wrap items-center justify-between gap-2 py-2 text-left hover:bg-slate-50">
         <span className="min-w-0 flex-1"><span className="block break-words text-sm font-medium text-slate-800">{nome(p.ponto)}</span><span className="text-xs text-slate-500">{p.lacunas ? `${p.lacunas} lacuna(s) · ` : ''}{p.alertas ? `${p.alertas} dia(s) a conferir` : p.registros ? 'Sem alerta nas batidas informadas' : 'Sem detalhe diário'}</span></span>
         <span className="text-right text-xs tabular-nums text-slate-600"><b className="text-sm text-slate-800">{p.registros ? hora(p.normais) : '—'} normais</b><br />{hora(p.extras)} extras · {hora(p.faltas)} faltas</span><ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
       </button>)}</div>

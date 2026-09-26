@@ -104,7 +104,7 @@ function CodigoEticaCard({ c }: { c: Colaborador }) {
             <RichContent blocos={doc.blocos} />
           </div>
         ) : (
-          <EmptyState title="Documento indisponível" description="O Código de Ética ainda não foi publicado." />
+          <p className="text-sm text-slate-500">Documento indisponível. O Código de Ética ainda não foi publicado.</p>
         )}
 
         {aceite ? (
@@ -169,7 +169,7 @@ function CienciaPdiCard({ c }: { c: Colaborador }) {
       />
       <CardBody>
         {meusPdis.length === 0 ? (
-          <EmptyState title="Nenhum PDI atribuído" description="Você ainda não possui planos de desenvolvimento." icon={<Target className="h-8 w-8" />} />
+          <p className="text-sm text-slate-500">Nenhum PDI atribuído. Você ainda não possui planos de desenvolvimento.</p>
         ) : (
           <div className="space-y-3">
             {meusPdis.map((p) => {
@@ -224,14 +224,14 @@ function AcompanhamentoCard() {
   const aceitos = linhas.filter((l) => l.aceite).length;
 
   return (
-    <Card className="mt-6">
+    <Card className="mt-4 overflow-hidden">
       <CardHeader
         title="Acompanhamento de aceites"
         subtitle={`${aceitos} de ${linhas.length} colaboradores aceitaram o Código de Ética${doc?.versao ? ` · versão ${doc.versao}` : ""}.`}
         icon={<ShieldCheck className="h-[18px] w-[18px]" />}
         action={
           <div className="flex items-center gap-3">
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+            <label className="flex min-h-10 cursor-pointer items-center gap-1.5 text-xs text-slate-500">
               <input type="checkbox" checked={incluirSaiu} onChange={(e) => setIncluirSaiu(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
               Incluir quem saiu
             </label>
@@ -239,7 +239,7 @@ function AcompanhamentoCard() {
           </div>
         }
       />
-      <CardBody>
+      <CardBody className={linhas.length === 0 ? undefined : "p-0"}>
         {linhas.length === 0 ? (
           <EmptyState title="Sem colaboradores" />
         ) : (

@@ -212,7 +212,7 @@ export default function Ponto() {
             conteudo: (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-slate-50/60 px-4 py-3">
-                  <p className="text-sm text-slate-600">
+                  <p className="min-w-[12rem] flex-1 text-sm text-slate-600">
                     Antes de advertir, entenda o perfil. Como identificar e como lidar com cada pessoa.
                   </p>
                   <Link to="/comportamental" className="btn-outline shrink-0">
@@ -1005,17 +1005,19 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
                 {/* Legenda / explicação — só no modo Tudo (o resumo não usa os selos de situação) */}
                 {modo === "tudo" && (
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Info className="h-3.5 w-3.5" /> Como ler o extrato</p>
-                  <div className="grid gap-x-6 gap-y-1.5 text-xs text-slate-500 sm:grid-cols-2">
-                    {SIT_LEGENDA.map(({ s, txt }) => (
-                      <div key={s} className="flex items-center gap-2">
-                        <span className="shrink-0"><Badge variant={SIT_BADGE[s]}>{SIT_LABEL[s]}</Badge></span>
-                        <span>{txt}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 px-4 pb-3">
+                  <details className="group">
+                    <summary className="flex min-h-10 cursor-pointer select-none items-center gap-1.5 text-xs font-semibold text-slate-600"><Info className="h-3.5 w-3.5" /> Como ler o extrato<ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" /></summary>
+                    <div className="grid gap-x-6 gap-y-1.5 pb-2 text-xs text-slate-500 sm:grid-cols-2">
+                      {SIT_LEGENDA.map(({ s, txt }) => (
+                        <div key={s} className="flex items-center gap-2">
+                          <span className="shrink-0"><Badge variant={SIT_BADGE[s]}>{SIT_LABEL[s]}</Badge></span>
+                          <span>{txt}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                  <p className="text-[11px] leading-relaxed text-slate-400">
                     As horas <b>Normais</b>, <b>Faltas</b> e <b>Extras</b> já vêm calculadas pelo Secullum (regras da CLT) — não recalculamos, para não divergir da folha legal.
                     {/* Só afirma que confere depois de conferir de verdade. */}
                     {comDetalhe > 0 && divergentes.length === 0 && ` Conferido: em ${comDetalhe} ficha(s), a soma dos dias fecha com o total do mês.`}
@@ -2074,7 +2076,7 @@ function AbaAdvertencias({
   return (
     <div>
       {podeEditar && (
-        <div className="mb-6 flex items-center justify-end">
+        <div className="mb-4 flex items-center justify-end">
           <button className="btn-primary" onClick={() => setNovo(true)}>
             <Plus className="h-4 w-4" /> Registrar advertência
           </button>
@@ -2092,7 +2094,7 @@ function AbaAdvertencias({
           onClick={() => alternarTipo("Suspensão")} ativo={filtroTipo === "Suspensão"} title="Ver só as suspensões" />
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="Advertências por colaborador"
           subtitle="Reincidência disciplinar no escopo"
@@ -2100,7 +2102,7 @@ function AbaAdvertencias({
         />
         <CardBody>
           {rankingChart.length === 0 ? (
-            <EmptyState title="Sem advertências registradas" description="Nenhum registro disciplinar no seu escopo." icon={<ShieldAlert className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Sem advertências registradas. Nenhum registro disciplinar no seu escopo.</p>
           ) : (
             <BarrasVerticais
               data={rankingChart}
@@ -2115,7 +2117,7 @@ function AbaAdvertencias({
         </CardBody>
       </Card>
 
-      <Card className="mt-6 overflow-hidden">
+      <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="Registros de advertência"
           subtitle={`${listaVisivel.length}${filtroTipo ? ` de ${lista.length}` : ""} registro(s) no seu escopo de acesso`}
@@ -2477,8 +2479,8 @@ function AbaAbsenteismo({
         </div>
       )}
       {/* Filtro de período */}
-      <Card className="mb-6">
-        <CardBody className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        {/* período sem moldura de cartão: eram 100px para dois campos e quatro atalhos */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <Campo label="De" className="sm:w-44">
               <Input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} />
@@ -2494,8 +2496,8 @@ function AbaAbsenteismo({
               </button>
             ))}
           </div>
-        </CardBody>
-      </Card>
+        
+      </div>
 
       <div className="rh-stats">
         <StatCard label="Ausências no período" value={total} icon={<CalendarRange className="h-5 w-5" />} accent="brand" hint={`${diaData(de)} – ${diaData(ate)}`}
@@ -2508,7 +2510,7 @@ function AbaAbsenteismo({
           onClick={() => alternarFoco("justificadas")} ativo={foco === "justificadas"} title="Ver só as ausências justificadas" />
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="Quem mais falta"
           subtitle="Ranking de ausências no período"
@@ -2516,7 +2518,7 @@ function AbaAbsenteismo({
         />
         <CardBody>
           {ranking.length === 0 ? (
-            <EmptyState title="Sem ausências no período" description="Ajuste o intervalo de datas para ver os registros." icon={<CalendarRange className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Sem ausências no período. Ajuste o intervalo de datas para ver os registros.</p>
           ) : (
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
@@ -2572,7 +2574,7 @@ function AbaAbsenteismo({
         </CardBody>
       </Card>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="Ausências por tipo"
           subtitle="Distribuição dos motivos de ausência no período"
@@ -2580,14 +2582,14 @@ function AbaAbsenteismo({
         />
         <CardBody>
           {porTipo.length === 0 ? (
-            <EmptyState title="Sem dados no período" description="Nenhuma ausência registrada no intervalo selecionado." icon={<BarChart3 className="h-8 w-8" />} />
+            <p className="text-sm text-slate-500">Sem dados no período. Nenhuma ausência registrada no intervalo selecionado.</p>
           ) : (
             <BarrasColoridas data={porTipo} onItemClick={abrirPorTipo} altura={200} />
           )}
         </CardBody>
       </Card>
 
-      <Card className="mt-6 overflow-hidden">
+      <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="Registros de ausência"
           subtitle={`${listaVisivel.length}${foco ? ` de ${lista.length}` : ""} registro(s) entre ${diaData(de)} e ${diaData(ate)}`}

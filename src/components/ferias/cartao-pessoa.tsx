@@ -102,7 +102,7 @@ export function CartaoPessoaFerias({
 }) {
   const situacao = situacaoDaPessoa(dados);
   return (
-    <div className="grid gap-2.5 px-3 py-2.5 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_auto] md:items-center">
+    <div className="grid gap-2.5 px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center">
       <div className="flex min-w-0 items-center gap-2.5">
         <span aria-hidden="true" className="shrink-0"><Avatar nome={nome} foto={foto} /></span>
         <div className="min-w-0">

@@ -64,18 +64,16 @@ export function PainelTeste({ podeEditar }: { podeEditar: boolean }) {
         <StatCard label="Registros incompletos" value={pendentes} icon={<AlertTriangle className="h-5 w-5" />} accent="gold" hint="Falta fechar ou confirmar pagamento" />
       </div>
 
-      <Card className="mb-4">
-        <CardBody className="flex flex-wrap items-center justify-between gap-3 py-3">
-          <p className="text-sm text-slate-500">
-            Quem passou pela empresa em teste antes da contratação — inclusive quem <b>não</b> foi contratado.
-          </p>
-          {podeEditar && (
-            <button className="btn-primary" onClick={() => setEditando("novo")}>
-              <Plus className="h-4 w-4" /> Registrar teste
-            </button>
-          )}
-        </CardBody>
-      </Card>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          Quem passou pela empresa em teste antes da contratação — inclusive quem <b>não</b> foi contratado.
+        </p>
+        {podeEditar && (
+          <button className="btn-primary" onClick={() => setEditando("novo")}>
+            <Plus className="h-4 w-4" /> Registrar teste
+          </button>
+        )}
+      </div>
 
       {lista.length === 0 ? (
         <EmptyState

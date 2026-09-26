@@ -87,14 +87,14 @@ export default function LGPD() {
         />
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="Trilha de acessos"
           subtitle="Quem acessou dados sensíveis, quando e de qual colaborador."
           icon={<Eye className="h-[18px] w-[18px]" />}
         />
         <CardBody>
-          <div className="mb-4 flex flex-wrap items-end gap-3 print:hidden">
+          <div className="mb-3 flex flex-wrap items-end gap-3 print:hidden">
             <label className="min-w-0 flex-1 text-xs text-slate-500">Pessoa, ação ou recurso<Input className="mt-1" placeholder="Buscar nos acessos…" value={busca} onChange={e => { setBusca(e.target.value); setPagina(1); }} /></label>
             <label className="text-xs text-slate-500">De<Input type="date" className="mt-1" value={inicio} onChange={e => { setInicio(e.target.value); setPagina(1); }} /></label>
             <label className="text-xs text-slate-500">Até<Input type="date" className="mt-1" value={fim} min={inicio || undefined} onChange={e => { setFim(e.target.value); setPagina(1); }} /></label>
@@ -144,7 +144,7 @@ export default function LGPD() {
       {/* O card "Consentimentos" rola até aqui — a trilha acima tem centenas de
           linhas e esta tabela ficava fora da tela. */}
       <div ref={refConsent}>
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader
           title="Consentimentos LGPD"
           subtitle="Consentimentos de tratamento de dados registrados na admissão."
@@ -152,7 +152,7 @@ export default function LGPD() {
         />
         <CardBody>
           {consentVisiveis.length === 0 ? (
-            <EmptyState title="Nenhum consentimento registrado" />
+            <p className="text-sm text-slate-500">Nenhum consentimento registrado.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

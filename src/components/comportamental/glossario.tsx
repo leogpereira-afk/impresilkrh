@@ -34,7 +34,7 @@ function Acordeao({
         type="button"
         onClick={() => onToggle(id)}
         aria-expanded={aberto}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50/70"
+        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-slate-50/70"
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: cor }}>
           <Icon className="h-[18px] w-[18px]" />
@@ -213,18 +213,19 @@ export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | 
   }, [alvo]);
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-brand-50 to-white p-5">
-        <p className="flex items-center gap-2 text-sm font-semibold text-brand-ink">
+    <div className="space-y-6">
+      <details className="group rounded-2xl border border-slate-200/70 bg-gradient-to-br from-brand-50 to-white px-4">
+        <summary className="flex min-h-11 cursor-pointer select-none items-center gap-2 text-sm font-semibold text-brand-ink">
           <Lightbulb className="h-4 w-4 text-gold-500" /> Como usar este guia
-        </p>
-        <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+          <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+        </summary>
+        <p className="pb-4 text-sm leading-relaxed text-slate-600">
           Pessoas não são iguais — e tratar todo mundo do mesmo jeito gera atrito. Aqui você encontra os perfis comportamentais,
           o clima, os estilos de aprendizagem e os níveis de motivação e risco, com <strong>como identificar</strong> e
           <strong> como lidar</strong> com cada um. Use para dar feedback melhor, treinar do jeito certo, reter talentos —
           e também para se conhecer. Toque em cada item para abrir.
         </p>
-      </div>
+      </details>
 
       <Secao titulo="Os 4 arquétipos comportamentais" descricao="Perfis / temperamentos (base DISC). Ninguém é 100% um só — há um predominante." Icon={Brain}>
         {PERFIS_COMPORTAMENTAIS.map((p) => {
@@ -267,7 +268,7 @@ export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | 
 
       <Secao titulo="Termômetro de motivação (0–100)" descricao="A carinha que aparece na ficha do colaborador, faixa a faixa." Icon={Gauge}>
         <div className="rounded-xl border border-slate-200/70 bg-white p-4">
-          <ul className="space-y-2.5">
+          <ul className="space-y-1.5">
             {FAIXAS_MOTIVACAO.map((f) => {
               const Icon = f.rosto === "muito-feliz" ? Laugh : f.rosto === "feliz" ? Smile : f.rosto === "neutro" ? Meh : Frown;
               const acao =
@@ -279,7 +280,7 @@ export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | 
               return (
                 <li key={f.label} className="flex items-start gap-3">
                   <Icon className="mt-0.5 h-5 w-5 shrink-0" style={{ color: f.cor }} />
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                     <p className="text-sm font-semibold" style={{ color: f.cor }}>{f.min}–{f.max} · {f.label}</p>
                     <p className="text-sm text-slate-600">{acao}</p>
                   </div>

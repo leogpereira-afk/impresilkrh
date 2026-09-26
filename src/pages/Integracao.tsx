@@ -289,7 +289,7 @@ export default function Integracao() {
         />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Card>
           <CardHeader
             title={
@@ -302,18 +302,18 @@ export default function Integracao() {
           <CardBody>
             <BarrasColoridas
               data={dadosJornada}
-              altura={160}
+              altura={120}
               onItemClick={abrirJornada}
             />
           </CardBody>
         </Card>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <EsteiraOnboarding />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
           abas={[
             {
@@ -404,7 +404,7 @@ const ETAPAS_ESTEIRA: { titulo: string; icon: React.ReactNode }[] = [
 
 function EsteiraOnboarding() {
   return (
-    <Card>
+    <Card idPersistencia="integracao:esteira" abertoInicial={false}>
       <CardHeader
         title={
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
@@ -681,26 +681,11 @@ function PainelPendencias({
         }
       />
       <CardBody className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
-            <p className="text-lg font-semibold text-slate-800">
-              {pendencias.tarefasAbertas}
-            </p>
-            <p className="text-xs text-slate-500">Etapas em aberto</p>
-          </div>
-          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
-            <p className="text-lg font-semibold text-slate-800">
-              {pendencias.docsAbertos}
-            </p>
-            <p className="text-xs text-slate-500">Documentos pendentes</p>
-          </div>
-          <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-center">
-            <p className="text-lg font-semibold text-slate-800">
-              {pendencias.colabsComPendencia}
-            </p>
-            <p className="text-xs text-slate-500">Colaboradores</p>
-          </div>
-        </div>
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
+          <span><strong className="font-semibold tabular-nums text-slate-800">{pendencias.tarefasAbertas}</strong> Etapas em aberto</span>
+          <span><strong className="font-semibold tabular-nums text-slate-800">{pendencias.docsAbertos}</strong> Documentos pendentes</span>
+          <span><strong className="font-semibold tabular-nums text-slate-800">{pendencias.colabsComPendencia}</strong> Colaboradores</span>
+        </p>
 
         {comPendencia.length > 0 ? (
           <div>
@@ -1010,23 +995,15 @@ function CardChecklist({
 
         {/* Linha do tempo / stepper das etapas da jornada */}
         {tipo === "Admissão" && jornada.length > 0 && (
-          <ol className="flex flex-col gap-1.5">
+          <ol className="flex flex-wrap gap-1">
             {jornada.map((t) => (
-              <li key={t.id} className="flex items-center gap-2">
+              <li key={t.id} title={`${t.titulo}${t.concluida ? " (feita)" : " (em aberto)"}`}>
                 {t.concluida ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden />
                 ) : (
-                  <Circle className="h-4 w-4 shrink-0 text-amber-500" />
+                  <Circle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
                 )}
-                <span
-                  className={
-                    t.concluida
-                      ? "text-xs text-slate-400 line-through"
-                      : "rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700"
-                  }
-                >
-                  {t.titulo}
-                </span>
+                <span className="sr-only">{t.titulo}{t.concluida ? " (feita)" : " (em aberto)"}</span>
               </li>
             ))}
           </ol>

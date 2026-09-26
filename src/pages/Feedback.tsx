@@ -16,7 +16,7 @@ import { useHoje } from "@/lib/useHoje";
 import { useMemo, useState } from "react";
 import { MessageSquare, Search, Plus, Sparkles, ArrowDownAZ, ChevronDown, ChevronRight, ThumbsUp, Wrench, ClipboardList, CalendarPlus, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
-import { Card, CardBody } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, EmptyState } from "@/components/ui/misc";
 import { Modal } from "@/components/ui/modal";
@@ -222,8 +222,8 @@ export default function Feedback() {
         })}
       </div>
 
-      <Card className="mb-4">
-        <CardBody className="flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        {/* busca e ordenação sem moldura: era um cartão inteiro para uma linha de controles */}
           <div className="relative min-w-[16rem] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou cargo" className="pl-9" />
@@ -246,8 +246,8 @@ export default function Feedback() {
               Limpar filtro
             </button>
           )}
-        </CardBody>
-      </Card>
+        
+      </div>
 
       {lista.length === 0 ? (
         <EmptyState
@@ -269,7 +269,7 @@ export default function Feedback() {
                   <th className="th" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 [&>tr>td]:py-2">
                 {lista.map(({ c, cad }, i) => (
                   <LinhaPessoa
                     key={c.id}

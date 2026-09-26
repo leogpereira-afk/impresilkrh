@@ -1,6 +1,6 @@
 import { movimentacaoPeriodo } from "@/lib/movimentacaoPeriodo";
 import { cicloVigente as escolherCiclo } from "@/lib/cicloVigente";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Users,
@@ -587,6 +587,20 @@ export default function Relatorios() {
     [ativos, drill],
   );
 
+  /* "Entenda as diferenças" fica fechado na tela (26/09/2026, compactação),
+     mas esta tela tem "Imprimir / PDF" e <details> fechado não sai no papel:
+     o PDF perderia justamente a explicação de por que caixa e competência
+     diferem. Na hora de imprimir ele abre sozinho e depois volta como estava. */
+  const refEntenda = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    let estavaAberto = false;
+    const antes = () => { const el = refEntenda.current; if (el) { estavaAberto = el.open; el.open = true; } };
+    const depois = () => { const el = refEntenda.current; if (el) el.open = estavaAberto; };
+    window.addEventListener("beforeprint", antes);
+    window.addEventListener("afterprint", depois);
+    return () => { window.removeEventListener("beforeprint", antes); window.removeEventListener("afterprint", depois); };
+  }, []);
+
   if (ehRestrito) {
     return (
       <div>
@@ -609,6 +623,18 @@ export default function Relatorios() {
         title="Relatórios do RH"
         description="Quadro atual, salários cadastrados e movimentação no período selecionado."
       >
+        {/* Filtro de período no cabeçalho, como no Painel (25/09/2026): controla movimentação e turnover. */}
+        <Select value={filtroMes} onChange={(e) => setFiltroMes(Number(e.target.value))} className="w-36" aria-label="Mês">
+          <option value={0}>Ano inteiro</option>
+          {MESES_PT.map((nome, i) => (
+            <option key={i} value={i + 1}>{nome}</option>
+          ))}
+        </Select>
+        <Select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))} className="w-24" aria-label="Ano">
+          {anosDisponiveis.map((ano) => (
+            <option key={ano} value={ano}>{ano}</option>
+          ))}
+        </Select>
         {/* Levar o relatório para fora: planilha ou papel/PDF. Antes o número só
             existia na tela — para mostrar numa reunião, era anotar na mão. */}
         <button className="btn-outline" onClick={exportarRelatorioCsv} title="Baixar os indicadores em planilha (.csv)">
@@ -618,25 +644,9 @@ export default function Relatorios() {
           <Printer className="h-4 w-4" /> Imprimir / PDF
         </button>
       </PageHeader>
-
-      {/* Filtro de período — controla movimentação e turnover */}
-      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Período</span>
-        <Select value={filtroMes} onChange={(e) => setFiltroMes(Number(e.target.value))} className="w-40" aria-label="Mês">
-          <option value={0}>Ano inteiro</option>
-          {MESES_PT.map((nome, i) => (
-            <option key={i} value={i + 1}>{nome}</option>
-          ))}
-        </Select>
-        <Select value={filtroAno} onChange={(e) => setFiltroAno(Number(e.target.value))} className="w-28" aria-label="Ano">
-          {anosDisponiveis.map((ano) => (
-            <option key={ano} value={ano}>{ano}</option>
-          ))}
-        </Select>
-        <span className="hidden text-xs text-slate-400 sm:inline">
-          Movimentação e turnover: {rotuloPeriodo} · folha e quadro mostram a posição atual
-        </span>
-      </div>
+      <p className="-mt-1 mb-3 hidden text-xs text-slate-400 sm:block">
+        Movimentação e turnover: {rotuloPeriodo} · folha e quadro mostram a posição atual
+      </p>
 
       {/* Cards do topo: não há uma lista única nesta tela para filtrar, então
           cada número abre o detalhe de QUEM o compõe (drill-down). O onClick vai
@@ -705,7 +715,7 @@ export default function Relatorios() {
         />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Card>
           <CardHeader
             title="Folha real (pagamentos)"
@@ -750,17 +760,17 @@ export default function Relatorios() {
             </div>
 
             {/* Explicação das diferenças */}
-            <div className="rounded-lg border border-blue-100 bg-blue-50/40 px-4 py-3 text-xs leading-relaxed text-slate-600">
-              <p className="mb-1 flex items-center gap-1.5 font-semibold text-slate-700">
-                <Info className="h-3.5 w-3.5 text-blue-500" /> Entenda as diferenças
-              </p>
-              <ul className="space-y-1">
+            <details ref={refEntenda} className="rounded-lg border border-blue-100 bg-blue-50/40 px-4 text-xs leading-relaxed text-slate-600">
+              <summary className="min-h-10 cursor-pointer py-2.5 font-semibold text-slate-700">
+                <Info className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-blue-500" />Entenda as diferenças
+              </summary>
+              <ul className="space-y-1 pb-3">
                 <li><strong className="text-slate-700">Salário de carteira</strong> — o salário do contrato (CTPS). É a base fixa, sem adiantamento, extras ou encargos.</li>
                 <li><strong className="text-slate-700">Folha real</strong> — o que de fato foi pago (salário + adiantamento + extras), a partir dos pagamentos que você sobe.</li>
                 <li><strong className="text-slate-700">Caixa</strong> — soma pelo <em>dia em que o dinheiro saiu</em>. É o desembolso real do mês: o adiantamento pago no dia 20 entra no caixa <em>deste</em> mês.</li>
                 <li><strong className="text-slate-700">Competência</strong> — soma pelo <em>mês a que o pagamento se refere</em>. O mesmo adiantamento do dia 20 vai para a competência do <em>mês seguinte</em> — por isso os totais diferem.</li>
               </ul>
-            </div>
+            </details>
 
             {pendentesErp > 0 && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{pendentesErp} título(s) em aberto no ERP, fora dos totais pagos. <Link className="underline" to="/custos?aba=sync">Conferir pendências</Link></p>}
             {folhaReal.temDados ? (
@@ -781,7 +791,7 @@ export default function Relatorios() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
             title="Folha por área"
@@ -868,7 +878,7 @@ export default function Relatorios() {
         </Card>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Card>
           <CardHeader
             title="Desempenho por setor"
@@ -881,9 +891,9 @@ export default function Relatorios() {
           />
           <CardBody className="p-0">
             {desempenhoSetor.mediaGeral == null ? (
-              <div className="p-4">
-                <EmptyState title="Sem notas lançadas" description="Lance avaliações no módulo Desempenho para ver a média por setor." />
-              </div>
+              <p className="p-4 text-sm text-slate-500">
+                <span className="font-medium text-slate-600">Sem notas lançadas.</span> Lance avaliações no módulo Desempenho para ver a média por setor.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -945,7 +955,7 @@ export default function Relatorios() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader
             title="Clima por setor"
@@ -1008,7 +1018,7 @@ export default function Relatorios() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
             title="Movimentação"
@@ -1038,6 +1048,7 @@ export default function Relatorios() {
               serieA={{ nome: "Admissões", cor: "#16a34a" }}
               serieB={{ nome: "Desligamentos", cor: "#dc2626" }}
               onItemClick={drillMovimentacao}
+              vazio="Nenhuma admissão nem desligamento no período."
             />
           </CardBody>
         </Card>
@@ -1058,7 +1069,7 @@ export default function Relatorios() {
         </Card>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Card>
           <CardHeader
             title="Tempo de casa"
@@ -1071,7 +1082,7 @@ export default function Relatorios() {
         </Card>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Card>
           <CardHeader
             title="Viagens e diárias"
@@ -1080,10 +1091,10 @@ export default function Relatorios() {
           />
           <CardBody>
             {dashViagens.count === 0 ? (
-              <EmptyState title="Sem viagens no período" description={`Nenhuma diária registrada em ${rotuloPeriodo}.`} icon={<Plane className="h-8 w-8" />} />
+              <p className="text-sm text-slate-500"><span className="font-medium text-slate-600">Sem viagens no período.</span> Nenhuma diária registrada em {rotuloPeriodo}.</p>
             ) : (
               <>
-                <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
                     { label: "Total em diárias", valor: formatBRL(dashViagens.total) },
                     { label: "Viagens", valor: dashViagens.count },
@@ -1096,7 +1107,7 @@ export default function Relatorios() {
                     </Link>
                   ))}
                 </div>
-                <div className="grid gap-6 lg:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2">
                   <div>
                     <p className="mb-2 text-xs font-medium text-slate-500">Gasto por colaborador (top 10)</p>
                     <BarrasVerticais

@@ -61,7 +61,7 @@ export default function MeuPerfil() {
 
   return (
     <div>
-      <Card className="mb-6">
+      <Card className="mb-3">
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <MinhaFoto c={c} />
           <div className="min-w-0 flex-1">
@@ -144,11 +144,11 @@ function AbaDados({ c }: { c: Colaborador }) {
   const faixa = d.faixaColab(c);
   const enq = d.enquadrarColab(c);
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader title="Dados pessoais" icon={<IdCard className="h-[18px] w-[18px]" />} />
         <CardBody>
-          <dl className="grid grid-cols-2 gap-4">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
             <Field label="CPF" value={formatCPF(c.cpf)} />
             <Field label="Nascimento" value={formatDate(c.dataNascimento)} />
             <Field label="E-mail" value={c.email ?? "—"} className="col-span-2" />
@@ -163,7 +163,7 @@ function AbaDados({ c }: { c: Colaborador }) {
             <Field label="Filhos" value={quantidadeFilhos(c) ?? "Não informado"} />
             <Field label="Cônjuge" value={c.conjugeNome ?? "—"} className="col-span-2" />
           </dl>
-          <p className="mt-4 text-xs text-slate-400">
+          <p className="mt-3 text-xs text-slate-400">
             Estes são os seus dados pessoais. Para correções, procure o RH.
           </p>
         </CardBody>
@@ -172,7 +172,7 @@ function AbaDados({ c }: { c: Colaborador }) {
       <Card>
         <CardHeader title="Dados profissionais" icon={<Briefcase className="h-[18px] w-[18px]" />} />
         <CardBody>
-          <dl className="grid grid-cols-2 gap-4">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
             <Field label="Cargo" value={d.nomeCargo(c)} />
             <Field label="Área" value={d.nomeArea(c.areaId)} />
             <Field label="Nível" value={`${d.nomeNivel(c.nivelId)} · ${senioridade(c.nivelId)}`} />
@@ -313,7 +313,7 @@ function AbaFerias({ colaboradorId }: { colaboradorId: string }) {
       <CardBody>
         <ResumoFerias registros={lista} />
         {lista.length === 0 ? (
-          <EmptyState title="Sem registros de férias" />
+          <p className="mt-3 text-sm text-slate-500">Sem registros de férias</p>
         ) : (
           <div className="space-y-3">
             {lista.map((f) => (
@@ -346,7 +346,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
   const meusPdis = pdis.filter((p) => p.colaboradorId === colaboradorId);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader title="Avaliação de desempenho" subtitle={cicloNome} />
         <CardBody>
@@ -369,7 +369,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
               {aval.planoAcao && <p className="pt-1 text-xs text-slate-500">{aval.planoAcao}</p>}
             </div>
           ) : (
-            <EmptyState title="Sem avaliação registrada" />
+            <p className="text-sm text-slate-500">Sem avaliação registrada</p>
           )}
         </CardBody>
       </Card>
@@ -377,7 +377,7 @@ function AbaDesenvolvimento({ colaboradorId }: { colaboradorId: string }) {
         <CardHeader title="Meu PDI" subtitle="Plano de Desenvolvimento Individual" icon={<Target className="h-[18px] w-[18px]" />} />
         <CardBody className="space-y-3">
           {meusPdis.length === 0 ? (
-            <EmptyState title="Nenhum PDI ativo" />
+            <p className="text-sm text-slate-500">Nenhum PDI ativo</p>
           ) : (
             meusPdis.map((p) => (
               <div key={p.id}>
