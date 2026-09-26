@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
 import { useHoje } from '@/lib/useHoje';
 import {
@@ -17,6 +17,7 @@ import { useColecao, useConfig, salvarConfig } from "@/lib/store";
    Os dois andam sempre juntos (mesmo par de PainelControle.tsx e Custos.tsx). */
 import { enviarConfigNuvem } from "@/lib/sync";
 import { visivel, alternarFoco, esquecerTipo } from "@/lib/focoCalendario";
+import { separarAgenda } from "@/lib/agendaDoMes";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeGerir } from "@/lib/rbac";
@@ -327,6 +328,12 @@ function CalendarioGeral() {
   };
 
   const itensVisiveis = diaSelecionado === null ? itens : itens.filter(it => it.dia === diaSelecionado);
+  /* Agenda de hoje em diante no mês atual (26/09/2026): o que já passou sai do
+     topo, mas fica a um clique. Mudar de mês fecha de novo. */
+  const agenda = separarAgenda(itensVisiveis, ano, mes, diaSelecionado, HOJE);
+  const [verPassados, setVerPassados] = useState(false);
+  useEffect(() => { setVerPassados(false); }, [mes, ano]);
+  const listaAgenda = verPassados ? [...agenda.passados, ...agenda.aVista] : agenda.aVista;
 
   return (
     <div>
@@ -404,6 +411,11 @@ function CalendarioGeral() {
         }
       />
 
+      {/* Agenda NA LATERAL (26/09/2026): pedido do Léo, "com a agenda na lateral,
+          mas menor que a do exemplo". 16-18rem à direita a partir de 1024px;
+          no celular continua embaixo do quadro. */}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_16rem] xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="min-w-0">
       <Card className="mb-4">
         <CardBody className="p-0">
           <div className="grid grid-cols-7 border-b border-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
@@ -506,51 +518,78 @@ function CalendarioGeral() {
         </div>
       </div>
 
-      <div ref={agendaRef} className="scroll-mt-20">
+      </div>
+
+      <div ref={agendaRef} className="scroll-mt-20 lg:sticky lg:top-20">
       <Card colapsavel={false}>
-        <CardHeader title={diaSelecionado === null ? `Agenda de ${MESES_PT[mes]}` : `${diaSelecionado} de ${MESES_PT[mes]}`} subtitle={`${itensVisiveis.length} evento(s) · ${diaSelecionado === null ? "mês completo" : "dia selecionado"}`} action={diaSelecionado !== null && <button className="btn-outline" onClick={() => setDiaSelecionado(null)}>Ver mês completo</button>} icon={<CalendarDays className="h-[18px] w-[18px]" />} />
-        <CardBody>
-          {itensVisiveis.length === 0 ? (
+        <CardHeader
+          title={diaSelecionado === null ? `Agenda de ${MESES_PT[mes]}` : `${diaSelecionado} de ${MESES_PT[mes]}`}
+          subtitle={
+            diaSelecionado !== null ? `${agenda.aVista.length} evento(s) no dia`
+              : agenda.passados.length > 0 || (ano === HOJE.getFullYear() && mes === HOJE.getMonth()) ? `${agenda.aVista.length} de hoje em diante`
+                : `${agenda.aVista.length} evento(s) no mês`
+          }
+          action={diaSelecionado !== null && <button className="btn-outline" onClick={() => setDiaSelecionado(null)}>Ver mês</button>}
+          icon={<CalendarDays className="h-[18px] w-[18px]" />}
+        />
+        {/* Corpo com rolagem própria na lateral: a agenda acompanha a tela
+            (sticky) e não empurra a página quando o mês tem muitos eventos. */}
+        <CardBody className="p-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto">
+          {agenda.passados.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setVerPassados((v) => !v)}
+              className="mb-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-dashed border-slate-200 px-2 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+            >
+              {verPassados ? "Esconder os que já passaram" : `Ver ${agenda.passados.length} que já passaram`}
+            </button>
+          )}
+          {listaAgenda.length === 0 ? (
             /* Vazio POR FILTRO e vazio DE VERDADE são coisas diferentes: dizer
                "nada marcado neste mês" com o filtro ligado faz a pessoa concluir
                que o mês está livre quando ela mesma escondeu o resto. */
-            <EmptyState
-              title={diaSelecionado !== null ? "Nenhum evento neste dia com os filtros atuais" : foco.size > 0 ? "Nada deste tipo neste mês" : "Nada marcado neste mês"}
-              description={foco.size > 0
-                ? `O filtro está mostrando só ${[...foco].join(", ")}. Clique em “Ver todos” na legenda acima.`
+            <p className="text-sm text-slate-500">
+              <span className="font-medium text-slate-600">
+                {diaSelecionado !== null ? "Nenhum evento neste dia com os filtros atuais."
+                  : foco.size > 0 ? "Nada deste tipo."
+                    : agenda.passados.length > 0 ? "Nada mais neste mês."
+                      : "Nada marcado neste mês."}
+              </span>{" "}
+              {foco.size > 0
+                ? `O filtro está mostrando só ${[...foco].join(", ")}. Clique em “Ver todos” na legenda.`
                 : "Use “Novo evento” para adicionar reuniões e datas comemorativas."}
-              icon={<CalendarDays className="h-8 w-8" />}
-            />
+            </p>
           ) : (
-            <div className="space-y-1.5">
-              {itensVisiveis.map((it, i) => {
-                const Icon = iconDe(it.tipo);
+            <ul className="space-y-1">
+              {listaAgenda.map((it, i) => {
                 const ev = it.eventoId ? eventos.find((e) => e.id === it.eventoId) : null;
+                const passou = verPassados && agenda.passados.includes(it);
                 return (
-                  <div key={i} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2">
-                    <span className="flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg text-white" style={{ background: corDe(it.tipo, personalizados) }}>
-                      <span className="text-[8px] uppercase leading-none">{MESES_PT[mes].slice(0, 3)}</span>
-                      <span className="text-sm font-bold leading-none">{it.dia}</span>
+                  <li key={i} className={cn("flex items-start gap-2 rounded-lg px-1.5 py-1.5 hover:bg-slate-50", passou && "opacity-60")}>
+                    {/* O quadradinho É o tipo (cor) e o dia; o nome do tipo vem
+                        escrito embaixo -- sem o ícone ao lado, que tomava 24px
+                        de uma coluna estreita. */}
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white" style={{ background: corDe(it.tipo, personalizados) }}>
+                      {String(it.dia).padStart(2, "0")}
                     </span>
-                    <Icon className="h-4 w-4 shrink-0" style={{ color: corDe(it.tipo, personalizados) }} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-700">{it.titulo}</p>
-                      <p className="break-words text-xs text-slate-500">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
+                      <p className="break-words text-sm font-medium leading-snug text-slate-700">{it.titulo}</p>
+                      <p className="break-words text-[11px] leading-snug text-slate-500">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
+                      {gere && ev && (
+                        <div className="mt-0.5 flex gap-1">
+                          <button className="btn-ghost min-h-10 px-2 text-xs text-slate-500 hover:text-brand" onClick={() => setEdit(ev)}><Pencil className="h-3.5 w-3.5" /> Editar</button>
+                          <button className="btn-ghost min-h-10 px-2 text-xs text-slate-500 hover:text-red-600" onClick={() => setDel(ev)}><Trash2 className="h-3.5 w-3.5" /> Remover</button>
+                        </div>
+                      )}
                     </div>
-                    {gere && ev && (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => setEdit(ev)} aria-label="Editar"><Pencil className="h-4 w-4" /></button>
-                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setDel(ev)} aria-label="Remover"><Trash2 className="h-4 w-4" /></button>
-                      </div>
-                    )}
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </CardBody>
       </Card>
-
+      </div>
       </div>
       {(novo || edit) && <EventoModal onFechar={() => { setNovo(false); setEdit(null); }} editar={edit} />}
       <ConfirmDialog
