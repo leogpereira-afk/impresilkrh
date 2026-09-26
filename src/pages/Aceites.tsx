@@ -15,6 +15,7 @@ import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { formatDate, formatDateLong } from "@/lib/format";
 import type { Aceite, Colaborador, DocumentoInstitucional } from "@/data/types";
+import { AvisoIdentidadeVelha } from "@/components/documentos/aviso-identidade";
 
 const TIPO_ETICA = "Código de Ética";
 const TIPO_PDI = "PDI";
@@ -40,6 +41,9 @@ export default function Aceites() {
         title="Termos e confirmações"
         description="Aceite eletrônico do Código de Ética e ciência dos seus planos de desenvolvimento."
       />
+
+      {/* Missão, visão e valores de 23/09 no Código de Ética: aviso + botão (só RH). */}
+      <AvisoIdentidadeVelha className="mb-4" />
 
       <MeusTermos c={c} />
 
