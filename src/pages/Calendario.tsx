@@ -89,9 +89,15 @@ function CalendarioGeral() {
   const HOJE = hojeFerias;
   const [diaSelecionado, setDiaSelecionado] = useState<number | null>(null);
   const agendaRef = useRef<HTMLDivElement>(null);
+  const corpoAgendaRef = useRef<HTMLDivElement>(null);
   const abrirDia = (dia: number) => {
     setDiaSelecionado(dia);
-    requestAnimationFrame(() => agendaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    /* A partir de 1024px a agenda já está AO LADO do quadro: rolar até ela a
+       cada clique fazia a página pular sem motivo. Só embaixo (celular e
+       tablet) é que o dia clicado precisa trazer a agenda à vista. */
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      requestAnimationFrame(() => agendaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
   };
   const config = useConfig();
   /* `?? []` cria um array NOVO a cada render, e aí o useMemo abaixo nunca
@@ -333,6 +339,10 @@ function CalendarioGeral() {
   const agenda = separarAgenda(itensVisiveis, ano, mes, diaSelecionado, HOJE);
   const [verPassados, setVerPassados] = useState(false);
   useEffect(() => { setVerPassados(false); }, [mes, ano]);
+  /* A div da agenda é a mesma de um mês para o outro: sem isto, a rolagem de
+     setembro continuava valendo em outubro e o mês novo abria no meio, com os
+     primeiros dias escondidos em cima. */
+  useEffect(() => { corpoAgendaRef.current?.scrollTo({ top: 0 }); }, [mes, ano, diaSelecionado, foco]);
   const listaAgenda = verPassados ? [...agenda.passados, ...agenda.aVista] : agenda.aVista;
 
   return (
@@ -520,7 +530,7 @@ function CalendarioGeral() {
 
       </div>
 
-      <div ref={agendaRef} className="scroll-mt-20 lg:sticky lg:top-20">
+      <div ref={agendaRef} className="min-w-0 scroll-mt-20 lg:sticky lg:top-20 print:static">
       <Card colapsavel={false}>
         <CardHeader
           title={diaSelecionado === null ? `Agenda de ${MESES_PT[mes]}` : `${diaSelecionado} de ${MESES_PT[mes]}`}
@@ -534,14 +544,15 @@ function CalendarioGeral() {
         />
         {/* Corpo com rolagem própria na lateral: a agenda acompanha a tela
             (sticky) e não empurra a página quando o mês tem muitos eventos. */}
-        <CardBody className="p-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto">
+        <CardBody className="p-0">
+          <div ref={corpoAgendaRef} className="p-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto print:max-h-none print:overflow-visible">
           {agenda.passados.length > 0 && (
             <button
               type="button"
               onClick={() => setVerPassados((v) => !v)}
               className="mb-2 flex min-h-10 w-full items-center justify-center rounded-lg border border-dashed border-slate-200 px-2 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
             >
-              {verPassados ? "Esconder os que já passaram" : `Ver ${agenda.passados.length} que já passaram`}
+              {verPassados ? "Esconder os que já passaram" : agenda.passados.length === 1 ? "Ver 1 que já passou" : `Ver ${agenda.passados.length} que já passaram`}
             </button>
           )}
           {listaAgenda.length === 0 ? (
@@ -551,8 +562,8 @@ function CalendarioGeral() {
             <p className="text-sm text-slate-500">
               <span className="font-medium text-slate-600">
                 {diaSelecionado !== null ? "Nenhum evento neste dia com os filtros atuais."
-                  : foco.size > 0 ? "Nada deste tipo."
-                    : agenda.passados.length > 0 ? "Nada mais neste mês."
+                  : agenda.passados.length > 0 ? (foco.size > 0 ? "Nada mais deste tipo neste mês." : "Nada mais neste mês.")
+                    : foco.size > 0 ? "Nada deste tipo."
                       : "Nada marcado neste mês."}
               </span>{" "}
               {foco.size > 0
@@ -573,8 +584,8 @@ function CalendarioGeral() {
                       {String(it.dia).padStart(2, "0")}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="break-words text-sm font-medium leading-snug text-slate-700">{it.titulo}</p>
-                      <p className="break-words text-[11px] leading-snug text-slate-500">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
+                      <p className="text-sm font-medium leading-snug text-slate-700 [overflow-wrap:anywhere]">{it.titulo}</p>
+                      <p className="text-[11px] leading-snug text-slate-500 [overflow-wrap:anywhere]">{it.tipo}{it.sub ? ` · ${it.sub}` : ""}</p>
                       {gere && ev && (
                         <div className="mt-0.5 flex gap-1">
                           <button className="btn-ghost min-h-10 px-2 text-xs text-slate-500 hover:text-brand" onClick={() => setEdit(ev)}><Pencil className="h-3.5 w-3.5" /> Editar</button>
@@ -587,6 +598,7 @@ function CalendarioGeral() {
               })}
             </ul>
           )}
+          </div>
         </CardBody>
       </Card>
       </div>
