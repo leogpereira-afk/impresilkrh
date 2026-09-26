@@ -22,6 +22,7 @@ import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import type { DocumentoInstitucional, ArquivoRepositorio } from "@/data/types";
+import { comIdentidadeNova, precisaAtualizarIdentidade, VERSAO_IDENTIDADE_NOVA } from "@/lib/identidadeNoCodigo";
 
 export default function Documentos() {
   const [aba, mudarAba] = useAbaNaUrl("documentos:aba", ["institucionais", "repositorio", "pops"], "institucionais");
@@ -64,7 +65,20 @@ export default function Documentos() {
 /* Conteúdo institucional original — preservado integralmente.                        */
 
 function DocumentosInstitucionais() {
-  const { items } = useColecao("institucionais");
+  const { items, atualizar } = useColecao("institucionais");
+  const sessao = useSessao();
+  const toast = useToast();
+  /* Missão, visão e valores de 23/09/2026 no Código de Ética (pedido do Léo,
+     26/09). O texto gravado na nuvem ainda era o de julho, e escrita em
+     produção é pela tela: o RH vê o aviso e o botão faz a troca -- só da parte
+     de identidade, o resto do Código fica como está. Some sozinho depois. */
+  const etica = items.find((d) => d.id === "codigo-etica");
+  const identidadeVelha = !!etica && ehRH(sessao) && precisaAtualizarIdentidade(etica.blocos);
+  const atualizarIdentidade = () => {
+    if (!etica) return;
+    atualizar(etica.id, { blocos: comIdentidadeNova(etica.blocos), versao: VERSAO_IDENTIDADE_NOVA, atualizadoEm: new Date().toISOString() });
+    toast("Código de Ética atualizado com a missão, a visão e os valores novos.");
+  };
 
   // Documentos institucionais (SST tem página própria — excluído aqui).
   const grupos = useMemo(() => {
@@ -95,6 +109,14 @@ function DocumentosInstitucionais() {
 
   return (
     <div className="space-y-4">
+      {identidadeVelha && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+          <p className="min-w-[14rem] flex-1 text-sm text-amber-900">
+            O Código de Ética ainda mostra a missão, a visão e os valores <strong>antigos</strong>. A troca muda só essa parte; Abrangência e Temas principais ficam como estão.
+          </p>
+          <button type="button" className="btn-primary shrink-0 whitespace-nowrap" onClick={atualizarIdentidade}>Atualizar para os novos</button>
+        </div>
+      )}
       {grupos.map((grupo) => (
         <section key={grupo.categoria}>
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-brand">

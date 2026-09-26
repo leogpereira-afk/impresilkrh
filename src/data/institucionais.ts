@@ -1,5 +1,6 @@
 import type { DocumentoInstitucional } from "./types";
 import { HOJE } from "./_gen";
+import { blocosDaIdentidade, VERSAO_IDENTIDADE_NOVA } from "@/lib/identidadeNoCodigo";
 
 const ts = HOJE.toISOString();
 
@@ -9,23 +10,12 @@ export const INSTITUCIONAIS: DocumentoInstitucional[] = [
     id: "codigo-etica",
     titulo: "Código de Ética e Conduta",
     categoria: "Código de Ética",
-    versao: "2026.1",
+    versao: VERSAO_IDENTIDADE_NOVA,
     descricao: "Principal referencial orientador da conduta na Impresilk Comunicação Visual.",
     atualizadoEm: ts,
     blocos: [
-      { tipo: "subtitulo", texto: "Missão" },
-      { tipo: "paragrafo", texto: "Ajudar negócios a encontrarem sua essência e oportunidades para se diferenciar, crescer e transformar suas marcas por meio de soluções visuais inteligentes, promovendo um ambiente de trabalho inspirador para nossos colaboradores e impacto positivo na comunidade." },
-      { tipo: "subtitulo", texto: "Visão" },
-      { tipo: "paragrafo", texto: "Ser reconhecida como a principal referência em comunicação visual, liderando o mercado por meio de inovações constantes, tecnologia de ponta e uma equipe de profissionais altamente qualificados." },
-      { tipo: "subtitulo", texto: "Valores" },
-      { tipo: "lista", itens: [
-        "Inovação com Inteligência — soluções visuais criativas, funcionais e com propósito.",
-        "Excelência em Execução — qualidade em cada etapa, do projeto à entrega.",
-        "Pessoas em Primeiro Lugar — respeitamos, desenvolvemos e valorizamos nossos colaboradores.",
-        "Relações de Confiança — ética, transparência e responsabilidade.",
-        "Impacto Social e Comunitário — transformar realidades ao nosso redor.",
-        "Sustentabilidade e Consciência — gerar valor com o menor impacto ambiental possível.",
-      ] },
+      // Missão, visão e valores de 23/09/2026 (fonte: data/identidade.ts).
+      ...blocosDaIdentidade(),
       { tipo: "subtitulo", texto: "Abrangência" },
       { tipo: "paragrafo", texto: "Aplica-se a todos os gestores, colaboradores, parceiros, fornecedores e prestadores de serviços. O cumprimento é obrigatório durante toda a vigência do contrato, não sendo permitido alegar desconhecimento de seu conteúdo." },
       { tipo: "subtitulo", texto: "Temas principais" },
