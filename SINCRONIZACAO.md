@@ -8,8 +8,7 @@ Edge Functions) e o app publicado como site estático no **GitHub Pages**.
 > **`https://leogpereira-afk.github.io/impresilkrh/`**, com o projeto Supabase
 > `heveemylixartyijxewh` (banco, RLS, Storage e as Edge Functions `sync` e
 > `admin-users` publicados). Os dados foram migrados e a conta ADMIN_RH do
-> diretor já existe. **O Netlify foi desativado** (site apagado) — o histórico
-> abaixo sobre o Netlify fica só como referência do que foi feito.
+> diretor já existe.
 
 ---
 
@@ -20,8 +19,7 @@ Edge Functions) e o app publicado como site estático no **GitHub Pages**.
 - Cada alteração entra em uma **fila** e é enviada para a nuvem quando há
   internet. Quando o computador volta a ficar online, a fila esvazia sozinha.
 - A nuvem é a Edge Function **`sync`** do Supabase, que guarda os dados na
-  tabela `registros` do Postgres (1 linha por `colecao`+`id`, o mesmo modelo
-  que antes era 1 blob por registro).
+  tabela `registros` do Postgres (1 linha por `colecao`+`id`).
 - Conflitos (a mesma ficha editada em dois lugares) são detectados por
   **data/hora** (`atualizadoEm`) e você decide qual versão manter.
 - **Exige login** (ver `LOGIN.md`) — não existe mais token embutido no build.
@@ -95,24 +93,6 @@ Edge Functions) e o app publicado como site estático no **GitHub Pages**.
 > ambiente (o hub builda este app com `BASE_PATH=/rh/`); sem essa variável, o
 > build usa `/impresilkrh/` (a própria URL do GitHub Pages deste repo).
 
-## Migrar os dados do site antigo (Netlify)
-
-Rode uma vez, com o site antigo ainda no ar:
-
-```bash
-NETLIFY_SITE_URL=https://impresilkrh.netlify.app \
-NETLIFY_ADMIN_USUARIO="leonardo goncalves" \
-NETLIFY_ADMIN_SENHA="senha-do-master-no-site-antigo" \
-SUPABASE_URL=https://SEU-PROJETO.supabase.co \
-SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key \
-node scripts/migrate-from-netlify.mjs
-```
-
-Isso copia todos os registros e a config global para o Supabase e lista as
-contas atuais — as **senhas em si não são migráveis** (o Supabase guarda o
-hash de um jeito diferente), então recrie cada conta em **Painel de Controle
-› Usuários** depois do deploy.
-
 > A cada deploy que mude o "casco" do app, suba o número da versão do cache em
 > `public/sw.js` (constante `CACHE`, ex.: `impresilk-rh-v6` → `v7`). Isso força
 > os navegadores a baixarem a versão nova sem ficar presos a uma antiga.
@@ -121,7 +101,7 @@ hash de um jeito diferente), então recrie cada conta em **Painel de Controle
 
 ## ⚠️ O que mudou de segurança em relação ao modelo antigo
 
-O modelo anterior (Netlify) tinha um `SYNC_TOKEN` **embutido no app**, visível
+O modelo anterior tinha um `SYNC_TOKEN` **embutido no app**, visível
 no DevTools de qualquer pessoa que abrisse o site — servia só para barrar
 acesso casual. Esse modelo **não existe mais**: hoje **toda** sincronização
 exige uma sessão de login válida (Supabase Auth), e o único segredo com poder

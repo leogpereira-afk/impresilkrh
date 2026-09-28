@@ -221,7 +221,7 @@ export async function trySync(): Promise<void> {
         if (e instanceof SessaoAlterada) return;
         marcarErro("envio", e);
         if (eRede(e)) { setStatus("offline"); return; } // para o ciclo; retenta no próximo gatilho
-        // Falha PERMANENTE (token errado, 403 de escopo, 500 do Blobs): conta a
+        // Falha PERMANENTE (token errado, 403 de escopo, 500 do servidor): conta a
         // tentativa. Ao bater o limite, NÃO descarta em silêncio (era assim antes,
         // e a alteração do usuário sumia sem ninguém saber): move para a caixa de
         // falhas, que fica visível e pode ser retentada à mão.

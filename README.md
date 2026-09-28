@@ -96,8 +96,6 @@ supabase/
   config.toml  # declara as Edge Functions p/ a integração Supabase↔GitHub publicar sozinha
   migrations/  # schema do Postgres (registros, config_global, meta, perfis) + RLS
   functions/   # Edge Functions: sync (dados) e admin-users (contas)
-scripts/
-  migrate-from-netlify.mjs  # migração única dos dados do site antigo
 .github/workflows/
   deploy.yml  # build + deploy do site no GitHub Pages
 ```

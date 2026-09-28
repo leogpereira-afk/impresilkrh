@@ -1,6 +1,6 @@
 name: Deploy (GitHub Pages)
 
-# Publica o build da SPA no GitHub Pages (único host — o Netlify foi desativado).
+# Publica o build da SPA no GitHub Pages (único host).
 # O backend é o Supabase (Auth + Postgres + Storage + Edge Functions), acessado
 # direto pelo navegador com a anon key (pública por design — protegida por RLS).
 #
