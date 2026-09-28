@@ -98,6 +98,13 @@ export interface ApoioDaLinha {
   custoDe?: (c: Colaborador) => { total: string; lancamentos: number } | undefined;
   /** Nome de outra pessoa pelo id (gestor, padrinho) — só na ficha completa. */
   nomeDe?: (id: string) => string;
+  /* Faixa e enquadramento CALCULADOS AGORA, pela faixa atual do cargo. O que
+     fica gravado na ficha é o retrato do dia em que alguém mexeu em salário,
+     cargo ou nível: preencher a faixa do cargo depois não o atualiza. A tela
+     já calcula na hora (dominio.enquadrarColab); o papel tem que dizer o mesmo
+     que a tela. Sem estas funções, vale o gravado. */
+  faixaDe?: (c: Colaborador) => { min: number; max: number } | null;
+  enquadramentoDe?: (c: Colaborador) => string;
 }
 
 const texto = (v: unknown) => String(v ?? "").trim();
@@ -216,6 +223,14 @@ export function camposDaFicha(
       ],
     },
     {
+      grupo: "Uniforme",
+      campos: [
+        ["Camisa", [t(c.camisaModelo), t(c.camisaTamanho)].filter(Boolean).join(" ")],
+        ["Calça", t(c.calcaTamanho)],
+        ["Bota", t(c.botaNumero)],
+      ],
+    },
+    {
       grupo: "Contato",
       campos: [
         ["E-mail", t(c.email)],
@@ -274,15 +289,20 @@ export function camposDaFicha(
       campos: [
         ["Salário", dinheiroOuMascara(c.salario, perm.sensiveis, fmtDinheiro)],
         ["Adicionais", dinheiroOuMascara(c.adicionais, perm.sensiveis, fmtDinheiro)],
-        [
-          "Faixa do cargo",
-          c.refMin != null || c.refMax != null
-            ? perm.sensiveis
-              ? [c.refMin != null ? fmtDinheiro(c.refMin) : "?", c.refMax != null ? fmtDinheiro(c.refMax) : "?"].join(" a ")
-              : "•••••"
-            : "",
-        ],
-        ["Enquadramento", t(c.enquadramento)],
+        (() => {
+          const f = apoio.faixaDe ? apoio.faixaDe(c) : null;
+          const min = apoio.faixaDe ? f?.min ?? null : c.refMin ?? null;
+          const max = apoio.faixaDe ? f?.max ?? null : c.refMax ?? null;
+          return [
+            "Faixa do cargo",
+            min != null || max != null
+              ? perm.sensiveis
+                ? [min != null ? fmtDinheiro(min) : "?", max != null ? fmtDinheiro(max) : "?"].join(" a ")
+                : "•••••"
+              : "",
+          ] as Campo;
+        })(),
+        ["Enquadramento", apoio.enquadramentoDe ? t(apoio.enquadramentoDe(c)) : t(c.enquadramento)],
         ["Observação do enquadramento", t(c.observacaoEnquadramento)],
       ],
     },

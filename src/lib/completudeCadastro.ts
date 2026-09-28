@@ -54,6 +54,11 @@ export const CAMPOS_FICHA: CampoFicha[] = [
   { chave: "pontosMelhoria", rotulo: "Pontos de melhoria", peso: "complementar" },
   { chave: "fotoDataUrl", rotulo: "Foto", peso: "complementar" },
   { chave: "cnh", rotulo: "CNH", peso: "complementar" },
+  // Uniforme (28/09/2026): sem eles o RH compra camisa e bota no chute.
+  { chave: "camisaModelo", rotulo: "Modelo da camisa", peso: "complementar" },
+  { chave: "camisaTamanho", rotulo: "Tamanho da camisa", peso: "complementar" },
+  { chave: "calcaTamanho", rotulo: "Tamanho da calça", peso: "complementar" },
+  { chave: "botaNumero", rotulo: "Número da bota", peso: "complementar" },
   { chave: "dataInicioCargo", rotulo: "Início no cargo", peso: "complementar" },
   // Só cobra dados de cônjuge/filhos de quem declarou ter.
   { chave: "conjugeNome", rotulo: "Cônjuge", peso: "complementar" },

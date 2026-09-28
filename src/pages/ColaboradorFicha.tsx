@@ -25,7 +25,7 @@ import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
-import { useDominio, senioridadeDe as senioridade, enquadrar, noQuadro } from "@/lib/dominio";
+import { useDominio, senioridadeDe as senioridade, enquadrar, noQuadro, faixaDefinida } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
@@ -38,7 +38,7 @@ import { putBlob, getBlob, delBlob } from "@/lib/blobstore";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { enviarArquivoNuvem, buscarArquivoNuvem } from "@/lib/sync";
 import { BarrasVerticais } from "@/components/charts/charts";
-import { CATEGORIAS_DOCUMENTO, CATEGORIAS_SST, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES } from "@/lib/constants";
+import { CATEGORIAS_DOCUMENTO, CATEGORIAS_SST, COR_POSICAO_FAIXA, JANELA_ALERTA_DIAS, NIVEIS_RISCO, CATEGORIAS_CNH, ESTILOS_APRENDIZAGEM, EMPRESAS, HUMORES, MODELOS_CAMISA, TAMANHOS_CAMISA, TAMANHOS_CALCA, NUMEROS_BOTA } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 import { situacaoFerias, situacaoExperiencia, inicioDoHistorico } from "@/lib/clt";
 import { vinculosDoColaborador } from "@/lib/vinculos";
@@ -623,9 +623,10 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
     atualizar(c.id, mexeuNoDinheiro
       ? {
         ...patch,
-        refMin: cargoNovo?.faixas[0] ?? null,
-        refMax: cargoNovo?.faixas[4] ?? null,
-        enquadramento: cargoNovo && depois.salario != null ? enquadrar(depois.salario, cargoNovo.faixas) : null,
+        // Cargo ainda sem faixa não grava "R$ 0 a R$ 0" (ver faixaDefinida).
+        refMin: cargoNovo && faixaDefinida(cargoNovo.faixas) ? cargoNovo.faixas[0] : null,
+        refMax: cargoNovo && faixaDefinida(cargoNovo.faixas) ? cargoNovo.faixas[4] : null,
+        enquadramento: cargoNovo && faixaDefinida(cargoNovo.faixas) && depois.salario != null ? enquadrar(depois.salario, cargoNovo.faixas) : null,
       }
       : patch);
     if (mexeuNoDinheiro) registrarMovimentacaoDeCarreira(c, depois, d, criarMov);
@@ -731,6 +732,34 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 aqui brigaria com a lista. Edita no cadastro completo. */}
             {sens && <Field label="Filhos" value={quantidadeFilhos(c) ?? "Não informado"} />}
           </dl>
+          {/* UNIFORME (pedido do Léo, 28/09/2026): para comprar uniforme e EPI
+              sem sair perguntando. Mora em Dados pessoais, num quadro próprio,
+              em vez de numa seção nova: seção nova mexeria na grade da ficha. */}
+          <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Uniforme</p>
+            <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2">
+              <CampoEditavel
+                label="Camisa (modelo)" exibicao={c.camisaModelo || "Não informado"} valor={c.camisaModelo ?? ""}
+                tipo="select" editavel={edit} opcoes={lista(MODELOS_CAMISA, "Não informado")}
+                onSalvar={(v) => gravar({ camisaModelo: v || null })}
+              />
+              <CampoEditavel
+                label="Camisa (tamanho)" exibicao={c.camisaTamanho || "Não informado"} valor={c.camisaTamanho ?? ""}
+                tipo="select" editavel={edit} opcoes={lista(TAMANHOS_CAMISA, "Não informado")}
+                onSalvar={(v) => gravar({ camisaTamanho: v || null })}
+              />
+              <CampoEditavel
+                label="Calça" exibicao={c.calcaTamanho || "Não informado"} valor={c.calcaTamanho ?? ""}
+                tipo="select" editavel={edit} opcoes={lista(TAMANHOS_CALCA, "Não informado")}
+                onSalvar={(v) => gravar({ calcaTamanho: v || null })}
+              />
+              <CampoEditavel
+                label="Bota (número)" exibicao={c.botaNumero || "Não informado"} valor={c.botaNumero ?? ""}
+                tipo="select" editavel={edit} opcoes={lista(NUMEROS_BOTA, "Não informado")}
+                onSalvar={(v) => gravar({ botaNumero: v || null })}
+              />
+            </dl>
+          </div>
           {sens && (c.filhos?.length ?? 0) > 0 && (
             <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Filhos</p>
@@ -906,6 +935,25 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               opcoes={lista(CATEGORIAS_CNH, "Não informado")} onSalvar={(v) => gravar({ cnh: v })}
             />
           </dl>
+          {/* ONDE SE CADASTRA A OPÇÃO QUE FALTA (pedido do Léo, 28/09/2026: "ou
+              saber no local onde eu posso fazer isso"). Aqui a edição é campo a
+              campo, sem lugar para um "+"; o "+" mora no Editar (cadastro
+              completo). Abre em outra aba para não perder a ficha. */}
+          {edit && (
+            <p className="mt-2 flex flex-wrap items-center gap-x-1 text-xs text-slate-500">
+              Falta uma opção na lista?
+              <Link to="/painel-controle?aba=estrutura" target="_blank" rel="noopener"
+                className="inline-flex min-h-10 items-center px-1 font-medium text-brand hover:underline">
+                Áreas, níveis e status
+              </Link>
+              ·
+              <Link to="/painel-controle?aba=cargos" target="_blank" rel="noopener"
+                className="inline-flex min-h-10 items-center px-1 font-medium text-brand hover:underline">
+                Cargos e faixas
+              </Link>
+              <span>(Configurações do RH) ou o "+" no Editar.</span>
+            </p>
+          )}
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {/* Estas duas datas movem prazos legais: a admissão comanda férias e
                 contrato de experiência; o início no cargo, o tempo de casa no

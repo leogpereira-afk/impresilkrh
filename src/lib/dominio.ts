@@ -11,9 +11,19 @@ import { MAPA_SENIORIDADE } from "./constants";
    como cadastro a completar, em vez de sumir no meio do que está certo. */
 export type Enquadramento = "Crítico" | "Abaixo" | "Dentro" | "Acima" | "Sem dados";
 
+/** O cargo tem faixa de verdade? Faixa toda zerada é cargo ainda não
+ *  precificado (o "Novo cargo" nasce assim): não é régua, é falta de régua. */
+export function faixaDefinida(faixas?: readonly number[] | null): faixas is readonly number[] {
+  return !!faixas && faixas.some((v) => v > 0);
+}
+
 // Enquadramento do salário frente à faixa do cargo (N1→N5). Apêndice C.
 export function enquadrar(salario: number | null | undefined, faixas?: number[]): Enquadramento {
   if (salario == null || !faixas || faixas.length === 0) return "Sem dados";
+  // Faixa toda zerada é cargo que ainda não foi precificado (o "Novo cargo"
+  // nasce assim). Comparar com zero dava "Acima" para qualquer salário: selo
+  // de quem ganha além do teto, quando o que falta é o teto.
+  if (!faixaDefinida(faixas)) return "Sem dados";
   const min = faixas[0];
   const max = faixas[faixas.length - 1];
   if (salario < min * 0.92) return "Crítico";

@@ -170,6 +170,16 @@ export interface Colaborador {
   motivacaoAnterior?: number; // registro anterior (tendência)
   cidade?: string;
   cnh?: string; // categoria da CNH: Não possui, A, B, AB, C, D, E, ACC
+  /* TAMANHOS DE UNIFORME (pedido do Léo, 28/09/2026: "na ficha do RH eu
+     preciso do tamanho da bota, calça e camisa, sendo masculina e baby look").
+     Servem para comprar uniforme e EPI sem sair perguntando um por um.
+     Texto, e não número: calça tem numeração (40, 42) e letra (M, G) nas duas
+     grades, e bota "38" tem que continuar "38", não 38.0. As opções estão em
+     lib/constants (MODELOS_CAMISA, TAMANHOS_CAMISA, TAMANHOS_CALCA, NUMEROS_BOTA). */
+  camisaModelo?: string | null; // Masculina, Baby look
+  camisaTamanho?: string | null; // PP a XGG
+  calcaTamanho?: string | null; // 34 a 56, ou PP a XGG
+  botaNumero?: string | null; // 33 a 46
   filhos?: Familiar[];
   contatoEmergencia?: ContatoEmergencia;
 

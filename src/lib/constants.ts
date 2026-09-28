@@ -294,6 +294,19 @@ export const EMPRESAS = ["Impresilk", "Forte Mais"] as const;
 // Categoria de CNH (carteira de motorista)
 export const CATEGORIAS_CNH = ["Não possui", "A", "B", "AB", "C", "D", "E", "ACC"] as const;
 
+// Tamanhos de uniforme (ficha da pessoa). A calça aceita as duas grades,
+// numeração e letra, porque o fornecedor de brim vende por número e o de
+// moletom por letra.
+export const MODELOS_CAMISA = ["Masculina", "Baby look"] as const;
+export const TAMANHOS_CAMISA = ["PP", "P", "M", "G", "GG", "XG", "XGG"] as const;
+export const TAMANHOS_CALCA = [
+  "34", "36", "38", "40", "42", "44", "46", "48", "50", "52", "54", "56",
+  "PP", "P", "M", "G", "GG", "XG", "XGG",
+] as const;
+export const NUMEROS_BOTA = [
+  "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46",
+] as const;
+
 // Treinamento (v3)
 export const TIPOS_TREINAMENTO = ["Obrigatório", "Reciclagem", "Onboarding", "Técnico", "Segurança"] as const;
 export const STATUS_TREINAMENTO = ["Pendente", "Em andamento", "Concluído"] as const;

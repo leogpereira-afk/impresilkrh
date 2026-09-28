@@ -12,7 +12,7 @@ import { Input, Select } from "@/components/ui/form";
 import { MotivacaoRosto } from "@/components/ui/indicadores";
 import { ColaboradorForm } from "@/components/colaboradores/colaborador-form";
 import { useColecao } from "@/lib/store";
-import { useDominio } from "@/lib/dominio";
+import { useDominio, faixaDefinida } from "@/lib/dominio";
 import { quadroPorSituacao, presenteHoje, chaveDeStatus, ausenciasDe } from "@/lib/quadroPorSituacao";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, ehRH, podeVerDadosSensiveis, podeVerGestao } from "@/lib/rbac";
@@ -268,6 +268,11 @@ export default function Colaboradores() {
       ["Status", (c) => d.nomeStatus(c.statusId)],
       ["Enquadramento", (c) => d.enquadrarColab(c)],
       ["Admissão", (c) => (c.dataAdmissao ?? "").slice(0, 10)],
+      // Uniforme: a planilha de compra sai daqui, filtrada por área se quiser.
+      ["Camisa (modelo)", (c) => c.camisaModelo ?? ""],
+      ["Camisa (tamanho)", (c) => c.camisaTamanho ?? ""],
+      ["Calça", (c) => c.calcaTamanho ?? ""],
+      ["Bota", (c) => c.botaNumero ?? ""],
     ];
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     const linhas = [
@@ -372,6 +377,15 @@ export default function Colaboradores() {
           nomeNivel: (id) => d.nomeNivel(id ?? undefined),
           nomeStatus: (id) => d.nomeStatus(id ?? undefined),
           nomeDe: (id) => d.colabById.get(id)?.nome ?? "",
+          // Calculado agora, como na tela (ver ApoioDaLinha em colaboradoresPdf).
+          faixaDe: (c) => {
+            const cargo = c.cargoId ? d.cargoById.get(c.cargoId) : undefined;
+            return cargo && faixaDefinida(cargo.faixas) ? { min: cargo.faixas[0], max: cargo.faixas[4] } : null;
+          },
+          enquadramentoDe: (c) => {
+            const e = d.enquadrarColab(c);
+            return e === "Sem dados" ? "" : e;
+          },
         },
       });
       toast(`${r.linhas} ficha(s) no arquivo.`);

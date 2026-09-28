@@ -10,7 +10,7 @@
 // só mostra o quanto falta para o próximo degrau.
 // ============================================================================
 
-import { enquadrar } from "@/lib/dominio";
+import { enquadrar, faixaDefinida } from "@/lib/dominio";
 
 export interface PosicaoNaFaixa {
   /** 0 a 100 — onde a bolinha fica na régua do piso ao teto. */
@@ -26,6 +26,9 @@ export function posicaoNaFaixa(
 ): PosicaoNaFaixa | null {
   if (salario == null || !Number.isFinite(salario)) return null;
   if (!faixas || faixas.length === 0) return null;
+  // Faixa toda zerada: não há régua para pôr a bolinha. Seguir daqui dizia
+  // "Sem dados" no rótulo e "fora da faixa" na bolinha, ao mesmo tempo.
+  if (!faixaDefinida(faixas)) return null;
 
   const min = faixas[0];
   const max = faixas[faixas.length - 1];

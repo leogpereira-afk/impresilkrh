@@ -366,7 +366,7 @@ function OcupanteLinha({ colab, nivel, faixas }: {
           <span className="text-[10px] tabular-nums text-slate-400">{formatBRL(faixas![faixas!.length - 1])}</span>
         </div>
       ) : (
-        <span className="flex-1 text-xs text-slate-400">Sem salário cadastrado</span>
+        <span className="flex-1 text-xs text-slate-400">{colab.salario == null ? "Sem salário cadastrado" : "Cargo ainda sem faixa salarial"}</span>
       )}
 
       <div className="shrink-0 text-right">

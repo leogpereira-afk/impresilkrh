@@ -7,9 +7,13 @@ import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useColecao, obter, obterDinamico, definirColecaoDinamica } from "@/lib/store";
 import { erroDatasCadastro, camposEmConflito } from "@/lib/edicaoCadastro";
 import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
-import { useDominio, enquadrar, noQuadro } from "@/lib/dominio";
+import { useDominio, enquadrar, noQuadro, faixaDefinida } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
-import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH } from "@/lib/constants";
+import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH, MODELOS_CAMISA, TAMANHOS_CAMISA, TAMANHOS_CALCA, NUMEROS_BOTA } from "@/lib/constants";
+import { OpcoesDaLista } from "./opcoes-da-lista";
+import { areaParaCriar, cargoParaCriar } from "@/lib/novaOpcao";
+import { useSessao } from "@/lib/session";
+import { ehRH } from "@/lib/rbac";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import { desligamentoDeHoje, avisoDoDesligamento, podeDesligar } from "@/lib/desligamento";
@@ -55,6 +59,9 @@ export function ColaboradorForm({
   const d = useDominio();
   const { criar, atualizar, remover: removerColaborador } = useColecao("colaboradores");
   const { criar: criarMov } = useColecao("movimentacoes");
+  const { criar: criarArea } = useColecao("areas");
+  const { criar: criarCargo } = useColecao("cargos");
+  const rh = ehRH(useSessao());
 
   const vazio: Partial<Colaborador> = {
     nome: "", areaId: "producao", statusId: "ativo", nivelId: "N1", qtdFilhos: 0,
@@ -116,6 +123,34 @@ export function ColaboradorForm({
     const fora = d.colabById.get(atual);
     return fora ? [...noQuadroMenosEu, fora] : noQuadroMenosEu;
   };
+  /* O "+" ao lado de Área e Cargo (components/colaboradores/opcoes-da-lista).
+     Nome que já existe não vira outra opção: a que existe fica escolhida. */
+  const novaArea = (nome: string) => {
+    const r = areaParaCriar(nome, d.areas);
+    if ("erro" in r) return r.erro;
+    if ("nova" in r) {
+      try { criarArea(r.nova); } catch (e) { return e instanceof Error ? e.message : "Não deu para criar a área."; }
+      toast(`Área "${r.nova.nome}" criada. A descrição se completa em Configurações do RH, aba Estrutura.`);
+    } else {
+      toast(`A área "${r.existente.nome}" já existia e ficou escolhida.`, "info");
+    }
+    // O cargo só sai se a área MUDOU: digitar o nome da área que já está
+    // escolhida (para conferir se ela existe) não pode apagar o cargo.
+    const id = "nova" in r ? r.nova.id : r.existente.id;
+    set(id === form.areaId ? { areaId: id } : { areaId: id, cargoId: null });
+  };
+  const novoCargo = (nome: string) => {
+    const r = cargoParaCriar(nome, form.areaId, d.cargos, d.areas);
+    if ("erro" in r) return r.erro;
+    if ("nova" in r) {
+      try { criarCargo(r.nova); } catch (e) { return e instanceof Error ? e.message : "Não deu para criar o cargo."; }
+      toast(`Cargo "${r.nova.nome}" criado. As faixas salariais se preenchem em Configurações do RH, aba Cargos & Faixas.`);
+    } else {
+      toast(`O cargo "${r.existente.nome}" já existia nesta área e ficou escolhido.`, "info");
+    }
+    set({ cargoId: "nova" in r ? r.nova.id : r.existente.id });
+  };
+
   const gestoresPossiveis = comOAtual(form.gestorId);
   const padrinhosPossiveis = comOAtual(form.padrinhoId);
 
@@ -245,7 +280,10 @@ export function ColaboradorForm({
     const cargo = form.cargoId ? d.cargoById.get(form.cargoId) : undefined;
     // Recalcula sempre que há cargo+salário; senão limpa (deixa o cálculo dinâmico assumir),
     // em vez de manter um enquadramento antigo "grudado".
-    const enquadramento = cargo && salario != null ? enquadrar(salario, cargo.faixas) : null;
+    // Cargo sem faixa (recém-criado pelo "+", ainda não precificado) não
+    // grava "R$ 0 a R$ 0" nem enquadramento: grava vazio, que é o que é.
+    const comFaixa = cargo && faixaDefinida(cargo.faixas) ? cargo : undefined;
+    const enquadramento = comFaixa && salario != null ? enquadrar(salario, comFaixa.faixas) : null;
     const filhosLimpos = (form.filhos ?? []).filter((x) => x.nome?.trim());
     const ce = form.contatoEmergencia;
     const temContato = !!(ce && (ce.nome?.trim() || ce.telefone?.trim() || ce.parentesco?.trim()));
@@ -256,8 +294,8 @@ export function ColaboradorForm({
       qtdFilhos: JSON.stringify(form.filhos ?? []) === JSON.stringify(retrato?.filhos ?? [])
         ? (form.qtdFilhos ?? filhosLimpos.length) : filhosLimpos.length,
       contatoEmergencia: temContato ? ce : undefined,
-      refMin: cargo?.faixas[0] ?? form.refMin ?? null,
-      refMax: cargo?.faixas[4] ?? form.refMax ?? null,
+      refMin: cargo ? (comFaixa?.faixas[0] ?? null) : (form.refMin ?? null),
+      refMax: cargo ? (comFaixa?.faixas[4] ?? null) : (form.refMax ?? null),
       enquadramento,
       // Reativar (status ativo) limpa a data de desligamento para o colaborador
       // voltar a contar no quadro e o botão "Desligar" reaparecer.
@@ -370,23 +408,34 @@ export function ColaboradorForm({
         <Campo label="Nascimento" estado={estadoDe("dataNascimento")}><Input type="date" value={(form.dataNascimento ?? "").slice(0, 10)} onChange={(e) => set({ dataNascimento: e.target.value })} /></Campo>
 
         <Campo label="Área" estado={estadoDe("areaId")}>
-          <Select value={form.areaId ?? ""} onChange={(e) => set({ areaId: e.target.value, cargoId: null })}>
-            <option value="">Não informada</option>
-            {d.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
-          </Select>
+          <OpcoesDaLista nomeCampo="Área" podeEditar={rh} novoRotulo="Nova área" listaRotulo="áreas"
+            ondeEditar="/painel-controle?aba=estrutura" onCriar={novaArea}>
+            <Select value={form.areaId ?? ""} onChange={(e) => set({ areaId: e.target.value, cargoId: null })}>
+              <option value="">Não informada</option>
+              {d.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </Select>
+          </OpcoesDaLista>
         </Campo>
         <Campo label="Cargo" estado={estadoDe("cargoId")}>
-          <Select value={form.cargoId ?? ""} onChange={(e) => set({ cargoId: e.target.value })}>
-            <option value="">— selecione —</option>
-            {cargosArea.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            {form.cargoId && !cargosArea.some(c => c.id === form.cargoId) && <option value={form.cargoId}>{d.cargoById.get(form.cargoId)?.nome ?? 'Cargo não localizado'} · conferir área</option>}
-          </Select>
+          <OpcoesDaLista nomeCampo="Cargo" podeEditar={rh} novoRotulo="Novo cargo" listaRotulo="cargos"
+            ondeEditar="/painel-controle?aba=cargos" onCriar={novoCargo}>
+            <Select value={form.cargoId ?? ""} onChange={(e) => set({ cargoId: e.target.value })}>
+              <option value="">— selecione —</option>
+              {cargosArea.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              {form.cargoId && !cargosArea.some(c => c.id === form.cargoId) && <option value={form.cargoId}>{d.cargoById.get(form.cargoId)?.nome ?? 'Cargo não localizado'} · conferir área</option>}
+            </Select>
+          </OpcoesDaLista>
         </Campo>
+        {/* Nível e Status sem "+": nível é a régua fixa N1 a N5 (só o nome se
+            edita), e status tem regra que um campo de nome não pergunta (conta
+            no quadro? é ausência?). A engrenagem leva para onde se decide isso. */}
         <Campo label="Nível" estado={estadoDe("nivelId")}>
-          <Select value={form.nivelId ?? ""} onChange={(e) => set({ nivelId: e.target.value })}>
-            <option value="">Não informado</option>
-            {d.niveis.map((n) => <option key={n.id} value={n.id}>{n.codigo} · {n.nome}</option>)}
-          </Select>
+          <OpcoesDaLista nomeCampo="Nível" podeEditar={rh} listaRotulo="níveis" ondeEditar="/painel-controle?aba=estrutura">
+            <Select value={form.nivelId ?? ""} onChange={(e) => set({ nivelId: e.target.value })}>
+              <option value="">Não informado</option>
+              {d.niveis.map((n) => <option key={n.id} value={n.id}>{n.codigo} · {n.nome}</option>)}
+            </Select>
+          </OpcoesDaLista>
         </Campo>
         {/* Texto, não type="number": o campo numérico do navegador devolve VAZIO
             para qualquer coisa que ele não valide — inclusive "2.500,38", que é
@@ -407,9 +456,11 @@ export function ColaboradorForm({
           </Select>
         </Campo>
         <Campo label="Status">
-          <Select value={form.statusId ?? ""} onChange={(e) => set({ statusId: e.target.value })}>
-            {d.status.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
-          </Select>
+          <OpcoesDaLista nomeCampo="Status" podeEditar={rh} listaRotulo="status" ondeEditar="/painel-controle?aba=estrutura">
+            <Select value={form.statusId ?? ""} onChange={(e) => set({ statusId: e.target.value })}>
+              {d.status.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </Select>
+          </OpcoesDaLista>
         </Campo>
 
         {/* DESLIGAMENTO — o campo não existia, e mesmo assim o valor era gravado:
@@ -516,6 +567,39 @@ export function ColaboradorForm({
           <Campo label="Nome"><Input value={form.contatoEmergencia?.nome ?? ""} onChange={(e) => setEmergencia({ nome: e.target.value })} /></Campo>
           <Campo label="Parentesco"><Input value={form.contatoEmergencia?.parentesco ?? ""} onChange={(e) => setEmergencia({ parentesco: e.target.value })} placeholder="Cônjuge, Mãe…" /></Campo>
           <Campo label="Telefone"><Input value={form.contatoEmergencia?.telefone ?? ""} onChange={(e) => setEmergencia({ telefone: e.target.value })} placeholder="(00) 00000-0000" /></Campo>
+        </div>
+      </div>
+
+      {/* UNIFORME (pedido do Léo, 28/09/2026): para comprar uniforme e EPI
+          sem sair perguntando um por um. Camisa tem modelo, masculina ou baby
+          look, porque o mesmo "M" veste diferente nos dois. */}
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Uniforme</p>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Campo label="Camisa (modelo)" estado={estadoDe("camisaModelo")}>
+            <Select value={form.camisaModelo ?? ""} onChange={(e) => set({ camisaModelo: e.target.value || null })}>
+              <option value="">—</option>
+              {MODELOS_CAMISA.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Camisa (tamanho)" estado={estadoDe("camisaTamanho")}>
+            <Select value={form.camisaTamanho ?? ""} onChange={(e) => set({ camisaTamanho: e.target.value || null })}>
+              <option value="">—</option>
+              {TAMANHOS_CAMISA.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Calça" estado={estadoDe("calcaTamanho")}>
+            <Select value={form.calcaTamanho ?? ""} onChange={(e) => set({ calcaTamanho: e.target.value || null })}>
+              <option value="">—</option>
+              {TAMANHOS_CALCA.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
+          <Campo label="Bota (número)" estado={estadoDe("botaNumero")}>
+            <Select value={form.botaNumero ?? ""} onChange={(e) => set({ botaNumero: e.target.value || null })}>
+              <option value="">—</option>
+              {NUMEROS_BOTA.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Campo>
         </div>
       </div>
 
