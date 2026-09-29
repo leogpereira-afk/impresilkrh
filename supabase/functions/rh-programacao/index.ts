@@ -2,8 +2,8 @@
 // explícita do ADMIN_RH. Não cria O.S., não libera carros, não grava folha.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { json, preflight } from '../_shared/cors.ts';
-import { projetarProgramacao, validarEdicao, diasDaOrdem, diaSP, conflitosProgramacao } from '../_shared/programacao.ts';
-import type { EdicaoProgramacao, DadosProgramacao } from '../_shared/programacao.ts';
+import { projetarProgramacao, validarEdicao, diasDaOrdem, diaSP, conflitosProgramacao, mapaPessoasPorId, equipeCanonica, resolverIdPCP } from '../_shared/programacao.ts';
+import type { EdicaoProgramacao, DadosProgramacao, ContextoPessoas, FichaPessoa } from '../_shared/programacao.ts';
 const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 const texto=(v:unknown,max=500)=>typeof v==='string'?v.trim().slice(0,max):'';
 async function lerOrdens(){
@@ -15,6 +15,20 @@ async function lerOrdens(){
     const {data,error}=await q;if(error)throw new Error('Não foi possível consultar o PCP.');
     linhas.push(...data??[]);if(!data||data.length<500)break;depois=data[data.length-1].id;
   }return linhas;
+}
+/* A equipe do PCP grava o ID do RH (6 primeiros dígitos do CPF) desde
+   29/09/2026; a O.S. antiga guarda o nome. Aqui sai o contexto para ler as
+   duas pela PESSOA: ID -> ficha e nome antigo -> ID, com a régua do PCP e os
+   vínculos que o PCP salvou. O CPF vira o ID sem sair da porta. Se as fichas
+   não vierem, a lista sai sem a ligação automática (e diz no console), em
+   vez de não sair. */
+async function lerPessoas(vinculos:unknown):Promise<ContextoPessoas>{
+  const {data,error}=await admin.from('registros').select('id,registro->>nome,registro->>apelido,registro->>cpf,registro->>dataDesligamento').eq('colecao','colaboradores').eq('apagado',false);
+  if(error){console.warn('rh-programacao: fichas do RH indisponíveis',error.message);return {porId:new Map(),idDe:()=>''};}
+  const linhas=(data??[]) as Record<string,unknown>[];
+  const campo=(l:Record<string,unknown>,k:string)=>String(l[k]??(l.registro as Record<string,unknown>|undefined)?.[k]??'');
+  const fichas:FichaPessoa[]=linhas.map(l=>{const d=campo(l,'cpf').replace(/\D/g,'');return {id:d.length===11?d.slice(0,6):'',chave:String(l.id??''),nome:campo(l,'nome').trim(),apelido:campo(l,'apelido').trim(),desligado:!!campo(l,'dataDesligamento').trim()};});
+  return {porId:mapaPessoasPorId(linhas),idDe:resolverIdPCP(fichas,vinculos)};
 }
 Deno.serve(async(req:Request)=>{
   const pre=preflight(req);if(pre)return pre;
@@ -29,10 +43,12 @@ Deno.serve(async(req:Request)=>{
     if(!['listar','salvar'].includes(body?.action))return json({erro:'Ação inválida.'},400);
     const {data:cfg,error:ec}=await admin.from('pcp_config_global').select('config').maybeSingle();if(ec)throw new Error('Não foi possível consultar os cadastros do PCP.');
     const instaladores=Array.isArray(cfg?.config?.instaladores)?cfg.config.instaladores.filter((x:unknown)=>typeof x==='string'):[];
+    const vinculosPCP=Array.isArray(cfg?.config?.vinculosRH)?cfg.config.vinculosRH:[];
     const veiculos=Array.isArray(cfg?.config?.veiculos)?cfg.config.veiculos.filter((x:unknown)=>typeof x==='string'):[];
     if(body.action==='listar'){
       if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(body.mes??''))return json({erro:'Mês inválido.'},400);
-      const ordens=(await lerOrdens()).map(l=>projetarProgramacao({...l.registro,id:l.id},l.atualizado_em)).filter(o=>!o.finalizadaEm||diasDaOrdem(o).some(d=>d.startsWith(body.mes)));
+      const ctx=await lerPessoas(vinculosPCP);
+      const ordens=(await lerOrdens()).map(l=>projetarProgramacao({...l.registro,id:l.id},l.atualizado_em,ctx)).filter(o=>!o.finalizadaEm||diasDaOrdem(o).some(d=>d.startsWith(body.mes)));
       return json({ordens,instaladores,veiculos,consultadoEm:new Date().toISOString()});
     }
     const v=body.edicao;if(!v||typeof v!=='object'||!v.dados||!Array.isArray(v.dados.participantes)||v.dados.participantes.length>60)return json({erro:'Programação inválida.'},400);
@@ -44,23 +60,33 @@ Deno.serve(async(req:Request)=>{
     const {data:pessoas,error:er}=await admin.from('registros').select('id,registro').eq('colecao','colaboradores').eq('apagado',false).in('id',[...v.dados.participantes.map((p:Record<string,unknown>)=>texto(p?.colaboradorId,150)),texto(v.dados.gerenteId,150),perfil.colaborador_id]);
     if(er)throw new Error('Não foi possível conferir as pessoas do RH.');
     const porId=new Map((pessoas??[]).map(p=>[p.id,p.registro]));
+    const ctx=await lerPessoas(vinculosPCP);
+    const idDoColaborador=new Map([...ctx.porId.entries()].map(([id6,p])=>[p.colaboradorId,id6]));
     const participantes=[];
     for(const p of v.dados.participantes){
       const id=texto(p?.colaboradorId,150), pessoa=porId.get(id);
       if(!pessoa||pessoa.dataDesligamento||pessoa.statusId==='inativo')return json({erro:'Uma pessoa não está disponível no cadastro. Confira a equipe.'},400);
-      const nome=texto(pessoa.nome,180), nomePCP=texto(p.nomePCP,180);
-      if(nomePCP!==nome&&!instaladores.includes(nomePCP))return json({erro:'Selecione o nome cadastrado no PCP ou o nome completo do colaborador.'},400);
+      /* O PCP GRAVA O ID (ordem do dono, 29/09/2026). Quem tem CPF entra na
+         equipe pelo ID -- menos quando o nome escolhido é um da lista de
+         instaladores que ainda não leva a ninguém do RH: o celular dele entra
+         por esse nome e só enxergaria a O.S. escrita assim. */
+      const nome=texto(pessoa.nome,180), id6=idDoColaborador.get(id)||'', escolhido=texto(p.nomePCP,180);
+      const daLista=instaladores.includes(escolhido), idDaLista=daLista?ctx.idDe(escolhido):'';
+      if(id6&&idDaLista&&idDaLista!==id6)return json({erro:`"${escolhido}" no PCP é de outra pessoa do RH. Confira o nome de ${nome.split(' ')[0]}.`},400);
+      const nomePCP=id6&&!(daLista&&!idDaLista)?id6:escolhido;
+      if(nomePCP!==id6&&nomePCP!==nome&&!daLista)return json({erro:'Selecione o nome cadastrado no PCP ou o nome completo do colaborador.'},400);
       participantes.push({colaboradorId:id,nome,nomePCP});
     }
     const regras={osValidada:v.dados.regras?.osValidada===true,prazoAcordado:v.dados.regras?.prazoAcordado===true,dossieCompleto:v.dados.regras?.dossieCompleto===true,exportacaoTotal:v.dados.regras?.exportacaoTotal===true,diretorLiberou:v.dados.regras?.diretorLiberou===true,evidencia:texto(v.dados.regras?.evidencia,1500)};
     const gerenteId=texto(v.dados.gerenteId,150);if(gerenteId&&!porId.has(gerenteId))return json({erro:'Gerente não encontrado no RH.'},400);
-    const agora=new Date().toISOString(), antigo=projetarProgramacao({...atual.registro,id:atual.id},atual.atualizado_em);
+    const agora=new Date().toISOString(), antigo=projetarProgramacao({...atual.registro,id:atual.id},atual.atualizado_em,ctx);
     const dados:DadosProgramacao={participantes,fim:texto(v.dados.fim,5),motoristaId:texto(v.dados.motoristaId,150),lugares:v.dados.lugares===null?null:Number(v.dados.lugares),grade:v.dados.grade===true,gerenteId,gerenteNome:texto(porId.get(gerenteId)?.nome,180),orientacoes:texto(v.dados.orientacoes,2000),regras,atualizadoEm:agora,atualizadoPor:perfil.colaborador_id};
     const edicao:EdicaoProgramacao={id:atual.id,versao:atual.atualizado_em,data:texto(v.data,10),hora:texto(v.hora,5),veiculo:texto(v.veiculo,100),dados};
     const erros=validarEdicao(edicao);if(erros.length)return json({erro:erros.join(' ')},400);
-    const assinatura=(o:typeof antigo)=>JSON.stringify([o.data,o.hora,o.veiculo,o.equipe,o.dados.participantes,o.dados.fim,o.dados.motoristaId,o.dados.lugares,o.dados.gerenteId,o.dados.regras]);
-    const candidata={...antigo,...edicao,equipe:participantes.map(p=>p.nomePCP)};
-    const agendaMudou=JSON.stringify([antigo.data,antigo.hora,antigo.equipe,antigo.veiculo])!==JSON.stringify([candidata.data,candidata.hora,candidata.equipe,candidata.veiculo]);
+    // Pela PESSOA: trocar o nome antigo pelo ID da mesma pessoa não é remarcar.
+    const assinatura=(o:typeof antigo)=>JSON.stringify([o.data,o.hora,o.veiculo,equipeCanonica(o),o.dados.participantes.map(p=>p.colaboradorId).sort(),o.dados.fim,o.dados.motoristaId,o.dados.lugares,o.dados.gerenteId,o.dados.regras]);
+    const candidata={...antigo,...edicao,equipe:participantes.map(p=>p.nomePCP),pessoas:participantes.map(p=>p.colaboradorId),rotulos:participantes.map(p=>p.nome)};
+    const agendaMudou=JSON.stringify([antigo.data,antigo.hora,equipeCanonica(antigo),antigo.veiculo])!==JSON.stringify([candidata.data,candidata.hora,equipeCanonica(candidata),candidata.veiculo]);
     if(agendaMudou&&(atual.registro.carroLiberado||atual.registro.horaSaida))return json({erro:'Esta O.S. já tem saída registrada. Confira e reabra a programação no PCP antes de remarcar.'},409);
     if(assinatura(antigo)===assinatura(candidata)&&!v.desconfirmar)dados.confirmado=antigo.dados.confirmado;
     if(v.confirmar){
@@ -69,7 +95,7 @@ Deno.serve(async(req:Request)=>{
       if(!['Telefone','WhatsApp'].includes(v.confirmar.canal)||!texto(v.confirmar.contato,180))return json({erro:'Informe o canal e quem confirmou com você.'},400);
       dados.confirmado={dia:hoje,em:agora,por:perfil.colaborador_id,canal:v.confirmar.canal,contato:texto(v.confirmar.contato,180)};
     }
-    const outras=(await lerOrdens()).map(l=>projetarProgramacao({...l.registro,id:l.id},l.atualizado_em));
+    const outras=(await lerOrdens()).map(l=>projetarProgramacao({...l.registro,id:l.id},l.atualizado_em,ctx));
     const conflitos=conflitosProgramacao(candidata,outras);
     if(conflitos.some(c=>c.certo))return json({erro:`Equipe ou veículo já ocupado no horário: O.S. ${conflitos.filter(c=>c.certo).map(c=>c.numero).join(', ')}. Ajuste a programação.`},409);
     const reg=atual.registro;

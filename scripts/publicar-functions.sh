@@ -57,10 +57,12 @@ for fn in "${FUNCOES[@]}"; do
   # "_shared/cripto.ts"` pegava a mencao em COMENTARIO (e anexava arquivo que o
   # repo nao tem), e um `grep "^import"` perdia o import MULTILINHA -- que e o
   # do painel-auth, e o deploy dele quebrou por isso em 17/08/2026.
+  # Aspas simples OU duplas: rh-programacao e rh-performance importam com
+  # aspas simples, e o padrao so de duplas publicava sem o _shared (29/09/2026).
   while read -r dep; do
     [ -f "_shared/$dep" ] && args+=(-F "file=@_shared/$dep;filename=../_shared/$dep;type=application/typescript")
-  done < <(grep -oE 'from "\.\./_shared/[A-Za-z0-9_.-]+\.ts"' "$fn/index.ts" \
-             | sed -E 's|.*_shared/||; s|"$||' | sort -u)
+  done < <(grep -oE "from ['\"]\.\./_shared/[A-Za-z0-9_.-]+\.ts['\"]" "$fn/index.ts" \
+             | sed -E "s|.*_shared/||; s|['\"]\$||" | sort -u)
 
   # verify_jwt=false de proposito: quem confere a sessao e a propria function
   # (admin.auth.getUser sobre o cracha do Supabase Auth), e o preflight CORS

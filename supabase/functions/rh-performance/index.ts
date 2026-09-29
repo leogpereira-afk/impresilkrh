@@ -3,6 +3,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { json, preflight } from '../_shared/cors.ts';
 import { projetarOrdem } from '../_shared/performanceOS.ts';
+import { mapaPessoasPorId } from '../_shared/programacao.ts';
 
 const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -24,6 +25,10 @@ Deno.serve(async(req:Request)=>{
     try{body=await req.json();}catch{return json({erro:'Pedido inválido.'},400);}
     const competencia=String(body?.competencia??'');
     if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(competencia))return json({erro:'Mês inválido.'},400);
+    // A equipe do PCP grava o ID do RH (29/09/2026): a pessoa já vem ligada.
+    const {data:fichas,error:erroFichas}=await admin.from('registros').select('id,registro->>nome,registro->>cpf').eq('colecao','colaboradores').eq('apagado',false);
+    if(erroFichas)throw new Error('Não foi possível consultar as pessoas do RH.');
+    const porId=mapaPessoasPorId((fichas??[]) as Record<string,unknown>[]);
     const ordens:ReturnType<typeof projetarOrdem>[]=[];
     let depois='';
     for(let pagina=0;;pagina++){
@@ -33,7 +38,7 @@ Deno.serve(async(req:Request)=>{
       const {data,error}=await query;
       if(error)throw new Error('Não foi possível consultar as entregas do PCP.');
       for(const linha of data??[]){
-        const os=projetarOrdem({...linha.registro,id:linha.id},linha.atualizado_em);
+        const os=projetarOrdem({...linha.registro,id:linha.id},linha.atualizado_em,porId);
         if(os.finalizadaEm.startsWith(competencia))ordens.push(os);
       }
       if(!data||data.length<500)break;
