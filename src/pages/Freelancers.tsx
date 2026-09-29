@@ -38,6 +38,8 @@ import { ehRH } from "@/lib/rbac";
 import { useDominio } from "@/lib/dominio";
 import { formatBRL, formatDate, diaLocalISO, parseBRL } from "@/lib/format";
 import type { Freelancer } from "@/data/types";
+import { cpfPendente, exigeCpf, idDoContrato, problemaCpfFreelancer } from "@/lib/freelancerContrato";
+import { idPessoa } from "@/lib/identidade";
 
 const HOJE = diaLocalISO(new Date());
 
@@ -103,6 +105,20 @@ export default function Freelancers() {
       .sort((a, b) => (a.contratoFim || "0000-00-00").localeCompare(b.contratoFim || "0000-00-00"));
   }, [todos, busca, verEncerrados]);
 
+  /* CPF PENDENTE (F07 do PCP): contrato de instalador sem CPF não tem o ID
+     de 6 dígitos, e o PCP não consegue dar o ponto a ele. O contrato antigo
+     não é apagado: fica marcado aqui até alguém preencher. */
+  const semCpf = todos.filter((f) => cpfPendente(f)).length;
+  /* O MESMO ID EM FICHA E CONTRATO, com CPFs diferentes, faz o PCP travar os
+     dois cadastros até alguém conferir. Mesmo CPF é a mesma pessoa (quem foi
+     do quadro e voltou como freelancer), e aí não há nada a conferir. */
+  const idRepetidoCom = (f: Partial<Freelancer>) => {
+    const id = idDoContrato(f);
+    if (!id) return null;
+    const cpf = String(f.cpf ?? "").replace(/\D/g, "");
+    return d.colaboradores.find((c) => idPessoa(c.cpf) === id && String(c.cpf ?? "").replace(/\D/g, "") !== cpf) ?? null;
+  };
+
   const vencendo = todos.filter((f) => {
     if (f.situacao === "encerrado") return false;
     const dd = diasAte(f.contratoFim);
@@ -129,11 +145,19 @@ export default function Freelancers() {
         ?? todos.find((f) => f.id !== form.id && (f.apelido ?? "") === apelido);
       if (outro) return toast(`O apelido "${apelido}" já é de ${outro.nome}. Use outro.`, "erro");
     }
+    /* A MESMA RÉGUA DA PORTA DE DADOS (sync): instalador sem CPF, ou CPF que
+       não confere, não grava. Na edição pela tela o CPF que falta é pedido;
+       encerrar o contrato continua possível, mesmo com o CPF antigo errado. */
+    const gravado = form.id ? todos.find((f) => f.id === form.id) ?? null : null;
+    const erroCpf = problemaCpfFreelancer(form, gravado, { edicaoManual: true });
+    if (erroCpf) return toast(erroCpf, "erro");
     const valor = valorTexto.trim() ? parseBRL(valorTexto) : undefined;
     if (valorTexto.trim() && (valor == null || !Number.isFinite(valor) || /[-−]/.test(valorTexto))) return toast("Informe um valor válido, como 1.250,50.", "erro");
     const dados = { ...form, valor: valor ?? undefined, nome, apelido, situacao: form.situacao ?? "ativo" };
     if (form.id) { atualizar(form.id, dados); toast("Contrato atualizado."); }
     else { criar(dados); toast("Freelancer cadastrado."); }
+    const colide = idRepetidoCom(dados);
+    if (colide) toast(`O ID ${idDoContrato(dados)} também é de ${colide.nome} em Colaboradores, com outro CPF. O PCP trava os dois até o CPF ser conferido.`, "info");
     setForm(null);
   };
 
@@ -160,6 +184,16 @@ export default function Freelancers() {
             <b>{vencendo} contrato{vencendo === 1 ? "" : "s"}</b> {vencendo === 1 ? "vence" : "vencem"} nos
             próximos 15 dias, já venceu ou está sem prazo. Vencido, o acesso fecha sozinho nos sistemas —
             renove aqui se a pessoa continua trabalhando.
+          </span>
+        </div>
+      )}
+
+      {semCpf > 0 && (
+        <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <b>{semCpf} contrato{semCpf === 1 ? "" : "s"} de instalador</b> sem CPF. Sem ele não há o ID de
+            6 dígitos, e o PCP não consegue dar o ponto a essa pessoa. Abra o contrato e preencha o CPF.
           </span>
         </div>
       )}
@@ -208,6 +242,9 @@ export default function Freelancers() {
                         <td className="px-3 py-2">
                           <div className="font-medium text-slate-900">{f.nome}</div>
                           {f.apelido && <div className="font-mono text-xs text-slate-400">{f.apelido}</div>}
+                          {idDoContrato(f) && <div className="font-mono text-xs text-slate-400">ID {idDoContrato(f)}</div>}
+                          {cpfPendente(f) && <Badge variant="warning">CPF pendente</Badge>}
+                          {idRepetidoCom(f) && <Badge variant="danger">ID repetido</Badge>}
                         </td>
                         <td className="px-3 py-2 text-slate-600">{f.funcao || "—"}</td>
                         <td className="px-3 py-2 text-slate-600">
@@ -260,7 +297,10 @@ export default function Freelancers() {
             <Campo label="Função" hint="o que ele faz: instalador, montador, designer">
               <Input value={form.funcao ?? ""} onChange={(e) => setForm({ ...form, funcao: e.target.value })} />
             </Campo>
-            <Campo label="CPF"><Input value={form.cpf ?? ""} onChange={(e) => setForm({ ...form, cpf: e.target.value })} /></Campo>
+            <Campo label="CPF" obrigatorio={exigeCpf(form)}
+              hint={exigeCpf(form) ? "obrigatório para instalador: o ID de 6 dígitos do PCP sai daqui" : undefined}>
+              <Input value={form.cpf ?? ""} inputMode="numeric" onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
+            </Campo>
             <Campo label="CNPJ" hint="quando presta como empresa">
               <Input value={form.cnpj ?? ""} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} />
             </Campo>

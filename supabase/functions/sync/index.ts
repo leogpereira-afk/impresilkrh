@@ -12,6 +12,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json, preflight } from "../_shared/cors.ts";
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
+import { problemaCpfFreelancer } from "../_shared/freelancerContrato.ts";
 
 const PAGINA = 150;
 
@@ -473,6 +474,20 @@ Deno.serve(async (req) => {
         const atual = await consulta(colecao, registro.id);
         if (!ehAdmin && (registro._apagado || (atual && !(colecao === "alteracoes" || colecao === "acessos" ? podeEscreverAlteracao(atual.registro) : podeEscrever(colecao, atual.registro))))) return json({ erro: "Sem permissão para alterar este registro." }, 403);
         if (!ehAdmin && (colecao === "alteracoes" || colecao === "acessos") && atual) return json({ erro: "O histórico existente não pode ser reescrito." }, 403);
+        /* CONTRATO DE INSTALADOR PRECISA DE CPF (F07 do PCP, 29/09/2026): o
+           PCP lê esta coleção e a pessoa lá é o ID que sai do CPF. A mesma
+           régua da tela (Freelancers.tsx), para cliente velho ou envio por
+           fora da tela. Barra só o que cria ou piora a falta, comparando com
+           o contrato gravado (`atual`): o que já está no banco sem CPF aceita a
+           gravação que não mexe no CPF, na função nem na situação (limpar o
+           responsável de ficha apagada, renovar a data) e segue pendente na
+           tela. A importação de retrato não é barrada. Lápide não tem o que
+           conferir. */
+        if (colecao === "freelancers" && !registro._apagado) {
+          const gravado = atual && !atual.apagado ? (atual.registro as Record<string, unknown>) : null;
+          const erroCpf = problemaCpfFreelancer(registro as Record<string, unknown>, gravado);
+          if (erroCpf) return json({ erro: erroCpf }, 422);
+        }
         let gravar: Record<string, unknown> = registro;
         let aviso: string | null = null;
         if (colecao === "performanceCiclos") {
