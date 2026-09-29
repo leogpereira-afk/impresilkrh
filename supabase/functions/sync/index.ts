@@ -22,6 +22,30 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const chave = (colecao: string, id: string) => `${colecao}::${id}`;
+
+/* PARTICIPACAO POR O.S. MORA NA O.S. (F02, 29/09/2026).
+   A apuracao `performanceCiclos` guardava em `entregas` o vinculo de cada O.S.
+   com o percentual de cada pessoa. Esse percentual passou a ser lancado so
+   dentro da O.S., no PCP (divisao com log). Aqui a lista `entregas` fica
+   congelada: o servidor SEMPRE grava a lista guardada (sem linha viva = lista
+   vazia; a lapide nao prende o mes), qualquer que seja a enviada.
+   DESCARTA COM AVISO, NAO RECUSA (revisao F02): um 410 recusava o registro
+   inteiro. O vinculo recusado ficava na copia local (o pull nao rebaixa o que
+   esta na fila ou nas falhas) e toda gravacao seguinte daquele mes, inclusive
+   aprovacao de bonificacao, levava 410 junto. Agora o resto grava pelo
+   rh_gravar_seguro (a conferencia de versao responde conflito primeiro), a
+   resposta traz `aviso`, e o pull seguinte repoe a lista do banco na copia.
+   O aplicarRetrato ("Enviar tudo", importacao) faz o mesmo por ciclo.
+   A comparacao ignora a ordem das chaves: o jsonb do Postgres reordena. */
+const canonico = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(canonico)
+  : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, canonico((v as Record<string, unknown>)[k])]))
+  : v;
+const mesmasEntregas = (enviada: unknown, guardada: unknown) =>
+  JSON.stringify(canonico(enviada ?? [])) === JSON.stringify(canonico(guardada ?? []));
+const entregasGuardadas = (linha: { apagado?: boolean; registro?: Record<string, unknown> } | null | undefined): unknown[] =>
+  linha && !linha.apagado && Array.isArray(linha.registro?.entregas) ? linha.registro!.entregas as unknown[] : [];
+const AVISO_ENTREGAS = "Os vínculos de O.S. enviados foram descartados: a participação é lançada dentro da O.S., no PCP. O restante foi salvo.";
 const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia",
   /* PONTOS FORTES E DE MELHORIA sao AVALIACAO sobre a pessoa, escrita pelo RH.
      Sem entrar aqui, a colecao `colaboradores` (nivel "todos") entregaria a
@@ -449,11 +473,19 @@ Deno.serve(async (req) => {
         const atual = await consulta(colecao, registro.id);
         if (!ehAdmin && (registro._apagado || (atual && !(colecao === "alteracoes" || colecao === "acessos" ? podeEscreverAlteracao(atual.registro) : podeEscrever(colecao, atual.registro))))) return json({ erro: "Sem permissão para alterar este registro." }, 403);
         if (!ehAdmin && (colecao === "alteracoes" || colecao === "acessos") && atual) return json({ erro: "O histórico existente não pode ser reescrito." }, 403);
+        let gravar: Record<string, unknown> = registro;
+        let aviso: string | null = null;
+        if (colecao === "performanceCiclos") {
+          const guardadas = entregasGuardadas(atual);
+          if (!mesmasEntregas((registro as { entregas?: unknown }).entregas, guardadas)) aviso = AVISO_ENTREGAS;
+          gravar = { ...registro, entregas: guardadas };
+        }
         const resultado = await rpc("rh_gravar_seguro", {
-          p_colecao: colecao, p_id: registro.id, p_registro: registro,
+          p_colecao: colecao, p_id: registro.id, p_registro: gravar,
           p_versao: versao(body.baseVersao), p_mutacao: mutacao(), p_apagar: false,
         });
         if (resultado?.conflito && resultado.servidor) resultado.servidor = mascarar(resultado.servidor);
+        if (aviso && resultado && !resultado.conflito) resultado.aviso = aviso;
         return json(resultado);
       }
 
@@ -479,7 +511,36 @@ Deno.serve(async (req) => {
             ? { ...(configDoRetrato as Record<string, unknown>), lancamentosSocio: doBanco.lancamentosSocio }
             : (({ lancamentosSocio: _fora, ...resto }) => resto)(configDoRetrato as Record<string, unknown>);
         }
-        return json(await rpc("rh_aplicar_retrato", { p_dados: dados, p_rev: versao(body.rev), p_substituir: body.substituir === true, p_config: configDoRetrato }));
+        /* O MESMO CONGELAMENTO DO UPSERT (F02): "Enviar tudo" e a importacao por
+           colecao mandam a copia local inteira. Sem isto, um vinculo de O.S. que
+           o upsert descartou (ou uma copia velha) entrava no banco por aqui.
+           Cada ciclo do retrato leva a lista guardada no banco; ciclo sem linha
+           viva entra com lista vazia. A restauracao nao inclui, nao troca e nao
+           remove vinculo. */
+        let dadosDoRetrato = dados as Record<string, unknown>;
+        let avisoRetrato: string | null = null;
+        if ("performanceCiclos" in dadosDoRetrato) {
+          const ciclos = dadosDoRetrato.performanceCiclos;
+          if (!Array.isArray(ciclos)) return json({ erro: "Coleções inválidas." }, 400);
+          const vivos = new Map<string, unknown[]>();
+          for (let inicio = 0; ; inicio += 500) {
+            const { data, error } = await admin.from("registros").select("id, registro, apagado").eq("colecao", "performanceCiclos").eq("apagado", false).order("id").range(inicio, inicio + 499);
+            if (error) throw new Error("Não foi possível conferir as apurações de performance.");
+            for (const l of data ?? []) vivos.set(l.id, entregasGuardadas(l));
+            if (!data || data.length < 500) break;
+          }
+          const repostos: unknown[] = [];
+          for (const c of ciclos) {
+            if (!c || typeof c !== "object" || Array.isArray(c)) { repostos.push(c); continue; }
+            const guardadas = vivos.get(String((c as { id?: unknown }).id)) ?? [];
+            if (!mesmasEntregas((c as { entregas?: unknown }).entregas, guardadas)) avisoRetrato = AVISO_ENTREGAS;
+            repostos.push({ ...(c as Record<string, unknown>), entregas: guardadas });
+          }
+          dadosDoRetrato = { ...dadosDoRetrato, performanceCiclos: repostos };
+        }
+        const aplicado = await rpc("rh_aplicar_retrato", { p_dados: dadosDoRetrato, p_rev: versao(body.rev), p_substituir: body.substituir === true, p_config: configDoRetrato });
+        if (avisoRetrato && aplicado && !aplicado.conflito) aplicado.aviso = avisoRetrato;
+        return json(aplicado);
       }
       case "bulkUpsert":
         return json({ erro: "Atualize esta página para usar a importação protegida por cópia de segurança." }, 409);

@@ -50,3 +50,84 @@ describe('porta de dados de Plantões e Performance',()=>{
     });
   }
 });
+
+/* F02 (29/09/2026): o percentual de cada pessoa na O.S. passa a morar só dentro
+   da O.S., no PCP. A apuração do RH (performanceCiclos) continua lida e editável
+   no resto (critérios, metas, aprovação), mas a lista `entregas` (vínculo de O.S.
+   com participação) não muda mais por aqui: o servidor grava SEMPRE a lista
+   guardada no banco e avisa quando descartou a enviada.
+   Antes (primeira versão da F02) era 410, e o 410 recusava o registro inteiro:
+   o vínculo recusado ficava na cópia local e prendia toda gravação seguinte do
+   mês, inclusive aprovação de bonificação (prova no teste de cliente abaixo). */
+describe('performanceCiclos: participação por O.S. fechada no RH', () => {
+  const entrega = { id: 'e1', colaboradorId: 'pessoa-teste', os: { id: 'os-1', numero: 'TESTE-1', cliente: 'Cliente de teste' }, participacao: 60, complexidade: 2, aceite: true, qualidade: 'sem_retrabalho', prazo: 'no_prazo', evidencia: '', justificativa: '' };
+  const ciclo = (entregas: unknown[] | undefined, extra: Record<string, unknown> = {}) => ({ id: 'ciclo-2026-09', competencia: '2026-09', regra: { orcamento: 0 }, pessoas: [], historico: [], ...(entregas === undefined ? {} : { entregas }), ...extra });
+  const guardado = (entregas: unknown[]): Linha => ({ id: 'ciclo-2026-09', colecao: 'performanceCiclos', apagado: false, registro: ciclo(entregas) });
+  const enviar = (linhas: Linha[], registro: unknown) => { const a = ambiente('ADMIN_RH', linhas, false, true, 'sync'); return { a, r: a.chamar({ action: 'upsert', colecao: 'performanceCiclos', registro, baseVersao: 1, mutationId: 'teste' }) }; };
+  const gravado = (a: ReturnType<typeof ambiente>) => { const c = (a.rpc.mock.calls as unknown as [string, Record<string, unknown>][]).find(x => x[0] === 'rh_gravar_seguro'); expect(c).toBeTruthy(); return c![1].p_registro as Record<string, unknown>; };
+  /* Descarta com aviso: grava o resto (regra muda para 500) com a lista guardada. */
+  const descarta = async (linhas: Linha[], registro: Record<string, unknown>, guardadas: unknown[]) => {
+    const { a, r } = enviar(linhas, { ...registro, regra: { orcamento: 500 } });
+    const resp = await r; expect(resp.status).toBe(200);
+    expect((await resp.json()).aviso).toMatch(/PCP/);
+    const g = gravado(a); expect(g.entregas).toEqual(guardadas); expect(g.regra).toEqual({ orcamento: 500 });
+  };
+  it('incluir vínculo de O.S. numa apuração sem vínculos', () => descarta([guardado([])], ciclo([entrega]), []));
+  it('mudar a participação de um vínculo existente', () => descarta([guardado([entrega])], ciclo([{ ...entrega, participacao: 100 }]), [entrega]));
+  it('remover um vínculo existente', () => descarta([guardado([entrega])], ciclo([]), [entrega]));
+  it('omitir o campo entregas quando o banco tem vínculos (não apaga em silêncio)', () => descarta([guardado([entrega])], ciclo(undefined), [entrega]));
+  it('apuração nova já com vínculo', () => descarta([], ciclo([entrega]), []));
+  it('entregas em formato estranho (objeto no lugar da lista)', () => descarta([guardado([])], ciclo(undefined, { entregas: { e1: entrega } }), []));
+  it('o resto da apuração grava sem aviso: critérios mudam, vínculos iguais (mesmo em outra ordem de chaves)', async () => {
+    const reordenada = Object.fromEntries(Object.entries(entrega).reverse());
+    const { a, r } = enviar([guardado([entrega])], ciclo([reordenada], { regra: { orcamento: 500 } }));
+    const resp = await r; expect(resp.status).toBe(200); expect((await resp.json()).aviso).toBeUndefined();
+    expect(a.rpc).toHaveBeenCalledWith('rh_gravar_seguro', expect.objectContaining({ p_colecao: 'performanceCiclos' }));
+  });
+  it('apuração apagada (lápide com vínculos) recomeça vazia; vínculo novo é descartado', async () => {
+    const lapide = { ...guardado([entrega]), apagado: true };
+    const { a, r } = enviar([lapide], ciclo([]));
+    const resp = await r; expect(resp.status).toBe(200); expect((await resp.json()).aviso).toBeUndefined();
+    expect(gravado(a).entregas).toEqual([]);
+    await descarta([lapide], ciclo([{ ...entrega, id: 'e2' }]), []);
+  });
+  it('apuração nova sem vínculos grava normalmente', async () => {
+    const { a, r } = enviar([], ciclo([]));
+    expect((await r).status).toBe(200);
+    expect(gravado(a).entregas).toEqual([]);
+  });
+  it('conflito de versão responde conflito (não aviso) mesmo com vínculo diferente', async () => {
+    const a = ambiente('ADMIN_RH', [guardado([])], false, true, 'sync');
+    a.rpc.mockImplementationOnce((async () => ({ data: { conflito: true, servidor: { colecao: 'performanceCiclos', registro: ciclo([]) } }, error: null })) as never);
+    const body = await (await a.chamar({ action: 'upsert', colecao: 'performanceCiclos', registro: ciclo([entrega]), baseVersao: 0, mutationId: 'teste' })).json();
+    expect(body.conflito).toBe(true); expect(body.aviso).toBeUndefined(); expect(body.servidor).toBeTruthy();
+  });
+  it('"Enviar tudo" e importação (aplicarRetrato) levam a lista guardada, não a da cópia local', async () => {
+    const outro = { ...guardado([]), id: 'ciclo-2026-08', registro: { ...ciclo([]), id: 'ciclo-2026-08' } };
+    const a = ambiente('ADMIN_RH', [guardado([entrega]), outro], false, true, 'sync');
+    const dados = { performanceCiclos: [
+      { ...ciclo([{ ...entrega, participacao: 100 }, { ...entrega, id: 'e9' }]), regra: { orcamento: 700 } },
+      { ...ciclo([entrega]), id: 'ciclo-2026-08' },
+      { ...ciclo([entrega]), id: 'ciclo-2026-07' },
+    ], plantoes: [{ id: 'p1' }] };
+    const resp = await a.chamar({ action: 'aplicarRetrato', dados, rev: 1, substituir: true });
+    expect(resp.status).toBe(200); expect((await resp.json()).aviso).toMatch(/PCP/);
+    const c = (a.rpc.mock.calls as unknown as [string, Record<string, unknown>][]).find(x => x[0] === 'rh_aplicar_retrato')!;
+    const p = c[1].p_dados as { performanceCiclos: { id: string; entregas: unknown[]; regra: unknown }[]; plantoes: unknown[] };
+    expect(p.performanceCiclos.map(x => [x.id, x.entregas])).toEqual([['ciclo-2026-09', [entrega]], ['ciclo-2026-08', []], ['ciclo-2026-07', []]]);
+    expect(p.performanceCiclos[0].regra).toEqual({ orcamento: 700 });
+    expect(p.plantoes).toEqual([{ id: 'p1' }]);
+  });
+  it('aplicarRetrato sem performanceCiclos não consulta as apurações', async () => {
+    const a = ambiente('ADMIN_RH', [guardado([entrega])], false, true, 'sync');
+    const resp = await a.chamar({ action: 'aplicarRetrato', dados: { plantoes: [] }, rev: 1, substituir: false });
+    expect(resp.status).toBe(200); expect((await resp.json()).aviso).toBeUndefined();
+    const c = (a.rpc.mock.calls as unknown as [string, Record<string, unknown>][]).find(x => x[0] === 'rh_aplicar_retrato')!;
+    expect(c[1].p_dados).toEqual({ plantoes: [] });
+  });
+  it('aplicarRetrato com performanceCiclos fora de lista é recusado antes do banco', async () => {
+    const a = ambiente('ADMIN_RH', [], false, true, 'sync');
+    expect((await a.chamar({ action: 'aplicarRetrato', dados: { performanceCiclos: { x: 1 } }, rev: 1 })).status).toBe(400);
+    expect(a.rpc).not.toHaveBeenCalled();
+  });
+});

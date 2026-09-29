@@ -51,22 +51,15 @@ describe('Equipe do PCP pelo ID do RH', () => {
     expect(modelo.vinculosConferidos(soId)).toBe(true);
   });
 
-  it('salvar grava o ID de quem tem CPF, mesmo que a tela mande o apelido', async () => {
+  /* Os dois testes que ficavam aqui ('salvar grava o ID...' e 'trocar o nome
+     antigo pelo ID não é remarcar') fixavam a GRAVAÇÃO da equipe pelo RH. Desde
+     29/09/2026 (F02) a porta não grava: a equipe mora no PCP, dentro da O.S. O
+     ID continua valendo na leitura (teste acima) e no PCP (tests/pessoas-id). */
+  it('salvar a equipe pelo RH responde 410 e não grava nada, nem pelo ID', async () => {
     const a = ambiente({ equipe: ['Apelido'] });
     const r = await a.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: 'Apelido' }, { colaboradorId: 'q', nome: 'Outra Pessoa', nomePCP: '' }]) });
-    expect(r.status).toBe(200);
-    const gravado = a.updates.mock.calls[0][0].registro;
-    expect(gravado.equipe).toEqual(['200001', '200002']);
-    expect(gravado.programacaoRH.participantes.map((p: { nomePCP: string }) => p.nomePCP)).toEqual(['200001', '200002']);
-  });
-
-  it('trocar o nome antigo pelo ID da mesma pessoa não é remarcar (O.S. já na rua não trava)', async () => {
-    const a = ambiente({ equipe: ['Apelido'], carroLiberado: true, programacaoRH: { participantes: [{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: 'Apelido' }] } });
-    const r = await a.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: 'Apelido' }]) });
-    expect(r.status).toBe(200);
-    expect(a.updates.mock.calls[0][0].registro.equipe).toEqual(['200001']);
-    const b = ambiente({ equipe: ['Apelido'], carroLiberado: true, programacaoRH: { participantes: [{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: 'Apelido' }] } });
-    expect((await b.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'q', nome: 'Outra Pessoa', nomePCP: '' }]) })).status).toBe(409);
+    expect(r.status).toBe(410);
+    expect(a.updates).not.toHaveBeenCalled();
   });
 
   it('Performance do RH: a pessoa gravada por ID conta, com o nome da ficha', () => {
@@ -96,32 +89,26 @@ describe('Régua de pessoa igual à do PCP (mesmos casos de tests/pessoas-id.tes
   });
 });
 
-describe('Revisão de 29/09: nome antigo e ID da mesma pessoa', () => {
-  it('primeira gravação de O.S. programada pelo PCP (nome, sem participantes) não é remarcação', async () => {
-    const a = ambiente({ equipe: ['Pessoa'], carroLiberado: true, confirmacao: 'Confirmado', confPor: 'PCP' });
-    const r = await a.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: '' }]) });
-    expect(r.status).toBe(200);
-    const g = a.updates.mock.calls[0][0].registro;
-    expect(g.equipe).toEqual(['200001']);
-    expect(g.confirmacao).toBe('Confirmado');
-  });
-  it('conflito: a mesma pessoa por nome numa O.S. e por ID na outra', async () => {
-    const outra = { id: 'os-b', colecao: 'os', apagado: false, atualizado_em: versao, registro: { id: 'os-b', numero: 'B', instalacao: { data: '2026-09-14', hora: '07:30', duracaoDias: 1 }, equipe: ['Apelido'], veiculo: 'Outro', finalizadaEm: '' } };
-    const a = ambiente({ equipe: ['200002'], _outras: [outra] });
-    const r = await a.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: '' }]) });
-    expect(r.status).toBe(409);
+/* 'Revisão de 29/09' exercitava o caminho de gravar (primeira gravação, conflito
+   por nome e ID, nome da lista). Com a porta fechada (F02) nenhum desses casos
+   chega a gravar: todos recebem 410. A regra de conflito continua em
+   _shared/programacao.ts (conflitosProgramacao) como referência para o PCP. */
+describe('Porta fechada: os casos da revisão de 29/09 não gravam mais', () => {
+  it.each([
+    ['primeira gravação de O.S. programada pelo PCP', { equipe: ['Pessoa'], carroLiberado: true, confirmacao: 'Confirmado', confPor: 'PCP' }, [{ colaboradorId: 'p', nome: 'Pessoa Teste', nomePCP: '' }]],
+    ['nome da lista que não leva a ninguém do RH', { equipe: ['Carla'] }, [{ colaboradorId: 'q', nome: 'Outra Pessoa', nomePCP: 'Carla' }]],
+    ['nome da lista que é de outra pessoa', { equipe: [] }, [{ colaboradorId: 'q', nome: 'Outra Pessoa', nomePCP: 'Apelido' }]],
+  ])('%s: 410', async (_nome, os, participantes) => {
+    const a = ambiente(os);
+    expect((await a.chamar({ action: 'salvar', edicao: edicao(participantes) })).status).toBe(410);
     expect(a.updates).not.toHaveBeenCalled();
   });
-  it('nome da lista que não leva a ninguém do RH fica como nome (o celular dele entra por ele)', async () => {
-    const a = ambiente({ equipe: ['Carla'] });
-    const r = await a.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'q', nome: 'Outra Pessoa', nomePCP: 'Carla' }]) });
-    expect(r.status).toBe(200);
-    expect(a.updates.mock.calls[0][0].registro.equipe).toEqual(['Carla']);
-  });
-  it('nome da lista que é de outra pessoa é recusado', async () => {
-    const a = ambiente({ equipe: [] });
-    const r = await a.chamar({ action: 'salvar', edicao: edicao([{ colaboradorId: 'q', nome: 'Outra Pessoa', nomePCP: 'Apelido' }]) });
-    expect(r.status).toBe(400);
+  it('o conflito de horário pela PESSOA (nome numa O.S., ID na outra) segue valendo como regra', () => {
+    const porId = modelo.mapaPessoasPorId(FICHAS);
+    const fichas = FICHAS.map(f => ({ id: String((f.registro as { cpf?: string }).cpf ?? '').replace(/\D/g, '').slice(0, 6), chave: f.id, nome: f.registro.nome, apelido: String((f.registro as { apelido?: string }).apelido ?? ''), desligado: false }));
+    const ctx = { porId, idDe: modelo.resolverIdPCP(fichas, [{ apelido: 'Apelido', id: '200001', chave: 'p', nome: 'Pessoa Teste' }]) };
+    const o = (id: string, equipe: string[], veiculo: string) => modelo.projetarProgramacao({ id, numero: id, instalacao: { data: '2026-09-14', hora: '07:30', duracaoDias: 1 }, equipe, veiculo, finalizadaEm: '' }, versao, ctx);
+    expect(modelo.conflitosProgramacao(o('os-a', ['200001'], 'Carro'), [o('os-b', ['Apelido'], 'Outro')]).length).toBeGreaterThan(0);
   });
 });
 

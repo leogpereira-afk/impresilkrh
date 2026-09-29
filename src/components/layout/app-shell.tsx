@@ -231,6 +231,17 @@ export function AppShell() {
     return () => window.removeEventListener("impresilk:armazenamento-cheio", aviso);
   }, [toast]);
 
+  // O servidor aceitou um envio mas descartou parte dele (ex.: vínculo de O.S.
+  // na apuração de performance, que agora é lançado no PCP).
+  useEffect(() => {
+    const aviso = (e: Event) => {
+      const mensagem = (e as CustomEvent<{ mensagem?: string }>).detail?.mensagem;
+      if (mensagem) toast(mensagem, "info");
+    };
+    window.addEventListener("impresilk:aviso-sync", aviso);
+    return () => window.removeEventListener("impresilk:aviso-sync", aviso);
+  }, [toast]);
+
   /* O atalho não dispara com o cursor dentro de campo de texto: Ctrl+K em
      alguns teclados/editores é usado para outra coisa, e roubar a tecla de
      quem está escrevendo uma observação seria pior que não ter atalho. */

@@ -40,3 +40,19 @@ describe('fonte PCP mínima e competência local',()=>{
  it('não vaza dados pessoais ou trata baixa automática como aceite',()=>{const os=projetarOrdem({id:'1',numero:10,finalizadaEm:'2026-09-01T01:00:00Z',equipe:['Ana'],cnpjCpf:'privado',checkinGPS:{lat:123},baixaAutoERP:{em:'hoje'},instalacao:{data:'2026-08-31'}},'agora');expect(os.finalizadaEm).toBe('2026-08-31');expect(os.baixaAutomatica).toBe(true);expect(os).not.toHaveProperty('cnpjCpf');expect(os).not.toHaveProperty('checkinGPS');expect(os).not.toHaveProperty('aceite');});
  it('OS não finalizada não é entrega',()=>expect(projetarOrdem({id:'1',finalizadaEm:''},'').finalizadaEm).toBe(''));
 });
+
+/* F02: a tela não vincula mais O.S. A pendência de quem não tem vínculo não pode
+   mandar "vincular" (ordem sem saída); diz que a participação mora no PCP. */
+describe('apuração sem vínculo de O.S. (F02)', () => {
+  it('a pendência explica que a participação é lançada no PCP e não manda vincular', () => {
+    const c = novoCiclo('2026-10');
+    c.regra.referencia = 'Metas combinadas em reunião de teste.';
+    const p = { ...novaPessoa('pessoa-ficticia'), habitual: 1, meta: 5, colaboracao: [100, 100, 100] as [number, number, number], evidenciaColaboracao: 'fato de teste' };
+    c.pessoas = [p];
+    const a = apurarPessoa(c, p);
+    expect(a.pendencias.some(t => /^Vincule/.test(t))).toBe(false);
+    expect(a.pendencias.some(t => /PCP/.test(t) && /não fecha nota nova/.test(t))).toBe(true);
+    expect(a.pendencias.join(' ')).not.toMatch(/—/);
+    expect(a.nota).toBeNull();
+  });
+});

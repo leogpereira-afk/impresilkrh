@@ -56,6 +56,9 @@ export function validarEntrega(e: EntregaPerformance, ciclo: CicloPerformance): 
   if (['execucao','externo'].includes(e.qualidade)||['atraso','externo'].includes(e.prazo)) { if(!e.justificativa.trim()) erros.push('Explique a causa do retrabalho ou atraso.'); }
   return erros;
 }
+/* F02: a tela nao vincula mais O.S. (a participacao e lancada dentro da O.S.,
+   no PCP). A pendencia antiga mandava vincular, uma ordem sem saida. */
+export const PENDENCIA_SEM_VINCULO = 'Sem vínculo de O.S. nesta apuração. A participação agora é lançada no PCP, e esta tela não fecha nota nova.';
 export function apurarPessoa(ciclo: CicloPerformance, p: PessoaPerformance) {
   const linhas=ciclo.entregas.filter(e=>e.colaboradorId===p.colaboradorId);
   const aceitas=linhas.filter(e=>e.aceite&&e.evidencia.trim());
@@ -72,7 +75,7 @@ export function apurarPessoa(ciclo: CicloPerformance, p: PessoaPerformance) {
     colaboracao:p.colaboracao.length===3&&p.colaboracao.every(n=>n!==null&&Number.isFinite(n)&&n>=0&&n<=100)&&p.evidenciaColaboracao.trim()?p.colaboracao.reduce<number>((a,b)=>a+(b??0),0)/3:null,
   };
   const pendencias=validarRegra(ciclo.regra);
-  if (!linhas.length) pendencias.push('Vincule as O.S. entregues.');
+  if (!linhas.length) pendencias.push(PENDENCIA_SEM_VINCULO);
   if (linhas.some(e=>!e.aceite||!e.evidencia.trim()||e.qualidade==='pendente'||e.prazo==='pendente')) pendencias.push('Confira aceite, evidência, qualidade e prazo das entregas.');
   for(const e of linhas) pendencias.push(...validarEntrega(e,ciclo));
   if(!Number.isFinite(p.habitual)||p.habitual<0||!Number.isFinite(p.meta)||p.meta<=p.habitual) pendencias.push('Defina a referência habitual e uma meta superior a ela.');

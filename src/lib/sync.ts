@@ -191,6 +191,7 @@ export async function trySync(): Promise<void> {
   _syncing = true;
   marcarErro("envio");
   setStatus("syncing");
+  let rebaixar = false;
   try {
     for (const acao of lerFila().filter((a) => !a.conflito)) {
       try {
@@ -208,6 +209,10 @@ export async function trySync(): Promise<void> {
             aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...r, _rhRev: resp.versao } : r)));
           }
           gravarFila(lerFila().filter(a => !(mesma(a, acao) && a.mutationId === acao.mutationId)).map(a => mesma(a, acao) && Number.isSafeInteger(resp.versao) ? { ...a, baseVersao: resp.versao } : a));
+          // O servidor gravou, mas descartou parte do que foi enviado (ex.: vínculos
+          // de O.S. da apuração de performance, que agora moram no PCP). Avisa e
+          // rebaixa a coleção para a cópia local ficar igual ao banco.
+          if (typeof resp.aviso === "string") { avisar(resp.aviso); rebaixar = true; }
 
         } else {
           const resp = await chamar("delete", { colecao: acao.colecao, id: acao.id, baseVersao: acao.baseVersao, mutationId: acao.mutationId });
@@ -239,7 +244,14 @@ export async function trySync(): Promise<void> {
   } finally {
     _syncing = false;
     recalcStatus();
+    if (rebaixar) void pull();
   }
+}
+
+/** Aviso do servidor sobre o que foi descartado de um envio aceito. */
+function avisar(mensagem: string) {
+  if (!temWindow) return;
+  try { window.dispatchEvent(new CustomEvent("impresilk:aviso-sync", { detail: { mensagem } })); } catch { /* ignora */ }
 }
 
 // --------------------------- baixar (pull) ----------------------------------
@@ -425,7 +437,8 @@ export async function enviarTudo(): Promise<void> {
   const filaInicial = new Set(lerFila().map(a => a.mutationId));
   epocaDados++; setStatus("syncing");
   try {
-    await chamar("aplicarRetrato", { dados, rev: revisaoConferida, substituir: true, config: obterConfig() });
+    const r = await chamar("aplicarRetrato", { dados, rev: revisaoConferida, substituir: true, config: obterConfig() });
+    if (typeof r?.aviso === "string") avisar(r.aviso);
     revisaoConferida = null;
     gravarFila(lerFila().filter(a => !filaInicial.has(a.mutationId)));
     gravarMassa([]); guardar(K_MASSA_REV, "{}");
@@ -459,7 +472,7 @@ export async function enviarColecao(nome: string): Promise<boolean> {
     const dados = { [nome]: obterDinamico(nome) };
     const antes = JSON.stringify(dados[nome]);
     const filaInicial = new Set(lerFila().filter(a => a.colecao === nome).map(a => a.mutationId));
-    let r: { rev?: number };
+    let r: { rev?: number; aviso?: string };
     try {
       r = await chamar("aplicarRetrato", { dados, rev, substituir });
     } catch (e) {
@@ -468,6 +481,7 @@ export async function enviarColecao(nome: string): Promise<boolean> {
       if (rev == null) throw e;
       r = await chamar("aplicarRetrato", { dados, rev, substituir });
     }
+    if (typeof r.aviso === "string") avisar(r.aviso);
     const seguintes = basesMassa(); delete seguintes[nome];
     for (const n of lerMassa()) if (n !== nome && (seguintes[n] ?? rev) === rev) seguintes[n] = r.rev ?? rev;
     guardar(K_MASSA_REV, JSON.stringify(seguintes));

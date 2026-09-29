@@ -1,4 +1,8 @@
 // Handler real + banco simulado: nenhuma O.S. ou pessoa de produção é gravada.
+// Desde 29/09/2026 (F02) a porta só LÊ: a programação mora no PCP, dentro da
+// O.S. Os testes que fixavam a gravação (agenda, confirmação, remarcação,
+// disputa de versão) viraram testes de porta fechada: qualquer 'salvar',
+// válido ou forjado, recebe 410 sem ler nem gravar pcp_registros.
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
@@ -10,14 +14,15 @@ const original=()=>({id:'os-a',colecao:'os',apagado:false,atualizado_em:versao,r
 function ambiente(op:{perfil?:string;ativo?:boolean;falha?:boolean;sumiu?:boolean;concorrente?:boolean;inativo?:boolean;fechada?:boolean}={}){
  let handler!:(r:Request)=>Promise<Response>;
  const linha=original();if(op.fechada)linha.registro.finalizadaEm='2026-09-12';
- const updates=vi.fn();
+ const updates=vi.fn(),tabelas:string[]=[];
  const admin={auth:{getUser:async(t:string)=>({data:{user:t==='valido'?{id:'auth'}:null},error:null})},from:(t:string)=>{
+  tabelas.push(t);
   let rows:Record<string,unknown>[]=t==='perfis'?[{user_id:'auth',colaborador_id:'rh',perfil:op.perfil??'ADMIN_RH',ativo:op.ativo??true}]:t==='pcp_config_global'?[{config:{instaladores:['Apelido'],veiculos:['Carro']}}]:t==='registros'?[{id:'p',colecao:'colaboradores',apagado:false,registro:{nome:'Pessoa Teste',statusId:op.inativo?'inativo':'ativo'}},{id:'rh',colecao:'colaboradores',apagado:false,registro:{nome:'Responsável',statusId:'ativo'}}]:op.sumiu?[]:[linha];
   let one=false,patch:Record<string,unknown>|null=null,limite=Infinity;
   const q={select:()=>q,eq:(k:string,v:unknown)=>{rows=rows.filter(r=>r[k]===v);return q;},in:(k:string,v:unknown[])=>{rows=rows.filter(r=>v.includes(r[k]));return q;},gt:(k:string,v:string)=>{rows=rows.filter(r=>String(r[k])>v);return q;},order:()=>q,limit:(n:number)=>{limite=n;return q;},maybeSingle:()=>{one=true;return q;},update:(v:Record<string,unknown>)=>{patch=v;return q;},then:(resolve:(r:unknown)=>unknown)=>{if(patch){updates(patch);rows=op.concorrente?[]:rows.map(r=>({...r,...patch}));}return Promise.resolve(resolve({data:one?rows[0]??null:rows.slice(0,limite),error:op.falha&&t==='pcp_registros'?{message:'falha'}:null}));}};return q;
  }};
  runInNewContext(codigo,{...modelo,createClient:()=>admin,Deno:{env:{get:()=>''},serve:(h:typeof handler)=>{handler=h;}},preflight:()=>null,json:(b:unknown,status=200)=>new Response(JSON.stringify(b),{status}),Request,Response,Date,JSON,Map,Set,Number,String,Array});
- return {updates,chamar:(body:unknown,token='valido')=>handler(new Request('https://teste/rh-programacao',{method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify(body)}))};
+ return {updates,tabelas,chamar:(body:unknown,token='valido')=>handler(new Request('https://teste/rh-programacao',{method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify(body)}))};
 }
 const edicao=()=>({id:'os-a',versao,data:'2026-09-14',hora:'07:30',veiculo:'Carro',dados:{...modelo.dadosVazios(),participantes:[{colaboradorId:'p',nome:'NOME FORJADO',nomePCP:'Apelido'}],lugares:2,motoristaId:'p',gerenteId:'rh'}});
 describe('Servidor da programação',()=>{
@@ -26,13 +31,12 @@ describe('Servidor da programação',()=>{
  it('recusa conta inativa',async()=>expect((await ambiente({ativo:false}).chamar({action:'listar',mes:'2026-09'})).status).toBe(401));
  it('recusa exclusão e ação desconhecida',async()=>{const a=ambiente();expect((await a.chamar({action:'delete',id:'os-a'})).status).toBe(400);expect(a.updates).not.toHaveBeenCalled();});
  it('retorna projeção sem valor, documentos ou fotos',async()=>{const a=ambiente(),r=await a.chamar({action:'listar',mes:'2026-09'}),j=await r.json();expect(r.status).toBe(200);expect(j.ordens).toHaveLength(1);expect(j.ordens[0]).not.toHaveProperty('valor');expect(j.ordens[0]).not.toHaveProperty('fotosRetornoIds');expect(a.updates).not.toHaveBeenCalled();});
- it('grava só agenda, preserva os demais campos e usa identidade do servidor',async()=>{const a=ambiente();const e={...edicao(),cliente:'FORJADO',carroLiberado:true,valor:0};const r=await a.chamar({action:'salvar',edicao:e});expect(r.status).toBe(200);const gravado=a.updates.mock.calls[0][0].registro;expect(gravado).toMatchObject({cliente:'Cliente reservado',valor:920,rev:4,liberadoPCP:false,carroLiberado:false,fotosRetornoIds:['foto'],confirmacao:''});expect(gravado.programacaoRH.participantes[0].nome).toBe('Pessoa Teste');expect(gravado.programacaoRH.atualizadoPor).toBe('rh');});
- it('não cria nem ressuscita O.S.',async()=>{const a=ambiente({sumiu:true});expect((await a.chamar({action:'salvar',edicao:edicao()})).status).toBe(404);expect(a.updates).not.toHaveBeenCalled();});
- it('recusa O.S. concluída',async()=>{const a=ambiente({fechada:true});expect((await a.chamar({action:'salvar',edicao:edicao()})).status).toBe(409);expect(a.updates).not.toHaveBeenCalled();});
- it('detecta versão velha e disputa durante o UPDATE',async()=>{const a=ambiente();expect((await a.chamar({action:'salvar',edicao:{...edicao(),versao:'velha'}})).status).toBe(409);expect(a.updates).not.toHaveBeenCalled();const b=ambiente({concorrente:true});expect((await b.chamar({action:'salvar',edicao:edicao()})).status).toBe(409);});
- it('recusa pessoas inativas ou inventadas',async()=>{const a=ambiente({inativo:true});expect((await a.chamar({action:'salvar',edicao:edicao()})).status).toBe(400);expect(a.updates).not.toHaveBeenCalled();const b=ambiente(),e=edicao();e.dados.participantes[0].colaboradorId='desconhecido';expect((await b.chamar({action:'salvar',edicao:e})).status).toBe(400);expect(b.updates).not.toHaveBeenCalled();});
- it('recusa confirmação futura e confirmação forjada dentro dos dados',async()=>{const a=ambiente(),e=edicao();e.data='2099-09-14';const r=await a.chamar({action:'salvar',edicao:{...e,confirmar:{canal:'Telefone',contato:'Cliente'}}});expect(r.status).toBe(400);expect(a.updates).not.toHaveBeenCalled();const b=ambiente();await b.chamar({action:'salvar',edicao:{...e,dados:{...e.dados,confirmado:{dia:e.data,em:'2099-09-14T10:00:00Z',por:'rh'}}}});expect(b.updates.mock.calls[0][0].registro.programacaoRH.confirmado).toBeUndefined();});
- it('confirmação do dia atualiza RH e PCP com autor verificado',async()=>{const a=ambiente(),e=edicao();e.data=modelo.diaSP();const r=await a.chamar({action:'salvar',edicao:{...e,confirmar:{canal:'WhatsApp',contato:'Cliente de teste'}}});expect(r.status).toBe(200);expect(a.updates.mock.calls[0][0].registro).toMatchObject({confirmacao:'Confirmado',confCanal:'WhatsApp',confPor:'Responsável',carroLiberado:false,programacaoRH:{confirmado:{dia:e.data,por:'rh',canal:'WhatsApp'}}});});
- it('remarcar invalida a confirmação anterior no PCP',async()=>{const a=ambiente(),e=edicao();e.data='2026-09-15';const r=await a.chamar({action:'salvar',edicao:e});expect(r.status).toBe(200);expect(a.updates.mock.calls[0][0].registro).toMatchObject({confirmacao:'',confCanal:'',confHora:'',confPor:''});});
+ const fechada=async(a:ReturnType<typeof ambiente>,body:unknown)=>{const r=await a.chamar(body);expect(r.status).toBe(410);expect((await r.json()).erro).toMatch(/PCP/);expect(a.updates).not.toHaveBeenCalled();expect(a.tabelas).not.toContain('pcp_registros');expect(a.tabelas).not.toContain('pcp_config_global');};
+ it('salvar uma programação válida responde 410 e não toca o PCP',async()=>fechada(ambiente(),{action:'salvar',edicao:edicao()}));
+ it('salvar com campos forjados (cliente, valor, carro liberado) também é recusado',async()=>fechada(ambiente(),{action:'salvar',edicao:{...edicao(),cliente:'FORJADO',carroLiberado:true,valor:0}}));
+ it('confirmação do dia e desconfirmação não passam mais por aqui',async()=>{const e=edicao();e.data=modelo.diaSP();await fechada(ambiente(),{action:'salvar',edicao:{...e,confirmar:{canal:'WhatsApp',contato:'Cliente de teste'}}});await fechada(ambiente(),{action:'salvar',edicao:{...e,desconfirmar:true}});});
+ it('remarcar, O.S. concluída, O.S. sumida e disputa de versão: todas 410, nenhuma chega ao banco',async()=>{const e=edicao();e.data='2026-09-15';await fechada(ambiente(),{action:'salvar',edicao:e});await fechada(ambiente({fechada:true}),{action:'salvar',edicao:edicao()});await fechada(ambiente({sumiu:true}),{action:'salvar',edicao:edicao()});await fechada(ambiente({concorrente:true}),{action:'salvar',edicao:{...edicao(),versao:'velha'}});});
+ it('salvar sem edição ou com edição inválida também é 410 (não vira 400 de validação)',async()=>{await fechada(ambiente(),{action:'salvar'});await fechada(ambiente(),{action:'salvar',edicao:{id:'os-a'}});});
+ it('listar continua depois do fechamento',async()=>{const a=ambiente(),r=await a.chamar({action:'listar',mes:'2026-09'});expect(r.status).toBe(200);expect((await r.json()).ordens[0].id).toBe('os-a');expect(a.updates).not.toHaveBeenCalled();});
  it('erro de consulta não vira lista vazia ou confirmação de salvamento',async()=>{const a=ambiente({falha:true});expect((await a.chamar({action:'listar',mes:'2026-09'})).status).toBe(500);expect(a.updates).not.toHaveBeenCalled();});
 });
