@@ -19,7 +19,7 @@ import { useSessao } from "@/lib/session";
 import { logoutAuth } from "@/lib/auth";
 import { useDominio } from "@/lib/dominio";
 import { useColecao } from "@/lib/store";
-import { modulosLiberados, moduloAcessivel, ehMaster } from "@/lib/rbac";
+import { modulosLiberados, moduloAcessivel, ehMaster, PERFIS_CONTRATOS_FREELANCER } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { SyncButton } from "./sync-button";
 import { BuscaTelas } from "./busca-telas";
@@ -51,7 +51,7 @@ const NAV: ItemNav[] = [
   { href: "/vagas", label: "Recrutamento e vagas", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
   /* Contratos e participação no quadro são informações distintas. O status
      Freelancer do cadastro continua contando no quadro conforme configuração. */
-  { href: "/freelancers", label: "Contratos de freelancer", icon: FileSignature, perfis: RH, grupo: "Pessoas" },
+  { href: "/freelancers", label: "Contratos de freelancer", icon: FileSignature, perfis: PERFIS_CONTRATOS_FREELANCER, grupo: "Pessoas" },
   { href: "/organograma", label: "Organograma", icon: Network, perfis: TODOS, grupo: "Pessoas" },
   { href: "/ponto", label: "Ponto, ausências e advertências", icon: Clock, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/ferias", label: "Férias", icon: Palmtree, perfis: GESTAO, grupo: "Pessoas" },

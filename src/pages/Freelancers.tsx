@@ -23,8 +23,9 @@
  * para encerrá-lo; o freelancer não tem nada além deste campo.
  */
 
-import { useMemo, useState } from "react";
-import { Search, HardHat, Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Search, HardHat, Plus, Pencil, Trash2, AlertTriangle, Handshake } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,8 @@ import { formatBRL, formatDate, diaLocalISO, parseBRL } from "@/lib/format";
 import type { Freelancer } from "@/data/types";
 import { cpfPendente, exigeCpf, idDoContrato, problemaCpfFreelancer } from "@/lib/freelancerContrato";
 import { idPessoa } from "@/lib/identidade";
+import { contratoDaFicha, fichasSemContrato, mesmaPessoa } from "@/lib/freelancerNoQuadro";
+import { Pessoa } from "@/components/ui/pessoa";
 
 const HOJE = diaLocalISO(new Date());
 
@@ -92,6 +95,26 @@ export default function Freelancers() {
   const abrirForm = (f: Partial<Freelancer>) => { setForm(f); setValorTexto(f.valor != null ? String(f.valor) : ""); };
   const [apagando, setApagando] = useState<Freelancer | null>(null);
 
+  /* NO QUADRO COMO FREELANCER, SEM CONTRATO (decisão do Léo de 30/09/2026).
+     A ficha na situação "freelancer" conta no quadro, mas o PCP junta ficha e
+     contrato pelo CPF e, com contrato ativo do mesmo CPF, vale o contrato: é
+     ele que tem o combinado e a data que fecha o acesso. Sem contrato, a
+     pessoa trabalha sem data para acabar. O bloco lista essas fichas e o botão
+     abre o formulário JÁ PREENCHIDO com o que a ficha tem; gravar continua
+     sendo o Salvar, pela mesma régua de CPF. Criado o contrato (ativo ou
+     não), a ficha sai daqui sozinha, porque a lista é recalculada da coleção. */
+  const semContrato = useMemo(() => fichasSemContrato(d.colaboradores, todos), [d.colaboradores, todos]);
+
+  /* Quem chega de Colaboradores tocando numa linha de contrato vem com
+     ?contrato=<id>: a linha dele fica destacada e rola para a vista, para não
+     ter de procurar o nome numa tabela que pode ser longa. */
+  const [params] = useSearchParams();
+  const destacado = params.get("contrato") ?? "";
+  useEffect(() => {
+    if (!destacado) return;
+    document.getElementById(`contrato-${destacado}`)?.scrollIntoView?.({ block: "center" });
+  }, [destacado, todos.length]);
+
   const lista = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return todos
@@ -132,7 +155,7 @@ export default function Freelancers() {
     /* A DATA É OBRIGATÓRIA, e não é burocracia: é ela que fecha o acesso. Sem
        ela, o combinado dura para sempre por omissão — que é como acesso
        esquecido vira porta aberta. O banco recusa igual, do outro lado. */
-    if (!form.contratoFim) return toast("Diga até quando o contrato vale — é essa data que fecha o acesso.", "erro");
+    if (!form.contratoFim) return toast("Diga até quando o contrato vale: é essa data que fecha o acesso.", "erro");
     if (form.contratoInicio && form.contratoFim < form.contratoInicio) {
       return toast("O fim do contrato está antes do início.", "erro");
     }
@@ -140,8 +163,13 @@ export default function Freelancers() {
       .toLowerCase().replace(/[^a-z0-9]/g, "");
     if (apelido) {
       /* Mesmo apelido que um colaborador é duas pessoas disputando a mesma
-         porta — a entrada é única, e o login sai daqui igualzinho. */
-      const outro = d.colaboradores.find((c) => (c.apelido ?? "") === apelido)
+         porta — a entrada é única, e o login sai daqui igualzinho.
+         A MESMA PESSOA NÃO DISPUTA COM ELA MESMA: o contrato criado a partir da
+         ficha (botão "Criar contrato") vem com o apelido dela, e o PCP já trata
+         ficha e contrato do mesmo CPF como uma pessoa só. Sem esta exceção, o
+         formulário preenchido nunca salvaria sem trocar o login de quem já
+         entra nos sistemas com ele. */
+      const outro = d.colaboradores.find((c) => (c.apelido ?? "") === apelido && !mesmaPessoa(c, form))
         ?? todos.find((f) => f.id !== form.id && (f.apelido ?? "") === apelido);
       if (outro) return toast(`O apelido "${apelido}" já é de ${outro.nome}. Use outro.`, "erro");
     }
@@ -182,8 +210,8 @@ export default function Freelancers() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             <b>{vencendo} contrato{vencendo === 1 ? "" : "s"}</b> {vencendo === 1 ? "vence" : "vencem"} nos
-            próximos 15 dias, já venceu ou está sem prazo. Vencido, o acesso fecha sozinho nos sistemas —
-            renove aqui se a pessoa continua trabalhando.
+            próximos 15 dias, já venceu ou está sem prazo. Vencido, o acesso fecha sozinho nos sistemas.
+            Se a pessoa continua trabalhando, renove aqui.
           </span>
         </div>
       )}
@@ -196,6 +224,46 @@ export default function Freelancers() {
             6 dígitos, e o PCP não consegue dar o ponto a essa pessoa. Abra o contrato e preencha o CPF.
           </span>
         </div>
+      )}
+
+      {semContrato.length > 0 && (
+        <Card>
+          <CardBody className="space-y-3">
+            <div className="flex items-start gap-2">
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                <Handshake className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">No quadro como Freelancer, sem contrato</h2>
+                <p className="text-xs text-slate-500">
+                  {semContrato.length === 1 ? "Esta ficha está" : `Estas ${semContrato.length} fichas estão`} na
+                  situação Freelancer em Colaboradores, mas não há contrato com o mesmo CPF. Sem contrato, o PCP
+                  não tem o combinado nem a data que fecha o acesso.
+                </p>
+              </div>
+            </div>
+            <ul className="divide-y divide-slate-100">
+              {semContrato.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <div className="min-w-0">
+                    <Pessoa nome={c.nome} cpf={c.cpf} />
+                    {/* nomeCargo devolve "—" quando a ficha não tem cargo: aqui vira frase. */}
+                    <div className="text-xs text-slate-500">{d.nomeCargo(c) !== "—" ? d.nomeCargo(c) : "Sem cargo na ficha"}</div>
+                  </div>
+                  {podeEditar && (
+                    <button
+                      type="button"
+                      className="btn-outline min-h-10 whitespace-nowrap"
+                      onClick={() => abrirForm(contratoDaFicha(c, diaLocalISO()))}
+                    >
+                      <Plus className="h-4 w-4" /> Criar contrato
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
       )}
 
       <Card>
@@ -219,7 +287,7 @@ export default function Freelancers() {
             <EmptyState
               icon={<HardHat className="h-6 w-6" />}
               title="Nenhum contrato aqui"
-              description="Quem presta serviço sem carteira entra por esta tela — e o acesso dele aos sistemas passa a ter data para acabar."
+              description="Quem presta serviço sem carteira entra por esta tela, e o acesso dele aos sistemas passa a ter data para acabar."
             />
           ) : (
             <div className="overflow-x-auto">
@@ -238,7 +306,11 @@ export default function Freelancers() {
                   {lista.map((f) => {
                     const e = estado(f);
                     return (
-                      <tr key={f.id} className="border-b last:border-0">
+                      <tr
+                        key={f.id}
+                        id={`contrato-${f.id}`}
+                        className={`border-b last:border-0 ${f.id === destacado ? "bg-amber-50 ring-2 ring-inset ring-amber-300" : ""}`}
+                      >
                         <td className="px-3 py-2">
                           <div className="font-medium text-slate-900">{f.nome}</div>
                           {f.apelido && <div className="font-mono text-xs text-slate-400">{f.apelido}</div>}
@@ -246,11 +318,11 @@ export default function Freelancers() {
                           {cpfPendente(f) && <Badge variant="warning">CPF pendente</Badge>}
                           {idRepetidoCom(f) && <Badge variant="danger">ID repetido</Badge>}
                         </td>
-                        <td className="px-3 py-2 text-slate-600">{f.funcao || "—"}</td>
+                        <td className="px-3 py-2 text-slate-600">{f.funcao || "não informada"}</td>
                         <td className="px-3 py-2 text-slate-600">
-                          {f.responsavelId ? d.nomeColab(f.responsavelId) : "—"}
+                          {f.responsavelId ? d.nomeColab(f.responsavelId) : "ninguém"}
                         </td>
-                        <td className="px-3 py-2 tabular-nums text-slate-600">{formatDate(f.contratoFim) || "—"}</td>
+                        <td className="px-3 py-2 tabular-nums text-slate-600">{f.contratoFim ? formatDate(f.contratoFim) : "sem data"}</td>
                         <td className="px-3 py-2"><Badge variant={e.variante}>{e.rotulo}</Badge></td>
                         {podeEditar && (
                           <td className="px-3 py-2 text-right">
@@ -276,7 +348,7 @@ export default function Freelancers() {
         aberto={!!form}
         onFechar={() => setForm(null)}
         titulo={form?.id ? "Editar contrato" : "Novo freelancer"}
-        descricao="Ele não entra no quadro, na folha nem no organograma. O que se registra aqui é o combinado — e a data em que ele acaba."
+        descricao="Ele não entra no quadro, na folha nem no organograma. O que se registra aqui é o combinado e a data em que ele acaba."
         largura="max-w-2xl"
         rodape={
           <>
@@ -287,10 +359,18 @@ export default function Freelancers() {
       >
         {form && (
           <div className="grid gap-3 sm:grid-cols-2">
+            {/* Veio do botão "Criar contrato": diz de onde saíram os dados e o
+                que falta decidir. Nada foi gravado ainda. */}
+            {!form.id && form.exColaboradorId && (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 sm:col-span-2">
+                Preenchido com a ficha de {d.nomeColab(form.exColaboradorId)} em Colaboradores. Escolha a função e
+                a data de fim, confira o resto e salve. Nada foi gravado ainda.
+              </p>
+            )}
             <Campo label="Nome" obrigatorio className="sm:col-span-2">
               <Input value={form.nome ?? ""} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
             </Campo>
-            <Campo label="Apelido (login nos sistemas)" hint="minúsculo, sem acento — é com ele que a pessoa entra">
+            <Campo label="Apelido (login nos sistemas)" hint="minúsculo, sem acento: é com ele que a pessoa entra">
               <Input value={form.apelido ?? ""} placeholder="ex.: osmane"
                 onChange={(e) => setForm({ ...form, apelido: e.target.value })} />
             </Campo>

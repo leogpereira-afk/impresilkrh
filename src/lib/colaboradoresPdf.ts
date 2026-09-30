@@ -25,8 +25,9 @@
 // documento usa o mesmo molde de lib/performancePdf.ts (jsPDF carregado sob
 // demanda, para não pesar o bundle de quem nunca exporta).
 // ============================================================================
-import type { Colaborador } from "@/data/types";
+import type { Colaborador, Freelancer } from "@/data/types";
 import { idPessoa } from "./identidade";
+import { COLUNA_CONTRATO, camposDoContrato, celulaDoContrato } from "./freelancerNoQuadro";
 
 export type VisaoLinha = "cadastro" | "custo" | "comportamental";
 
@@ -73,12 +74,23 @@ export function descreverCobertura(
   mostrados: number,
   noEscopo: number,
   totalCadastro: number,
+  contratos?: { mostrados: number; foraDoRecorte: number },
 ): string {
   const foraDoEscopo = Math.max(0, totalCadastro - noEscopo);
   const filtrados = Math.max(0, noEscopo - mostrados);
   const partes = [`${mostrados} colaborador(es) neste documento`];
   if (filtrados > 0) partes.push(`${filtrados} fora pelo recorte acima`);
   if (foraDoEscopo > 0) partes.push(`${foraDoEscopo} fora do seu acesso ou da direção`);
+  /* CONTRATO DE FREELANCER CONTA À PARTE (decisão do Léo de 30/09/2026). No
+     filtro Freelancer a lista mostra também os contratos ativos, que não são do
+     quadro. Somá-los aos colaboradores faria o "fora pelo recorte" mentir (a
+     conta é sobre as fichas do escopo), então eles ganham a frase deles. */
+  if (contratos && contratos.mostrados > 0) {
+    partes.push(`mais ${contratos.mostrados} contrato(s) de freelancer, fora do quadro`);
+  }
+  if (contratos && contratos.foraDoRecorte > 0) {
+    partes.push(`${contratos.foraDoRecorte} contrato(s) fora pelo recorte acima`);
+  }
   return partes.join(" · ");
 }
 
@@ -159,6 +171,29 @@ export function linhaDoColaborador(c: Colaborador, visao: VisaoLinha, apoio: Apo
     ou(texto(c.email)),
     ou(texto(c.telefone)),
   ];
+}
+
+/**
+ * A linha de um contrato de freelancer, nas colunas da visão.
+ *
+ * Só no filtro Freelancer, e só para quem abre /freelancers (a tela decide e
+ * manda os contratos já recortados). O contrato não tem área, nível, admissão,
+ * custo nem perfil: essas células saem VAZIAS, e não com o traço das fichas,
+ * porque o traço diz "não preenchido na ficha" e aqui não há ficha.
+ */
+export function linhaDoContrato(f: Freelancer, visao: VisaoLinha): string[] {
+  const campos = camposDoContrato(f);
+  return COLUNAS[visao].map((col) => campos[col] ?? "");
+}
+
+/** Os contratos que a tela mostrava, para o papel mostrar os mesmos. */
+export interface ContratosDoPdf {
+  /** Ficha da lista → contrato dela (a tela mostrava a tag "Contrato"). */
+  comContrato: Map<string, Freelancer>;
+  /** Contratos em linha própria, na ordem da tela. */
+  avulsos: Freelancer[];
+  /** Quantos a busca ou a área tiraram da lista. */
+  foraDoRecorte: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +403,8 @@ export interface PedidoDePdf {
   quem?: string;
   /** Injetável para teste; em produção é a hora do clique. */
   agora?: Date;
+  /** Só no filtro Freelancer, para quem vê contratos. Sem ele, nada muda. */
+  contratos?: ContratosDoPdf;
 }
 
 export interface PdfMontado {
@@ -391,10 +428,27 @@ export interface PdfMontado {
 export async function montarColaboradoresPdf(p: PedidoDePdf): Promise<PdfMontado> {
   const agora = p.agora ?? new Date();
   const recorte = descreverFiltros(p.filtros);
-  const cobertura = descreverCobertura(p.lista.length, p.noEscopo, p.totalCadastro);
+  const k = p.contratos;
+  const temContrato = !!k && (k.avulsos.length > 0 || k.comContrato.size > 0);
+  const cobertura = descreverCobertura(
+    p.lista.length, p.noEscopo, p.totalCadastro,
+    k ? { mostrados: k.avulsos.length, foraDoRecorte: k.foraDoRecorte } : undefined,
+  );
   const arquivo = nomeDoArquivo(p.visao, agora.toISOString());
-  const head = COLUNAS[p.visao];
-  const body = p.lista.map((c) => linhaDoColaborador(c, p.visao, p.apoio));
+  /* O papel mostra o que a tela mostrava. Com contrato na lista, uma coluna a
+     mais: nela a ficha que tem contrato diz até quando ele vale (a tag
+     "Contrato" da tela), e a linha de contrato diz o mesmo dela. Sem contrato,
+     as colunas são as de sempre. */
+  const head = temContrato ? [...COLUNAS[p.visao], COLUNA_CONTRATO] : COLUNAS[p.visao];
+  const body = [
+    ...p.lista.map((c) => {
+      const linha = linhaDoColaborador(c, p.visao, p.apoio);
+      if (!temContrato) return linha;
+      const doContrato = k.comContrato.get(c.id);
+      return [...linha, doContrato ? celulaDoContrato(doContrato) : ""];
+    }),
+    ...(temContrato ? k.avulsos.map((f) => [...linhaDoContrato(f, p.visao), celulaDoContrato(f)]) : []),
+  ];
 
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
@@ -416,15 +470,20 @@ export async function montarColaboradoresPdf(p: PedidoDePdf): Promise<PdfMontado
   doc.setFontSize(10);
   doc.setTextColor(80);
   doc.text(recorte, 14, 23);
-  doc.text(cobertura, 14, 28.5);
+  /* A cobertura pode passar da largura quando a lista tem contrato (ganha
+     duas frases): quebra em linhas em vez de sair cortada na margem, e o
+     resto do cabeçalho desce junto. */
+  const linhasCobertura: string[] = doc.splitTextToSize(cobertura, doc.internal.pageSize.getWidth() - 28);
+  doc.text(linhasCobertura, 14, 28.5);
+  const desce = (linhasCobertura.length - 1) * 4.5;
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Gerado em ${agora.toLocaleString("pt-BR")}${p.quem ? ` por ${p.quem}` : ""}`, 14, 34);
+  doc.text(`Gerado em ${agora.toLocaleString("pt-BR")}${p.quem ? ` por ${p.quem}` : ""}`, 14, 34 + desce);
 
   autoTable(doc, {
     head: [head],
     body: body.length ? body : [head.map((_, i) => (i === 0 ? "Nenhum colaborador neste recorte." : ""))],
-    startY: 39,
+    startY: 39 + desce,
     styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
     headStyles: { fillColor: [22, 51, 79], textColor: 255, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [246, 248, 250] },
@@ -488,6 +547,20 @@ export async function montarFichasPdf(
   doc.setTextColor(120);
   doc.text(`Gerado em ${agora.toLocaleString("pt-BR")}${p.quem ? ` por ${p.quem}` : ""}`, 14, 38);
   doc.text("Cada ficha traz apenas os campos preenchidos. A foto do cadastro não entra neste papel.", 14, 43.5);
+  /* No filtro Freelancer a lista da tela mostra também contratos, que não têm
+     ficha de cadastro. O maço não os inventa, mas diz que ficaram de fora:
+     calado, ele se leria como "a lista era só isto". */
+  const semFicha = p.contratos?.avulsos.length ?? 0;
+  if (semFicha > 0) {
+    doc.text(
+      doc.splitTextToSize(
+        `${semFicha} contrato(s) de freelancer da lista não entram: contrato não tem ficha de cadastro. O combinado está em Contratos de freelancer.`,
+        larg - 28,
+      ),
+      14,
+      49,
+    );
+  }
 
   p.lista.forEach((c) => {
     // Cada ficha COMEÇA em página nova — papel de RH é separado e entregue por

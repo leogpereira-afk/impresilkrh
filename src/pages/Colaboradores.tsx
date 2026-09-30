@@ -15,17 +15,22 @@ import { useColecao } from "@/lib/store";
 import { useDominio, faixaDefinida } from "@/lib/dominio";
 import { quadroPorSituacao, presenteHoje, chaveDeStatus, ausenciasDe } from "@/lib/quadroPorSituacao";
 import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis, ehRH, podeVerDadosSensiveis, podeVerGestao } from "@/lib/rbac";
-import { tempoDeCasa, parseData, formatBRL } from "@/lib/format";
+import { colaboradoresVisiveis, ehRH, modulosLiberados, podeVerContratosFreelancer, podeVerDadosSensiveis, podeVerGestao } from "@/lib/rbac";
+import { tempoDeCasa, parseData, formatBRL, diaLocalISO } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { TIPOS_ENCARGO, corDoTipo, competenciaLabel } from "@/lib/folha";
 import { foraDaExperiencia, explicar as explicarForaDaExperiencia, type ForaDaExperiencia } from "@/lib/foraDaExperiencia";
 import { quemEstaEmExperiencia } from "@/lib/emExperiencia";
 import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
-import type { Colaborador, Pagamento } from "@/data/types";
+import type { Colaborador, Freelancer, Pagamento } from "@/data/types";
 import { SeloCompletude } from "@/components/colaboradores/completude";
 import { idPessoa } from "@/lib/identidade";
+import { cpfPendente } from "@/lib/freelancerContrato";
+import {
+  COLUNA_CONTRATO, STATUS_DO_CONTRATO, STATUS_FREELANCER,
+  ateQuando, camposDoContrato, celulaDoContrato, contratosDaTela, contratosForaDoCard,
+} from "@/lib/freelancerNoQuadro";
 
 // Cor do selo de perfil comportamental (temperamentos). Sem perfil = neutro.
 const COR_PERFIL: Record<string, string> = {
@@ -67,6 +72,35 @@ const NOTA_DO_STATUS: Record<string, string> = {
    resto passa direto, e um valor estranho vira fundo transparente em vez de
    quebrar o card. */
 const comAlfa = (cor: string, alfa: string) => (/^#[0-9a-f]{6}$/i.test(cor) ? `${cor}${alfa}` : cor);
+
+/* As células do meio de cada lente, com as MESMAS classes do cabeçalho. A
+   linha de contrato não tem esses dados, mas precisa das células: um colSpan
+   no lugar delas contaria também as colunas escondidas no celular e no tablet
+   (hidden md:table-cell), e a tabela ganharia colunas fantasmas à direita. */
+const CELULAS_DA_LENTE: Record<"cadastro" | "custo" | "comportamental", string[]> = {
+  cadastro: ["td hidden md:table-cell", "td hidden sm:table-cell", "td hidden lg:table-cell", "td"],
+  custo: ["td", "td hidden md:table-cell", "td hidden sm:table-cell"],
+  comportamental: ["td", "td hidden sm:table-cell", "td hidden md:table-cell"],
+};
+
+/* Para onde a linha de contrato leva: a tela de Freelancers, com o contrato
+   destacado. Colaboradores não tem ficha para abrir, porque contrato não é
+   ficha. */
+const linkDoContrato = (f: Freelancer) => `/freelancers?contrato=${encodeURIComponent(f.id)}`;
+
+/* A tag da linha que tem contrato, e o selo do CPF que falta. Os dois no mesmo
+   estilo da tela de Freelancers, para a pessoa reconhecer o que já viu lá. */
+function TagContrato({ contrato, rotulo = "Contrato" }: { contrato: Freelancer; rotulo?: string }) {
+  const ate = ateQuando(contrato);
+  return (
+    <>
+      <Badge variant="info" className="shrink-0">
+        <span title={`Contrato de freelancer ativo${ate ? `, ${ate}` : ", sem data de fim"}`}>{rotulo}</span>
+      </Badge>
+      {cpfPendente(contrato) && <Badge variant="warning" className="shrink-0">CPF pendente</Badge>}
+    </>
+  );
+}
 
 function ThOrdenavel({
   campo, ordem, setOrdem, className, children,
@@ -168,6 +202,18 @@ export default function Colaboradores() {
   const escopo = useMemo(() => colaboradoresVisiveis(sessao, d.colaboradores), [sessao, d.colaboradores]);
   const { items: ferias } = useColecao("ferias");
 
+  /* CONTRATOS DE FREELANCER NO FILTRO FREELANCER (decisão do Léo de
+     30/09/2026). Quem trabalha por contrato não tem ficha, e a tela respondia
+     "freelancers no quadro" sem ele. Agora, no filtro Freelancer, os contratos
+     ativos entram na lista em linha própria, FORA de toda conta (total na
+     empresa, cards, headcount, custo, folha). Só para quem abre /freelancers:
+     a guarda é a mesma da rota e do menu, perfil e módulo. Para os outros
+     perfis a coleção nem chega do servidor, mas a tela não conta com isso. */
+  const { items: usuarios } = useColecao("usuarios");
+  const podeVerContratos = podeVerContratosFreelancer(sessao, modulosLiberados(sessao, usuarios));
+  const { items: contratosFreelancer } = useColecao("freelancers");
+  const hoje = diaLocalISO();
+
 
   // Quem está em férias agora (usado nos cards e no filtro rápido). Vem das
   // DATAS do período, não do texto "Em andamento": esse texto é digitado à mão e
@@ -255,6 +301,14 @@ export default function Colaboradores() {
      "Incluir inativos" — ele não quer card deles, mas 49 linhas embaixo de
      "30 na empresa" sem explicar os 19 é a tela mentindo por omissão. */
   const desligadosTxt = mostrarInativos && quadro.desligados > 0 ? ` · +${quadro.desligados} desligado${quadro.desligados === 1 ? "" : "s"} na lista` : "";
+  /* O card Freelancer conta fichas, e no filtro Freelancer a lista mostra
+     também os contratos. Sem esta menção, o card diria 1 com 2 linhas
+     embaixo. O número NÃO entra no valor do card nem no total: contrato é
+     gente de fora do quadro, e é justamente isso que ele existe para dizer. */
+  const maisPorContrato = useMemo(
+    () => (podeVerContratos ? contratosForaDoCard(escopo, contratosFreelancer, hoje) : 0),
+    [podeVerContratos, escopo, contratosFreelancer, hoje],
+  );
 
   // Exporta a lista filtrada atual para CSV (Excel-friendly, separador ;).
   const exportarCsv = () => {
@@ -275,9 +329,27 @@ export default function Colaboradores() {
       ["Bota", (c) => c.botaNumero ?? ""],
     ];
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    /* O arquivo mostra o que a tela mostra. No filtro Freelancer, com
+       contrato na lista, entra a coluna "Contrato de freelancer" (a tag da
+       tela, por escrito) e as linhas de contrato, com o Status "Freelancer
+       (contrato)" e VAZIAS onde o contrato não tem o dado. Fora disso, o CSV
+       é o de sempre. */
+    const comContrato = linhasContrato.length > 0 || contratoPorFicha.size > 0;
+    const cabecalho = [...cols.map((x) => x[0]), ...(comContrato ? [COLUNA_CONTRATO] : [])];
     const linhas = [
-      cols.map((x) => x[0]).join(";"),
-      ...lista.map((c) => cols.map(([, fn]) => esc(fn(c))).join(";")),
+      cabecalho.join(";"),
+      ...lista.map((c) => {
+        const campos = cols.map(([, fn]) => esc(fn(c)));
+        if (comContrato) {
+          const k = contratoPorFicha.get(c.id);
+          campos.push(esc(k ? celulaDoContrato(k) : ""));
+        }
+        return campos.join(";");
+      }),
+      ...linhasContrato.map((f) => {
+        const campos = camposDoContrato(f);
+        return cabecalho.map((nome) => esc(campos[nome] ?? "")).join(";");
+      }),
     ];
     const blob = new Blob(["\uFEFF" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -305,6 +377,7 @@ export default function Colaboradores() {
       const { exportarColaboradoresPdf } = await import("@/lib/colaboradoresPdf");
       await exportarColaboradoresPdf({
         lista,
+        contratos: contratosDoArquivo,
         visao: visaoLinha,
         noEscopo: escopo.filter((c) => !c.ehDirecao).length,
         totalCadastro: d.colaboradores.length,
@@ -355,6 +428,7 @@ export default function Colaboradores() {
       const { exportarFichasPdf } = await import("@/lib/colaboradoresPdf");
       const r = await exportarFichasPdf({
         lista,
+        contratos: contratosDoArquivo,
         visao: "cadastro",
         noEscopo: escopo.filter((c) => !c.ehDirecao).length,
         totalCadastro: d.colaboradores.length,
@@ -466,6 +540,26 @@ export default function Colaboradores() {
       .sort(comparar);
   }, [escopo, fStatus, busca, chips, mostrarInativos, foco, presente, d, comparar]);
 
+  /* Os contratos que a lista mostra, e a tag das fichas que têm contrato. A
+     regra (quem é a mesma pessoa, quem entra, o que a busca e a área fazem)
+     mora em lib/freelancerNoQuadro, com teste; aqui só se passa o estado da
+     tela. Fora do filtro Freelancer, ou para quem não abre /freelancers, vem
+     vazio, e a tela fica como sempre foi. */
+  const contratosDaLista = useMemo(
+    () => contratosDaTela({
+      podeVer: podeVerContratos, fStatus, foco, lista, contratos: contratosFreelancer, hoje, busca, comArea: chips.size > 0,
+    }),
+    [podeVerContratos, fStatus, foco, lista, contratosFreelancer, hoje, busca, chips],
+  );
+  const linhasContrato = contratosDaLista.avulsos;
+  const contratoPorFicha = contratosDaLista.comContrato;
+  const semLinhas = lista.length === 0 && linhasContrato.length === 0;
+  /* Vai para os arquivos só quando há o que dizer, inclusive "a busca tirou
+     N contratos". Sem nada, o PDF sai idêntico ao de antes. */
+  const contratosDoArquivo = linhasContrato.length > 0 || contratoPorFicha.size > 0 || contratosDaLista.foraDoRecorte > 0
+    ? contratosDaLista
+    : undefined;
+
   // Lista simples de nomes, agrupada por inicial (A, B, C…) — só os nomes, sem
   // cargo/setor. Usa a mesma lista já filtrada e ordenada alfabeticamente.
   const inicial = (nome: string) =>
@@ -522,15 +616,18 @@ export default function Colaboradores() {
 
   return (
     <div>
-      <PageHeader title="Colaboradores" description={`${lista.length} colaborador(es) no seu escopo de acesso.`}>
+      <PageHeader
+        title="Colaboradores"
+        description={`${lista.length} colaborador(es) no seu escopo de acesso.${linhasContrato.length ? ` Mais ${linhasContrato.length} contrato(s) de freelancer, fora do quadro.` : ""}`}
+      >
         {ehRH(sessao) && <Link className="btn-outline" to="/painel-controle?aba=cadastros">Conferir cadastros</Link>}
-        <button className="btn-outline" onClick={exportarCsv} disabled={lista.length === 0} title="Exporta a lista filtrada para CSV">
+        <button className="btn-outline" onClick={exportarCsv} disabled={semLinhas} title="Exporta a lista filtrada para CSV">
           <Download className="h-4 w-4" /> Exportar CSV
         </button>
         <button
           className="btn-outline"
           onClick={() => void exportarPdf()}
-          disabled={lista.length === 0 || baixandoPdf}
+          disabled={semLinhas || baixandoPdf}
           title="Baixa a lista filtrada em PDF, com as mesmas colunas que a tela está mostrando"
         >
           <FileDown className="h-4 w-4" /> {baixandoPdf ? "Gerando…" : "PDF da lista"}
@@ -539,7 +636,7 @@ export default function Colaboradores() {
           className="btn-outline"
           onClick={() => void exportarFichas()}
           disabled={lista.length === 0 || baixandoFichas}
-          title="Uma ficha por pessoa, com TODOS os campos preenchidos do cadastro — respeitando o que o seu acesso permite ver"
+          title="Uma ficha por pessoa, com TODOS os campos preenchidos do cadastro, respeitando o que o seu acesso permite ver"
         >
           <FileText className="h-4 w-4" /> {baixandoFichas ? "Gerando…" : "Fichas completas"}
         </button>
@@ -617,7 +714,7 @@ export default function Colaboradores() {
                 {emExperiencia.length} {emExperiencia.length === 1 ? "pessoa está" : "pessoas estão"} em contrato de experiência
               </p>
               <p className="text-xs text-slate-600">
-                Decida antes do prazo: passou de 90 dias sem decisão, o contrato vira por tempo indeterminado — e desligar depois custa aviso prévio e multa do FGTS.
+                Decida antes do prazo: passou de 90 dias sem decisão, o contrato vira por tempo indeterminado. Desligar depois custa aviso prévio e multa do FGTS.
               </p>
             </div>
           </div>
@@ -679,7 +776,7 @@ export default function Colaboradores() {
                   : `${experienciaIncoerente.length} pessoas estão marcadas como “Em experiência”, mas as datas dizem outra coisa`}
               </p>
               <p className="text-xs text-slate-600">
-                Elas não entram no aviso acima — o prazo é contado pela data de admissão, não pelo status. Abra a ficha para acertar.
+                Elas não entram no aviso acima: o prazo é contado pela data de admissão, não pelo status. Abra a ficha para acertar.
               </p>
             </div>
           </div>
@@ -716,7 +813,7 @@ export default function Colaboradores() {
                 {semAdmissao.length} {semAdmissao.length === 1 ? "pessoa está" : "pessoas estão"} sem data de admissão
               </p>
               <p className="text-xs text-slate-600">
-                Sem ela não dá para calcular contrato de experiência nem férias — estas pessoas ficam de fora do aviso acima.
+                Sem ela não dá para calcular contrato de experiência nem férias, e estas pessoas ficam de fora do aviso acima.
               </p>
             </div>
           </div>
@@ -753,17 +850,19 @@ export default function Colaboradores() {
             // A cor vem do próprio status, a mesma do selo dele na lista e na
             // ficha — não há segunda paleta para sair de sincronia.
             tint: g.cor,
+            // Só o card Freelancer, e só para quem vê contrato (ver maisPorContrato).
+            extra: g.statusId === STATUS_FREELANCER && maisPorContrato > 0 ? `+${maisPorContrato} por contrato` : "",
           })),
           // Não é "afastado" no sentido do status: é todo mundo que ainda é da
           // casa mas hoje não está — férias, atestado, afastamento, abandono,
           // aviso prévio. Quem precisa saber com quantas mãos conta amanhã olha
           // este número, não o cadastro de cada um.
-          { key: "indisponiveis", label: "Indisponíveis", nota: "férias, atestado, afastamento…", valor: quadro.indisponiveis, icon: HeartPulse, tint: "#ea580c" },
+          { key: "indisponiveis", label: "Indisponíveis", nota: "férias, atestado, afastamento…", valor: quadro.indisponiveis, icon: HeartPulse, tint: "#ea580c", extra: "" },
           // NAO ha card de Desligados: "eu nao preciso ver os desligados" (Léo,
           // 08/09/2026). Os cards respondem "com quem eu conto hoje" — quem saiu
           // não é essa pergunta. Continua alcançável pelo "Incluir inativos"
           // logo abaixo, que é onde se vai de propósito procurar quem saiu.
-        ]).map(({ key, label, nota, valor, icon: Icon, tint }) => {
+        ]).map(({ key, label, nota, valor, icon: Icon, tint, extra }) => {
           const ativoCard = foco === key;
           // Card zerado não vira filtro: clicar só levaria à lista vazia.
           const semNinguem = valor === 0;
@@ -792,6 +891,11 @@ export default function Colaboradores() {
                 <p className="text-xl font-bold leading-none text-slate-800">{valor}</p>
                 <p className="mt-1 truncate text-xs text-slate-500">{label}{ativoCard && " · filtrando"}</p>
                 {nota && <p className="truncate text-[10px] text-slate-400">{nota}</p>}
+                {extra && (
+                  <p className="truncate text-[10px] font-semibold text-brand" title="Contratos de freelancer ativos: aparecem na lista deste filtro, mas não contam no quadro">
+                    {extra}
+                  </p>
+                )}
               </div>
             </button>
           );
@@ -933,7 +1037,7 @@ export default function Colaboradores() {
         </div>
       </Card>
 
-      {lista.length > 0 && visao === 'lista' && <div className="grid gap-2 sm:hidden" aria-label="Pessoas encontradas">
+      {!semLinhas && visao === 'lista' && <div className="grid gap-2 sm:hidden" aria-label="Pessoas encontradas">
         <div className="flex gap-2"><Select aria-label="Ordenar pessoas" value={ordem.campo} onChange={e => setOrdem({ ...ordem, campo: e.target.value as CampoOrdem })}>
           <option value="nome">Nome</option><option value="status">Situação</option>
           {visaoLinha === 'cadastro' && <><option value="area">Área</option><option value="nivel">Nível</option><option value="tempo">Tempo de casa</option><option value="enquadramento">Enquadramento</option></>}
@@ -941,16 +1045,23 @@ export default function Colaboradores() {
           {visaoLinha === 'comportamental' && <><option value="perfil">Perfil</option><option value="motivacao">Motivação</option></>}
         </Select><button className="btn-outline shrink-0" aria-label="Inverter ordenação" onClick={() => setOrdem({ ...ordem, asc: !ordem.asc })}>{ordem.asc ? 'Crescente' : 'Decrescente'}</button></div>
         {lista.map(c => <Link key={c.id} to={`/colaboradores/${c.id}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="break-words font-semibold text-slate-800">{c.nome}</p>
+          <p className="flex flex-wrap items-center gap-1.5 break-words font-semibold text-slate-800">{c.nome}{contratoPorFicha.has(c.id) && <TagContrato contrato={contratoPorFicha.get(c.id)!} />}</p>
           <p className="mt-1 text-sm text-slate-600">{d.nomeCargo(c)} · {d.statusById.get(c.statusId ?? "")?.nome ?? 'Situação não informada'}</p>
           {visaoLinha === 'cadastro' && <p className="mt-1 text-xs text-slate-500">{d.nomeArea(c.areaId)} · {d.nomeNivel(c.nivelId)} · {d.enquadrarColab(c)}</p>}
           {visaoLinha === 'custo' && <p className="mt-1 text-sm">{competenciaLabel(mesCusto)}: {custoPorColab.has(c.id) ? formatBRL(custoPorColab.get(c.id)!.total) : 'Sem lançamentos'} · {custoPorColab.get(c.id)?.n ?? 0} lançamento(s)</p>}
           {visaoLinha === 'comportamental' && <p className="mt-1 text-sm">{c.perfilComportamental || 'Perfil não informado'}{podeVerGestao(sessao, c.id, d.colaboradores) && c.motivacao != null ? ` · Motivação: ${c.motivacao}` : ''}</p>}
           <span className="mt-1 block text-sm font-medium text-brand">Abrir ficha →</span>
         </Link>)}
+        {/* Contrato de freelancer (só no filtro Freelancer): leva à tela dele. */}
+        {linhasContrato.map(f => <Link key={`contrato-${f.id}`} to={linkDoContrato(f)} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <p className="flex flex-wrap items-center gap-1.5 break-words font-semibold text-slate-800">{f.nome}<TagContrato contrato={f} rotulo="Contrato de freelancer" /></p>
+          <p className="mt-1 text-sm text-slate-600">{f.funcao || 'Função não informada'} · {STATUS_DO_CONTRATO}</p>
+          <p className="mt-1 text-xs text-slate-500">{ateQuando(f) || 'Sem data de fim'} · fora do quadro</p>
+          <span className="mt-1 block text-sm font-medium text-brand">Abrir contrato →</span>
+        </Link>)}
       </div>}
 
-      {lista.length === 0 ? (
+      {semLinhas ? (
         <EmptyState title="Nenhum colaborador encontrado" description="Ajuste a busca ou os filtros." icon={<Users className="h-8 w-8" />} />
       ) : visao === "lista" ? (
         <Card className="hidden overflow-hidden sm:block">
@@ -1003,6 +1114,9 @@ export default function Colaboradores() {
                           <p className="truncate font-medium text-slate-800">{c.nome}</p>
                           <p className="truncate text-xs text-slate-500">{d.nomeCargo(c)}</p>
                         </div>
+                        {/* Ficha que tem contrato de freelancer do mesmo CPF: a
+                            pessoa aparece uma vez só, aqui, com a tag. */}
+                        {contratoPorFicha.has(c.id) && <TagContrato contrato={contratoPorFicha.get(c.id)!} />}
                         {/* % de preenchimento. Só aparece quando NÃO está 100%:
                             selo em toda linha vira ruído e ensina a ignorar.
                             O ⚠ marca falta de campo obrigatório, que é outra
@@ -1076,6 +1190,40 @@ export default function Colaboradores() {
                   </tr>
                   );
                 })}
+                {/* CONTRATOS DE FREELANCER, depois das fichas (só no filtro
+                    Freelancer). O contador continua a contagem da lista, que é
+                    o que ele responde ("quantos já conferi"); o Status diz que
+                    é contrato, e as colunas do quadro ficam vazias. */}
+                {linhasContrato.map((f, j) => (
+                  <tr key={`contrato-${f.id}`} className="group transition hover:bg-slate-50/60">
+                    <td className="td">
+                      <Link to={linkDoContrato(f)} className="flex min-h-10 items-center gap-3" title="Abrir o contrato na tela de Freelancers">
+                        <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{lista.length + j + 1}</span>
+                        <Avatar nome={f.nome} size="sm" />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-800">{f.nome}</p>
+                          <p className="truncate text-xs text-slate-500">
+                            {[f.funcao || "Função não informada", ateQuando(f)].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+                        <TagContrato contrato={f} rotulo="Contrato de freelancer" />
+                      </Link>
+                    </td>
+                    {CELULAS_DA_LENTE[visaoLinha].map((cls, k) => (
+                      <td key={k} className={cls}>
+                        {k === CELULAS_DA_LENTE[visaoLinha].findIndex((x) => x === "td") && (
+                          <span className="text-xs text-slate-400">fora do quadro</span>
+                        )}
+                      </td>
+                    ))}
+                    <td className="td"><DotBadge label={STATUS_DO_CONTRATO} cor={d.corStatus(STATUS_FREELANCER)} /></td>
+                    <td className="td text-right">
+                      <Link to={linkDoContrato(f)} aria-label={`Abrir o contrato de ${f.nome}`} className="inline-flex text-slate-300 transition group-hover:text-brand">
+                        <ChevronRight className="h-5 w-5" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -1133,7 +1281,7 @@ export default function Colaboradores() {
                                 >
                                   <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" className="h-9 w-9" />
                                   <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-slate-800">{c.nome}</p>
+                                    <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800"><span className="truncate">{c.nome}</span>{contratoPorFicha.has(c.id) && <TagContrato contrato={contratoPorFicha.get(c.id)!} />}</p>
                                     <p className="truncate text-xs text-slate-500">{d.nomeCargo(c)}</p>
                                     <p className="mt-0.5 text-[11px] text-slate-400">{tempoDeCasa(c.dataInicioCargo)} no cargo</p>
                                   </div>
@@ -1152,11 +1300,44 @@ export default function Colaboradores() {
               </Card>
             );
           })}
+          {/* Contrato não tem setor: fica num grupo próprio, depois das áreas,
+              em vez de sumir da visão por setor (só no filtro Freelancer). */}
+          {linhasContrato.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="flex min-w-0 items-center gap-3">
+                  <Handshake className="h-4 w-4 shrink-0 text-brand" />
+                  <span className="text-sm font-semibold text-slate-800">Contratos de freelancer</span>
+                  <span className="truncate text-xs text-slate-500">fora do quadro, sem setor</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                  <Users className="h-3.5 w-3.5" /> {linhasContrato.length}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2.5 border-t border-slate-100 bg-slate-50/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                {linhasContrato.map((f) => (
+                  <Link
+                    key={`contrato-${f.id}`}
+                    to={linkDoContrato(f)}
+                    className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-brand/40 hover:bg-slate-50/80 hover:shadow-sm"
+                  >
+                    <Avatar nome={f.nome} size="sm" className="h-9 w-9" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800">{f.nome}</p>
+                      <p className="truncate text-xs text-slate-500">{f.funcao || "Função não informada"}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">{ateQuando(f) || "Sem data de fim"}</p>
+                    </div>
+                    <span className="flex shrink-0 flex-col items-end gap-1"><TagContrato contrato={f} /></span>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
       )}
 
       {/* Atalho ao final: lista simples de nomes (A–Z), fora de cargos/setores */}
-      {lista.length > 0 && (
+      {!semLinhas && (
         <div className="mt-6 flex justify-center">
           <button onClick={() => setVerNomes(true)} className="btn-outline">
             <ArrowDownAZ className="h-4 w-4" /> Ver todos os nomes (A–Z)
@@ -1168,7 +1349,7 @@ export default function Colaboradores() {
         aberto={verNomes}
         onFechar={() => setVerNomes(false)}
         titulo="Colaboradores em ordem alfabética"
-        descricao={`${lista.length} nome(s). Toque em um nome para abrir a ficha.`}
+        descricao={`${lista.length + linhasContrato.length} nome(s). Toque em um nome para abrir a ficha${linhasContrato.length ? " ou o contrato" : ""}.`}
         largura="max-w-2xl"
       >
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
@@ -1190,6 +1371,24 @@ export default function Colaboradores() {
               </ul>
             </div>
           ))}
+          {linhasContrato.length > 0 && (
+            <div>
+              <p className="sticky top-0 z-10 bg-white py-1 text-xs font-bold uppercase tracking-[0.18em] text-brand">Contratos de freelancer</p>
+              <ul className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+                {linhasContrato.map((f) => (
+                  <li key={`contrato-${f.id}`}>
+                    <Link
+                      to={linkDoContrato(f)}
+                      onClick={() => setVerNomes(false)}
+                      className="block truncate rounded-md px-2 py-1 text-sm text-slate-700 transition hover:bg-slate-50 hover:text-brand"
+                    >
+                      {f.nome}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </Modal>
 

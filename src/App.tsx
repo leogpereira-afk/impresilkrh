@@ -6,6 +6,7 @@ import { useSessao } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 import { EmptyState } from "@/components/ui/misc";
 import { Lock } from "lucide-react";
+import { PERFIS_CONTRATOS_FREELANCER } from "@/lib/rbac";
 
 import Login from "@/pages/Login";
 
@@ -93,7 +94,8 @@ export default function App() {
             <Route path="/ferias" element={<Restrito perfis={GESTAO}><Ferias /></Restrito>} />
             <Route path="/integracao" element={<Restrito perfis={GESTAO}><Integracao /></Restrito>} />
             <Route path="/vagas" element={<Restrito perfis={RH}><Vagas /></Restrito>} />
-            <Route path="/freelancers" element={<Restrito perfis={RH}><Freelancers /></Restrito>} />
+            {/* A lista mora no rbac: Colaboradores mostra contrato de freelancer só a quem passa por esta porta. */}
+            <Route path="/freelancers" element={<Restrito perfis={PERFIS_CONTRATOS_FREELANCER}><Freelancers /></Restrito>} />
             <Route path="/folha-variavel" element={<Restrito perfis={GESTAO}><FolhaVariavel /></Restrito>} />
             <Route path="/comunicacao" element={<Comunicacao />} />
           <Route path="/mensagens" element={<Restrito perfis={GESTAO}><Mensagens /></Restrito>} />

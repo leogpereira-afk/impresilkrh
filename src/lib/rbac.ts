@@ -1,7 +1,7 @@
 // RBAC client-side. Calcula o escopo de visibilidade conforme o perfil e a
 // hierarquia (gestor recursivo). Mascaramento de dados sensíveis segue a LGPD.
 
-import type { Colaborador, Usuario } from "@/data/types";
+import type { Colaborador, Perfil, Usuario } from "@/data/types";
 import type { Sessao } from "./session";
 
 // IDs da equipe de um gestor (diretos e indiretos), incluindo ele mesmo.
@@ -117,4 +117,17 @@ export function modulosLiberados(sessao: Sessao | null, usuarios: Usuario[]): Se
 export function moduloAcessivel(modulo: string, liberados: Set<string> | null): boolean {
   if (modulo === "meu-perfil" || modulo === "mural-vagas") return true;
   return liberados === null || liberados.has(modulo);
+}
+
+/* QUEM ENXERGA CONTRATO DE FREELANCER. É a guarda da rota /freelancers (App.tsx
+   e o item do menu usam esta mesma lista), e vale também para qualquer tela que
+   mostre um contrato por tabela: Colaboradores, no filtro Freelancer, lista os
+   contratos ativos (decisão do Léo de 30/09/2026). Se cada tela copiasse o
+   perfil à mão, a primeira que esquecesse de acompanhar uma mudança mostraria o
+   combinado a quem não pode abrir a tela dele.
+   O módulo entra junto porque é assim que o menu decide: um perfil liberado com
+   o módulo "freelancers" desmarcado nas Configurações também não vê. */
+export const PERFIS_CONTRATOS_FREELANCER: Perfil[] = ["ADMIN_RH"];
+export function podeVerContratosFreelancer(sessao: Sessao | null, liberados: Set<string> | null = null): boolean {
+  return !!sessao && PERFIS_CONTRATOS_FREELANCER.includes(sessao.perfil) && moduloAcessivel("freelancers", liberados);
 }
