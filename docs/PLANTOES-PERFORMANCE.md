@@ -1,5 +1,7 @@
 # Plantões e Performance — piloto para a instalação
 
+> **Performance saiu do RH em 01/10/2026 (F25).** O programa das equipes (ranking, pontos, comissão e prêmios) fica no PCP, na aba Performance, e a participação de cada pessoa é lançada dentro da O.S. O item saiu do menu do RH. O endereço `/performance` mostra o aviso com o link do PCP e, ao RH, as apurações antigas só para consulta, em PDF. Nada foi apagado do banco. O texto abaixo sobre Performance fica como histórico.
+
 ## Onde usar
 
 - **Calendário → Plantões:** escala de sábados, horas extras e empreitas, independente dos eventos do calendário. O mês abre no atual. Escolha um sábado ou crie uma escala em outra data.

@@ -33,9 +33,11 @@ const RAIZ = path.resolve(import.meta.dirname, "..", "src");
  */
 const CONFERENCIAS = [
   "components/programacao/programacao.tsx",
-  "pages/Performance.tsx",
+  // F25 (01/10/2026): saíram da lista "pages/Performance.tsx" e
+  // "components/performance/entrega-modal.tsx". A tela Performance deixou de
+  // escolher pessoa (virou o aviso de que o programa das equipes mora no PCP) e
+  // o modal de vínculo de O.S. foi apagado junto com ela.
   "components/plantoes/plantoes.tsx",
-  "components/performance/entrega-modal.tsx",
   "components/custos/auditoria-lancamentos.tsx",
   "components/custos/previa-folha.tsx",
   "components/custos/conferencia-tipos.tsx",

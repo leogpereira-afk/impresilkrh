@@ -87,7 +87,9 @@ export default function App() {
             <Route path="/desempenho" element={<Restrito perfis={GESTAO}><Desempenho /></Restrito>} />
             <Route path="/feedback" element={<Restrito perfis={GESTAO}><Feedback /></Restrito>} />
             <Route path="/comportamental" element={<Comportamental />} />
-            <Route path="/performance" element={<Restrito perfis={RH}><Performance /></Restrito>} />
+            {/* F25: a tela saiu do menu. O endereço antigo mostra o aviso de que o programa
+                das equipes mora no PCP; as apurações antigas só aparecem, para consulta, ao RH. */}
+            <Route path="/performance" element={<Performance />} />
             <Route path="/custos" element={<Restrito perfis={RH}><Custos /></Restrito>} />
             <Route path="/treinamento" element={<Restrito perfis={GESTAO}><Treinamento /></Restrito>} />
             <Route path="/ponto" element={<Restrito perfis={GESTAO}><Ponto /></Restrito>} />

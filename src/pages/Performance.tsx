@@ -1,72 +1,90 @@
-import { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Award, Plus, FileDown, Settings2, ChevronRight } from 'lucide-react';
+/* A TELA PERFORMANCE DO RH SAIU DO MENU (F25, 01/10/2026).
+ *
+ * Regra do dono: no RH fica só o que remete à pessoa. O programa das equipes
+ * (ranking, pontos, comissão e prêmios) mora no PCP, na aba Performance, onde a
+ * participação de cada pessoa é lançada dentro da O.S., com divisão e registro
+ * de quem mudou. Com as duas telas no ar, a mesma pessoa tinha dois números no
+ * mesmo mês.
+ *
+ * A rota /performance continua de pé para quem guardou o endereço: em vez da
+ * apuração antiga, mostra este aviso com o caminho do PCP. Nada foi apagado do
+ * banco. As apurações antigas (performanceCiclos) seguem guardadas e, para o RH,
+ * aparecem aqui SÓ PARA CONSULTA, em PDF: esta tela não tem nenhum botão que
+ * grave. O servidor (sync) já congela o vínculo de O.S. desde a F02.
+ */
+import { useState } from 'react';
+import { ExternalLink, FileDown, Trophy } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
-import { StatCard } from '@/components/ui/stat-card';
-import { Modal } from '@/components/ui/modal';
-import { Campo, Input, Select, Textarea } from '@/components/ui/form';
 import { useToast } from '@/components/ui/toast';
-import { obter, useColecao } from '@/lib/store';
-import { idPessoa } from '@/lib/identidade';
-import { useDominio, noQuadro } from '@/lib/dominio';
+import { useColecao } from '@/lib/store';
 import { useSessao } from '@/lib/session';
-import { apurarPessoa, CRITERIOS_COLABORACAO, dinheiro, horas, mesAtual, novaPessoa, novoCiclo, validarAprovacao, validarRegra } from '@/lib/performance';
+import { useDominio } from '@/lib/dominio';
+import { idPessoa } from '@/lib/identidade';
+import { dinheiro } from '@/lib/performance';
 import { exportarPerformance } from '@/lib/performancePdf';
-import { EntregaModal } from '@/components/performance/entrega-modal';
-import type { CicloPerformance, EntregaPerformance, PessoaPerformance, RegraPerformance } from '@/data/performance';
+import type { CicloPerformance } from '@/data/performance';
 
-const nulo=(n:number|null)=>n===null?'A conferir':`${n.toFixed(1)} / 100`;
-export default function Performance() {
-  const d=useDominio();
-  const nomePessoa=(id:string)=>`${d.nomeColab(id)} · ID ${idPessoa(d.colabById.get(id)?.cpf)??id}`; const sessao=useSessao(); const toast=useToast();
-  const store=useColecao('performanceCiclos'); const plantoes=useColecao('plantoes'); const pontos=useColecao('pontos');
-  const original=useRef('');
-  const [mes,setMes]=useState(mesAtual); const [adicionar,setAdicionar]=useState(false); const [pessoaIdEscolhida,setPessoaIdEscolhida]=useState('');
-  const [pessoa,setPessoa]=useState<PessoaPerformance|null>(null);
-  const [regra,setRegra]=useState<RegraPerformance|null>(null);
-  const [entrega,setEntrega]=useState<EntregaPerformance|null>(null);
-  const [aprovando,setAprovando]=useState<PessoaPerformance|null>(null); const [valor,setValor]=useState(''); const [justificativa,setJustificativa]=useState('');
-  const [reabrindo,setReabrindo]=useState<PessoaPerformance|null>(null);
-  const [erro,setErro]=useState<string[]>([]); const [baixando,setBaixando]=useState(false);
-  const ciclo=store.items.find(c=>c.competencia===mes)??novoCiclo(mes);
-  const atual=()=>obter('performanceCiclos').find(c=>c.competencia===mes)??novoCiclo(mes);
-  const retrato=(c:CicloPerformance)=>JSON.stringify([c.competencia,c.regra,c.pessoas,c.entregas,c.historico]);
-  const iniciarEdicao=()=>{original.current=retrato(atual());};
-  const aprovadas=ciclo.pessoas.filter(p=>p.aprovacao);
-  const calculos=ciclo.pessoas.map(p=>({p,a:apurarPessoa(ciclo,p)}));
-  const salvar=(c: CicloPerformance,acao: string)=>{
-    if(sessao?.perfil!=='ADMIN_RH')return false;
-    if(original.current!==retrato(atual())){setErro(['A apuração mudou enquanto você editava. Feche a janela e abra novamente para conferir a versão atual.']);return false;}
-    try{store.criarOuAtualizar({...c,historico:[...c.historico,{em:new Date().toISOString(),por:sessao.colaboradorId,acao}].slice(-200)});original.current=retrato(atual());setErro([]);toast('Salvo. Acompanhe a sincronização no topo.','sucesso');return true;}catch(e){setErro([e instanceof Error?e.message:'Não foi possível salvar.']);return false;}
+/** Endereço do PCP no ar (repositório leogpereira-afk/impresilk, GitHub Pages). */
+export const URL_PCP = 'https://leogpereira-afk.github.io/impresilk/';
+
+const mesAno = (competencia: string) => `${competencia.slice(5, 7)}/${competencia.slice(0, 4)}`;
+
+function ApuracoesAntigas() {
+  const d = useDominio();
+  const toast = useToast();
+  const store = useColecao('performanceCiclos');
+  const [baixando, setBaixando] = useState('');
+  const ciclos = [...store.items].sort((a, b) => String(b.competencia).localeCompare(String(a.competencia)));
+  if (!ciclos.length) return null;
+  const nomePessoa = (id: string) => `${d.nomeColab(id)} · ID ${idPessoa(d.colabById.get(id)?.cpf) ?? id}`;
+  const pdf = async (c: CicloPerformance) => {
+    setBaixando(c.competencia);
+    try { await exportarPerformance(c, nomePessoa); }
+    catch { toast('Não foi possível gerar o PDF.', 'erro'); }
+    finally { setBaixando(''); }
   };
-  const abrirPessoa=(p:PessoaPerformance)=>{iniciarEdicao();setErro([]);setPessoa(structuredClone(p));};
-  const emEdicao=pessoa?{...ciclo,pessoas:ciclo.pessoas.map(p=>p.colaboradorId===pessoa.colaboradorId?pessoa:p)}:ciclo;
-  const analise=pessoa?apurarPessoa(emEdicao,pessoa):null;
-  const editada=pessoa&&JSON.stringify(pessoa)!==JSON.stringify(ciclo.pessoas.find(p=>p.colaboradorId===pessoa.colaboradorId));
-  const pdf=async()=>{setBaixando(true);try{await exportarPerformance(ciclo,nomePessoa);}catch{toast('Não foi possível gerar o PDF.','erro');}finally{setBaixando(false);}};
-  const extrasEscala=(id:string)=>plantoes.items.filter(p=>!p.cancelado&&p.data.startsWith(mes)).flatMap(p=>p.participantes).filter(p=>p.colaboradorId===id&&p.situacao==='Realizado').reduce((a,b)=>a+(b.extrasMin??0),0);
-  const extrasPonto=(id:string)=>pontos.items.filter(p=>p.competencia===mes&&p.colaboradorId===id);
-  const caixaErros=!!erro.length&&<div role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{erro.map(e=><p key={e}>{e}</p>)}</div>;
-  return <div className="space-y-4"><PageHeader title="Performance" description="Entregas comprovadas, qualidade e reconhecimento. Uma apuração clara para quem instala e para quem decide."><label className="flex items-center gap-2 text-sm text-slate-500">Mês de apuração<Input type="month" className="w-44" value={mes} onChange={e=>{if(e.target.value){setMes(e.target.value);setErro([]);}}}/></label><button className="btn-ghost" onClick={()=>setMes(mesAtual())}>Mês atual</button><button className="btn-outline" onClick={()=>{iniciarEdicao();setErro([]);setRegra(structuredClone(ciclo.regra));}}><Settings2 className="h-4 w-4"/>Critérios e valores</button><button className="btn-primary" onClick={()=>{iniciarEdicao();setPessoaIdEscolhida('');setErro([]);setAdicionar(true);}}><Plus className="h-4 w-4"/>Incluir pessoa</button><button className="btn-outline" disabled={baixando} onClick={()=>void pdf()}><FileDown className="h-4 w-4"/>{baixando?'Gerando…':'Relatório em PDF'}</button></PageHeader>
-    <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">A apuração de bônus de instalação (O.S. finalizada no PCP) mora na Produção. Extra, plantão e empreita não entram lá. Esta tela do RH não conversa com aquela.</p>
-    {caixaErros&&!pessoa&&!regra&&!adicionar&&!aprovando&&!reabrindo&&caixaErros}
-    <div className="rh-stats"><StatCard label="Pessoas em apuração" value={ciclo.pessoas.length}/><StatCard label="O.S. vinculadas" value={new Set(ciclo.entregas.map(e=>e.os.id)).size} hint="Participação repartida entre a equipe"/><StatCard label="Propostas aprovadas" value={dinheiro(aprovadas.reduce((n,p)=>n+p.aprovacao!.valor,0))} hint={`${aprovadas.length} pessoa(s) · ainda não é pagamento`}/><StatCard label="Orçamento disponível" value={dinheiro(Math.max(0,ciclo.regra.orcamento-aprovadas.reduce((n,p)=>n+p.aprovacao!.valor,0)))} hint="Definido em Critérios e valores"/></div>
-    {!ciclo.pessoas.length&&<div className="card p-4"><h2 className="flex items-center gap-2 text-lg font-semibold text-brand"><Award className="h-5 w-5 shrink-0"/>Comece pela equipe de instalação</h2><p className="mt-1 max-w-3xl text-sm text-slate-500">A participação de cada pessoa nas O.S. agora é lançada dentro da O.S., no PCP, e a bonificação de instalação é apurada na Produção. Esta tela não fecha nota de apuração nova: ela guarda critérios, metas e colaboração, e revisa só as apurações que já têm vínculos de O.S. guardados.</p><div className="mt-3 grid gap-2 sm:grid-cols-3">{['1. Combine critérios e orçamento','2. Lance a participação na O.S., no PCP','3. Confira a apuração na Produção'].map(t=><div key={t} className="rounded-xl bg-slate-50 px-3 py-2 text-sm font-medium">{t}</div>)}</div></div>}
-    <div className="space-y-3">{calculos.map(({p,a})=><button className="card flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition hover:border-brand/40" key={p.colaboradorId} onClick={()=>abrirPessoa(p)}><div><h2 className="text-lg font-semibold">{nomePessoa(p.colaboradorId)}</h2><p className="mt-1 text-sm text-slate-500">{a.aceitas.length} entrega(s) conferida(s) · {a.pontos.toFixed(2)} pontos · {horas(extrasEscala(p.colaboradorId))} extras na escala</p></div><div className="flex items-center gap-5"><div><p className="font-semibold text-brand">{p.aprovacao?'Proposta aprovada':a.nota===null?'A conferir':`Nota ${a.nota.toFixed(1)}`}</p><p className="text-sm text-slate-500">{p.aprovacao?dinheiro(p.aprovacao.valor):a.elegivel?`${dinheiro(a.sugestao)} sugeridos`:'Abrir apuração'}</p></div><ChevronRight className="h-5 w-5"/></div></button>)}</div>
-    <details className="card px-4 py-3"><summary className="cursor-pointer font-semibold text-brand">Como funciona a bonificação dos instaladores</summary><div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-600"><p><b>Entrega ({ciclo.regra.pesos.entrega}%):</b> pontos de complexidade × participação na O.S., comparados à meta individual. Uma instalação grande vale mais pontos que uma tarefa simples. A soma das participações da equipe não passa de 100%.</p><p><b>Qualidade ({ciclo.regra.pesos.qualidade}%):</b> participação dos pontos entregues sem retrabalho atribuído à execução. Registre e confira a causa; problema de material, alteração do cliente e projeto não são atribuídos automaticamente ao instalador.</p><p><b>Prazo ({ciclo.regra.pesos.prazo}%):</b> entregas no prazo entre as entregas com prazo sob controle da equipe. Impedimentos externos justificados ficam fora desse denominador.</p><p><b>Colaboração ({ciclo.regra.pesos.colaboracao}%):</b> três comportamentos observáveis, com evidências. A régua é 0 (não atendido), 50 (parcial) e 100 (atendido). Horas extras, atestados e ausências protegidas não elevam nem reduzem a nota.</p><p><b>Proposta:</b> teto individual × nota / 100, com nota e qualidade mínimas, superação da referência habitual e limite de orçamento. Os pesos são uma proposta de gestão ajustável, não percentuais previstos em lei.</p><p>Segurança é requisito de execução. Relatar incidente, risco ou interromper trabalho inseguro não deve reduzir bonificação. Não se usa “zero acidentes relatados” como meta.</p><p>Prêmio, gratificação, horas extras e empreitada têm tratamentos diferentes. Valide a política e a convenção coletiva com o responsável trabalhista/contábil antes de pagar. A tela registra uma proposta, sem lançar valores na folha.</p><p className="flex flex-wrap gap-4"><a className="underline" target="_blank" rel="noreferrer" href="https://www.planalto.gov.br/ccivil_03/decreto-lei/del5452compilado.htm">CLT: arts. 59 e 457</a><a className="underline" target="_blank" rel="noreferrer" href="https://www.gov.br/trabalho-e-emprego/pt-br/acesso-a-informacao/participacao-social/conselhos-e-orgaos-colegiados/comissao-tripartite-partitaria-permanente/normas-regulamentadora/normas-regulamentadoras-vigentes/norma-regulamentadora-no-35-nr-35">MTE: trabalho em altura</a></p></div></details>
-    {!!ciclo.historico.length&&<details className="card px-4 py-3"><summary className="cursor-pointer font-semibold">Histórico da apuração</summary><div className="mt-3 space-y-2 text-sm">{[...ciclo.historico].reverse().map((h,i)=><p key={`${h.em}-${i}`}>{new Date(h.em).toLocaleString('pt-BR')} · {nomePessoa(h.por)} · {h.acao}</p>)}</div></details>}
-    {adicionar&&<Modal aberto onFechar={()=>setAdicionar(false)} titulo="Incluir pessoa na apuração" rodape={<><button className="btn-ghost" onClick={()=>setAdicionar(false)}>Cancelar</button><button className="btn-primary" disabled={!pessoaIdEscolhida} onClick={()=>{if(pessoaIdEscolhida&&!ciclo.pessoas.some(p=>p.colaboradorId===pessoaIdEscolhida)&&salvar({...ciclo,pessoas:[...ciclo.pessoas,novaPessoa(pessoaIdEscolhida)]},`Incluiu ${nomePessoa(pessoaIdEscolhida)}`)){setAdicionar(false);abrirPessoa(novaPessoa(pessoaIdEscolhida));}}}>Incluir</button></>}>{caixaErros}<Campo label="Colaborador"><Select value={pessoaIdEscolhida} onChange={e=>setPessoaIdEscolhida(e.target.value)}><option value="">Selecione uma pessoa</option>{d.colaboradores.filter(c=>noQuadro(c)&&!c.ehDirecao&&!ciclo.pessoas.some(p=>p.colaboradorId===c.id)).sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=><option key={c.id} value={c.id}>{nomePessoa(c.id)}</option>)}</Select></Campo></Modal>}
-    {regra&&<Modal aberto onFechar={()=>setRegra(null)} titulo="Critérios e valores do mês" largura="max-w-3xl" rodape={<><button className="btn-ghost" onClick={()=>setRegra(null)}>Fechar</button><button className="btn-primary" disabled={!!aprovadas.length} onClick={()=>{const erros=validarRegra(regra);if(erros.length){setErro(erros);return;}if(salvar({...ciclo,regra},'Atualizou os critérios do mês'))setRegra(null);}}>Salvar critérios</button></>}><div className="space-y-4">{caixaErros}{!!aprovadas.length&&<p className="rounded-xl bg-amber-50 p-3">Há propostas aprovadas. Reabra as aprovações antes de alterar a regra do mês.</p>}<fieldset disabled={!!aprovadas.length} className="space-y-4"><p className="text-sm text-slate-500">Pesos propostos para o piloto de instalação. Combine a régua antes do período e mantenha a referência documentada.</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{(Object.keys(regra.pesos) as (keyof RegraPerformance['pesos'])[]).map(k=><Campo key={k} label={`${{entrega:'Entrega',qualidade:'Qualidade',prazo:'Prazo',colaboracao:'Colaboração'}[k]} (%)`}><Input type="number" min="0" max="100" value={regra.pesos[k]} onChange={e=>setRegra({...regra,pesos:{...regra.pesos,[k]:Number(e.target.value)}})}/></Campo>)}</div><div className="grid gap-3 sm:grid-cols-2">{([{k:'notaMinima',nome:'Nota mínima (0–100)'},{k:'qualidadeMinima',nome:'Qualidade mínima (0–100)'},{k:'tetoIndividual',nome:'Teto por pessoa (R$)'},{k:'orcamento',nome:'Orçamento do mês (R$)'}] as const).map(x=><Campo label={x.nome} key={x.k}><Input type="number" min="0" step="0.01" value={regra[x.k]} onChange={e=>setRegra({...regra,[x.k]:Number(e.target.value)})}/></Campo>)}</div><Campo label="Referência habitual e critérios combinados" obrigatorio hint="Registre período de referência, método de complexidade, metas combinadas, data e responsáveis. Não use só o faturamento da O.S."><Textarea value={regra.referencia} onChange={e=>setRegra({...regra,referencia:e.target.value})}/></Campo></fieldset></div></Modal>}
-    {pessoa&&analise&&<Modal aberto onFechar={()=>setPessoa(null)} titulo={nomePessoa(pessoa.colaboradorId)} descricao={`Performance · ${mes.slice(5)}/${mes.slice(0,4)}`} largura="max-w-5xl" rodape={<><button className="btn-ghost" onClick={()=>setPessoa(null)}>Fechar</button>{!pessoa.aprovacao&&<button className="btn-primary" onClick={()=>{if(!Number.isFinite(pessoa.habitual)||pessoa.habitual<0||!Number.isFinite(pessoa.meta)||pessoa.meta<0){setErro(['Metas e referência não podem ser negativas.']);return;}if(salvar(emEdicao,`Conferiu ${nomePessoa(pessoa.colaboradorId)}`))setPessoa(null);}}>Salvar avaliação</button>}</>}><div className="space-y-5">{caixaErros}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{(Object.keys(analise.notas) as (keyof typeof analise.notas)[]).map(k=><StatCard key={k} label={{entrega:'Entrega',qualidade:'Qualidade',prazo:'Prazo',colaboracao:'Colaboração'}[k]} value={nulo(analise.notas[k])}/>)}</div>
-      <div className="rounded-xl bg-slate-50 p-4 text-sm"><b>Horas extras, em separado:</b> {horas(extrasEscala(pessoa.colaboradorId))} conferidas em plantões. {extrasPonto(pessoa.colaboradorId).length===1?`${horas(extrasPonto(pessoa.colaboradorId)[0].extrasMin)} no ponto do mês.`:extrasPonto(pessoa.colaboradorId).length>1?'Mais de um espelho no mês: conferir os períodos no Ponto.':'Ainda sem espelho de ponto no mês.'} As fontes não são somadas. <Link className="underline" to="/ponto">Conferir ponto</Link></div>
-      <fieldset disabled={!!pessoa.aprovacao} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><Campo label="Referência habitual (pontos)" hint="Resultado ordinário de um período comparável."><Input type="number" min="0" step="0.1" value={pessoa.habitual} onChange={e=>setPessoa({...pessoa,habitual:Number(e.target.value)})}/></Campo><Campo label="Meta superior (pontos)" hint="Ajuste ao serviço, à participação e à disponibilidade combinada."><Input type="number" min="0" step="0.1" value={pessoa.meta} onChange={e=>setPessoa({...pessoa,meta:Number(e.target.value)})}/></Campo></div>
-      <h3 className="font-semibold text-brand">Colaboração observável</h3><div className="grid gap-3 sm:grid-cols-3">{CRITERIOS_COLABORACAO.map((label,i)=><Campo label={label} key={label}><Select value={pessoa.colaboracao[i]??''} onChange={e=>{const notas=[...pessoa.colaboracao] as PessoaPerformance['colaboracao'];notas[i]=e.target.value===''?null:Number(e.target.value);setPessoa({...pessoa,colaboracao:notas});}}><option value="">A conferir</option><option value="0">0 · Não atendido</option><option value="50">50 · Parcial</option><option value="100">100 · Atendido</option></Select></Campo>)}</div><Campo label="Evidências da colaboração" hint="Descreva fatos e datas. Evite rótulos como 'bom' ou 'ruim'."><Textarea value={pessoa.evidenciaColaboracao} onChange={e=>setPessoa({...pessoa,evidenciaColaboracao:e.target.value})}/></Campo><Campo label="Contexto e observações"><Textarea value={pessoa.contexto} onChange={e=>setPessoa({...pessoa,contexto:e.target.value})} placeholder="Mudanças de escopo, disponibilidade combinada, impedimentos e resposta da pessoa."/></Campo></fieldset>
-      <section><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold text-brand">Entregas e ordens de serviço</h3></div>{editada&&<p className="mb-2 text-sm text-amber-700">Salve a avaliação para aprovar a proposta.</p>}<p className="mb-2 text-sm text-slate-500">A participação de cada pessoa na O.S. agora é lançada dentro da O.S., no PCP. Os vínculos abaixo ficam só para consulta.</p>{!analise.linhas.length&&<p className="rounded-xl border border-dashed p-5 text-slate-500">Nenhum vínculo de O.S. guardado nesta apuração.</p>}{analise.linhas.map(e=><button key={e.id} className="mb-2 block w-full rounded-xl border p-4 text-left hover:bg-slate-50" onClick={()=>setEntrega(e)}><b>O.S. {e.os.numero}</b> · {e.os.cliente}<span className="mt-1 block text-sm text-slate-500">{e.participacao}% de participação · complexidade {e.complexidade}/5 · {e.aceite?'Aceite conferido':'Aceite pendente'} · {e.qualidade==='pendente'?'Qualidade a conferir':e.qualidade==='execucao'?'Retrabalho de execução':e.qualidade==='externo'?'Ocorrência externa':'Sem retrabalho'}</span></button>)}</section>
-      <div className="rounded-xl border border-brand/20 bg-brand/5 p-5"><h3 className="font-semibold text-brand">Proposta de bonificação</h3><p className="mt-2 text-xl font-semibold">{pessoa.aprovacao?dinheiro(pessoa.aprovacao.valor):dinheiro(analise.sugestao)}</p><p className="mt-1 text-sm">{analise.nota===null?'A apuração ainda tem pendências.':`Nota ${analise.nota.toFixed(1)} × teto ${dinheiro(ciclo.regra.tetoIndividual)} / 100.`} {analise.nota!==null&&!analise.elegivel?'Ainda não atende aos critérios mínimos ou à superação da referência habitual.':''}</p>{!!analise.pendencias.length&&<ul className="mt-3 list-inside list-disc text-sm text-amber-800">{analise.pendencias.map(e=><li key={e}>{e}</li>)}</ul>}<p className="mt-3 text-sm text-slate-500">A aprovação registra sua decisão e preserva a regra aplicada. O pagamento é tratado posteriormente na folha.</p>{pessoa.aprovacao?<div className="mt-3"><p className="text-sm">Aprovada por {nomePessoa(pessoa.aprovacao.por)} · {new Date(pessoa.aprovacao.em).toLocaleString('pt-BR')}</p><button className="btn-outline mt-3" onClick={()=>{setJustificativa('');setReabrindo(pessoa);}}>Reabrir para correção</button></div>:<button className="btn-primary mt-4" disabled={!analise.elegivel||!!editada} onClick={()=>{setValor(String(analise.sugestao));setJustificativa('');setErro([]);setAprovando(pessoa);}}>Revisar e aprovar proposta</button>}</div>
-    </div></Modal>}
-    {entrega&&<EntregaModal competencia={mes} registro={entrega} onFechar={()=>setEntrega(null)}/>}
-    {aprovando&&<Modal aberto onFechar={()=>setAprovando(null)} titulo="Aprovar proposta de bonificação" rodape={<><button className="btn-ghost" onClick={()=>setAprovando(null)}>Cancelar</button><button className="btn-primary" onClick={()=>{const erros=validarAprovacao(ciclo,aprovando,Number(valor),justificativa);if(erros.length){setErro(erros);return;}const a=apurarPessoa(ciclo,aprovando);const p={...aprovando,aprovacao:{valor:Number(valor),nota:a.nota!,em:new Date().toISOString(),por:sessao!.colaboradorId,justificativa,regra:structuredClone(ciclo.regra)}};if(salvar({...ciclo,pessoas:ciclo.pessoas.map(x=>x.colaboradorId===p.colaboradorId?p:x)},`Aprovou proposta de ${nomePessoa(p.colaboradorId)}`)){setAprovando(null);setPessoa(p);}}}>Aprovar proposta</button></>}><div className="space-y-4">{caixaErros}<p>{nomePessoa(aprovando.colaboradorId)} · {mes}</p><Campo label="Valor aprovado (R$)"><Input type="number" min="0" step="0.01" value={valor} onChange={e=>setValor(e.target.value)}/></Campo><Campo label="Justificativa da decisão"><Textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)}/></Campo><p className="text-sm text-slate-500">Confirme as evidências e a política acordada. Esta ação não paga nem lança verba na folha.</p></div></Modal>}
-    {reabrindo&&<Modal aberto onFechar={()=>setReabrindo(null)} titulo="Reabrir apuração" rodape={<><button className="btn-ghost" onClick={()=>setReabrindo(null)}>Cancelar</button><button className="btn-primary" disabled={!justificativa.trim()} onClick={()=>{const {aprovacao,...p}=reabrindo;if(salvar({...ciclo,pessoas:ciclo.pessoas.map(x=>x.colaboradorId===p.colaboradorId?p:x)},`Reabriu ${nomePessoa(p.colaboradorId)}; proposta anterior ${dinheiro(aprovacao!.valor)}; motivo: ${justificativa}`)){setReabrindo(null);setPessoa(p);}}}>Reabrir</button></>}><Campo label="Motivo da correção"><Textarea value={justificativa} onChange={e=>setJustificativa(e.target.value)}/></Campo></Modal>}
-  </div>;
+  return (
+    <details className="card px-4 py-3">
+      <summary className="cursor-pointer font-semibold text-brand">Apurações antigas guardadas no RH ({ciclos.length})</summary>
+      <p className="mt-3 text-sm text-slate-500">Só consulta. Estas apurações foram feitas na tela antiga e continuam guardadas como estavam. Nada aqui grava ou muda.</p>
+      <ul className="mt-3 space-y-2">
+        {ciclos.map((c) => {
+          const pessoas = c.pessoas ?? [];
+          const aprovadas = pessoas.filter((p) => p.aprovacao);
+          const total = aprovadas.reduce((n, p) => n + (p.aprovacao?.valor ?? 0), 0);
+          return (
+            <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+              <div>
+                <p className="font-semibold">{mesAno(c.competencia)}</p>
+                <p className="text-sm text-slate-500">
+                  {pessoas.length} pessoa(s) · {(c.entregas ?? []).length} vínculo(s) de O.S. · {aprovadas.length} proposta(s) aprovada(s){aprovadas.length ? `, ${dinheiro(total)}` : ''}
+                </p>
+              </div>
+              <button className="btn-outline min-h-10" disabled={!!baixando} onClick={() => void pdf(c)}>
+                <FileDown className="h-4 w-4" />{baixando === c.competencia ? 'Gerando…' : 'Baixar PDF'}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+export default function Performance() {
+  const sessao = useSessao();
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Performance" description="O programa das equipes de instalação agora fica no PCP." />
+      <section className="card space-y-3 p-5">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-brand"><Trophy className="h-5 w-5 shrink-0" />O programa das equipes mudou para o PCP</h2>
+        <p className="max-w-3xl text-sm text-slate-600">Ranking, pontos, comissão e prêmios das equipes ficam no PCP, na aba <b>Performance</b>. A participação de cada pessoa é lançada dentro da O.S., e o fechamento do mês sai de lá.</p>
+        <p className="max-w-3xl text-sm text-slate-600">No RH fica o que é da pessoa: cadastro, ponto, férias, folha e desenvolvimento.</p>
+        <a className="btn-primary inline-flex min-h-11" href={URL_PCP} target="_blank" rel="noopener noreferrer">
+          <ExternalLink className="h-4 w-4" />Abrir o PCP
+        </a>
+      </section>
+      {sessao?.perfil === 'ADMIN_RH' && <ApuracoesAntigas />}
+    </div>
+  );
 }

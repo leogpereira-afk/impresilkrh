@@ -38,7 +38,6 @@ export interface TelaBuscavel {
 export const APELIDOS: Record<string, string[]> = {
   "/ponto": ["ponto", "frequencia", "advertencia", "falta", "atraso", "hora extra", "folha variavel"],
   "/sst": ["aso", "exame", "nr", "seguranca", "epi", "cipa", "saude"],
-  "/performance": ["performance", "bonificacao", "bonus", "instaladores", "entregas", "produtividade"],
   "/custos": ["folha", "salario", "pagamento", "custo", "adiantamento"],
   "/ferias": ["ferias", "descanso"],
   "/integracao": ["onboarding", "offboarding", "admissao", "desligamento", "checklist", "experiencia", "contrato de experiencia", "efetivacao"],
