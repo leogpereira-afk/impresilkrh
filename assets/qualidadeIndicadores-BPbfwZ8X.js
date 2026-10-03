@@ -1,0 +1,1 @@
+function e(i){return i==null||!Number.isFinite(i)||i<0||i>100?null:i>=85?"Alto":i>=70?"Médio":"Baixo"}function n(i){return i==="Alto"||i==="Médio"||i==="Baixo"?i:null}function r(i){return n(i)??"Não informado"}export{n as a,e as f,r};
