@@ -1131,6 +1131,8 @@ export interface FechamentoFolha {
 export interface Freelancer {
   id: string;
   nome: string;
+  /** Foto própria apenas quando não há ficha vinculada em Colaboradores. */
+  fotoDataUrl?: string | null;
   /** O login dele nos sistemas — mesma regra do apelido do colaborador. */
   apelido?: string;
   cpf?: string;

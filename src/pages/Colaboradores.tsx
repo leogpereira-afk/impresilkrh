@@ -1,3 +1,4 @@
+import { origemFotoFreelancer } from "@/lib/fotoFreelancer";
 import { useSearchParams } from "react-router-dom";
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -1045,7 +1046,7 @@ export default function Colaboradores() {
           {visaoLinha === 'comportamental' && <><option value="perfil">Perfil</option><option value="motivacao">Motivação</option></>}
         </Select><button className="btn-outline shrink-0" aria-label="Inverter ordenação" onClick={() => setOrdem({ ...ordem, asc: !ordem.asc })}>{ordem.asc ? 'Crescente' : 'Decrescente'}</button></div>
         {lista.map(c => <Link key={c.id} to={`/colaboradores/${c.id}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="flex flex-wrap items-center gap-1.5 break-words font-semibold text-slate-800">{c.nome}{contratoPorFicha.has(c.id) && <TagContrato contrato={contratoPorFicha.get(c.id)!} />}</p>
+          <div className="flex items-center gap-3"><Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" /><p className="flex flex-wrap items-center gap-1.5 break-words font-semibold text-slate-800">{c.nome}{contratoPorFicha.has(c.id) && <TagContrato contrato={contratoPorFicha.get(c.id)!} />}</p></div>
           <p className="mt-1 text-sm text-slate-600">{d.nomeCargo(c)} · {d.statusById.get(c.statusId ?? "")?.nome ?? 'Situação não informada'}</p>
           {visaoLinha === 'cadastro' && <p className="mt-1 text-xs text-slate-500">{d.nomeArea(c.areaId)} · {d.nomeNivel(c.nivelId)} · {d.enquadrarColab(c)}</p>}
           {visaoLinha === 'custo' && <p className="mt-1 text-sm">{competenciaLabel(mesCusto)}: {custoPorColab.has(c.id) ? formatBRL(custoPorColab.get(c.id)!.total) : 'Sem lançamentos'} · {custoPorColab.get(c.id)?.n ?? 0} lançamento(s)</p>}
@@ -1054,7 +1055,7 @@ export default function Colaboradores() {
         </Link>)}
         {/* Contrato de freelancer (só no filtro Freelancer): leva à tela dele. */}
         {linhasContrato.map(f => <Link key={`contrato-${f.id}`} to={linkDoContrato(f)} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="flex flex-wrap items-center gap-1.5 break-words font-semibold text-slate-800">{f.nome}<TagContrato contrato={f} rotulo="Contrato de freelancer" /></p>
+          <div className="flex items-center gap-3"><Avatar nome={f.nome} foto={origemFotoFreelancer(f, d.colaboradores).foto} size="sm" /><p className="flex flex-wrap items-center gap-1.5 break-words font-semibold text-slate-800">{f.nome}<TagContrato contrato={f} rotulo="Contrato de freelancer" /></p></div>
           <p className="mt-1 text-sm text-slate-600">{f.funcao || 'Função não informada'} · {STATUS_DO_CONTRATO}</p>
           <p className="mt-1 text-xs text-slate-500">{ateQuando(f) || 'Sem data de fim'} · fora do quadro</p>
           <span className="mt-1 block text-sm font-medium text-brand">Abrir contrato →</span>
@@ -1199,7 +1200,7 @@ export default function Colaboradores() {
                     <td className="td">
                       <Link to={linkDoContrato(f)} className="flex min-h-10 items-center gap-3" title="Abrir o contrato na tela de Freelancers">
                         <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{lista.length + j + 1}</span>
-                        <Avatar nome={f.nome} size="sm" />
+                        <Avatar nome={f.nome} foto={origemFotoFreelancer(f, d.colaboradores).foto} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-800">{f.nome}</p>
                           <p className="truncate text-xs text-slate-500">
@@ -1321,7 +1322,7 @@ export default function Colaboradores() {
                     to={linkDoContrato(f)}
                     className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-brand/40 hover:bg-slate-50/80 hover:shadow-sm"
                   >
-                    <Avatar nome={f.nome} size="sm" className="h-9 w-9" />
+                    <Avatar nome={f.nome} foto={origemFotoFreelancer(f, d.colaboradores).foto} size="sm" className="h-9 w-9" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-800">{f.nome}</p>
                       <p className="truncate text-xs text-slate-500">{f.funcao || "Função não informada"}</p>

@@ -422,3 +422,20 @@ describe("Freelancers: ficha no quadro sem contrato", () => {
     expect(el.querySelector("#contrato-k-s")!.className).not.toContain("bg-amber-50");
   });
 });
+
+
+describe("foto do freelancer nas telas conectadas", () => {
+  const foto = "data:image/jpeg;base64,Zm90bw==";
+  it("contrato usa a foto da ficha, e a ação de foto fica visível ao RH", () => {
+    estado.dominio = dominioFalso(COLABS.map(c => c.id === fichaA.id ? { ...c, fotoDataUrl: foto } : c));
+    montar(<Freelancers />, "/freelancers");
+    expect(linhaCom(kA.nome)?.querySelector("img")?.src).toBe(foto);
+    expect(el.querySelector(`button[aria-label="Foto de ${kA.nome}"]`)).not.toBeNull();
+  });
+  it("contrato sem ficha exibe a mesma foto na tabela e na lista do celular", () => {
+    estado.colecoes.freelancers = CONTRATOS.map(c => c.id === kB.id ? { ...c, fotoDataUrl: foto } : c);
+    montar(<Colaboradores />, "/colaboradores?status=freelancer");
+    expect(linhaCom(kB.nome)?.querySelector("img")?.src).toBe(foto);
+    expect(el.querySelector('[aria-label="Pessoas encontradas"] img[alt="Beta Instalador Fictício"]')?.getAttribute("src")).toBe(foto);
+  });
+});

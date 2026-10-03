@@ -23,7 +23,7 @@ export function Avatar({
 }) {
   // Foto corrompida/ilegível não pode virar ícone de imagem quebrada na tela:
   // ao falhar, cai nas iniciais como se não houvesse foto.
-  const [falhou, setFalhou] = useState(false);
+  const [fotoComErro, setFotoComErro] = useState<string | null>(null);
   const tamanhos = {
     sm: "h-8 w-8 text-xs",
     md: "h-10 w-10 text-sm",
@@ -31,14 +31,14 @@ export function Avatar({
   };
   const base = cn("shrink-0 rounded-full", tamanhos[size], className);
 
-  if (foto && !falhou) {
+  if (foto && foto !== fotoComErro) {
     return (
       <img
         src={foto}
         alt={nome}
         title={nome}
         loading="lazy"
-        onError={() => setFalhou(true)}
+        onError={() => setFotoComErro(foto)}
         className={cn(base, "object-cover ring-1 ring-slate-200")}
       />
     );

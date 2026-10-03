@@ -25,12 +25,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, HardHat, Plus, Pencil, Trash2, AlertTriangle, Handshake } from "lucide-react";
+import { Search, HardHat, Plus, Pencil, Trash2, AlertTriangle, Handshake, Camera } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
-import { EmptyState } from "@/components/ui/misc";
+import { Avatar, EmptyState } from "@/components/ui/misc";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { useColecao } from "@/lib/store";
@@ -43,6 +43,9 @@ import { cpfPendente, exigeCpf, idDoContrato, problemaCpfFreelancer } from "@/li
 import { idPessoa } from "@/lib/identidade";
 import { contratoDaFicha, fichasSemContrato, mesmaPessoa } from "@/lib/freelancerNoQuadro";
 import { Pessoa } from "@/components/ui/pessoa";
+
+import { origemFotoFreelancer } from "@/lib/fotoFreelancer";
+import { FotoFreelancer } from "@/components/foto-freelancer";
 
 const HOJE = diaLocalISO(new Date());
 
@@ -88,6 +91,7 @@ export default function Freelancers() {
      colecao muda de verdade -- que e o que o memo precisa. */
   const { items: todos, criar, atualizar, remover } = useColecao("freelancers");
 
+  const [fotoContrato, setFotoContrato] = useState<Freelancer | null>(null);
   const [busca, setBusca] = useState("");
   const [verEncerrados, setVerEncerrados] = useState(false);
   const [form, setForm] = useState<Partial<Freelancer> | null>(null);
@@ -312,11 +316,16 @@ export default function Freelancers() {
                         className={`border-b last:border-0 ${f.id === destacado ? "bg-amber-50 ring-2 ring-inset ring-amber-300" : ""}`}
                       >
                         <td className="px-3 py-2">
-                          <div className="font-medium text-slate-900">{f.nome}</div>
-                          {f.apelido && <div className="font-mono text-xs text-slate-400">{f.apelido}</div>}
-                          {idDoContrato(f) && <div className="font-mono text-xs text-slate-400">ID {idDoContrato(f)}</div>}
-                          {cpfPendente(f) && <Badge variant="warning">CPF pendente</Badge>}
-                          {idRepetidoCom(f) && <Badge variant="danger">ID repetido</Badge>}
+                          <div className="flex items-center gap-3">
+                            <Avatar nome={f.nome} foto={origemFotoFreelancer(f, d.colaboradores).foto} />
+                            <div>
+                              <div className="font-medium text-slate-900">{f.nome}</div>
+                              {f.apelido && <div className="font-mono text-xs text-slate-400">{f.apelido}</div>}
+                              {idDoContrato(f) && <div className="font-mono text-xs text-slate-400">ID {idDoContrato(f)}</div>}
+                              {cpfPendente(f) && <Badge variant="warning">CPF pendente</Badge>}
+                              {idRepetidoCom(f) && <Badge variant="danger">ID repetido</Badge>}
+                            </div>
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-slate-600">{f.funcao || "não informada"}</td>
                         <td className="px-3 py-2 text-slate-600">
@@ -326,6 +335,9 @@ export default function Freelancers() {
                         <td className="px-3 py-2"><Badge variant={e.variante}>{e.rotulo}</Badge></td>
                         {podeEditar && (
                           <td className="px-3 py-2 text-right">
+                            <button className="btn-ghost h-8 px-2" aria-label={`Foto de ${f.nome}`} onClick={() => setFotoContrato(f)}>
+                              <Camera className="h-3.5 w-3.5" /> Foto
+                            </button>
                             <button className="btn-ghost h-8 px-2" onClick={() => abrirForm({ ...f })}>
                               <Pencil className="h-3.5 w-3.5" /> Editar
                             </button>
@@ -427,6 +439,8 @@ export default function Freelancers() {
           </div>
         )}
       </Modal>
+
+      {podeEditar && fotoContrato && <FotoFreelancer key={fotoContrato.id} contrato={fotoContrato} fechar={() => setFotoContrato(null)} />}
 
       <ConfirmDialog
         aberto={!!apagando}
