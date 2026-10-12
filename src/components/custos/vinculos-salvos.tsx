@@ -3,7 +3,7 @@ import { Link2, Trash2, AlertTriangle, Check, CheckCircle2, ArrowRightLeft } fro
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/form";
-import { idPessoa } from "@/lib/identidade";
+import { idDaPessoa } from "@/lib/identidade";
 import { conferirVinculos, type VinculoSalvo } from "@/lib/vinculosMubi";
 import type { Colaborador } from "@/data/types";
 
@@ -80,9 +80,9 @@ export function VinculosSalvos({
                 <span className="font-mono text-xs text-slate-600">{v.chave}</span>
                 <span className="text-slate-300">→</span>
                 <span className="text-slate-700">{v.ficha?.nome ?? <span className="text-red-600">ficha {v.colaboradorId} não existe</span>}</span>
-                {v.ficha && idPessoa(v.ficha.cpf) && (
+                {v.ficha && idDaPessoa(v.ficha) && (
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500" title="ID da pessoa (6 primeiros dígitos do CPF)">
-                    ID {idPessoa(v.ficha.cpf)}
+                    ID {idDaPessoa(v.ficha)}
                   </span>
                 )}
                 {v.alerta && (

@@ -40,7 +40,8 @@ import { useDominio } from "@/lib/dominio";
 import { formatBRL, formatDate, diaLocalISO, parseBRL } from "@/lib/format";
 import type { Freelancer } from "@/data/types";
 import { cpfPendente, exigeCpf, idDoContrato, problemaCpfFreelancer } from "@/lib/freelancerContrato";
-import { idPessoa } from "@/lib/identidade";
+import { idDaPessoa, idGravado } from "@/lib/identidade";
+import { SeloIdPessoa } from "@/components/colaboradores/id-pessoa";
 import { contratoDaFicha, fichasSemContrato, mesmaPessoa } from "@/lib/freelancerNoQuadro";
 import { Pessoa } from "@/components/ui/pessoa";
 
@@ -139,11 +140,13 @@ export default function Freelancers() {
   /* O MESMO ID EM FICHA E CONTRATO, com CPFs diferentes, faz o PCP travar os
      dois cadastros até alguém conferir. Mesmo CPF é a mesma pessoa (quem foi
      do quadro e voltou como freelancer), e aí não há nada a conferir. */
+  /* O ID que vale (D-004): o gravado no cadastro; sem ele, o do CPF. */
+  const idDoFreelancer = (f: Partial<Freelancer>) => idGravado(f) || idDoContrato(f);
   const idRepetidoCom = (f: Partial<Freelancer>) => {
-    const id = idDoContrato(f);
+    const id = idDoFreelancer(f);
     if (!id) return null;
     const cpf = String(f.cpf ?? "").replace(/\D/g, "");
-    return d.colaboradores.find((c) => idPessoa(c.cpf) === id && String(c.cpf ?? "").replace(/\D/g, "") !== cpf) ?? null;
+    return d.colaboradores.find((c) => idDaPessoa(c) === id && String(c.cpf ?? "").replace(/\D/g, "") !== cpf) ?? null;
   };
 
   const vencendo = todos.filter((f) => {
@@ -189,7 +192,7 @@ export default function Freelancers() {
     if (form.id) { atualizar(form.id, dados); toast("Contrato atualizado."); }
     else { criar(dados); toast("Freelancer cadastrado."); }
     const colide = idRepetidoCom(dados);
-    if (colide) toast(`O ID ${idDoContrato(dados)} também é de ${colide.nome} em Colaboradores, com outro CPF. O PCP trava os dois até o CPF ser conferido.`, "info");
+    if (colide) toast(`O ID ${idDoFreelancer(dados)} também é de ${colide.nome} em Colaboradores, com outro CPF. O PCP trava os dois até o CPF ser conferido.`, "info");
     setForm(null);
   };
 
@@ -250,7 +253,7 @@ export default function Freelancers() {
               {semContrato.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <div className="min-w-0">
-                    <Pessoa nome={c.nome} cpf={c.cpf} />
+                    <Pessoa nome={c.nome} cpf={c.cpf} idGravado={c.idPessoa} />
                     {/* nomeCargo devolve "—" quando a ficha não tem cargo: aqui vira frase. */}
                     <div className="text-xs text-slate-500">{d.nomeCargo(c) !== "—" ? d.nomeCargo(c) : "Sem cargo na ficha"}</div>
                   </div>
@@ -321,7 +324,7 @@ export default function Freelancers() {
                             <div>
                               <div className="font-medium text-slate-900">{f.nome}</div>
                               {f.apelido && <div className="font-mono text-xs text-slate-400">{f.apelido}</div>}
-                              {idDoContrato(f) && <div className="font-mono text-xs text-slate-400">ID {idDoContrato(f)}</div>}
+                              {(idDoFreelancer(f) || podeEditar) && <div className="text-xs"><SeloIdPessoa cadastro={f} colecao="freelancers" podeTrocar={podeEditar} compacto /></div>}
                               {cpfPendente(f) && <Badge variant="warning">CPF pendente</Badge>}
                               {idRepetidoCom(f) && <Badge variant="danger">ID repetido</Badge>}
                             </div>

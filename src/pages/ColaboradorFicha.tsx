@@ -46,7 +46,7 @@ import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import type { Colaborador } from "@/data/types";
 import { BlocoCompletude } from "@/components/colaboradores/completude";
 import { competenciaPagto } from "@/lib/custos";
-import { idPessoa } from "@/lib/identidade";
+import { SeloIdPessoa } from "@/components/colaboradores/id-pessoa";
 
 const diasAte = (d?: string | null) => diasDeCalendario(d, HOJE);
 
@@ -300,13 +300,11 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold text-brand-ink">Ficha · {c.nome}</h1>
               <DotBadge label={d.nomeStatus(c.statusId)} cor={d.corStatus(c.statusId)} />
-              {/* O ID da pessoa (6 primeiros dígitos do CPF) — a chave pela qual o
-                  ERP e os outros sistemas a reconhecem. Nome só exibe. */}
-              {idPessoa(c.cpf) && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600" title="ID da pessoa: os 6 primeiros dígitos do CPF. É por ele que o ERP casa os pagamentos.">
-                  ID {idPessoa(c.cpf)}
-                </span>
-              )}
+              {/* O ID da pessoa: o gravado na ficha (D-004), que não muda quando
+                  o CPF é corrigido; sem ele, os 6 primeiros dígitos do CPF. É a
+                  chave pela qual o ERP e os outros sistemas a reconhecem. Nome
+                  só exibe. A marca de divergência e a troca (só admin) moram no selo. */}
+              <SeloIdPessoa cadastro={c} colecao="colaboradores" podeTrocar={podeEditar && sens} />
             </div>
             <p className="mt-0.5 text-sm text-slate-500">
               {d.nomeCargo(c)} · {d.nomeArea(c.areaId)} · Nível {d.nomeNivel(c.nivelId)} ({senioridade(c.nivelId)})

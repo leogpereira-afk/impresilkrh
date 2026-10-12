@@ -19,7 +19,7 @@ import { useToast } from '@/components/ui/toast';
 import { useColecao } from '@/lib/store';
 import { useSessao } from '@/lib/session';
 import { useDominio } from '@/lib/dominio';
-import { idPessoa } from '@/lib/identidade';
+import { idDaPessoa } from '@/lib/identidade';
 import { dinheiro } from '@/lib/performance';
 import { exportarPerformance } from '@/lib/performancePdf';
 import type { CicloPerformance } from '@/data/performance';
@@ -36,7 +36,7 @@ function ApuracoesAntigas() {
   const [baixando, setBaixando] = useState('');
   const ciclos = [...store.items].sort((a, b) => String(b.competencia).localeCompare(String(a.competencia)));
   if (!ciclos.length) return null;
-  const nomePessoa = (id: string) => `${d.nomeColab(id)} · ID ${idPessoa(d.colabById.get(id)?.cpf) ?? id}`;
+  const nomePessoa = (id: string) => `${d.nomeColab(id)} · ID ${idDaPessoa(d.colabById.get(id)) ?? id}`;
   const pdf = async (c: CicloPerformance) => {
     setBaixando(c.competencia);
     try { await exportarPerformance(c, nomePessoa); }

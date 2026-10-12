@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, FileDown, Pencil, CalendarDays } from 'lucide-react';
 import { obter, useColecao } from '@/lib/store';
-import { idPessoa } from '@/lib/identidade';
+import { idDaPessoa } from '@/lib/identidade';
 import { useDominio, noQuadro } from '@/lib/dominio';
 import { useSessao } from '@/lib/session';
 import { useToast } from '@/components/ui/toast';
@@ -19,7 +19,7 @@ const criar = (data: string, por: string): Plantao => ({id:'',titulo:'',data,ini
 export default function Plantoes() {
   const sessao=useSessao();
   const d=useDominio();
-  const nomePessoa=(id:string)=>`${d.nomeColab(id)} · ID ${idPessoa(d.colabById.get(id)?.cpf)??id}`;
+  const nomePessoa=(id:string)=>`${d.nomeColab(id)} · ID ${idDaPessoa(d.colabById.get(id))??id}`;
   const store=useColecao('plantoes');
   const equipes=useColecao('equipesPlantoes');
   const [nomeEquipe,setNomeEquipe]=useState('');

@@ -91,7 +91,7 @@ export const rotuloColecao = (c: string) => ROTULO[c] ?? c;
 
 // Campos que não são mudança de verdade (carimbo) ou que não podem ser escritos
 // em lugar nenhum (segredo).
-const IGNORADOS = new Set(["id", "atualizadoEm", "criadoEm", "importadoEm", "buscadoEm", "sincronizadoEm"]);
+const IGNORADOS = new Set(["id", "atualizadoEm", "criadoEm", "importadoEm", "buscadoEm", "sincronizadoEm", "idPessoaEm", "idPessoaPor"]);
 
 /**
  * Campos cujo VALOR nunca entra no histórico — só o fato de terem mudado.
@@ -139,6 +139,7 @@ const CAMPO: Record<string, string> = {
   dataPagamento: "Data de pagamento", perfil: "Perfil", modulos: "Módulos",
   ativo: "Ativo", observacao: "Observação", motivo: "Motivo", classe: "Classificação",
   idMubi: "Título no ERP", manual: "Lançado à mão", naoBatePonto: "Não bate ponto",
+  idPessoa: "ID da pessoa", idPessoaMotivo: "Motivo do ID da pessoa",
 };
 export const rotuloCampo = (c: string) => CAMPO[c] ?? c;
 

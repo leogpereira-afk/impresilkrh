@@ -1,4 +1,4 @@
-import { idPessoa } from "@/lib/identidade";
+import { idDaPessoa, idDivergeDoCpf, TITULO_ID_DIVERGENTE } from "@/lib/identidade";
 import { useDominio } from "@/lib/dominio";
 
 /**
@@ -15,7 +15,10 @@ import { useDominio } from "@/lib/dominio";
  * nome é escolher no escuro — e o erro é silencioso: o dinheiro sai da ficha
  * certa e entra na errada.
  *
- * O ID são os 6 primeiros dígitos do CPF, únicos entre as 93 fichas.
+ * O ID são os 6 primeiros dígitos do CPF, únicos entre as 93 fichas. Desde
+ * 12/10/2026 (D-004) ele fica GRAVADO na ficha e não muda com o CPF corrigido:
+ * o selo mostra o gravado e, sem ele, o do CPF; gravado diferente do CPF de
+ * hoje ganha a mesma marca do PCP.
  *
  * O SELO BUSCA SOZINHO. Basta o `colaboradorId`; ele acha nome e CPF no
  * cadastro. Foi a segunda tentativa: a primeira atravessava um `cpfDe` de tela
@@ -31,6 +34,7 @@ export function Pessoa({
   colaboradorId,
   nome,
   cpf,
+  idGravado,
   className,
 }: {
   /** Quem é. Com ele, nome e CPF saem do cadastro sozinhos. */
@@ -39,12 +43,16 @@ export function Pessoa({
   nome?: string;
   /** CPF já em mãos — evita a busca quando a tela já tem a ficha. */
   cpf?: string | null;
+  /** ID gravado já em mãos (a ficha ou o contrato que a tela tem). */
+  idGravado?: string | null;
   className?: string;
 }) {
   const d = useDominio();
   const ficha = colaboradorId ? d.colabById.get(colaboradorId) : undefined;
   const doc = cpf ?? ficha?.cpf;
-  const id = idPessoa(doc);
+  const fonte = { idPessoa: idGravado ?? ficha?.idPessoa, cpf: doc };
+  const id = idDaPessoa(fonte);
+  const diverge = idDivergeDoCpf(fonte);
   const rotulo = nome ?? ficha?.nome ?? colaboradorId ?? "—";
 
   return (
@@ -53,7 +61,7 @@ export function Pessoa({
       {id ? (
         <span
           className="whitespace-nowrap rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium tabular-nums text-slate-500"
-          title="ID da pessoa — 6 primeiros dígitos do CPF"
+          title="ID da pessoa: o gravado no cadastro; sem ele, os 6 primeiros dígitos do CPF"
         >
           {id}
         </span>
@@ -63,6 +71,14 @@ export function Pessoa({
           title="Sem CPF no cadastro: esta ficha não casa pela chave forte, só pelo nome — e nome se repete."
         >
           sem ID
+        </span>
+      )}
+      {diverge && (
+        <span
+          className="ml-1 whitespace-nowrap rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800"
+          title={TITULO_ID_DIVERGENTE}
+        >
+          ID diferente do CPF
         </span>
       )}
     </span>

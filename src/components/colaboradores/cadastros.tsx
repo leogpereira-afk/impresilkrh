@@ -10,7 +10,8 @@ import { useColecao, atualizarEm, removerEm, ehNomeColecao } from "@/lib/store";
 import { emLote, registrarAcaoManual } from "@/lib/auditoria";
 import { retratoDaPessoa } from "@/lib/retratoDaPessoa";
 import { formatCPF, formatDate } from "@/lib/format";
-import { idPessoa } from "@/lib/identidade";
+import { idDaPessoa, idDivergeDoCpf, idGravado } from "@/lib/identidade";
+import { PreencherIdPessoa } from "./id-pessoa";
 import { erroDatasCadastro } from "@/lib/edicaoCadastro";
 import { ConferenciaMubi } from "./conferencia-mubi";
 import type { CampoConferido, FichaRh } from "@/lib/conferenciaMubiRh";
@@ -97,7 +98,8 @@ function LinhaFicha({
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
           <code className="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600">{ficha.id}</code>
           {ficha.apelido && <span>login {ficha.apelido}</span>}
-          {idPessoa(ficha.cpf) && <span>ID {idPessoa(ficha.cpf)}</span>}
+          {idDaPessoa(ficha) && <span title={idGravado(ficha) ? "ID gravado na ficha" : "ID do CPF, ainda não gravado na ficha"}>ID {idDaPessoa(ficha)}{!idGravado(ficha) && " (do CPF)"}</span>}
+          {idDivergeDoCpf(ficha) && <Badge variant="warning">ID diferente do CPF</Badge>}
         </div>
       </td>
       <td className="td whitespace-nowrap text-xs text-slate-600">{formatCPF(ficha.cpf)}</td>
@@ -406,6 +408,9 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
 
   return (
     <div className="space-y-4">
+      {/* O ID da pessoa gravado (D-004): o botão das fichas antigas, só do RH
+          (esta aba já é só do RH, e a porta de dados confere o admin de novo). */}
+      <PreencherIdPessoa />
       {/* Conferência com o ERP em cima: é a que acha divergência de dado que JÁ
           está preenchido — admissão, CPF, telefone —, que é pior que campo
           vazio, porque o vazio se vê e o divergente não. */}

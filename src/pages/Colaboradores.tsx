@@ -26,7 +26,7 @@ import { feriasEmCurso } from "@/lib/ferias";
 import { cn } from "@/lib/cn";
 import type { Colaborador, Freelancer, Pagamento } from "@/data/types";
 import { SeloCompletude } from "@/components/colaboradores/completude";
-import { idPessoa } from "@/lib/identidade";
+import { idDaPessoa } from "@/lib/identidade";
 import { cpfPendente } from "@/lib/freelancerContrato";
 import {
   COLUNA_CONTRATO, STATUS_DO_CONTRATO, STATUS_FREELANCER,
@@ -734,7 +734,7 @@ export default function Colaboradores() {
                 >
                   <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-800">{c.nome}{idPessoa(c.cpf) && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-normal text-slate-500" title="ID da pessoa (6 primeiros dígitos do CPF)">ID {idPessoa(c.cpf)}</span>}</p>
+                    <p className="truncate text-sm font-semibold text-slate-800">{c.nome}{idDaPessoa(c) && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-normal text-slate-500" title="ID da pessoa (o gravado na ficha; sem ele, os 6 primeiros dígitos do CPF)">ID {idDaPessoa(c)}</span>}</p>
                     <p className="text-[11px] text-slate-500">
                       {sit.diasDeCasa} dias de casa · {d.nomeCargo(c) || "—"}
                     </p>

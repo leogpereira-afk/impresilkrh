@@ -46,7 +46,8 @@ const CONFERENCIAS = [
 ];
 
 /** Uma tela está no padrão se usa o selo <Pessoa> ou monta o ID à mão. */
-const NO_PADRAO = [/<Pessoa\b/, /idPessoa\s*\(/];
+// idDaPessoa(...) é o ID gravado na ficha (D-004), com o do CPF na falta dele.
+const NO_PADRAO = [/<Pessoa\b/, /id(?:Da)?Pessoa\s*\(/];
 
 const problemas = [];
 const ok = [];

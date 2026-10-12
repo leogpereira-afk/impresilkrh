@@ -26,7 +26,7 @@
 // demanda, para não pesar o bundle de quem nunca exporta).
 // ============================================================================
 import type { Colaborador, Freelancer } from "@/data/types";
-import { idPessoa } from "./identidade";
+import { idDaPessoa } from "./identidade";
 import { COLUNA_CONTRATO, camposDoContrato, celulaDoContrato } from "./freelancerNoQuadro";
 
 export type VisaoLinha = "cadastro" | "custo" | "comportamental";
@@ -135,7 +135,7 @@ const data = (v: unknown) => {
  * branco no papel se confunde com "o valor é zero" ou com erro de impressão.
  */
 export function linhaDoColaborador(c: Colaborador, visao: VisaoLinha, apoio: ApoioDaLinha): string[] {
-  const id = idPessoa(c.cpf) ?? "sem ID";
+  const id = idDaPessoa(c) ?? "sem ID";
   const ou = (v: string) => (v ? v : "—");
   if (visao === "custo") {
     const x = apoio.custoDe?.(c);
@@ -569,7 +569,7 @@ export async function montarFichasPdf(
     // que espremer.
     doc.addPage();
     const perm = p.permissaoDe(c);
-    const id = idPessoa(c.cpf) ?? "sem ID";
+    const id = idDaPessoa(c) ?? "sem ID";
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(15);

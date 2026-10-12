@@ -34,6 +34,8 @@ export interface FichaResumo {
   nome: string;
   apelido?: string | null;
   cpf?: string | null;
+  /** O ID gravado na ficha (D-004); sem ele, o do CPF. */
+  idPessoa?: string | null;
   statusId?: string | null;
   dataAdmissao?: string | null;
   dataDesligamento?: string | null;

@@ -94,6 +94,16 @@ export interface Colaborador {
    */
   apelido?: string;
   cpf?: string;
+  /** O ID DA PESSOA GRAVADO (D-004): 6 dígitos, nasce no servidor quando o
+   *  cadastro é criado e não muda quando o CPF é corrigido. Só o admin troca,
+   *  com motivo (ver supabase/functions/_shared/idPessoa.ts). */
+  idPessoa?: string;
+  /** Carimbo do servidor de quando o ID foi gravado ou trocado. */
+  idPessoaEm?: string;
+  /** Quem gravou pelo botão do admin ou trocou (id da ficha do admin). */
+  idPessoaPor?: string;
+  /** Motivo da troca (ou do preenchimento das fichas antigas). */
+  idPessoaMotivo?: string;
   email?: string;
   telefone?: string;
   dataNascimento?: string;
@@ -1136,6 +1146,16 @@ export interface Freelancer {
   /** O login dele nos sistemas — mesma regra do apelido do colaborador. */
   apelido?: string;
   cpf?: string;
+  /** O ID DA PESSOA GRAVADO (D-004): 6 dígitos, nasce no servidor quando o
+   *  cadastro é criado e não muda quando o CPF é corrigido. Só o admin troca,
+   *  com motivo (ver supabase/functions/_shared/idPessoa.ts). */
+  idPessoa?: string;
+  /** Carimbo do servidor de quando o ID foi gravado ou trocado. */
+  idPessoaEm?: string;
+  /** Quem gravou pelo botão do admin ou trocou (id da ficha do admin). */
+  idPessoaPor?: string;
+  /** Motivo da troca (ou do preenchimento das fichas antigas). */
+  idPessoaMotivo?: string;
   /** Quando presta como empresa. */
   cnpj?: string;
   telefone?: string;
