@@ -34,7 +34,10 @@ describe("R1: ficha viva sem ID e sem marca (gravada antes do 80e7d8f) continua 
   it("ficha viva sem ID troca o CPF para um que comeca pelo ID de outra pessoa: sem marca", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [linha("colaboradores", trocada()), linha("colaboradores", ficha("f2", { cpf: CPF_B }))] });
     await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f2", { cpf: CPF_X }), baseVersao: 3 });
-    expect(naLinha(s, "f2")!.p_registro.idPessoaBloqueado).toBe("id-de-outra-pessoa");
+    // Terceira revisão (D-004): o CPF corrigido não muda o ID. O ID que valia (o do
+    // CPF antigo, 654321) fica gravado; o 123456 (anterior de f1) não é dado a f2.
+    expect(naLinha(s, "f2")!.p_registro).toMatchObject({ idPessoa: "654321", cpf: CPF_X });
+    expect(naLinha(s, "f2")!.p_registro).not.toHaveProperty("idPessoaBloqueado");
   });
 });
 

@@ -14,7 +14,7 @@ import { json, preflight } from "../_shared/cors.ts";
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
 import { contratoNaPorta } from "../_shared/freelancerContrato.ts";
 // Numa linha só: o harness dos testes (src/test/servidorRh.ts) apaga as linhas de import e injeta os símbolos.
-import { AVISO_CENTRAL_ID_NOVO, AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, anterioresDe, anterioresDoCpf, avisoSemId, comAnteriores, comBloqueio, comCamposDoId, cpfDoCadastro, ehLinhaDeArquivo, semBloqueioComId, cpf11, enviouOutroId, idBloqueado, idDoArquivoDaLapide, idGravado, idParaCadastro, idQueVale, idValido, idsAnteriores, juntarAnteriores, cpfMascarado, guardaIdGravado, lapideGuardaId, mesmaPessoaDaLapide, outraPessoaComId, temIdGravavel, type CadastroComId, type IdAnterior } from "../_shared/idPessoa.ts";
+import { AVISO_CENTRAL_ID_NOVO, AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, anterioresDe, anterioresDoCpf, avisoSemId, comAnteriores, comBloqueio, comCamposDoId, cpfDoCadastro, ehLinhaDeArquivo, semBloqueioComId, cpf11, enviouOutroId, idBloqueado, idDoArquivoDaLapide, idGravado, idParaCadastro, idQueVale, idQueValiaNoCpfCorrigido, comIdQueValia, idValido, idsAnteriores, juntarAnteriores, cpfMascarado, guardaIdGravado, lapideGuardaId, mesmaPessoaDaLapide, outraPessoaComId, temIdGravavel, type CadastroComId, type IdAnterior } from "../_shared/idPessoa.ts";
 
 const PAGINA = 150;
 
@@ -302,7 +302,7 @@ Deno.serve(async (req) => {
       const { data, error } = await admin.from("registros").select("colecao, id, registro").in("colecao", ["colaboradores", "freelancers"]).eq("apagado", true).order("colecao").order("id").range(inicio, inicio + 499);
       if (error) throw new Error("Não foi possível conferir o ID da pessoa nos cadastros. Tente novamente.");
       for (const l of data ?? []) {
-        if (lapideGuardaId(l.registro)) out.push({ colecao: l.colecao, id: l.id, registro: (l.registro ?? {}) as Record<string, unknown>, apagado: true });
+        if (lapideGuardaId(l.registro, l.colecao)) out.push({ colecao: l.colecao, id: l.id, registro: (l.registro ?? {}) as Record<string, unknown>, apagado: true });
       }
       if (!data || data.length < 500) break;
     }
@@ -364,6 +364,17 @@ Deno.serve(async (req) => {
          80e7d8f). Se a régua já liberaria, a marca gravada fica: ela só some
          quando o admin dá o ID (a tela mostra "sem ID: conferir"). */
       let marca: string = lapide ? "" : idBloqueado(gravado);
+      // CPF corrigido em cadastro sem ID gravado: o ID que valia fica (D-004).
+      if (!lapide && !registro._apagado) {
+        const valia = idQueValiaNoCpfCorrigido(colecao, gravado, registro, await cadastrosDaRegua());
+        if (valia) {
+          const reg = comIdQueValia(comCamposDoId(registro, null), valia, daLinha, agoraIso());
+          return {
+            registro: reg, idPessoa: valia.outro ? "" : valia.idPessoa,
+            aviso: valia.outro ? avisoSemId("id-de-outra-pessoa", String(valia.outro.registro.nome ?? ""), true) : null,
+          };
+        }
+      }
       if (!lapide && !registro._apagado && cpfDoCadastro(colecao, registro)) {
         const d = idParaCadastro({ colecao, id: String(registro.id), registro }, await cadastrosDaRegua());
         if ("motivo" in d && d.motivo !== "sem-cpf") marca = d.motivo;
@@ -375,7 +386,7 @@ Deno.serve(async (req) => {
     // Outra pessoa ocupa a vaga da lápide que guarda ID: a lápide vai inteira
     // para a linha de arquivo antes (e continua na régua, que já a tem pela
     // linha de hoje). Falha aqui é 500: a fila tenta de novo, nada se perde.
-    if (lapide && !mesmaPessoaDaLapide(colecao, lapide, registro) && lapideGuardaId(lapide)) {
+    if (lapide && !mesmaPessoaDaLapide(colecao, lapide, registro) && lapideGuardaId(lapide, colecao)) {
       const arq = arquivoDaLapide(colecao, lapide, atual?.rh_versao);
       const r = await rpc("rh_gravar_seguro", { p_colecao: colecao, p_id: arq.id, p_registro: arq.registro, p_versao: 0, p_mutacao: null, p_apagar: false });
       if (!r?.ok) throw new Error("Não foi possível guardar o cadastro apagado antes de ocupar a vaga dele. Tente novamente.");
@@ -709,6 +720,8 @@ Deno.serve(async (req) => {
            os do próprio retrato (o id da linha pode ser de outra pessoa). */
         const juntarAviso = (msg: string) => { if (!avisoRetrato?.includes(msg)) avisoRetrato = [avisoRetrato, msg].filter(Boolean).join(" "); };
         const lapidesComId: { col: string; indice: number; reg: Record<string, unknown>; lapide: Record<string, unknown> }[] = [];
+        // Os vivos sem ID gravado no banco: se o retrato traz o CPF corrigido, o ID que valia fica (D-004).
+        const semIdNoBanco: { col: string; indice: number; antes: Record<string, unknown> }[] = [];
         for (const col of ["colaboradores", "freelancers"]) {
           if (!(col in dadosDoRetrato)) continue;
           const itens = dadosDoRetrato[col];
@@ -722,7 +735,8 @@ Deno.serve(async (req) => {
             // Quem tem ID, IDs anteriores ou a marca de bloqueio no banco: o retrato leva de lá.
             for (const l of data ?? []) {
               if (l.apagado && ehLinhaDeArquivo(l.id, l.registro)) arquivosNoBanco.add(l.id);
-              if (l.apagado ? !lapideGuardaId(l.registro) : !(guardaIdGravado(l.registro) || idBloqueado(l.registro))) continue;
+              // Os vivos sem ID com CPF também: o ID que valia no banco fica quando o CPF é corrigido.
+              if (l.apagado ? !lapideGuardaId(l.registro, col) : !(guardaIdGravado(l.registro) || idBloqueado(l.registro) || cpfDoCadastro(col, l.registro))) continue;
               if (l.apagado) lapides.set(l.id, { registro: l.registro as Record<string, unknown>, versao: Number.isSafeInteger(l.rh_versao) ? l.rh_versao : null });
               else guardados.set(l.id, l.registro as Record<string, unknown>);
             }
@@ -748,6 +762,7 @@ Deno.serve(async (req) => {
             // Lápide sobre lápide: o ID e a lista da lápide ficam como estavam.
             if (lapide && reg._apagado) return comCamposDoId(reg, lapide);
             const reposto = comCamposDoId(reg, doBanco);
+            if (doBanco && !idGravado(doBanco) && !reg._apagado) semIdNoBanco.push({ col, indice, antes: doBanco });
             if (lapide && !mesmaPessoaDaLapide(col, lapide, reg)) {
               const arq = arquivoDaLapide(col, lapide, lapides.get(String(reg.id))?.versao);
               arquivadas.set(arq.id, arq.registro);
@@ -767,7 +782,7 @@ Deno.serve(async (req) => {
         }
         // A marca de bloqueio no retrato: quem entra sem ID e com CPF passa pela régua.
         const semIdComCpf = doRetrato.filter((c) => !c.apagado && !idGravado(c.registro) && cpfDoCadastro(c.colecao, c.registro));
-        const vivos: CadastroComId[] = lapidesComId.length || semIdComCpf.length ? [...await cadastrosDaRegua(), ...doRetrato] : [];
+        const vivos: CadastroComId[] = lapidesComId.length || semIdComCpf.length || semIdNoBanco.length ? [...await cadastrosDaRegua(), ...doRetrato] : [];
         if (lapidesComId.length) {
           for (const { col, indice, reg, lapide } of lapidesComId) {
             const id = idGravado(lapide);
@@ -785,6 +800,17 @@ Deno.serve(async (req) => {
             const naLista = vivos.find((v) => !v.apagado && v.colecao === col && v.id === String(reg.id));
             if (naLista) naLista.registro = comCamposDoId(reg, lapide);
           }
+        }
+        const agoraRetrato = agoraIso();
+        for (const { col, indice, antes } of semIdNoBanco) {
+          const atual = (dadosDoRetrato[col] as Record<string, unknown>[])[indice];
+          const valia = idQueValiaNoCpfCorrigido(col, antes, atual, vivos);
+          if (!valia) continue;
+          const novo = comIdQueValia(atual, valia, anterioresDe(atual), agoraRetrato);
+          (dadosDoRetrato[col] as Record<string, unknown>[])[indice] = novo;
+          const naLista = vivos.find((v) => !v.apagado && v.colecao === col && v.id === String(atual.id));
+          if (naLista) naLista.registro = novo;
+          console.warn(`[sync] retrato: ${col}/${String(atual.id)}: CPF corrigido, ${valia.outro ? "o ID que valia é de outra pessoa: vai para os anteriores, com a marca" : "o ID que valia fica gravado"}`);
         }
         for (const c of semIdComCpf) {
           const atual = (dadosDoRetrato[c.colecao] as Record<string, unknown>[])[c.indice];

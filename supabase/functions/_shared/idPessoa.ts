@@ -313,11 +313,42 @@ export const mesmaPessoaDaLapide = (colecao: string, lapide: Reg, registro: Reg)
   return !!daLapide && daLapide === cpfDoCadastro(colecao, registro);
 };
 
+/** CPF CORRIGIDO EM CADASTRO VIVO SEM ID GRAVADO (terceira revisão, D-004:
+ *  "o ID não muda quando o CPF é corrigido"). O ID que valia no banco (o do
+ *  CPF antigo, sem a marca) era o que o PCP usava nas O.S. Devolve null quando
+ *  não se aplica (tem ID gravado, tem a marca, não tinha CPF, ou o CPF novo
+ *  começa pelo mesmo ID). Senão: o ID que fica, se ninguém mais o tem; ou o
+ *  outro que o tem (aí o cadastro fica sem ID, marcado, e o ID que valia vai
+ *  para os anteriores dele). Quem tem o CPF antigo é a mesma pessoa. */
+export function idQueValiaNoCpfCorrigido(
+  colecao: string, antes: Reg, depois: Record<string, unknown>, outros: CadastroComId[],
+): { idPessoa: string; outro?: CadastroComId & { anterior?: boolean } } | null {
+  if (!antes || idGravado(antes)) return null;
+  const valia = idQueVale(colecao, antes);
+  if (!valia || cpfDoCadastro(colecao, depois).slice(0, 6) === valia) return null;
+  const cpfAntigo = cpf11(campo(antes, "cpf"));
+  const alvo = { colecao, id: String(depois.id) };
+  const outro = outraPessoaComId(valia, cpfDoCadastro(colecao, depois), alvo, outros.filter((o) => !cpfAntigo || cpf11(o.registro.cpf) !== cpfAntigo));
+  return outro ? { idPessoa: valia, outro } : { idPessoa: valia };
+}
+
+/** O que gravar quando o ID que valia fica (ou, sendo de outra pessoa, vai para os anteriores). */
+export function comIdQueValia(
+  registro: Record<string, unknown>, d: { idPessoa: string; outro?: unknown }, anteriores: IdAnterior[], agora: string,
+): Record<string, unknown> {
+  if (!d.outro) {
+    return comAnteriores({ ...registro, idPessoa: d.idPessoa, idPessoaEm: agora, idPessoaMotivo: "Gravado pelo servidor: o CPF foi corrigido e o ID que a pessoa já tinha fica (D-004)." }, anteriores);
+  }
+  return comBloqueio(comAnteriores(registro, juntarAnteriores(anteriores, [{ idPessoa: d.idPessoa, em: agora, como: "troca" }])), "id-de-outra-pessoa");
+}
+
 /** O cadastro guarda ID gravado ou IDs anteriores? */
 export const guardaIdGravado = (r: Reg): boolean => !!idGravado(r) || idsAnteriores(r).length > 0;
 /** A lápide segura algum ID (tem o que perder se a vaga for ocupada)? O
- *  gravado, os anteriores, ou o do CPF (quem saiu antes do ID gravado). */
-export const lapideGuardaId = (lapide: Reg): boolean => guardaIdGravado(lapide) || !!cpf11(campo(lapide, "cpf"));
+ *  gravado, os anteriores, ou o do CPF (quem saiu antes do ID gravado), pela
+ *  mesma régua do PCP (idDoCadastroRH): a ficha pede os 11 dígitos, o contrato
+ *  de freelancer pede o CPF que confere. */
+export const lapideGuardaId = (lapide: Reg, colecao: string): boolean => guardaIdGravado(lapide) || !!cpfDoCadastro(colecao, lapide);
 
 /** CPF para o admin comparar: começo e fim, o meio escondido. */
 export const cpfMascarado = (v: unknown): string => {
