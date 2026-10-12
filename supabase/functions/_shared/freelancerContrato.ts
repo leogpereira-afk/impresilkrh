@@ -132,8 +132,17 @@ export function contratoNaPorta(
 ): { registro: ContratoNaPorta; aviso: string | null } {
   const registro: ContratoNaPorta = { ...f };
   if (!problemaCpfFreelancer(f, atual)) {
-    // O CPF que estava recusado foi resolvido: o lembrete sai.
-    if ("cpfRecusado" in registro && cpfValido(registro.cpf)) delete registro.cpfRecusado;
+    /* Envio sem CPF não apaga o CPF válido gravado, em contrato de qualquer
+       função ou situação (verificação da F07, 12/10/2026): o idPessoa fica
+       e, no PCP, um contrato com ID e sem CPF faria o ID da mesma pessoa
+       virar repetido. Campo ausente ou vazio nunca apaga. */
+    if (!soDigitosCpf(f.cpf) && cpfValido(atual?.cpf)) {
+      registro.cpf = atual?.cpf;
+      return { registro, aviso: AVISO_CPF_MANTIDO };
+    }
+    // O CPF recusado só sai quando chega um CPF válido NOVO (diferente do gravado):
+    // outra gravação qualquer do contrato não apaga o lembrete sem ninguém conferir.
+    if ("cpfRecusado" in registro && cpfValido(registro.cpf) && soDigitosCpf(registro.cpf) !== soDigitosCpf(atual?.cpf)) delete registro.cpfRecusado;
     return { registro, aviso: null };
   }
   const avisos: string[] = [];

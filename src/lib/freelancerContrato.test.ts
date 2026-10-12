@@ -189,3 +189,34 @@ describe("porta de dados do RH: barra só o que cria ou piora a falta de CPF", (
     expect(problemaCpfFreelancer(editado, antes)).toBe("");
   });
 });
+
+/* Verificação da F07 na fila (12/10/2026), caso ruim primeiro: envio sem CPF
+ * de contrato encerrado ou de outra função apagava o CPF válido (o idPessoa
+ * ficava, e no PCP o ID da mesma pessoa virava repetido); e qualquer outra
+ * gravação do contrato apagava o lembrete cpfRecusado sem ninguém conferir. */
+describe("verificação da F07: campo ausente não apaga", () => {
+  it("contrato encerrado ou de outra função enviado sem CPF mantém o CPF válido gravado, com aviso", async () => {
+    for (const extra of [{ situacao: "encerrado" }, { funcao: "Pintor" }]) {
+      const gravado = contrato({ cpf: CPF_OK, ...extra });
+      const s = servidorRh({ perfil: "ADMIN_RH", rows: [{ colecao: "freelancers", id: "fl-1", registro: gravado, apagado: false, rh_versao: 3 }] });
+      const enviado: Record<string, unknown> = { ...gravado, valor: 900 };
+      delete enviado.cpf;
+      const r = await s.call({ action: "upsert", colecao: "freelancers", baseVersao: 3, registro: enviado });
+      expect(r.status).toBe(200);
+      const p = s.rpcs.find((x) => x.nome === "rh_gravar_seguro")!.args.p_registro;
+      expect(p.cpf, JSON.stringify(extra)).toBe(CPF_OK);
+      expect(p.valor).toBe(900);
+      expect(r.body.aviso).toBe(AVISO_CPF_MANTIDO);
+    }
+  });
+  it("o lembrete do CPF recusado fica numa gravação qualquer e só sai com um CPF válido novo", async () => {
+    const CPF_NOVO = "900.002.003-44"; // fictício, verificadores certos
+    const gravado = contrato({ cpf: CPF_OK, cpfRecusado: CPF_ERRADO });
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [{ colecao: "freelancers", id: "fl-1", registro: gravado, apagado: false, rh_versao: 3 }] });
+    await s.call({ action: "upsert", colecao: "freelancers", baseVersao: 3, registro: { ...gravado, valor: 1 } });
+    expect(s.rpcs.find((x) => x.nome === "rh_gravar_seguro")!.args.p_registro.cpfRecusado).toBe(CPF_ERRADO);
+    const s2 = servidorRh({ perfil: "ADMIN_RH", rows: [{ colecao: "freelancers", id: "fl-1", registro: gravado, apagado: false, rh_versao: 3 }] });
+    await s2.call({ action: "upsert", colecao: "freelancers", baseVersao: 3, registro: { ...gravado, cpf: CPF_NOVO } });
+    expect(s2.rpcs.find((x) => x.nome === "rh_gravar_seguro")!.args.p_registro.cpfRecusado).toBeUndefined();
+  });
+});
