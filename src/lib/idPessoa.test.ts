@@ -317,8 +317,14 @@ describe("o botão do admin (prévia, preenchimento e troca)", () => {
     expect(r.body.idPessoa).toBe("987654");
     const ficha1 = gravacoes(s, "colaboradores")[0].args;
     expect(ficha1).toMatchObject({ p_versao: 3, p_registro: { idPessoa: "987654", idPessoaPor: "admin-ficticio", idPessoaMotivo: "Cadastro criado com o CPF errado" } });
+    // O histórico sincroniza para mais gente que o CPF: fica que o ID foi
+    // trocado, quem, quando e o motivo; os valores do ID não entram.
     const hist = gravacoes(s, "alteracoes")[0].args.p_registro;
-    expect(hist).toMatchObject({ acao: "ALTEROU", colecao: "colaboradores", registroId: "f1", mudancas: [{ campo: "ID da pessoa", de: "123456", para: "987654" }] });
+    expect(hist).toMatchObject({ acao: "ALTEROU", colecao: "colaboradores", registroId: "f1", usuarioColaboradorId: "admin-ficticio", mudancas: [{ campo: "ID da pessoa", de: "•••", para: "•••" }] });
+    expect(hist.criadoEm).toEqual(expect.any(String));
     expect(hist.detalhe).toContain("Cadastro criado com o CPF errado");
+    expect(JSON.stringify(hist)).not.toContain("123456");
+    expect(JSON.stringify(hist)).not.toContain("987654");
+    expect(JSON.stringify(hist)).not.toContain("—");
   });
 });

@@ -35,6 +35,16 @@ describe("diferencas", () => {
     expect(JSON.stringify(d)).not.toContain("xyz789");
   });
 
+  it("o ID da pessoa e o motivo dele mudam mas o valor NUNCA aparece (sai do CPF; o histórico chega a mais gente que o CPF)", () => {
+    // Valores fictícios.
+    const d = diferencas({ nome: "Ana", idPessoa: "123456", idPessoaMotivo: "Gravado pelo botão" }, { nome: "Ana", idPessoa: "987654", idPessoaMotivo: "CPF 987.654 corrigido" });
+    expect(d.mudancas).toEqual([
+      { campo: "ID da pessoa", de: "•••", para: "•••" },
+      { campo: "Motivo do ID da pessoa", de: "•••", para: "•••" },
+    ]);
+    for (const v of ["123456", "987654", "987.654"]) expect(JSON.stringify(d)).not.toContain(v);
+  });
+
   it("objeto igual em conteúdo não vira mudança falsa", () => {
     expect(diferencas({ end: { rua: "A" } }, { end: { rua: "A" } }).mudancas).toEqual([]);
     expect(diferencas({ end: { rua: "A" } }, { end: { rua: "B" } }).mudancas).toHaveLength(1);

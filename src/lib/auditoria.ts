@@ -109,6 +109,9 @@ const MASCARADOS = new Set([
   "cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial",
   "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep",
   "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia", "dataNascimento",
+  // o ID da pessoa sai do CPF e chega só a quem vê o CPF (CAMPOS_SENSIVEIS do
+  // sync); o histórico sincroniza para mais gente: registra só que mudou
+  "idPessoa", "idPessoaMotivo",
   // dinheiro da folha
   "valor", "salarioAnterior", "salarioNovo",
   // anexos

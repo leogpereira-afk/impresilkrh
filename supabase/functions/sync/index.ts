@@ -782,8 +782,10 @@ Deno.serve(async (req) => {
           const historico = await registrarNoHistorico({
             acao: "ALTEROU", recurso: `${colecao === "freelancers" ? "Contrato de freelancer" : "Colaborador"}: ${nomeDe(c)}`,
             colecao, registroId: id, colaboradorId: colecao === "colaboradores" ? id : null,
-            mudancas: [{ campo: "ID da pessoa", de: antes || "—", para: novo }], totalCampos: 1,
-            detalhe: `Troca do ID da pessoa pelo admin. Motivo: ${motivo}`,
+            // Sem os valores (o ID sai do CPF, e o histórico chega a mais gente
+            // que o CPF): fica que o ID foi trocado, quem, quando e o motivo.
+            mudancas: [{ campo: "ID da pessoa", de: "•••", para: "•••" }], totalCampos: 1,
+            detalhe: `ID da pessoa trocado pelo admin. Motivo: ${motivo}`,
           });
           // Ficha e contrato do mesmo CPF com IDs diferentes: o PCP avisa a
           // gestão até sobrar um só. A troca não mexe no outro sozinha.
