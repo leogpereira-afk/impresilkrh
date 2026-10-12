@@ -1,0 +1,35 @@
+# Decisões do dono (só se acrescenta)
+
+Uma entrada por decisão: `D-NNN · data · a regra · fonte · registrado por · onde se aplica`.
+Quando houver a frase do dono, ela vai entre aspas. Decisão que muda outra diz
+`substitui D-NNN` (ou o plano que substitui); na antiga se acrescenta
+`SUPERADA por D-NNN em AAAA-MM-DD`. Nada se apaga.
+
+Sem dado real: nada de nome, CPF, ID de 6 dígitos, salário ou valor de folha.
+Os exemplos são fictícios.
+
+Se um plano (de qualquer agente, dentro ou fora do repositório) disser outra
+coisa, vale a decisão daqui.
+
+As entradas D-001 a D-005 foram copiadas para cá em 12/10/2026, quando o
+protocolo da vez entrou no RH: são decisões que o dono já tinha tomado e que
+estavam só na memória do Claude (pasta de memória do Claude no Mac do dono) ou
+na pasta Dre. A fonte de cada uma diz onde.
+
+## Confirmadas
+
+- D-001 · 02/07/2026 · O RH SÓ CUIDA DA PESSOA. "não quero nada de produção, essa página é apenas de RH", e depois, refinando: "a parte de produção pode ter, mas só o que remete ao RH". O filtro é "é sobre a pessoa?": entram treinamento e capacitação de funções de produção, NRs e certificações, EPI, integração ao setor (apresentação às máquinas e aos riscos) e carreira de cargos de produção; não entram POP de processo, instrução de operação de máquina nem procedimento de qualidade, que moram no POPs e Fabricação · fonte: conversa do dono com o Claude em 02/07/2026, registrada na memória do Claude (feedback_rh_escopo.md) · registrado pelo claude em 12/10/2026 · o app inteiro; aplicada, por exemplo, no commit a841706 (F25: a tela Performance saiu do menu do RH e o programa das equipes ficou no PCP)
+- D-002 · 18/08/2026 · AS SENHAS DO RH NÃO SE TROCAM, e o agente não volta a sugerir a troca: "eu não vou trocar as senhas do rh, não me pedir isso mais". A decisão foi tomada com a informação na mão (depois de fechado o vazamento em que a coleção de usuários descia para qualquer pessoa logada). Vale para a sugestão por precaução: se houver evidência concreta de uso indevido (acesso registrado que não bate com a pessoa, conta usada de onde não devia), conta-se o fato, sem repetir o conselho · fonte: conversa do dono com o Claude em 18/08/2026, registrada na memória do Claude (feedback_senhas_rh_decidido.md) · registrado pelo claude em 12/10/2026 · relatórios, resumos, passagens e pendências: a troca de senha do RH não entra
+- D-003 · 17/08/2026 · A PESSOA É O ID: os 6 primeiros dígitos do CPF, único entre as fichas, com índice único e formato conferido no banco; o nome só se mostra, nunca é chave para gravar, casar ou buscar: "Todas entradas jogar o nome e gravar pelo id." Em 07/09/2026: "vamos vincular tudo ao id" e "jogar id a todo o sistema em todas as esferas"; quem mostra a pessoa numa tela de conferência mostra o ID ao lado do nome. O CPF inteiro não sai do RH · fonte: conversas do dono com o Claude em 17/08/2026 e 07/09/2026, registradas na memória do Claude (feedback_id_manda_nome_exibe.md e project_identidade_unica.md); a frase de 07/09 também está no cabeçalho de scripts/conferir-id-nas-conferencias.mjs · registrado pelo claude em 12/10/2026 · lib/identidade, as telas de conferência (conferidas por `npm run conferir:id`), o casamento dos títulos do Mubisys, a Programação (a equipe do PCP pelo ID do RH, commit d6f13da) e as functions rh-programacao e rh-performance
+- D-004 · 11/10/2026 · O ID DA PESSOA NASCE COM A FICHA E NÃO MUDA QUANDO O CPF É CORRIGIDO. Se o RH corrigir um CPF digitado errado, a pessoa continua com o mesmo ID (sem isso ela perderia, sem aviso, equipes, divisões, ranking e comissão no PCP). É a recomendação de 29/09/2026 (item 5 da seção 3 da fila), que a fila única do PCP de 11/10/2026 registra como "Confirmação que já vale se você não disser nada" · fonte: Dre/fila-pcp-2026-10-11.md (pasta Dre do dono), fim da seção 4, e o item 5 da seção 3 da mesma fila ("ID da pessoa gravado na ficha do RH e no contrato de freelancer, com o pcp-sync lendo esse campo (calcula pelo CPF só se faltar)") · registrado pelo claude em 12/10/2026 · AINDA NÃO APLICADA: é a próxima vez do claude aqui (a ficha e o contrato de freelancer guardam o ID; o pcp-sync lê esse campo e só calcula pelo CPF se faltar; o RH e o pcp-sync são publicados juntos, cada um com a sua vez). Vale enquanto o dono não disser o contrário; se ele disser, a resposta vira uma D-NNN nova que substitui esta
+- D-005 · 07/09/2026 · ESCRITA EM PRODUÇÃO SÓ PELA TELA: o agente não grava dado no banco de produção (nem UPDATE, nem DELETE, nem lápide); toda correção de dado vira botão na tela, com a lista do que muda e a confirmação, e o dono clica: "a partir de hoje fazer via aplicativo". Leitura (SELECT) pode; migration de função só com o "pode publicar" do dono · fonte: conversa do dono com o Claude em 06 e 07/09/2026, registrada na memória do Claude (feedback_escrita_em_producao_so_pela_tela.md) · registrado pelo claude em 12/10/2026 · todo conserto de dado do RH (exemplos já no app: corrigir tipos de lançamento, corrigir automáticos da auditoria, desligar pessoas pelo último pagamento, puxar o ano do plano)
+
+## Pendentes (NÃO valem como regra até o dono responder)
+
+Quando o dono responder, a resposta vira uma D-NNN nova, com a frase dele, e a
+pendente ganha `RESPONDIDA em AAAA-MM-DD por D-NNN`.
+
+- P-001 (ramos) · aberta em 12/10/2026 por claude · Apagar da origem os ramos de docs/RAMOS.md marcados "apagar com o aval do dono" e "superado"? O `gh-pages` NÃO entra: é o site no ar.
+- P-002 (GitHub) · aberta em 12/10/2026 por claude · Ligar no GitHub uma regra na main que exija o check Deploy? Do jeito que está, NÃO: o Deploy só roda com o commit já na main, e a regra recusaria todo push, até o da vez (a mesma nota da P-021 do PCP). Se o dono quiser essa trava, antes é preciso desenhar o caminho (fluxo por PR, que o verificar.yml já confere, ou um bypass para o dono).
+- P-003 (publicação das functions) · aberta em 12/10/2026 por claude · Levar para o functions.yml do painel-impresilk, no job publicar-rh, a mesma trava que o PCP tem: publicar só a partir da main que é o último Deploy verde do RH, conferir a vez do RH no ramo (`node scripts/vez.cjs conferir origin/main..<ramo>`) e rodar `npm run verificar` (hoje roda lint, typecheck e `npm test`, sem os testes do protocolo nem o conferir:id)? É mudança no painel, com a vez de lá. Até lá, quem dispara confere à mão (AGENTS.md, seção 2).
+- P-004 (dado real antigo) · aberta em 12/10/2026 por claude · Há nome real de pessoa em comentários antigos (ex.: scripts/conferir-id-nas-conferencias.mjs) e talvez em testes e documentos antigos. Varrer e trocar por fictício daqui para frente, ou também reescrever o histórico do git (como a P-023 do PCP)?

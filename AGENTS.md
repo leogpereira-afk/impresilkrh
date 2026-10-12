@@ -1,0 +1,243 @@
+# RH Impresilk (app Pessoas): regras para qualquer agente (Claude, Codex ou outro)
+
+Este arquivo e o CLAUDE.md têm o MESMO texto: o Codex lê o AGENTS.md, o Claude
+lê o CLAUDE.md. Mudou um, copie no outro; `tests/agentes.test.cjs` falha se
+divergirem. A sua memória (~/.claude/... ou ~/.codex/memories) é só sua: o
+outro agente não a vê. Tudo o que o outro precisa saber mora neste repositório.
+Se a sua memória, ou um plano fora daqui, disser outra coisa, vale o que está
+aqui.
+
+O protocolo da vez (seções 0, 5 e 6, `VEZ.md` e `scripts/vez.cjs`) é o mesmo do
+PCP (leogpereira-afk/impresilk), instalado aqui em 12/10/2026. Mudou uma regra
+da vez num dos dois, leve para o outro, com teste.
+
+## O que é o RH e onde está no ar
+
+- O app Pessoas: SPA em Vite, React, TypeScript e Tailwind. Os dados vêm do
+  Supabase (projeto compartilhado com os outros sistemas da casa) depois do
+  login; o navegador guarda cópia (localStorage e IndexedDB) e uma fila de
+  envio. Login por nome e senha no Supabase Auth: `LOGIN.md`. Nuvem e fila:
+  `SINCRONIZACAO.md`.
+- No ar: https://leogpereira-afk.github.io/impresilkrh/ (atalho
+  impresilk.com.br/rh), servido pela branch `gh-pages` (Pages em modo
+  "legacy"), que o `deploy.yml` reescreve a cada push na main.
+- Edge Functions do RH (`supabase/functions`): sync, admin-users,
+  backup-registros, mubi-pagamentos, rh-performance e rh-programacao, mais o
+  `_shared`. rh-programacao e rh-performance servem o PCP e o Painel: mudar o
+  contrato delas mexe nos dois.
+- O ramo padrão da origem é a main, mas um clone antigo pode ter o
+  `origin/HEAD` ainda num `claude/*` de junho (ver `docs/RAMOS.md`). Trabalhe
+  sempre a partir da `origin/main`.
+
+## 0. Antes de mexer em qualquer coisa, nesta ordem
+
+1. Trabalhe num clone ou worktree FORA do iCloud (ex.: ~/Projetos ou /tmp). A
+   pasta Dre fica no iCloud, que devolve leitura atrasada, despeja arquivos e
+   já perdeu o acesso ao disco no meio da sessão: nada de commit nem push de um
+   clone dentro da Dre (a antiga cópia Dre/rh inclusive). O clone
+   ~/Projetos/impresilkrh pode estar atrasado e ter trabalho de outra sessão:
+   crie um worktree novo a partir da origin/main.
+2. `git fetch origin` e `node scripts/vez.cjs` (mostra a vez lida da
+   origin/main; o Node 20 serve, neste Mac ~/apps/node20/bin/node). Se a vez
+   for de outro agente, ou de outra sessão sua, PARE e pergunte ao dono. Não
+   existe "só um ajuste rápido" em paralelo.
+   Se o dono disser no chat que libera: `node scripts/vez.cjs liberar "<frase
+   dele>"` e o push que o comando imprimir. A Passagem de quem parou fica.
+3. Leia a Passagem (`git show origin/main:VEZ.md`; as anteriores ficam em
+   docs/passagens/), o `docs/DECISOES.md` (confirmadas e pendentes), o
+   `docs/RAMOS.md` (o que NÃO juntar) e o plano da frente em `docs/planos/`
+   que não esteja marcado SUPERADO. Os registros de antes de 12/10/2026 estão
+   na raiz de docs/ (ex.: AUDITORIA_RH_2026-09-09.md) e na raiz do repositório
+   (AUDITORIA.md, LOGIN.md, SINCRONIZACAO.md).
+4. Olhe os últimos Deploy e Verificar deste repositório:
+   `gh run list -R leogpereira-afk/impresilkrh -w deploy.yml -L 3` e
+   `gh run list -R leogpereira-afk/impresilkrh -w verificar.yml -L 3`; se a
+   tarefa publica function, também
+   `gh run list -R leogpereira-afk/painel-impresilk -w functions.yml -L 3`
+   (neste Mac o gh fica em ~/apps/bin/gh). Vermelho é a primeira coisa a
+   resolver: leia a `conclusion` e o log do passo antes de falar em lentidão.
+5. Pegue a vez: `node scripts/vez.cjs pegar <claude|codex> "tarefa"
+   [--versao rh-vN] [--arquivos "src/lib/a.ts src/pages/B.tsx"]` (a versão é o
+   CACHE do public/sw.js, quando a tarefa mexe no casco). Ele monta o commit
+   do VEZ.md (e da Passagem anterior em docs/passagens/) em cima da
+   origin/main, sem mexer no seu ramo nem no disco, e imprime
+   `git push origin <sha>:main`. Faça esse push ANTES de tocar em código: a vez
+   só é sua depois dele. Push recusado = alguém mexeu na vez antes: rode
+   `node scripts/vez.cjs` de novo; nunca junte o VEZ.md à mão. A sessão fica
+   guardada no git-dir da pasta onde você rodou o pegar: rode o passar na
+   mesma pasta (ou com `VEZ_SESSAO=<id>`, o id do campo sessao do VEZ.md).
+   Esse push (só VEZ.md e docs/passagens/) roda o Deploy, que republica o
+   mesmo site e confere a vez. É a única exceção ao "publicar só com o pode
+   publicar do dono". O Claude pede no chat o OK para ele: o modo automático
+   do Claude barra push na main sem o OK.
+6. Trabalhe num ramo a partir da origin/main (`git fetch origin && git
+   switch -c <ramo> origin/main`). No ramo de trabalho o VEZ.md não muda: ele
+   só muda pelo vez.cjs, sempre em cima da origin/main.
+7. Tarefa que mexe no RH e no PCP (ou no Painel) precisa da vez em cada
+   repositório que ela muda, pelo protocolo de cada um.
+
+## 1. Regras da casa (garantias do sistema)
+
+- O repositório é PÚBLICO. Nenhum dado real nem segredo em código, teste, doc,
+  commit ou print: nada de nome de pessoa, CPF, ID de 6 dígitos, salário,
+  valor de folha ou de pagamento, telefone, endereço, token. Use dados
+  fictícios e diga que são. O app nasce vazio: `src/data` não traz pessoas,
+  contas nem movimento (`src/data/privacidade.test.ts` guarda isso); o dado
+  real só vem do servidor depois do login. Há nome real antigo em comentário
+  (ex.: scripts/conferir-id-nas-conferencias.mjs): não acrescente; limpar é
+  pergunta ao dono (P-004 em docs/DECISOES.md).
+- O RH só cuida da PESSOA (D-001): treinamento, NRs, EPI, integração ao setor
+  e carreira de cargos de produção entram; POP de processo, instrução de
+  máquina e procedimento de qualidade não entram (moram no POPs).
+- A pessoa é o ID de 6 dígitos; o nome só aparece na tela (D-003). Quem mostra
+  a pessoa numa conferência mostra o ID ao lado do nome
+  (`npm run conferir:id` reprova a tela que não mostra). O ID nasce com a
+  ficha e não muda quando o CPF é corrigido (D-004).
+- Senhas do RH: decidido pelo dono, não trocar e não sugerir troca por
+  precaução (D-002). Fato novo concreto (acesso que não bate com a pessoa) se
+  conta como fato.
+- No banco de produção o agente só faz SELECT. Escrita de dado em produção é
+  pela tela, pelo dono, com a lista do que muda e confirmação (D-005). Nada
+  de UPDATE/DELETE automático em dado real.
+- Acesso e máscara LGPD valem no cliente (`src/lib/rbac.ts`) E na function
+  sync: o navegador nunca é a única barreira. Mudou quem vê o quê, mude nos
+  dois, com teste.
+- Testes com data rodam no fuso de São Paulo (vite.config.ts). Teste que só
+  passa no seu fuso está errado.
+- Textos ao usuário em português do Brasil, sem travessão (—) em frase.
+- Decisões que valem: `docs/DECISOES.md`. Se um plano disser outra coisa,
+  vale a DECISÃO mais nova. Pergunta pendente (P-NNN) não é regra: enquanto
+  ela estiver aberta, não mude o comportamento que ela decide.
+
+## 2. Verificação e publicação
+
+- A suíte: `npm ci` e depois `npm run verificar` (lint, typecheck, vitest,
+  `npm run test:vez` e `npm run conferir:id`) e `npm run build`, com o Node 20
+  (o da CI; neste Mac ~/apps/node20/bin). Vermelho não sobe. `npm ci` num
+  clone fora do iCloud: o iCloud despeja node_modules.
+- Antes do push na main, também `node scripts/vez.cjs conferir
+  origin/main..HEAD` (o mesmo passo da CI). Vermelho não sobe: um commit fora
+  da vez que chega na main trava o site até o dono aceitar. Ramo atrás da main
+  (ou nascido antes do protocolo): `git rebase origin/main`; nunca `git merge`
+  com a mensagem padrão do git, que sai sem a linha `Agente:` (o mesmo vale
+  para revert e cherry-pick).
+- Push na main É publicação da tela: o `deploy.yml` confere a vez, roda
+  `npm run verificar` e o build, reescreve a branch `gh-pages` e pede o build
+  do Pages (POST /pages/builds). O caminho oficial (actions/deploy-pages)
+  travou só neste repositório em 06/08/2026: não volte a ele sem um caminho de
+  volta testado, e não apague o site do Pages. Confira pelo arquivo servido,
+  não pelo "success": o código de cada tela está no chunk da rota
+  (`assets/<Pagina>-<hash>.js`), não no index.
+- O `public/sw.js` é network-first; troque o CACHE (`impresilk-rh-vN`) quando
+  mudar o casco que ele guarda.
+- Functions do RH: o push aqui NÃO as publica (a integração GitHub e Supabase
+  não republica). Elas sobem pelo `functions.yml` do painel-impresilk, por
+  disparo manual com `rh_funcoes` (a lista, ex.: `sync rh-programacao`) e
+  `rh_ref` (o ramo; padrão main). Aquele workflow recusa ramo que não contém
+  a main do RH e roda lint, typecheck e `npm test` no ramo, mas NÃO confere a
+  vez daqui nem o último Deploy verde daqui (P-003): antes de disparar,
+  confira à mão `git merge-base --is-ancestor origin/main <ramo>`, o último
+  Deploy daqui verde, `npm run verificar` e `node scripts/vez.cjs conferir
+  origin/main..<ramo>`. O `scripts/publicar-functions.sh` com token local é o
+  caminho antigo; não guarde token em arquivo.
+- Ordem: migration, depois a function, por último a tela. Mudou o `_shared`?
+  Publique juntas as functions que o importam.
+- Depois de publicar a function, confira a versão no ar (list_edge_functions)
+  e o corpo publicado, não a resposta do deploy.
+- Publicar só depois do "pode publicar" do dono, dito para esta tarefa.
+- Nunca `[skip ci]` em commit que muda código. Nunca push --force na main. A
+  `gh-pages` é reescrita pelo deploy.yml de propósito: não mexa nela à mão.
+
+## 3. Onde ficam planos, decisões e registros
+
+- Plano: `docs/planos/AAAA-MM-DD-assunto.md`. Plano que mora fora daqui (pasta
+  Dre, memória de agente, conversa) não vale: copie para cá antes de seguir.
+- Decisão do dono: `docs/DECISOES.md`. Uma entrada por decisão: número D-NNN,
+  data, a regra (com a frase do dono entre aspas quando houver), a fonte, quem
+  registrou, onde foi aplicada. Só se acrescenta. Decisão que muda outra diz
+  qual substitui. Pergunta ainda sem resposta entra como P-NNN em "Pendentes"
+  e NÃO vale como regra até virar D-NNN.
+- Ramos: `docs/RAMOS.md` diz o que juntar e o que não juntar.
+- Registro de entrega (o que foi feito, como foi verificado): `docs/` com data
+  no nome, como os de 09/09/2026.
+- O estado de quem está trabalhando: `VEZ.md`. Patch de outro repositório que
+  ainda não foi publicado: `docs/patches/`.
+
+## 4. Como marcar "superado"
+
+- Nunca apague plano, decisão, registro ou ramo de outro agente.
+- Documento superado: a PRIMEIRA linha passa a ser
+  `> SUPERADO em AAAA-MM-DD por <arquivo ou commit>: <motivo em uma frase>.`
+  O resto fica como estava, para a história.
+- Decisão superada: na entrada antiga de `docs/DECISOES.md`, acrescente
+  `SUPERADA por D-NNN em AAAA-MM-DD`.
+- Ramo que não vai entrar: acrescente em `docs/RAMOS.md`
+  `ramo X: superado por <commit ou doc>` e pergunte ao dono antes de apagar.
+- Plano fora do repositório que ficou velho (ex.: um plano na pasta Dre): ponha
+  a mesma linha SUPERADO no topo dele, apontando para o arquivo daqui.
+
+## 5. Um agente, numa sessão, por repositório de cada vez
+
+- `VEZ.md` (na origin/main) diz de quem é a vez e de qual sessão. Só esse
+  agente, nessa sessão, faz commit ou push neste repositório, em qualquer
+  ramo, e só ele dispara a publicação das functions do RH. Duas sessões do
+  mesmo agente também não trabalham em paralelo.
+- Todo commit leva, no fim da mensagem, a linha `Agente: claude`,
+  `Agente: codex` ou `Agente: leo`.
+- A CI (passo "Commits dentro da vez?", no deploy.yml e no verificar.yml)
+  confere TODOS os commits desde o último Deploy verde, com o
+  `scripts/vez.cjs` daquele Deploy (mudar o conferidor no próprio push não o
+  desliga). Recusa commit sem a linha, de quem não tem a vez, que apaga o
+  VEZ.md, ou que troca a vez de um agente para outro sem a devolução
+  (`agente: ninguem`), inclusive num merge que resolve o conflito do VEZ.md
+  ficando com a própria versão. No deploy.yml o passo vem antes do build:
+  vermelho não publica. O verificar.yml faz o mesmo em pull request e no
+  disparo manual, até a ponta do ramo. Todo push na main roda o Deploy,
+  inclusive o só de VEZ.md e docs/passagens/.
+- Um commit recusado que já está na main continua vermelho em todo Deploy
+  seguinte, e o site fica parado no último verde, até ser tratado. Sem push
+  --force: o dono aceita (`node scripts/vez.cjs aceitar <sha> "<frase dele>"`
+  e o push impresso, ou um commit dele no site do GitHub com a linha
+  `Aceito: <sha>`). O Deploy desse push já passa.
+- O dono: commit feito por ele no site do GitHub (editor ou botão de merge)
+  vem assinado pelo GitHub e vale como `Agente: leo` sem a linha. Se ele
+  passar a vez pelo editor do site trocando a linha `agente:`, a sessão do
+  agente anterior deixa de valer e o novo pega normalmente. Um agente só
+  escreve `Agente: leo` nos commits de vez (liberar, aceitar, pegar pelo dono),
+  quando o dono pediu no chat, com a frase dele no commit (o vez.cjs põe). Código
+  com `Agente: leo` fora do site do GitHub é recusado.
+- As regras da vez (scripts/vez.cjs, .github/workflows/, AGENTS.md e
+  CLAUDE.md), depois de publicadas, só mudam com o dono: merge dele no site do
+  GitHub, ou aceitas por ele.
+- Commit feito antes de o VEZ.md existir (sem VEZ.md nele nem no pai) passa
+  só com a linha `Agente:`.
+- Limite: a CI roda o deploy.yml do próprio push; tirar o passo dali desliga a
+  conferência. Uma regra na main do GitHub exigindo o check Deploy NÃO resolve
+  do jeito que está: o Deploy só roda com o commit já na main, e a regra
+  recusaria todo push, até o da vez (o mesmo da P-021 do PCP).
+- Ao terminar, ou ao parar no meio (cota acabou, sessão caiu): preencha a
+  Passagem no VEZ.md do disco e rode `node scripts/vez.cjs passar`. Ele monta a
+  devolução em cima da origin/main (o ramo de trabalho NÃO vai junto) e imprime
+  o push. Depois, `git checkout -- VEZ.md`.
+
+## 6. O que deixar ao passar a vez (Passagem do VEZ.md)
+
+Todos os campos, uma linha cada (detalhe em docs/, o campo aponta para lá).
+`vez.cjs passar` recusa se faltar algum, e com a vez livre (`agente: ninguem`)
+o `tests/agentes.test.cjs` também. Enquanto a vez é sua, os campos podem
+ficar em "-"; preencha-os ao parar, mesmo no meio. O passar também recusa a
+Passagem que ninguém escreveu nesta vez (igual à da origin/main ou à do
+último commit da pasta).
+
+- `no_ar`: sha da main e do último Deploy verde, o CACHE do public/sw.js e as
+  versões das functions do RH (sync, admin-users, backup-registros,
+  mubi-pagamentos, rh-performance, rh-programacao), e como conferiu.
+- `ramos`: cada ramo aberto, quantos à frente e atrás da main, e o destino:
+  juntar, superado por X (e em docs/RAMOS.md), ou o dono decide.
+- `feito`: o que entrou nesta vez (commits) e onde está o registro.
+- `pela_metade`: o que ficou incompleto, com arquivo e função.
+- `decisoes`: as D-NNN registradas nesta vez.
+- `perguntas_ao_dono`: o que depende dele (e o P-NNN).
+- `nao_fazer`: armadilhas descobertas (o que quebra e por quê).
+- `testes`: comando e resultado (passam, falham, pulados).
+- `dados`: migrations aplicadas e qualquer dado real tocado, ou "nenhum".
