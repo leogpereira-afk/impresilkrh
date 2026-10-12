@@ -35,6 +35,7 @@ export function Pessoa({
   nome,
   cpf,
   idGravado,
+  bloqueado,
   className,
 }: {
   /** Quem é. Com ele, nome e CPF saem do cadastro sozinhos. */
@@ -45,12 +46,14 @@ export function Pessoa({
   cpf?: string | null;
   /** ID gravado já em mãos (a ficha ou o contrato que a tela tem). */
   idGravado?: string | null;
+  /** A marca de bloqueio do cadastro que a tela tem (sem ID: o do CPF é de outra pessoa). */
+  bloqueado?: string | null;
   className?: string;
 }) {
   const d = useDominio();
   const ficha = colaboradorId ? d.colabById.get(colaboradorId) : undefined;
   const doc = cpf ?? ficha?.cpf;
-  const fonte = { idPessoa: idGravado ?? ficha?.idPessoa, cpf: doc };
+  const fonte = { idPessoa: idGravado ?? ficha?.idPessoa, cpf: doc, idPessoaBloqueado: bloqueado ?? ficha?.idPessoaBloqueado };
   const id = idDaPessoa(fonte);
   const diverge = idDivergeDoCpf(fonte);
   const rotulo = nome ?? ficha?.nome ?? colaboradorId ?? "—";
@@ -68,7 +71,9 @@ export function Pessoa({
       ) : (
         <span
           className="whitespace-nowrap rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800"
-          title="Sem CPF no cadastro: esta ficha não casa pela chave forte, só pelo nome — e nome se repete."
+          title={fonte.idPessoaBloqueado
+            ? "Sem ID: o ID do CPF é (ou foi) de outra pessoa. O admin do RH decide o ID desta ficha."
+            : "Sem CPF no cadastro: esta ficha não casa pela chave forte, só pelo nome, e nome se repete."}
         >
           sem ID
         </span>

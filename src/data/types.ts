@@ -111,6 +111,11 @@ export interface Colaborador {
    *  e ficha e contrato do mesmo CPF dividem a lista. Segue a régua do CPF:
    *  só o RH e a própria pessoa recebem. */
   idPessoaAnteriores?: IdAnterior[];
+  /** Cadastro sem ID porque o ID do CPF é (ou foi) de outra pessoa: o motivo
+   *  ("id-de-outra-pessoa" ou "mesmo-cpf-com-ids-diferentes"), sem número.
+   *  Quem calcula o ID pelo CPF (o PCP, a tela) não calcula para ele. Só o
+   *  servidor escreve; some quando o cadastro ganha ID pelo admin. */
+  idPessoaBloqueado?: string;
   email?: string;
   telefone?: string;
   dataNascimento?: string;
@@ -1172,6 +1177,11 @@ export interface Freelancer {
    *  e ficha e contrato do mesmo CPF dividem a lista. Segue a régua do CPF:
    *  só o RH e a própria pessoa recebem. */
   idPessoaAnteriores?: IdAnterior[];
+  /** Cadastro sem ID porque o ID do CPF é (ou foi) de outra pessoa: o motivo
+   *  ("id-de-outra-pessoa" ou "mesmo-cpf-com-ids-diferentes"), sem número.
+   *  Quem calcula o ID pelo CPF (o PCP, a tela) não calcula para ele. Só o
+   *  servidor escreve; some quando o cadastro ganha ID pelo admin. */
+  idPessoaBloqueado?: string;
   /** Quando presta como empresa. */
   cnpj?: string;
   telefone?: string;

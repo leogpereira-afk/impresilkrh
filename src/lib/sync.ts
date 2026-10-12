@@ -292,6 +292,15 @@ export async function trocarIdPessoa(colecao: "colaboradores" | "freelancers", i
   } finally { void pull(); }
 }
 
+/** Devolve à MESMA pessoa que voltou nesta linha o ID do cadastro apagado da
+ *  linha (o admin confirma que é a mesma pessoa). O servidor confere e carimba. */
+export async function devolverIdPessoa(colecao: "colaboradores" | "freelancers", id: string, idPessoa: string, motivo: string): Promise<{ idPessoa: string; aviso?: string }> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  try {
+    return await chamar("idPessoa", { op: "devolverId", colecao, id, idPessoa, motivo, mesmaPessoa: true });
+  } finally { void pull(); }
+}
+
 /** Registra um ID que a pessoa já teve (troca feita antes de o RH guardar os
  *  IDs anteriores). O servidor confere a mesma régua e carimba. */
 export async function registrarIdAnterior(colecao: "colaboradores" | "freelancers", id: string, idPessoa: string, motivo: string): Promise<{ idPessoaAnteriores: string[]; aviso?: string }> {

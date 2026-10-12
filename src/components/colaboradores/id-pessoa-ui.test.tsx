@@ -13,6 +13,7 @@ const estado = vi.hoisted(() => ({
   previa: null as unknown,
   preencher: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
   registrar: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  devolver: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
 }));
 vi.mock("@/lib/dominio", async (orig) => ({
   ...(await orig<typeof import("@/lib/dominio")>()),
@@ -27,6 +28,7 @@ vi.mock("@/lib/sync", () => ({
   preencherIdPessoa: (...a: unknown[]) => estado.preencher(...a),
   trocarIdPessoa: async () => ({ idPessoa: "000000" }),
   registrarIdAnterior: (...a: unknown[]) => estado.registrar(...a),
+  devolverIdPessoa: (...a: unknown[]) => estado.devolver(...a),
 }));
 
 import { SeloIdPessoa, PreencherIdPessoa } from "./id-pessoa";
@@ -40,6 +42,7 @@ beforeEach(() => {
   el = document.createElement("div"); document.body.appendChild(el); raiz = createRoot(el);
   estado.toast = vi.fn(); estado.preencher = vi.fn(async () => ({ gravados: 1, pulados: [] }));
   estado.registrar = vi.fn(async () => ({ idPessoaAnteriores: ["123456"] }));
+  estado.devolver = vi.fn(async () => ({ idPessoa: "987654" }));
 });
 afterEach(() => { act(() => raiz.unmount()); el.remove(); document.body.innerHTML = ""; });
 const desenhar = async (no: React.ReactNode) => { await act(async () => { raiz.render(no); }); };
@@ -116,6 +119,46 @@ describe("IDs anteriores na ficha (auditoria de 12/10/2026, P1)", () => {
     await act(async () => { confirmar().click(); });
     expect(estado.registrar).toHaveBeenCalledWith("colaboradores", "f1", "123456", "CPF digitado errado no cadastro");
     expect(estado.toast).toHaveBeenCalledWith("ID anterior registrado: 123456.");
+  });
+});
+
+describe("cadastro sem ID por decisão da régua (marca idPessoaBloqueado)", () => {
+  const botao = (t: string) => [...document.querySelectorAll("button")].find((b) => b.textContent === t);
+  const digitar = async (el: HTMLInputElement | HTMLTextAreaElement, valor: string) => {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, valor);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const marcada = { id: "f1", nome: "Pessoa Fictícia", cpf: "987.654.999-11", idPessoaBloqueado: "id-de-outra-pessoa" };
+  it("não mostra o ID do CPF (é de outra pessoa): mostra a marca, também a quem não troca", async () => {
+    await desenhar(<SeloIdPessoa cadastro={marcada} colecao="colaboradores" />);
+    expect(texto()).toContain("sem ID: o do CPF é de outra pessoa");
+    expect(texto()).not.toContain("987654");
+    expect(botao("devolver ID")).toBeUndefined();
+    await desenhar(<Pessoa nome="Pessoa Fictícia" cpf={marcada.cpf} bloqueado="id-de-outra-pessoa" />);
+    expect(texto()).toContain("sem ID");
+    expect(texto()).not.toContain("987654");
+  });
+  it("o admin devolve o ID só com 6 dígitos, motivo e a confirmação de que é a mesma pessoa", async () => {
+    await desenhar(<SeloIdPessoa cadastro={marcada} colecao="colaboradores" podeTrocar />);
+    const abrir = botao("devolver ID")!;
+    expect(abrir.className).toContain("min-h-10");
+    await act(async () => { abrir.click(); });
+    expect(texto()).toContain("Devolver o ID à mesma pessoa");
+    const confirmar = () => botao("Devolver o ID")!;
+    const [campoId] = [...document.querySelectorAll("input[inputmode=numeric]")] as HTMLInputElement[];
+    const [campoMotivo] = [...document.querySelectorAll("textarea")] as HTMLTextAreaElement[];
+    await digitar(campoId, "987654");
+    await digitar(campoMotivo, "Voltou com o CPF corrigido no cadastro");
+    expect(confirmar().disabled).toBe(true); // falta a confirmação
+    const caixa = document.querySelector("input[type=checkbox]") as HTMLInputElement;
+    await act(async () => { caixa.click(); });
+    expect(confirmar().disabled).toBe(false);
+    await act(async () => { confirmar().click(); });
+    expect(estado.devolver).toHaveBeenCalledWith("colaboradores", "f1", "987654", "Voltou com o CPF corrigido no cadastro");
+    expect(texto()).not.toContain("—");
   });
 });
 

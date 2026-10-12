@@ -22,6 +22,10 @@
  *      de uma troca antiga pela ficha. Sem isto o ID antigo ficava livre, e a
  *      ficha nova cujo CPF começasse por ele passava a ser, no PCP, a pessoa
  *      das O.S. antigas (auditoria de 12/10/2026, P1).
+ *   5. Cadastro gravado SEM ID porque o ID do CPF é (ou foi) de outra pessoa
+ *      leva a marca `idPessoaBloqueado` (o motivo, sem número): quem calcula o
+ *      ID pelo CPF (o PCP, rh-programacao, rh-performance, a tela) não calcula
+ *      para ele. Só o servidor escreve; some quando o cadastro ganha ID.
  *
  * UMA RÉGUA, DOIS LADOS: a porta de dados (sync/index.ts) e a tela
  * (src/lib/identidade.ts) usam estas funções. Sem import: o harness dos
@@ -30,6 +34,14 @@
 export const CAMPO_ID_PESSOA = "idPessoa";
 /** O ID e o carimbo dele andam juntos: quem preserva um preserva todos. */
 export const CAMPOS_DO_ID = ["idPessoa", "idPessoaEm", "idPessoaPor", "idPessoaMotivo", "idPessoaAnteriores"] as const;
+/** A marca de cadastro sem ID por decisão da régua (verificação de 12/10/2026,
+ *  D1). Não é sensível: é só o motivo, sem número. Os valores são os motivos da
+ *  régua que bloqueiam (não "sem-cpf": sem CPF não há o que calcular). */
+export const CAMPO_ID_BLOQUEADO = "idPessoaBloqueado";
+export const MOTIVOS_DE_BLOQUEIO = ["id-de-outra-pessoa", "mesmo-cpf-com-ids-diferentes"] as const;
+export type MotivoDeBloqueio = typeof MOTIVOS_DE_BLOQUEIO[number];
+/** Tudo o que só o servidor escreve no cadastro: o ID, o carimbo, a lista e a marca. */
+export const CAMPOS_DO_SERVIDOR = [...CAMPOS_DO_ID, CAMPO_ID_BLOQUEADO] as const;
 export const COLECOES_COM_ID = ["colaboradores", "freelancers"] as const;
 export type ColecaoComId = typeof COLECOES_COM_ID[number];
 export const temIdGravavel = (colecao: string): colecao is ColecaoComId =>
@@ -117,9 +129,16 @@ export function cpfDoCadastro(colecao: string, r: Reg): string {
   return colecao === "freelancers" && !cpfConfere(c) ? "" : c;
 }
 
-/** O ID que vale para o cadastro: o gravado; sem ele, o do CPF de hoje. */
+/** A marca de bloqueio do cadastro (um dos MOTIVOS_DE_BLOQUEIO), ou "". */
+export const idBloqueado = (r: Reg): MotivoDeBloqueio | "" => {
+  const v = campo(r, CAMPO_ID_BLOQUEADO);
+  return (MOTIVOS_DE_BLOQUEIO as readonly unknown[]).includes(v) ? v as MotivoDeBloqueio : "";
+};
+
+/** O ID que vale para o cadastro: o gravado; sem ele, o do CPF de hoje, a não
+ *  ser que o cadastro tenha a marca de bloqueio (o do CPF é de outra pessoa). */
 export const idQueVale = (colecao: string, r: Reg): string =>
-  idGravado(r) || cpfDoCadastro(colecao, r).slice(0, 6);
+  idGravado(r) || (idBloqueado(r) ? "" : cpfDoCadastro(colecao, r).slice(0, 6));
 
 /** O ID gravado é diferente do começo do CPF de hoje? (a mesma marca do PCP).
  *  Sem CPF à vista (máscara) não há o que comparar: não marca. */
@@ -137,6 +156,10 @@ export interface CadastroComId {
    *  continuam sendo de quem saiu (o histórico do PCP tem esses IDs). */
   apagado?: boolean;
 }
+
+/** Linha de arquivo cujo ID o admin devolveu à mesma pessoa (op devolverId):
+ *  o ID e a lista moram agora no cadastro vivo `devolvidoA`; ela sai da régua. */
+const devolvida = (o: CadastroComId): boolean => !!o.apagado && !!campo(o.registro, "devolvidoA");
 
 export type MotivoSemId = "sem-cpf" | "id-de-outra-pessoa" | "mesmo-cpf-com-ids-diferentes";
 
@@ -171,7 +194,7 @@ export function outraPessoaComId(
   outros: CadastroComId[],
 ): (CadastroComId & { anterior?: boolean }) | null {
   for (const o of outros) {
-    if (!o.apagado && mesmaChave(o, alvo)) continue;
+    if ((!o.apagado && mesmaChave(o, alvo)) || devolvida(o)) continue;
     const hoje = (o.apagado ? idGravado(o.registro) : idQueVale(o.colecao, o.registro)) === id;
     const antes = !hoje && idsAnteriores(o.registro).includes(id);
     if (!hoje && !antes) continue;
@@ -181,10 +204,11 @@ export function outraPessoaComId(
   return null;
 }
 
-/** Os IDs anteriores que um cadastro do CPF recebe dos outros cadastros VIVOS
- *  do mesmo CPF (ficha e contrato dividem a lista). */
+/** Os IDs anteriores que um cadastro do CPF recebe dos outros cadastros do
+ *  mesmo CPF (ficha e contrato dividem a lista), vivos e lápides: quem volta
+ *  em outra linha recebe a lista de quando saiu (verificação de 12/10/2026, D3). */
 export const anterioresDoCpf = (cpf: string, alvo: { colecao: string; id: string }, outros: CadastroComId[]): IdAnterior[] =>
-  cpf ? juntarAnteriores(...outros.filter((o) => !o.apagado && !mesmaChave(o, alvo) && cpf11(o.registro.cpf) === cpf).map((o) => anterioresDe(o.registro))) : [];
+  cpf ? juntarAnteriores(...outros.filter((o) => !devolvida(o) && !(!o.apagado && mesmaChave(o, alvo)) && cpf11(o.registro.cpf) === cpf).map((o) => anterioresDe(o.registro))) : [];
 
 /** Que ID um cadastro SEM o campo deve receber, olhando os outros cadastros
  *  vivos (fichas e contratos). Não olha o próprio `idPessoa`: quem chama decide
@@ -201,7 +225,12 @@ export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[], lap
   if (!cpf) return { idPessoa: "", motivo: "sem-cpf" };
   const mesmos = outros.filter((o) => !o.apagado && !mesmaChave(o, alvo) && cpf11(o.registro.cpf) === cpf);
   const daLapide = cpf11(campo(lapide, "cpf")) === cpf ? idGravado(lapide) : "";
-  const herdaveis = [...new Set([daLapide, ...mesmos.map((o) => idGravado(o.registro))].filter(Boolean))];
+  let herdaveis = [...new Set([daLapide, ...mesmos.map((o) => idGravado(o.registro))].filter(Boolean))];
+  // Sem cadastro vivo do CPF: quem volta em outra linha recebe o ID que tinha
+  // quando saiu (a lápide ou a linha de arquivo do mesmo CPF; D3).
+  if (!herdaveis.length) {
+    herdaveis = [...new Set(outros.filter((o) => o.apagado && !devolvida(o) && cpf11(o.registro.cpf) === cpf).map((o) => idGravado(o.registro)).filter(Boolean))];
+  }
   if (herdaveis.length > 1) return { idPessoa: "", motivo: "mesmo-cpf-com-ids-diferentes" };
   const id = herdaveis[0] ?? cpf.slice(0, 6);
   const outro = outraPessoaComId(id, cpf, alvo, outros);
@@ -236,11 +265,25 @@ export const avisoSemId = (motivo: MotivoSemId, outroNome?: string, anterior = f
  *  saem do registro (o envio nunca escreve nenhum deles). */
 export function comCamposDoId(registro: Record<string, unknown>, fonte: Reg): Record<string, unknown> {
   const r: Record<string, unknown> = { ...registro };
-  for (const k of CAMPOS_DO_ID) {
+  for (const k of CAMPOS_DO_SERVIDOR) {
     const v = campo(fonte, k);
     if (v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && !v.length)) r[k] = v;
     else delete r[k];
   }
+  return semBloqueioComId(r);
+}
+
+/** Cadastro com ID gravado não tem marca de bloqueio (ela some quando o ID chega). */
+export function semBloqueioComId(r: Record<string, unknown>): Record<string, unknown> {
+  if (idGravado(r) && CAMPO_ID_BLOQUEADO in r) { const o = { ...r }; delete o[CAMPO_ID_BLOQUEADO]; return o; }
+  return r;
+}
+
+/** Põe (ou tira, com "") a marca de bloqueio. Só os MOTIVOS_DE_BLOQUEIO valem. */
+export function comBloqueio(registro: Record<string, unknown>, motivo: string): Record<string, unknown> {
+  const r: Record<string, unknown> = { ...registro };
+  if ((MOTIVOS_DE_BLOQUEIO as readonly string[]).includes(motivo) && !idGravado(r)) r[CAMPO_ID_BLOQUEADO] = motivo;
+  else delete r[CAMPO_ID_BLOQUEADO];
   return r;
 }
 
@@ -251,7 +294,7 @@ export function comAnteriores(registro: Record<string, unknown>, lista: IdAnteri
   const hoje = idGravado(r);
   const fica = lista.filter((a) => a.idPessoa !== hoje);
   if (fica.length) r.idPessoaAnteriores = fica; else delete r.idPessoaAnteriores;
-  return r;
+  return semBloqueioComId(r);
 }
 
 /** A lápide é da mesma pessoa que chega na mesma linha? Só com o mesmo CPF
@@ -263,6 +306,9 @@ export const mesmaPessoaDaLapide = (colecao: string, lapide: Reg, registro: Reg)
 
 /** A lápide guarda ID ou IDs anteriores (tem o que perder se a vaga for ocupada)? */
 export const lapideGuardaId = (lapide: Reg): boolean => !!idGravado(lapide) || idsAnteriores(lapide).length > 0;
+
+/** É linha de arquivo de lápide (pelo nome ou pelo campo `arquivadaDe`)? */
+export const ehLinhaDeArquivo = (id: string, r: Reg): boolean => /\.saiu-v\d+$/.test(id) || !!campo(r, "arquivadaDe");
 
 /** O id da linha onde a lápide fica guardada quando OUTRA pessoa ocupa a vaga
  *  dela. Determinístico (a versão da lápide): a fila pode repetir o envio. */

@@ -10,7 +10,7 @@
 // Aqui mora a régua, e só ela: quem casa pagamento com pessoa usa estas
 // funções; quem mostra a pessoa na tela mostra o ID ao lado do nome.
 import type { Colaborador } from "@/data/types";
-import { idGravado as gravadoNoCadastro } from "../../supabase/functions/_shared/idPessoa";
+import { idBloqueado as bloqueadoNoCadastro, idGravado as gravadoNoCadastro } from "../../supabase/functions/_shared/idPessoa";
 
 export const soDigitos = (v: unknown): string => String(v ?? "").replace(/\D/g, "");
 
@@ -25,11 +25,12 @@ export function idPessoa(cpf: unknown): string | null {
    CPF corrigido. A régua mora em supabase/functions/_shared/idPessoa.ts (a
    porta de dados usa a mesma). Para MOSTRAR a pessoa vale o gravado; sem ele,
    o do CPF de hoje (`idPessoa(cpf)` acima continua sendo o cálculo). */
-export { idGravado, idDivergeDoCpf, idValido, idQueVale } from "../../supabase/functions/_shared/idPessoa";
+export { idBloqueado, idGravado, idDivergeDoCpf, idValido, idQueVale } from "../../supabase/functions/_shared/idPessoa";
 
-/** O ID para mostrar: o gravado; sem ele, o do CPF de hoje. */
-export function idDaPessoa(c: { idPessoa?: unknown; cpf?: unknown } | null | undefined): string | null {
-  return gravadoNoCadastro(c) || idPessoa(c?.cpf);
+/** O ID para mostrar: o gravado; sem ele, o do CPF de hoje, a não ser que o
+ *  cadastro tenha a marca de bloqueio (o ID do CPF é ou foi de outra pessoa). */
+export function idDaPessoa(c: { idPessoa?: unknown; cpf?: unknown; idPessoaBloqueado?: unknown } | null | undefined): string | null {
+  return gravadoNoCadastro(c) || (bloqueadoNoCadastro(c) ? null : idPessoa(c?.cpf));
 }
 
 export const TITULO_ID_DIVERGENTE =

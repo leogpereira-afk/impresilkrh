@@ -142,7 +142,7 @@ const CAMPO: Record<string, string> = {
   dataPagamento: "Data de pagamento", perfil: "Perfil", modulos: "Módulos",
   ativo: "Ativo", observacao: "Observação", motivo: "Motivo", classe: "Classificação",
   idMubi: "Título no ERP", manual: "Lançado à mão", naoBatePonto: "Não bate ponto",
-  idPessoa: "ID da pessoa", idPessoaMotivo: "Motivo do ID da pessoa", idPessoaAnteriores: "IDs anteriores da pessoa",
+  idPessoa: "ID da pessoa", idPessoaMotivo: "Motivo do ID da pessoa", idPessoaAnteriores: "IDs anteriores da pessoa", idPessoaBloqueado: "ID da pessoa bloqueado",
 };
 export const rotuloCampo = (c: string) => CAMPO[c] ?? c;
 

@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
-import { idDivergeDoCpf, idGravado, idQueVale, TITULO_ID_DIVERGENTE } from "@/lib/identidade";
+import { idBloqueado, idDivergeDoCpf, idGravado, idQueVale, TITULO_ID_DIVERGENTE } from "@/lib/identidade";
 import { AVISO_CENTRAL_ID_NOVO, idsAnteriores } from "../../../supabase/functions/_shared/idPessoa";
-import { previaIdPessoa, preencherIdPessoa, registrarIdAnterior, trocarIdPessoa, type ItemIdPessoa } from "@/lib/sync";
+import { devolverIdPessoa, previaIdPessoa, preencherIdPessoa, registrarIdAnterior, trocarIdPessoa, type ItemIdPessoa } from "@/lib/sync";
 
 /* O ID DA PESSOA NA TELA DO RH (D-004, 12/10/2026).
  *
@@ -28,7 +28,7 @@ import { previaIdPessoa, preencherIdPessoa, registrarIdAnterior, trocarIdPessoa,
  * não é o RH nem a própria pessoa), então quem não vê o CPF também não vê o
  * ID nem a marca. */
 
-type Cadastro = { id: string; nome?: string; cpf?: string; idPessoa?: string; idPessoaMotivo?: string; idPessoaEm?: string; idPessoaAnteriores?: unknown };
+type Cadastro = { id: string; nome?: string; cpf?: string; idPessoa?: string; idPessoaMotivo?: string; idPessoaEm?: string; idPessoaAnteriores?: unknown; idPessoaBloqueado?: unknown };
 
 export function SeloIdPessoa({
   cadastro, colecao, podeTrocar = false, compacto = false,
@@ -41,12 +41,15 @@ export function SeloIdPessoa({
 }) {
   const [trocando, setTrocando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
+  const [devolvendo, setDevolvendo] = useState(false);
   const id = idQueVale(colecao, cadastro);
   const gravado = idGravado(cadastro);
+  // Sem ID por decisão da régua: o do CPF é (ou foi) de outra pessoa.
+  const bloqueado = !gravado && !!idBloqueado(cadastro);
   const diverge = idDivergeDoCpf(cadastro);
   // Os IDs que a pessoa já teve (a porta só os entrega ao RH e à própria pessoa).
   const anteriores = idsAnteriores(cadastro).filter((a) => a !== gravado);
-  if (!id && !podeTrocar) return null;
+  if (!id && !podeTrocar && !bloqueado) return null;
   const titulo = gravado
     ? `ID da pessoa, gravado no cadastro${cadastro.idPessoaMotivo ? ` (${cadastro.idPessoaMotivo})` : ""}. Não muda quando o CPF é corrigido.`
     : "ID da pessoa: os 6 primeiros dígitos do CPF. Ainda não gravado no cadastro: o admin grava em Configurações do RH › Cadastros.";
@@ -60,6 +63,14 @@ export function SeloIdPessoa({
           title={titulo}
         >
           ID {id}{!gravado && <span className="ml-1 font-sans text-slate-400">(do CPF)</span>}
+        </span>
+      )}
+      {bloqueado && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+          title="O ID do CPF é (ou foi) de outra pessoa: este cadastro fica sem ID até o admin do RH decidir. O PCP não calcula o ID pelo CPF dele."
+        >
+          <AlertTriangle className="h-3 w-3" /> sem ID: o do CPF é de outra pessoa
         </span>
       )}
       {diverge && (
@@ -93,6 +104,17 @@ export function SeloIdPessoa({
           ID anterior
         </button>
       )}
+      {podeTrocar && bloqueado && (
+        <button
+          type="button"
+          className="btn-ghost min-h-10 px-2 py-0 text-xs"
+          title="A mesma pessoa voltou nesta ficha (ex.: CPF corrigido): devolver o ID que ela tinha"
+          onClick={() => setDevolvendo(true)}
+        >
+          devolver ID
+        </button>
+      )}
+      {devolvendo && <DevolverIdPessoa cadastro={cadastro} colecao={colecao} fechar={() => setDevolvendo(false)} />}
       {trocando && <TrocarIdPessoa cadastro={cadastro} colecao={colecao} fechar={() => setTrocando(false)} />}
       {registrando && <RegistrarIdAnterior cadastro={cadastro} colecao={colecao} fechar={() => setRegistrando(false)} />}
     </span>
@@ -147,6 +169,65 @@ function TrocarIdPessoa({ cadastro, colecao, fechar }: { cadastro: Cadastro; col
         <Campo label="Motivo" obrigatorio hint="fica no histórico de alterações">
           <Textarea rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} />
         </Campo>
+      </div>
+    </Modal>
+  );
+}
+
+/** Devolver o ID à MESMA pessoa que voltou nesta linha (ex.: CPF corrigido
+ *  nos últimos dígitos, que a régua não reconhece como a mesma). Só o admin; o
+ *  servidor só aceita o ID do cadastro apagado desta linha, nunca o de outra. */
+function DevolverIdPessoa({ cadastro, colecao, fechar }: { cadastro: Cadastro; colecao: "colaboradores" | "freelancers"; fechar: () => void }) {
+  const toast = useToast();
+  const [valor, setValor] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [mesma, setMesma] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const limpo = valor.replace(/\D/g, "");
+  const pronto = limpo.length === 6 && motivo.trim().length >= 10 && mesma;
+  const salvar = async () => {
+    if (!pronto || enviando) return;
+    setEnviando(true);
+    try {
+      const r = await devolverIdPessoa(colecao, cadastro.id, limpo, motivo.trim());
+      toast(`ID da pessoa devolvido: ${r.idPessoa}.`);
+      if (r.aviso) toast(r.aviso, "info");
+      fechar();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Não foi possível devolver o ID.", "erro");
+    } finally { setEnviando(false); }
+  };
+  return (
+    <Modal
+      aberto
+      onFechar={fechar}
+      titulo="Devolver o ID à mesma pessoa"
+      descricao={`${cadastro.nome ?? "Cadastro"}, hoje sem ID.`}
+      rodape={
+        <>
+          <button className="btn-ghost" onClick={fechar}>Cancelar</button>
+          <button className="btn-primary" disabled={!pronto || enviando} onClick={salvar}>
+            {enviando ? "Devolvendo..." : "Devolver o ID"}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Use só quando quem está nesta ficha é a MESMA pessoa que saiu dela (por exemplo, voltou com o CPF corrigido).
+          Só o ID do cadastro apagado desta mesma ficha pode ser devolvido. Se for outra pessoa, não devolva: ela
+          passaria a ser, no PCP, a pessoa das O.S. antigas.
+        </p>
+        <Campo label="ID da pessoa" obrigatorio hint="6 dígitos, o que ela tinha quando saiu">
+          <Input value={valor} inputMode="numeric" maxLength={6} autoComplete="off" onChange={(e) => setValor(e.target.value)} />
+        </Campo>
+        <Campo label="Motivo" obrigatorio hint="fica no histórico de alterações">
+          <Textarea rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        </Campo>
+        <label className="flex min-h-10 items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" className="h-4 w-4" checked={mesma} onChange={(e) => setMesma(e.target.checked)} />
+          É a mesma pessoa do cadastro apagado desta ficha.
+        </label>
       </div>
     </Modal>
   );

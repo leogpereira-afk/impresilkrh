@@ -256,7 +256,7 @@ export default function Freelancers() {
               {semContrato.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <div className="min-w-0">
-                    <Pessoa nome={c.nome} cpf={c.cpf} idGravado={c.idPessoa} />
+                    <Pessoa nome={c.nome} cpf={c.cpf} idGravado={c.idPessoa} bloqueado={c.idPessoaBloqueado} />
                     {/* nomeCargo devolve "—" quando a ficha não tem cargo: aqui vira frase. */}
                     <div className="text-xs text-slate-500">{d.nomeCargo(c) !== "—" ? d.nomeCargo(c) : "Sem cargo na ficha"}</div>
                   </div>
