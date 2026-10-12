@@ -10,7 +10,7 @@
 // Aqui mora a régua, e só ela: quem casa pagamento com pessoa usa estas
 // funções; quem mostra a pessoa na tela mostra o ID ao lado do nome.
 import type { Colaborador } from "@/data/types";
-import { idBloqueado as bloqueadoNoCadastro, idGravado as gravadoNoCadastro } from "../../supabase/functions/_shared/idPessoa";
+import { idBloqueado as bloqueadoNoCadastro, idGravado as gravadoNoCadastro, idsAnteriores as idsAnterioresNoCadastro } from "../../supabase/functions/_shared/idPessoa";
 
 export const soDigitos = (v: unknown): string => String(v ?? "").replace(/\D/g, "");
 
@@ -36,12 +36,28 @@ export function idDaPessoa(c: { idPessoa?: unknown; cpf?: unknown; idPessoaBloqu
 export const TITULO_ID_DIVERGENTE =
   "O ID gravado na ficha é diferente do começo do CPF de hoje (o CPF foi corrigido depois). Vale o gravado: é com ele que a pessoa está nas O.S., equipes e divisões do PCP. Só o admin do RH troca o ID, com motivo.";
 
-/** ID → pessoa, só quando o ID é único (dois cadastros com o mesmo CPF não casam com ninguém). */
+/** As chaves com que a pessoa casa num título do ERP: o ID que vale (o
+ *  gravado; sem ele, o do CPF, a não ser com a marca de bloqueio), os IDs
+ *  anteriores dela e o CPF inteiro (`cpf:<11 dígitos>`). Revisão do 80e7d8f:
+ *  antes casava só pelo começo do CPF, e o título "ID <de quem saiu>" caía na
+ *  ficha marcada, enquanto o ID gravado diferente do CPF não casava. */
+function chavesDaPessoa(c: Colaborador): string[] {
+  const doCpf = soDigitos(c.cpf);
+  const hoje = idDaPessoa(c);
+  return [...new Set([
+    ...(hoje ? [hoje] : []),
+    ...idsAnterioresNoCadastro(c),
+    ...(doCpf.length === 11 ? [`cpf:${doCpf}`] : []),
+  ])];
+}
+
+/** ID → pessoa, só quando a chave é de UMA pessoa (dois cadastros com o mesmo
+ *  ID ou o mesmo CPF não casam com ninguém). Ver chavesDaPessoa. */
 export function mapaDeIds(colaboradores: Colaborador[]): Map<string, Colaborador> {
   const contagem = new Map<string, number>();
-  for (const c of colaboradores) { const id = idPessoa(c.cpf); if (id) contagem.set(id, (contagem.get(id) ?? 0) + 1); }
+  for (const c of colaboradores) for (const k of chavesDaPessoa(c)) contagem.set(k, (contagem.get(k) ?? 0) + 1);
   const m = new Map<string, Colaborador>();
-  for (const c of colaboradores) { const id = idPessoa(c.cpf); if (id && contagem.get(id) === 1) m.set(id, c); }
+  for (const c of colaboradores) for (const k of chavesDaPessoa(c)) if (contagem.get(k) === 1) m.set(k, c);
   return m;
 }
 
@@ -60,8 +76,10 @@ export function acharPorIdNoTexto(texto: string, ids: Map<string, Colaborador>):
   const explicito = t.match(/\b(?:ID|IDENT(?:IDADE)?)\s*[:#.-]?\s*(\d{6})\b|#(\d{6})\b/i);
   if (explicito) { const id = explicito[1] ?? explicito[2]; const c = ids.get(id); if (c) return c; }
   const cpf = t.match(/(?<!\d)(\d{3})\.?(\d{3})\.?(\d{3})-?(\d{2})(?!\d)/);
-  if (cpf) { const c = ids.get(cpf[1] + cpf[2]); if (c) return c; }
+  // O CPF inteiro casa com a dona dele; sem ela, o começo do CPF casa como ID.
+  if (cpf) { const c = ids.get(`cpf:${cpf.slice(1).join("")}`) ?? ids.get(cpf[1] + cpf[2]); if (c) return c; }
   const soltos = [...t.matchAll(/(?<!\d)(\d{6})(?!\d)/g)].map((m) => m[1]).filter((id) => ids.has(id));
-  const unicos = [...new Set(soltos)];
-  return unicos.length === 1 ? ids.get(unicos[0])! : null;
+  // Dois números da MESMA pessoa (o ID e um anterior) ainda são uma pessoa só.
+  const pessoas = [...new Set(soltos.map((id) => ids.get(id)!))];
+  return pessoas.length === 1 ? pessoas[0] : null;
 }

@@ -104,7 +104,11 @@ describe("o ID anterior de outra pessoa não é dado a ninguém", () => {
     expect(item).toMatchObject({ idPessoa: "", motivo: expect.stringContaining("já foi de outra pessoa") });
     const r = await s.call({ action: "idPessoa", op: "preencher", itens: [{ colecao: "colaboradores", id: "f2", idPessoa: "123456" }] });
     expect(r.body.gravados).toBe(0);
-    expect(gravacoes(s, "colaboradores")).toHaveLength(0);
+    // Nenhum ID; só a marca de bloqueio (revisão do 80e7d8f).
+    const escritas = gravacoes(s, "colaboradores");
+    expect(escritas).toHaveLength(1);
+    expect(escritas[0].args.p_registro).not.toHaveProperty("idPessoa");
+    expect(escritas[0].args.p_registro.idPessoaBloqueado).toBe("id-de-outra-pessoa");
   });
   it("o trocar recusa dar a alguém o ID anterior de outra pessoa (viva ou lápide)", async () => {
     for (const dona of [linha("colaboradores", trocada()), lapide("colaboradores", trocada())]) {
@@ -204,7 +208,8 @@ describe("o ID de HOJE de quem saiu (lápide de outra linha) é de outra pessoa"
     const previa = await s.call({ action: "idPessoa", op: "previa" });
     expect((previa.body.itens as { id: string; idPessoa: string }[]).find((i) => i.id === "f4")!.idPessoa).toBe("");
     expect((await s.call({ action: "idPessoa", op: "preencher", itens: [{ colecao: "colaboradores", id: "f4", idPessoa: "123456" }] })).body.gravados).toBe(0);
-    expect(gravacoes(s)).toHaveLength(0);
+    // Nenhum ID; f4 só ganha a marca de bloqueio (revisão do 80e7d8f).
+    expect(gravacoes(s, "colaboradores").map((g) => [g.args.p_id, g.args.p_registro.idPessoa, g.args.p_registro.idPessoaBloqueado])).toEqual([["f4", undefined, "id-de-outra-pessoa"]]);
     // Sem a ficha f4 (que também usaria o 123456 pelo CPF), quem recusa é a lápide.
     const s2 = servidorRh({ perfil: "ADMIN_RH", rows: [saiu(), linha("colaboradores", ficha("f5", { cpf: CPF_B, idPessoa: "654321" }))] });
     const t = await s2.call({ action: "idPessoa", op: "trocar", colecao: "colaboradores", id: "f5", idPessoa: "123456", motivo: MOTIVO });

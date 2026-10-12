@@ -274,12 +274,17 @@ export interface ItemIdPessoa {
   herdado: boolean;
   motivo: string | null;
   outro: string | null;
+  /** O motivo da régua que bloqueia ("id-de-outra-pessoa" ou
+   *  "mesmo-cpf-com-ids-diferentes"): o preencher grava a marca. */
+  bloqueio?: string | null;
+  /** Já tem a marca de bloqueio gravada. */
+  marcado?: boolean;
 }
 export async function previaIdPessoa(): Promise<{ itens: ItemIdPessoa[]; total: number; comId: number }> {
   if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
   return await chamar("idPessoa", { op: "previa" });
 }
-export async function preencherIdPessoa(itens: Pick<ItemIdPessoa, "colecao" | "id" | "idPessoa">[]): Promise<{ gravados: number; pulados: { nome: string; motivo: string }[]; aviso?: string }> {
+export async function preencherIdPessoa(itens: Pick<ItemIdPessoa, "colecao" | "id" | "idPessoa">[]): Promise<{ gravados: number; marcados?: number; pulados: { nome: string; motivo: string }[]; aviso?: string }> {
   if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
   try {
     return await chamar("idPessoa", { op: "preencher", itens: itens.map(({ colecao, id, idPessoa }) => ({ colecao, id, idPessoa })) });
@@ -290,6 +295,14 @@ export async function trocarIdPessoa(colecao: "colaboradores" | "freelancers", i
   try {
     return await chamar("idPessoa", { op: "trocar", colecao, id, idPessoa, motivo });
   } finally { void pull(); }
+}
+
+/** Quem estava no cadastro apagado desta ficha (a linha de arquivo): nome,
+ *  CPF mascarado e o ID, para o admin comparar antes de devolver (só admin). */
+export interface ArquivoDaLinha { id: string; nome: string; cpf: string; idPessoa: string; devolvido: boolean; saiuEm: string }
+export async function arquivosDaLinha(colecao: "colaboradores" | "freelancers", id: string): Promise<{ itens: ArquivoDaLinha[] }> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  return await chamar("idPessoa", { op: "arquivosDaLinha", colecao, id });
 }
 
 /** Devolve à MESMA pessoa que voltou nesta linha o ID do cadastro apagado da

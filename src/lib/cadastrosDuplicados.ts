@@ -27,7 +27,7 @@
 //    tarefas). Por isso o caminho oferecido é TRANSFERIR o que está pendurado
 //    para a ficha boa, e só então apagar a vazia.
 // ============================================================================
-import { idPessoa, soDigitos } from "./identidade";
+import { idDaPessoa, soDigitos } from "./identidade";
 
 export interface FichaResumo {
   id: string;
@@ -36,6 +36,8 @@ export interface FichaResumo {
   cpf?: string | null;
   /** O ID gravado na ficha (D-004); sem ele, o do CPF. */
   idPessoa?: string | null;
+  /** A marca de bloqueio: sem ID, e o do CPF é (ou foi) de outra pessoa. */
+  idPessoaBloqueado?: string | null;
   statusId?: string | null;
   dataAdmissao?: string | null;
   dataDesligamento?: string | null;
@@ -225,7 +227,8 @@ export function lacoEntre(a: FichaResumo, b: FichaResumo): Laco | null {
   const cpfA = soDigitos(a.cpf), cpfB = soDigitos(b.cpf);
   const valem = cpfUtilizavel(cpfA) && cpfUtilizavel(cpfB);
   if (valem && cpfA === cpfB) return { tipo: "mesmo-cpf", certeza: "alta", explicacao: "o CPF é o mesmo" };
-  const idA = idPessoa(a.cpf), idB = idPessoa(b.cpf);
+  // O ID que vale (gravado; sem ele, o do CPF, a não ser com a marca de bloqueio).
+  const idA = idDaPessoa(a), idB = idDaPessoa(b);
   if (valem && idA && idA === idB) return { tipo: "mesmo-id", certeza: "alta", explicacao: `o ID da pessoa (${idA}) é o mesmo` };
 
   const ta = tokensDoNome(a.nome), tb = tokensDoNome(b.nome);

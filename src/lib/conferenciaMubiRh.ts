@@ -21,7 +21,8 @@
 // tinha como saber qual lado valia, e um "corrigir automaticamente" teria
 // gravado o errado em silêncio.
 // ============================================================================
-import { idPessoa } from "./identidade";
+import { idDaPessoa, idPessoa } from "./identidade";
+import { idsAnteriores } from "../../supabase/functions/_shared/idPessoa";
 
 export interface LinhaMubisys {
   nome: string;
@@ -119,6 +120,10 @@ export interface FichaRh {
   id: string;
   nome: string;
   cpf?: string | null;
+  /** O ID gravado, os anteriores e a marca de bloqueio (D-004): o casamento usa o ID que vale. */
+  idPessoa?: string | null;
+  idPessoaAnteriores?: unknown;
+  idPessoaBloqueado?: string | null;
   /* `null` é um valor de verdade no cadastro (desligamento apagado grava null,
      não undefined). Recusar null no tipo obrigaria quem chama a mentir com um
      `?? undefined`, e mentira de tipo vira defeito calado. */
@@ -193,10 +198,15 @@ export function dataIso(br: unknown): string {
  */
 export function conferirComMubisys(fichas: FichaRh[], leitura: LeituraMubisys): Conferencia {
   const porId = new Map<string, FichaRh>();
+  const porCpf = new Map<string, FichaRh>();
   const porNome = new Map<string, FichaRh>();
   for (const f of fichas) {
-    const id = idPessoa(f.cpf);
-    if (id && !porId.has(id)) porId.set(id, f);
+    /* O ID que vale (revisão do 80e7d8f): o gravado; sem ele, o do CPF, a não
+       ser com a marca de bloqueio (o ID do CPF é de outra pessoa); e os IDs
+       anteriores casam com a mesma pessoa. O CPF inteiro casa primeiro. */
+    const cpf = soDigitos(f.cpf);
+    if (cpf.length === 11 && !porCpf.has(cpf)) porCpf.set(cpf, f);
+    for (const id of [idDaPessoa(f), ...idsAnteriores(f)]) if (id && !porId.has(id)) porId.set(id, f);
     const n = norm(f.nome);
     if (n && !porNome.has(n)) porNome.set(n, f);
   }
@@ -207,7 +217,7 @@ export function conferirComMubisys(fichas: FichaRh[], leitura: LeituraMubisys): 
 
   for (const m of leitura.linhas) {
     const id = idPessoa(m.cpf);
-    let ficha = id ? porId.get(id) : undefined;
+    let ficha = porCpf.get(soDigitos(m.cpf)) ?? (id ? porId.get(id) : undefined);
     let casadoPor: "id" | "nome" = "id";
     if (!ficha) {
       ficha = porNome.get(norm(m.nome));

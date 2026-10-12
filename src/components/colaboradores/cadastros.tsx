@@ -417,6 +417,7 @@ export function CadastrosSecao({ onAbrirFicha }: { onAbrirFicha?: (id: string) =
       <ConferenciaMubi
         fichas={(colaboradores as Colaborador[]).filter((c) => !c.ehDirecao).map((c): FichaRh => ({
           id: c.id, nome: c.nome, cpf: c.cpf,
+          idPessoa: c.idPessoa, idPessoaAnteriores: c.idPessoaAnteriores, idPessoaBloqueado: c.idPessoaBloqueado,
           dataAdmissao: c.dataAdmissao, dataDesligamento: c.dataDesligamento, telefone: c.telefone,
         }))}
         onAplicar={aplicarDoMubisys}

@@ -192,10 +192,20 @@ export function outraPessoaComId(
   cpfAlvo: string,
   alvo: { colecao: string; id: string },
   outros: CadastroComId[],
+  /** IDs que o alvo já tem por direito (o herdado do mesmo CPF, os anteriores
+   *  dele, o devolvido pelo admin): a ficha MARCADA não os segura contra ele. */
+  doAlvo: string[] = [],
 ): (CadastroComId & { anterior?: boolean }) | null {
   for (const o of outros) {
     if ((!o.apagado && mesmaChave(o, alvo)) || devolvida(o)) continue;
-    const hoje = (o.apagado ? idGravado(o.registro) : idQueVale(o.colecao, o.registro)) === id;
+    /* O ID que o cadastro segura: o gravado; sem ele, o do CPF, também na
+       lápide sem ID gravado (quem saiu antes de 12/10 já estava por ID nas O.S.
+       do PCP desde 29/09) e também na ficha marcada (o ID do CPF dela não é
+       dela, mas também não é de uma terceira pessoa; revisão do 80e7d8f). */
+    const gravado = idGravado(o.registro);
+    const segura = gravado || cpfDoCadastro(o.colecao, o.registro).slice(0, 6);
+    if (!gravado && idBloqueado(o.registro) && !o.apagado && doAlvo.includes(id)) continue;
+    const hoje = segura === id;
     const antes = !hoje && idsAnteriores(o.registro).includes(id);
     if (!hoje && !antes) continue;
     if (cpfAlvo && cpf11(o.registro.cpf) === cpfAlvo) continue; // mesma pessoa
@@ -233,7 +243,7 @@ export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[], lap
   }
   if (herdaveis.length > 1) return { idPessoa: "", motivo: "mesmo-cpf-com-ids-diferentes" };
   const id = herdaveis[0] ?? cpf.slice(0, 6);
-  const outro = outraPessoaComId(id, cpf, alvo, outros);
+  const outro = outraPessoaComId(id, cpf, alvo, outros, herdaveis);
   if (outro) {
     return { idPessoa: "", motivo: "id-de-outra-pessoa", outro: { colecao: outro.colecao, id: outro.id, nome: String(outro.registro.nome ?? ""), ...(outro.anterior ? { anterior: true } : {}), ...(outro.apagado ? { apagado: true } : {}) } };
   }
@@ -304,8 +314,17 @@ export const mesmaPessoaDaLapide = (colecao: string, lapide: Reg, registro: Reg)
   return !!daLapide && daLapide === cpfDoCadastro(colecao, registro);
 };
 
-/** A lápide guarda ID ou IDs anteriores (tem o que perder se a vaga for ocupada)? */
-export const lapideGuardaId = (lapide: Reg): boolean => !!idGravado(lapide) || idsAnteriores(lapide).length > 0;
+/** O cadastro guarda ID gravado ou IDs anteriores? */
+export const guardaIdGravado = (r: Reg): boolean => !!idGravado(r) || idsAnteriores(r).length > 0;
+/** A lápide segura algum ID (tem o que perder se a vaga for ocupada)? O
+ *  gravado, os anteriores, ou o do CPF (quem saiu antes do ID gravado). */
+export const lapideGuardaId = (lapide: Reg): boolean => guardaIdGravado(lapide) || !!cpf11(campo(lapide, "cpf"));
+
+/** CPF para o admin comparar: começo e fim, o meio escondido. */
+export const cpfMascarado = (v: unknown): string => {
+  const d = cpf11(v);
+  return d ? `${d.slice(0, 3)}.${d.slice(3, 6)}.***-${d.slice(9)}` : "";
+};
 
 /** É linha de arquivo de lápide (pelo nome ou pelo campo `arquivadaDe`)? */
 export const ehLinhaDeArquivo = (id: string, r: Reg): boolean => /\.saiu-v\d+$/.test(id) || !!campo(r, "arquivadaDe");

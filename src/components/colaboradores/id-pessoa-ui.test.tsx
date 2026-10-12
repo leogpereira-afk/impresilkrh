@@ -29,6 +29,7 @@ vi.mock("@/lib/sync", () => ({
   trocarIdPessoa: async () => ({ idPessoa: "000000" }),
   registrarIdAnterior: (...a: unknown[]) => estado.registrar(...a),
   devolverIdPessoa: (...a: unknown[]) => estado.devolver(...a),
+  arquivosDaLinha: async () => ({ itens: [{ id: "f1.saiu-v7", nome: "Pessoa Fictícia Antes", cpf: "987.654.***-00", idPessoa: "987654", devolvido: false, saiuEm: "" }] }),
 }));
 
 import { SeloIdPessoa, PreencherIdPessoa } from "./id-pessoa";
@@ -133,8 +134,11 @@ describe("cadastro sem ID por decisão da régua (marca idPessoaBloqueado)", () 
   };
   const marcada = { id: "f1", nome: "Pessoa Fictícia", cpf: "987.654.999-11", idPessoaBloqueado: "id-de-outra-pessoa" };
   it("não mostra o ID do CPF (é de outra pessoa): mostra a marca, também a quem não troca", async () => {
+    // Uma ficha viva confirma o bloqueio: o selo afirma o motivo.
+    estado.dominio = { colabById: new Map(), colaboradores: [{ id: "f9", nome: "Dona Fictícia", cpf: "987.654.321-00", idPessoa: "987654" }] };
     await desenhar(<SeloIdPessoa cadastro={marcada} colecao="colaboradores" />);
     expect(texto()).toContain("sem ID: o do CPF é de outra pessoa");
+    estado.dominio = { colabById: new Map() };
     expect(texto()).not.toContain("987654");
     expect(botao("devolver ID")).toBeUndefined();
     await desenhar(<Pessoa nome="Pessoa Fictícia" cpf={marcada.cpf} bloqueado="id-de-outra-pessoa" />);
@@ -147,6 +151,8 @@ describe("cadastro sem ID por decisão da régua (marca idPessoaBloqueado)", () 
     expect(abrir.className).toContain("min-h-10");
     await act(async () => { abrir.click(); });
     expect(texto()).toContain("Devolver o ID à mesma pessoa");
+    // Quem estava na linha de arquivo aparece para o admin comparar (nome e CPF mascarado).
+    expect(texto()).toContain("Pessoa Fictícia Antes · CPF 987.654.***-00 · ID 987654");
     const confirmar = () => botao("Devolver o ID")!;
     const [campoId] = [...document.querySelectorAll("input[inputmode=numeric]")] as HTMLInputElement[];
     const [campoMotivo] = [...document.querySelectorAll("textarea")] as HTMLTextAreaElement[];
@@ -159,6 +165,16 @@ describe("cadastro sem ID por decisão da régua (marca idPessoaBloqueado)", () 
     await act(async () => { confirmar().click(); });
     expect(estado.devolver).toHaveBeenCalledWith("colaboradores", "f1", "987654", "Voltou com o CPF corrigido no cadastro");
     expect(texto()).not.toContain("—");
+  });
+});
+
+describe("marca que a régua de hoje já liberaria", () => {
+  it("o selo não afirma o motivo: diz \"sem ID: conferir\"", async () => {
+    estado.dominio = { colabById: new Map(), colaboradores: [] };
+    await desenhar(<SeloIdPessoa cadastro={{ id: "f1", cpf: "987.654.999-11", idPessoaBloqueado: "id-de-outra-pessoa" }} colecao="colaboradores" />);
+    expect(texto()).toContain("sem ID: conferir");
+    expect(texto()).not.toContain("é de outra pessoa");
+    estado.dominio = { colabById: new Map() };
   });
 });
 

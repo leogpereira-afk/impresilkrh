@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Fingerprint } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,8 +6,10 @@ import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
 import { idBloqueado, idDivergeDoCpf, idGravado, idQueVale, TITULO_ID_DIVERGENTE } from "@/lib/identidade";
-import { AVISO_CENTRAL_ID_NOVO, idsAnteriores } from "../../../supabase/functions/_shared/idPessoa";
-import { devolverIdPessoa, previaIdPessoa, preencherIdPessoa, registrarIdAnterior, trocarIdPessoa, type ItemIdPessoa } from "@/lib/sync";
+import { AVISO_CENTRAL_ID_NOVO, cpfDoCadastro, cpfMascarado, idParaCadastro, idsAnteriores } from "../../../supabase/functions/_shared/idPessoa";
+import { useDominio } from "@/lib/dominio";
+import type { Colaborador } from "@/data/types";
+import { arquivosDaLinha, devolverIdPessoa, previaIdPessoa, type ArquivoDaLinha, preencherIdPessoa, registrarIdAnterior, trocarIdPessoa, type ItemIdPessoa } from "@/lib/sync";
 
 /* O ID DA PESSOA NA TELA DO RH (D-004, 12/10/2026).
  *
@@ -42,10 +44,21 @@ export function SeloIdPessoa({
   const [trocando, setTrocando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
   const [devolvendo, setDevolvendo] = useState(false);
+  // (nos testes o domínio pode vir sem a lista)
+  const colaboradores = (useDominio() as { colaboradores?: Colaborador[] }).colaboradores;
   const id = idQueVale(colecao, cadastro);
   const gravado = idGravado(cadastro);
   // Sem ID por decisão da régua: o do CPF é (ou foi) de outra pessoa.
   const bloqueado = !gravado && !!idBloqueado(cadastro);
+  /* A marca só some quando o admin dá o ID; se a régua de hoje já liberaria
+     (CPF corrigido, quem bloqueava saiu do caminho), o selo não afirma mais o
+     motivo: diz "conferir". A régua aqui só vê as fichas vivas (a lápide fica
+     no servidor), então só afirma quando uma ficha viva confirma. */
+  const confirmaBloqueio = bloqueado && !!cpfDoCadastro(colecao, cadastro) && (() => {
+    const outros = (colaboradores ?? []).map((c) => ({ colecao: "colaboradores", id: c.id, registro: c as unknown as Record<string, unknown> }));
+    const d = idParaCadastro({ colecao, id: cadastro.id, registro: cadastro as Record<string, unknown> }, outros);
+    return "motivo" in d && d.motivo !== "sem-cpf";
+  })();
   const diverge = idDivergeDoCpf(cadastro);
   // Os IDs que a pessoa já teve (a porta só os entrega ao RH e à própria pessoa).
   const anteriores = idsAnteriores(cadastro).filter((a) => a !== gravado);
@@ -68,9 +81,11 @@ export function SeloIdPessoa({
       {bloqueado && (
         <span
           className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
-          title="O ID do CPF é (ou foi) de outra pessoa: este cadastro fica sem ID até o admin do RH decidir. O PCP não calcula o ID pelo CPF dele."
+          title={confirmaBloqueio
+            ? "O ID do CPF é (ou foi) de outra pessoa: este cadastro fica sem ID até o admin do RH decidir. O PCP não calcula o ID pelo CPF dele."
+            : "Este cadastro ficou sem ID porque o ID do CPF era de outra pessoa. Pode ter mudado (CPF corrigido): confira em Configurações do RH › Cadastros, \"Gravar o ID nas fichas antigas\". Até lá o PCP não calcula o ID pelo CPF dele."}
         >
-          <AlertTriangle className="h-3 w-3" /> sem ID: o do CPF é de outra pessoa
+          <AlertTriangle className="h-3 w-3" /> {confirmaBloqueio ? "sem ID: o do CPF é de outra pessoa" : "sem ID: conferir"}
         </span>
       )}
       {diverge && (
@@ -183,6 +198,15 @@ function DevolverIdPessoa({ cadastro, colecao, fechar }: { cadastro: Cadastro; c
   const [motivo, setMotivo] = useState("");
   const [mesma, setMesma] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  // Quem estava no cadastro apagado desta ficha, para comparar (só o admin abre).
+  const [arquivos, setArquivos] = useState<ArquivoDaLinha[] | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    arquivosDaLinha(colecao, cadastro.id)
+      .then((r) => { if (vivo) setArquivos(r.itens.filter((a) => !a.devolvido)); })
+      .catch(() => { if (vivo) setArquivos([]); });
+    return () => { vivo = false; };
+  }, [colecao, cadastro.id]);
   const limpo = valor.replace(/\D/g, "");
   const pronto = limpo.length === 6 && motivo.trim().length >= 10 && mesma;
   const salvar = async () => {
@@ -218,6 +242,25 @@ function DevolverIdPessoa({ cadastro, colecao, fechar }: { cadastro: Cadastro; c
           Só o ID do cadastro apagado desta mesma ficha pode ser devolvido. Se for outra pessoa, não devolva: ela
           passaria a ser, no PCP, a pessoa das O.S. antigas.
         </p>
+        <div className="rounded-lg border border-slate-100 px-3 py-2 text-xs text-slate-600">
+          <b>Quem estava nesta ficha antes</b> (compare nome e CPF com os de hoje):
+          {arquivos === null ? (
+            <p className="mt-1 text-slate-500">Buscando...</p>
+          ) : arquivos.length === 0 ? (
+            <p className="mt-1 text-slate-500">Não há cadastro apagado desta ficha com ID para devolver.</p>
+          ) : (
+            <ul className="mt-1 space-y-1">
+              {arquivos.map((a) => (
+                <li key={a.id}>
+                  <button type="button" className="btn-ghost min-h-10 w-full justify-start px-2 text-left text-xs" onClick={() => setValor(a.idPessoa)}>
+                    {a.nome || "sem nome"} · CPF {a.cpf || "sem CPF"} · ID <span className="font-mono">{a.idPessoa}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-1 text-slate-500">Hoje: {cadastro.nome ?? "sem nome"} · CPF {cpfMascarado(cadastro.cpf) || "sem CPF"}</p>
+        </div>
         <Campo label="ID da pessoa" obrigatorio hint="6 dígitos, o que ela tinha quando saiu">
           <Input value={valor} inputMode="numeric" maxLength={6} autoComplete="off" onChange={(e) => setValor(e.target.value)} />
         </Campo>
@@ -306,12 +349,16 @@ export function PreencherIdPessoa() {
   };
   const gravaveis = previa?.itens.filter((i) => i.idPessoa) ?? [];
   const decidir = previa?.itens.filter((i) => !i.idPessoa) ?? [];
+  // Os que pedem decisão porque o ID do CPF é (ou foi) de outra pessoa ganham a
+  // marca "sem ID" na mesma confirmação: o PCP deixa de calcular o ID deles pelo CPF.
+  const marcaveis = decidir.filter((i) => i.bloqueio && !i.marcado);
   const gravar = async () => {
-    if (!gravaveis.length || gravando) return;
+    if ((!gravaveis.length && !marcaveis.length) || gravando) return;
     setGravando(true);
     try {
       const r = await preencherIdPessoa(gravaveis);
       toast(`ID gravado em ${r.gravados} cadastro${r.gravados === 1 ? "" : "s"}.`);
+      if (r.marcados) toast(`${r.marcados} marcado${r.marcados === 1 ? "" : "s"} sem ID (o ID do CPF é ou foi de outra pessoa).`, "info");
       if (r.pulados.length) toast(`${r.pulados.length} ficou${r.pulados.length === 1 ? "" : "aram"} de fora porque o cadastro mudou depois da conferência. Abra de novo para conferir.`, "info");
       if (r.aviso) toast(r.aviso, "info");
       setAberto(false);
@@ -348,8 +395,8 @@ export function PreencherIdPessoa() {
         rodape={
           <>
             <button className="btn-ghost" onClick={() => setAberto(false)}>Cancelar</button>
-            <button className="btn-primary" disabled={!gravaveis.length || gravando} onClick={gravar}>
-              {gravando ? "Gravando..." : `Gravar ${gravaveis.length} ID${gravaveis.length === 1 ? "" : "s"}`}
+            <button className="btn-primary" disabled={(!gravaveis.length && !marcaveis.length) || gravando} onClick={gravar}>
+              {gravando ? "Gravando..." : `Gravar ${gravaveis.length} ID${gravaveis.length === 1 ? "" : "s"}${marcaveis.length ? ` e marcar ${marcaveis.length} sem ID` : ""}`}
             </button>
           </>
         }
@@ -364,7 +411,8 @@ export function PreencherIdPessoa() {
             </p>
             {decidir.length > 0 && (
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <b>Pedem decisão</b> (não são gravados por aqui; confira o CPF ou grave o ID pela ficha):
+                <b>Pedem decisão</b> (não recebem ID por aqui; confira o CPF ou grave o ID pela ficha). Os que têm o ID do
+                CPF de outra pessoa ficam marcados "sem ID" ao confirmar, para o PCP não dar a eles o ID dela:
                 <ul className="mt-1 space-y-0.5">
                   {decidir.map((i) => (
                     <li key={`${i.colecao}:${i.id}`}>
