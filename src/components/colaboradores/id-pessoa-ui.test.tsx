@@ -12,6 +12,7 @@ const estado = vi.hoisted(() => ({
   toast: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
   previa: null as unknown,
   preencher: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  registrar: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
 }));
 vi.mock("@/lib/dominio", async (orig) => ({
   ...(await orig<typeof import("@/lib/dominio")>()),
@@ -25,6 +26,7 @@ vi.mock("@/lib/sync", () => ({
   previaIdPessoa: async () => estado.previa,
   preencherIdPessoa: (...a: unknown[]) => estado.preencher(...a),
   trocarIdPessoa: async () => ({ idPessoa: "000000" }),
+  registrarIdAnterior: (...a: unknown[]) => estado.registrar(...a),
 }));
 
 import { SeloIdPessoa, PreencherIdPessoa } from "./id-pessoa";
@@ -37,6 +39,7 @@ let raiz: Root; let el: HTMLDivElement;
 beforeEach(() => {
   el = document.createElement("div"); document.body.appendChild(el); raiz = createRoot(el);
   estado.toast = vi.fn(); estado.preencher = vi.fn(async () => ({ gravados: 1, pulados: [] }));
+  estado.registrar = vi.fn(async () => ({ idPessoaAnteriores: ["123456"] }));
 });
 afterEach(() => { act(() => raiz.unmount()); el.remove(); document.body.innerHTML = ""; });
 const desenhar = async (no: React.ReactNode) => { await act(async () => { raiz.render(no); }); };
@@ -68,6 +71,51 @@ describe("selo do ID na ficha", () => {
     expect(texto()).toContain("Trocar o ID da pessoa");
     const confirmar = [...document.querySelectorAll("button")].find((b) => b.textContent === "Trocar o ID")!;
     expect(confirmar.disabled).toBe(true);
+  });
+});
+
+describe("IDs anteriores na ficha (auditoria de 12/10/2026, P1)", () => {
+  const botao = (t: string) => [...document.querySelectorAll("button")].find((b) => b.textContent === t);
+  const digitar = async (el: HTMLInputElement | HTMLTextAreaElement, valor: string) => {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, valor);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  it("o aviso da troca da ficha manda atualizar a conta no Painel para a Central usar o ID novo", async () => {
+    await desenhar(<SeloIdPessoa cadastro={{ id: "f1", nome: "Pessoa Fictícia", cpf: CPF_A_CORRIGIDO, idPessoa: "123456" }} colecao="colaboradores" podeTrocar />);
+    await act(async () => { botao("trocar ID")!.click(); });
+    expect(texto()).toContain("Atualize a conta desta pessoa em Painel › Sistemas › Pessoas (salvar de novo) para a Central usar o ID novo.");
+    expect(texto()).toContain("fica guardado como ID anterior");
+    expect(texto()).not.toContain("—");
+  });
+  it("mostra os IDs anteriores a quem recebe o campo, sem repetir o de hoje", async () => {
+    await desenhar(<SeloIdPessoa cadastro={{ id: "f1", cpf: CPF_A_CORRIGIDO, idPessoa: "987654", idPessoaAnteriores: [{ idPessoa: "123456", em: "2026-10-12T20:16:00.000Z", como: "troca" }, { idPessoa: "987654", em: "2026-10-13T00:00:00.000Z", como: "troca" }] }} colecao="colaboradores" />);
+    expect(texto()).toContain("antes: 123456");
+    expect(texto()).not.toContain("antes: 123456, 987654");
+    expect(botao("ID anterior")).toBeUndefined();
+  });
+  it("só o admin registra um ID anterior, e só em cadastro com ID gravado; pede 6 dígitos e motivo", async () => {
+    await desenhar(<SeloIdPessoa cadastro={{ id: "f1", cpf: CPF_A }} colecao="colaboradores" podeTrocar />);
+    expect(botao("ID anterior")).toBeUndefined();
+    await desenhar(<SeloIdPessoa cadastro={{ id: "f1", nome: "Pessoa Fictícia", cpf: CPF_A_CORRIGIDO, idPessoa: "987654" }} colecao="colaboradores" podeTrocar />);
+    const abrir = botao("ID anterior")!;
+    expect(abrir.className).toContain("min-h-10");
+    await act(async () => { abrir.click(); });
+    expect(texto()).toContain("Registrar um ID anterior");
+    const confirmar = () => botao("Registrar o ID anterior")!;
+    expect(confirmar().disabled).toBe(true);
+    const [campoId] = [...document.querySelectorAll("input")] as HTMLInputElement[];
+    const [campoMotivo] = [...document.querySelectorAll("textarea")] as HTMLTextAreaElement[];
+    await digitar(campoId, "987654"); // o ID de hoje não é anterior
+    await digitar(campoMotivo, "CPF digitado errado no cadastro");
+    expect(confirmar().disabled).toBe(true);
+    await digitar(campoId, "123456");
+    expect(confirmar().disabled).toBe(false);
+    await act(async () => { confirmar().click(); });
+    expect(estado.registrar).toHaveBeenCalledWith("colaboradores", "f1", "123456", "CPF digitado errado no cadastro");
+    expect(estado.toast).toHaveBeenCalledWith("ID anterior registrado: 123456.");
   });
 });
 

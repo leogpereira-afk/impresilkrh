@@ -14,7 +14,7 @@ import { json, preflight } from "../_shared/cors.ts";
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
 import { contratoNaPorta } from "../_shared/freelancerContrato.ts";
 // Numa linha só: o harness dos testes (src/test/servidorRh.ts) apaga as linhas de import e injeta os símbolos.
-import { AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, avisoSemId, comCamposDoId, cpfDoCadastro, cpf11, enviouOutroId, idGravado, idParaCadastro, idValido, outraPessoaComId, temIdGravavel, type CadastroComId } from "../_shared/idPessoa.ts";
+import { AVISO_CENTRAL_ID_NOVO, AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, anterioresDe, anterioresDoCpf, avisoSemId, comAnteriores, comCamposDoId, cpfDoCadastro, cpf11, enviouOutroId, idGravado, idParaCadastro, idValido, idsAnteriores, juntarAnteriores, outraPessoaComId, temIdGravavel, type CadastroComId, type IdAnterior } from "../_shared/idPessoa.ts";
 
 const PAGINA = 150;
 
@@ -293,6 +293,25 @@ Deno.serve(async (req) => {
     }
     return out;
   };
+  /* As LÁPIDES que guardam IDs anteriores (auditoria de 12/10/2026, P1): o ID
+     que a pessoa apagada já teve continua sendo dela no histórico do PCP e não
+     é dado a ninguém. Só os anteriores da lápide contam; o ID de hoje dela
+     segue a régua de antes (D-004). */
+  const lapidesComAnteriores = async (): Promise<CadastroComId[]> => {
+    const out: CadastroComId[] = [];
+    for (let inicio = 0; ; inicio += 500) {
+      const { data, error } = await admin.from("registros").select("colecao, id, registro").in("colecao", ["colaboradores", "freelancers"]).eq("apagado", true).order("colecao").order("id").range(inicio, inicio + 499);
+      if (error) throw new Error("Não foi possível conferir o ID da pessoa nos cadastros. Tente novamente.");
+      for (const l of data ?? []) {
+        if (idsAnteriores(l.registro).length) out.push({ colecao: l.colecao, id: l.id, registro: (l.registro ?? {}) as Record<string, unknown>, apagado: true });
+      }
+      if (!data || data.length < 500) break;
+    }
+    return out;
+  };
+  /** A régua inteira: os vivos e as lápides com IDs anteriores. */
+  const cadastrosDaRegua = async (vivos?: CadastroComId[]): Promise<CadastroComId[]> =>
+    [...(vivos ?? await cadastrosVivos()), ...await lapidesComAnteriores()];
 
   /* O QUE A GRAVAÇÃO DE UMA FICHA OU CONTRATO FAZ COM O ID. Nunca recusa: a
      gravação passa pela fila do aparelho, e um 4xx prenderia a ficha inteira
@@ -308,7 +327,11 @@ Deno.serve(async (req) => {
          com o mesmo CPF da lápide e passando pela conferência contra os vivos;
          sem CPF, o cadastro revivido fica sem ID;
        · cadastro antigo, com CPF e sem o campo: fica como está, até o botão do
-         admin (Configurações do RH › Cadastros) gravar com a conferência. */
+         admin (Configurações do RH › Cadastros) gravar com a conferência;
+       · os IDs ANTERIORES (`idPessoaAnteriores`) só o servidor escreve: o
+         cadastro vivo fica com a lista gravada, venha o que vier no envio, e
+         o que nasce recebe a lista dos outros cadastros vivos do mesmo CPF
+         (ficha e contrato dividem a lista). */
   const idNaGravacao = async (colecao: string, registro: Record<string, unknown>, atual: { registro?: unknown; apagado?: boolean } | null) => {
     const gravado = (atual?.registro ?? null) as Record<string, unknown> | null;
     const lapide = atual?.apagado ? gravado : null;
@@ -319,23 +342,29 @@ Deno.serve(async (req) => {
       return { registro: comCamposDoId(registro, gravado), idPessoa: guardado, aviso: enviouOutroId(registro, guardado) ? AVISO_ID_MANTIDO : null };
     }
     const nasce = !atual || !!lapide || (!cpfDoCadastro(colecao, gravado) && !!cpfDoCadastro(colecao, registro));
+    // Aqui `lapide` só existe quando nasce: a lista que fica é a do cadastro vivo gravado.
+    const daLinha = lapide ? [] : anterioresDe(gravado);
     if (!nasce || registro._apagado) {
-      return { registro: comCamposDoId(registro, null), idPessoa: "", aviso: enviouOutroId(registro, "") ? AVISO_ID_ANTIGO : null };
+      return { registro: comAnteriores(comCamposDoId(registro, null), daLinha), idPessoa: "", aviso: enviouOutroId(registro, "") ? AVISO_ID_ANTIGO : null };
     }
-    const decisao = idParaCadastro({ colecao, id: String(registro.id), registro }, await cadastrosVivos(), lapide);
-    if (!decisao.idPessoa) {
-      const aviso = decisao.motivo !== "sem-cpf" || enviouOutroId(registro, "") ? avisoSemId(decisao.motivo, decisao.outro?.nome) : null;
-      if (decisao.motivo !== "sem-cpf") console.warn(`[sync] ${colecao}/${String(registro.id)} salvo sem o ID da pessoa: ${MOTIVO_SEM_ID[decisao.motivo]}`);
-      return { registro: comCamposDoId(registro, null), idPessoa: "", aviso };
+    const alvo = { colecao, id: String(registro.id), registro };
+    const regua = await cadastrosDaRegua();
+    const doCpf = juntarAnteriores(daLinha, anterioresDoCpf(cpfDoCadastro(colecao, registro), alvo, regua));
+    const decisao = idParaCadastro(alvo, regua, lapide);
+    if ("motivo" in decisao) { // sem ID (só a decisão sem ID traz o motivo)
+      const aviso = decisao.motivo !== "sem-cpf" || enviouOutroId(registro, "") ? avisoSemId(decisao.motivo, decisao.outro?.nome, !!decisao.outro?.anterior) : null;
+      if (decisao.motivo !== "sem-cpf") console.warn(`[sync] ${colecao}/${String(registro.id)} salvo sem o ID da pessoa: ${MOTIVO_SEM_ID[decisao.motivo]}${decisao.outro?.anterior ? " (ID anterior de outra pessoa)" : ""}`);
+      return { registro: comAnteriores(comCamposDoId(registro, null), doCpf), idPessoa: "", aviso };
     }
     // A mesma pessoa voltou (mesmo CPF da lápide, conferida): fica o carimbo de antes.
     // Outro CPF com o mesmo começo dá o mesmo ID, mas o carimbo (quem, quando, motivo) é da
     // pessoa apagada e não passa adiante (verificação da correção, 12/10/2026).
     if (lapide && decisao.idPessoa === idGravado(lapide) && cpf11((lapide as Record<string, unknown>).cpf) === cpfDoCadastro(colecao, registro)) {
-      return { registro: comCamposDoId(registro, lapide), idPessoa: decisao.idPessoa, aviso: enviouOutroId(registro, decisao.idPessoa) ? AVISO_ID_MANTIDO : null };
+      const r = comCamposDoId(registro, lapide);
+      return { registro: comAnteriores(r, juntarAnteriores(anterioresDe(r), doCpf)), idPessoa: decisao.idPessoa, aviso: enviouOutroId(registro, decisao.idPessoa) ? AVISO_ID_MANTIDO : null };
     }
     return {
-      registro: { ...comCamposDoId(registro, null), idPessoa: decisao.idPessoa, idPessoaEm: agoraIso() },
+      registro: comAnteriores({ ...comCamposDoId(registro, null), idPessoa: decisao.idPessoa, idPessoaEm: agoraIso() }, doCpf),
       idPessoa: decisao.idPessoa,
       aviso: enviouOutroId(registro, decisao.idPessoa) ? AVISO_ID_MANTIDO : null,
     };
@@ -656,7 +685,8 @@ Deno.serve(async (req) => {
           for (let inicio = 0; ; inicio += 500) {
             const { data, error } = await admin.from("registros").select("id, registro, apagado").eq("colecao", col).order("id").range(inicio, inicio + 499);
             if (error) throw new Error("Não foi possível conferir o ID da pessoa nos cadastros.");
-            for (const l of data ?? []) if (idGravado(l.registro)) (l.apagado ? lapides : guardados).set(l.id, l.registro as Record<string, unknown>);
+            // Quem tem ID ou IDs anteriores no banco: o retrato leva os dois de lá.
+            for (const l of data ?? []) if (idGravado(l.registro) || idsAnteriores(l.registro).length) (l.apagado ? lapides : guardados).set(l.id, l.registro as Record<string, unknown>);
             if (!data || data.length < 500) break;
           }
           const repostos = itens.map((item: unknown, indice: number) => {
@@ -665,7 +695,7 @@ Deno.serve(async (req) => {
             const doBanco = guardados.get(String(reg.id)) ?? null;
             const lapide = doBanco ? null : lapides.get(String(reg.id)) ?? null;
             const reposto = comCamposDoId(reg, doBanco);
-            if (lapide && cpf11(reg.cpf) && cpf11(reg.cpf) === cpf11(lapide.cpf)) lapidesComId.push({ col, indice, reg: reposto, lapide });
+            if (lapide && idGravado(lapide) && cpf11(reg.cpf) && cpf11(reg.cpf) === cpf11(lapide.cpf)) lapidesComId.push({ col, indice, reg: reposto, lapide });
             else if (enviouOutroId(reg, idGravado(doBanco))) juntarAviso(doBanco ? AVISO_ID_MANTIDO : AVISO_ID_ANTIGO);
             return reposto;
           });
@@ -678,7 +708,7 @@ Deno.serve(async (req) => {
               if (item && typeof item === "object" && !Array.isArray(item)) doRetrato.push({ colecao: col, id: String((item as { id?: unknown }).id), registro: item as Record<string, unknown> });
             }
           }
-          const vivos: CadastroComId[] = [...await cadastrosVivos(), ...doRetrato];
+          const vivos: CadastroComId[] = [...await cadastrosDaRegua(), ...doRetrato];
           for (const { col, indice, reg, lapide } of lapidesComId) {
             const id = idGravado(lapide);
             // A mesma régua do upsert (verificação da correção, 12/10/2026): o retrato só leva o ID da
@@ -692,7 +722,7 @@ Deno.serve(async (req) => {
             }
             (dadosDoRetrato[col] as unknown[])[indice] = comCamposDoId(reg, lapide);
             // Quem vem depois na conferência já vê este ID com o dono dele.
-            const naLista = vivos.find((v) => v.colecao === col && v.id === String(reg.id));
+            const naLista = vivos.find((v) => !v.apagado && v.colecao === col && v.id === String(reg.id));
             if (naLista) naLista.registro = comCamposDoId(reg, lapide);
           }
         }
@@ -707,21 +737,28 @@ Deno.serve(async (req) => {
            preencher grava só o que a prévia mostrou e o admin confirmou, só em
                      quem continua sem o ID e só se o ID ainda é o mesmo;
            trocar    troca o ID de um cadastro (erro de cadastro), com motivo,
-                     carimbo do servidor e linha no histórico. */
+                     carimbo do servidor e linha no histórico; o ID que sai
+                     vai para os IDs anteriores da pessoa;
+           registrarAnterior  guarda um ID que a pessoa já teve e que nenhum
+                     campo guardou (troca feita antes dos IDs anteriores), com
+                     motivo, carimbo do servidor e linha no histórico.
+         Toda decisão confere também os IDs anteriores de todo mundo, vivos e
+         lápides (auditoria de 12/10/2026, P1). */
       case "idPessoa": {
         if (!ehAdmin) return json({ erro: "O ID da pessoa é gravado só pelo admin do RH." }, 403);
         const op = String(body.op ?? "");
         const cadastros = await cadastrosVivos();
+        const regua = await cadastrosDaRegua(cadastros);
         const nomeDe = (c: CadastroComId) => String(c.registro.nome ?? "");
         const desligado = (c: CadastroComId) => c.colecao === "freelancers"
           ? c.registro.situacao === "encerrado"
           : c.registro.statusId === "inativo" || !!c.registro.dataDesligamento;
         const planejar = () => cadastros.filter((c) => !idGravado(c.registro)).map((c) => {
-          const d = idParaCadastro(c, cadastros);
+          const d = idParaCadastro(c, regua);
           return {
             colecao: c.colecao, id: c.id, nome: nomeDe(c), desligado: desligado(c),
             idPessoa: d.idPessoa, herdado: "herdadoDe" in d && !!d.herdadoDe,
-            motivo: "motivo" in d ? MOTIVO_SEM_ID[d.motivo] : null,
+            motivo: "motivo" in d ? ("outro" in d && d.outro?.anterior ? "o ID do CPF já foi de outra pessoa (é um ID anterior dela)" : MOTIVO_SEM_ID[d.motivo]) : null,
             outro: "outro" in d && d.outro ? d.outro.nome : null,
           };
         });
@@ -741,6 +778,40 @@ Deno.serve(async (req) => {
           }
         };
         const AVISO_SEM_HISTORICO = "O ID foi gravado, mas a linha do histórico não. Anote o motivo e avise o suporte.";
+        /* Ficha e contrato do mesmo CPF dividem os IDs anteriores: a lista nova
+           vai também para os outros cadastros vivos do CPF. Devolve os que não
+           foram gravados (mudaram em outro aparelho). */
+        const espalharAnteriores = async (c: CadastroComId, lista: IdAnterior[]): Promise<string[]> => {
+          const cpf = cpf11(c.registro.cpf);
+          if (!cpf) return [];
+          const falhas: string[] = [];
+          for (const o of cadastros) {
+            if ((o.colecao === c.colecao && o.id === c.id) || cpf11(o.registro.cpf) !== cpf) continue;
+            const junta = juntarAnteriores(anterioresDe(o.registro), lista);
+            if (junta.length === anterioresDe(o.registro).length) continue;
+            const r = await rpc("rh_gravar_seguro", {
+              p_colecao: o.colecao, p_id: o.id, p_versao: o.versao, p_mutacao: null, p_apagar: false,
+              p_registro: comAnteriores({ ...o.registro }, junta),
+            });
+            if (!r?.ok) falhas.push(`${o.colecao === "freelancers" ? "o contrato" : "a ficha"} de ${nomeDe(o)}`);
+          }
+          return falhas;
+        };
+        const avisoEspalhar = (falhas: string[]) => falhas.length
+          ? `Os IDs anteriores não foram copiados para ${falhas.join(" e ")} (mudou em outro aparelho): faça de novo depois de atualizar a tela.`
+          : "";
+        const pedidoDoCadastro = () => {
+          const colecao = String(body.colecao ?? ""), id = String(body.id ?? "");
+          const valor = String(body.idPessoa ?? "").trim(), motivo = String(body.motivo ?? "").trim();
+          if (!temIdGravavel(colecao) || !validarId(id)) return { erro: json({ erro: "Cadastro inválido." }, 400) };
+          if (!idValido(valor)) return { erro: json({ erro: "O ID da pessoa tem exatamente 6 dígitos." }, 400) };
+          if (motivo.length < 10 || motivo.length > 500) return { erro: json({ erro: `Escreva o motivo ${op === "trocar" ? "da troca" : "do registro"} (de 10 a 500 letras): ele fica no histórico.` }, 400) };
+          const c = cadastros.find((x) => x.colecao === colecao && x.id === id);
+          if (!c) return { erro: json({ erro: "Cadastro não encontrado (ou apagado). Atualize a tela." }, 404) };
+          return { colecao, id, valor, motivo, c };
+        };
+        const quemTemOId = (outro: CadastroComId & { anterior?: boolean }, id: string) =>
+          `O ID ${id} ${outro.anterior ? "já foi" : "já é"} de outra pessoa (${nomeDe(outro)}${outro.apagado ? ", cadastro apagado" : ""}${outro.anterior ? ", ID anterior dela" : ""}). Confira os dois cadastros antes.`;
 
         if (op === "previa") {
           return json({ itens: planejar(), total: cadastros.length, comId: cadastros.filter((c) => idGravado(c.registro)).length });
@@ -775,22 +846,25 @@ Deno.serve(async (req) => {
         }
 
         if (op === "trocar") {
-          const colecao = String(body.colecao ?? ""), id = String(body.id ?? "");
-          const novo = String(body.idPessoa ?? "").trim(), motivo = String(body.motivo ?? "").trim();
-          if (!temIdGravavel(colecao) || !validarId(id)) return json({ erro: "Cadastro inválido." }, 400);
-          if (!idValido(novo)) return json({ erro: "O ID da pessoa tem exatamente 6 dígitos." }, 400);
-          if (motivo.length < 10 || motivo.length > 500) return json({ erro: "Escreva o motivo da troca (de 10 a 500 letras): ele fica no histórico." }, 400);
-          const c = cadastros.find((x) => x.colecao === colecao && x.id === id);
-          if (!c) return json({ erro: "Cadastro não encontrado (ou apagado). Atualize a tela." }, 404);
+          const p = pedidoDoCadastro();
+          if ("erro" in p) return p.erro;
+          const { colecao, id, valor: novo, motivo, c } = p;
           const antes = idGravado(c.registro);
           if (antes === novo) return json({ erro: `O ID gravado já é ${novo}.` }, 409);
-          const outro = outraPessoaComId(novo, cpf11(c.registro.cpf), c, cadastros);
-          if (outro) return json({ erro: `O ID ${novo} já é de outra pessoa (${nomeDe(outro)}). Confira os dois cadastros antes de trocar.` }, 409);
+          const outro = outraPessoaComId(novo, cpf11(c.registro.cpf), c, regua);
+          if (outro) return json({ erro: quemTemOId(outro, novo) }, 409);
+          // O ID que sai fica com a pessoa: vai para os IDs anteriores (com a
+          // data; o motivo fica só no histórico) e não é dado a mais ninguém.
+          const agora = agoraIso();
+          const anteriores = antes
+            ? juntarAnteriores(anterioresDe(c.registro), [{ idPessoa: antes, em: agora, por: meuId, como: "troca" }])
+            : anterioresDe(c.registro);
           const r = await rpc("rh_gravar_seguro", {
             p_colecao: colecao, p_id: id, p_versao: c.versao, p_mutacao: null, p_apagar: false,
-            p_registro: { ...c.registro, idPessoa: novo, idPessoaEm: agoraIso(), idPessoaPor: meuId, idPessoaMotivo: motivo },
+            p_registro: comAnteriores({ ...c.registro, idPessoa: novo, idPessoaEm: agora, idPessoaPor: meuId, idPessoaMotivo: motivo }, anteriores),
           });
           if (!r?.ok) return json({ erro: "O cadastro mudou em outro aparelho. Atualize a tela e tente de novo." }, 409);
+          const falhasIrmaos = antes ? await espalharAnteriores(c, anteriores) : [];
           const historico = await registrarNoHistorico({
             acao: "ALTEROU", recurso: `${colecao === "freelancers" ? "Contrato de freelancer" : "Colaborador"}: ${nomeDe(c)}`,
             colecao, registroId: id, colaboradorId: colecao === "colaboradores" ? id : null,
@@ -804,10 +878,42 @@ Deno.serve(async (req) => {
           const cpf = cpf11(c.registro.cpf);
           const irmaos = cpf ? cadastros.filter((o) => !(o.colecao === colecao && o.id === id) && cpf11(o.registro.cpf) === cpf && idGravado(o.registro) && idGravado(o.registro) !== novo) : [];
           const avisos = [
+            // A conta da Central (acesso_conta.id_pessoa) é gravada pelo Painel
+            // a partir da ficha: ela só pega o ID novo quando a conta é salva de novo.
+            colecao === "colaboradores" ? AVISO_CENTRAL_ID_NOVO : "",
             irmaos.length ? `${irmaos.map((o) => `${o.colecao === "freelancers" ? "O contrato" : "A ficha"} de ${nomeDe(o)}`).join(" e ")} tem o mesmo CPF e continua com outro ID: troque também, para a pessoa ter um ID só.` : "",
+            avisoEspalhar(falhasIrmaos),
             historico ? "" : AVISO_SEM_HISTORICO,
           ].filter(Boolean);
           return json({ ok: true, idPessoa: novo, ...(avisos.length ? { aviso: avisos.join(" ") } : {}) });
+        }
+
+        if (op === "registrarAnterior") {
+          const p = pedidoDoCadastro();
+          if ("erro" in p) return p.erro;
+          const { colecao, id, valor: anterior, motivo, c } = p;
+          const hoje = idGravado(c.registro);
+          if (!hoje) return json({ erro: "Grave primeiro o ID de hoje deste cadastro; depois registre o anterior." }, 409);
+          if (anterior === hoje) return json({ erro: `${anterior} é o ID de hoje deste cadastro, não um anterior.` }, 409);
+          if (idsAnteriores(c.registro).includes(anterior)) return json({ erro: `O ID ${anterior} já está entre os IDs anteriores deste cadastro.` }, 409);
+          const outro = outraPessoaComId(anterior, cpf11(c.registro.cpf), c, regua);
+          if (outro) return json({ erro: quemTemOId(outro, anterior) }, 409);
+          const anteriores = juntarAnteriores(anterioresDe(c.registro), [{ idPessoa: anterior, em: agoraIso(), por: meuId, como: "registro" }]);
+          const r = await rpc("rh_gravar_seguro", {
+            p_colecao: colecao, p_id: id, p_versao: c.versao, p_mutacao: null, p_apagar: false,
+            p_registro: comAnteriores({ ...c.registro }, anteriores),
+          });
+          if (!r?.ok) return json({ erro: "O cadastro mudou em outro aparelho. Atualize a tela e tente de novo." }, 409);
+          const falhasIrmaos = await espalharAnteriores(c, anteriores);
+          const historico = await registrarNoHistorico({
+            acao: "ALTEROU", recurso: `${colecao === "freelancers" ? "Contrato de freelancer" : "Colaborador"}: ${nomeDe(c)}`,
+            colecao, registroId: id, colaboradorId: colecao === "colaboradores" ? id : null,
+            // Como na troca: sem os valores do ID, só o fato, quem, quando e o motivo.
+            mudancas: [{ campo: "IDs anteriores da pessoa", de: "•••", para: "•••" }], totalCampos: 1,
+            detalhe: `ID anterior da pessoa registrado pelo admin. Motivo: ${motivo}`,
+          });
+          const avisos = [avisoEspalhar(falhasIrmaos), historico ? "" : AVISO_SEM_HISTORICO].filter(Boolean);
+          return json({ ok: true, idPessoaAnteriores: anteriores.map((a) => a.idPessoa), ...(avisos.length ? { aviso: avisos.join(" ") } : {}) });
         }
 
         return json({ erro: "Operação desconhecida." }, 400);

@@ -292,6 +292,15 @@ export async function trocarIdPessoa(colecao: "colaboradores" | "freelancers", i
   } finally { void pull(); }
 }
 
+/** Registra um ID que a pessoa já teve (troca feita antes de o RH guardar os
+ *  IDs anteriores). O servidor confere a mesma régua e carimba. */
+export async function registrarIdAnterior(colecao: "colaboradores" | "freelancers", id: string, idPessoa: string, motivo: string): Promise<{ idPessoaAnteriores: string[]; aviso?: string }> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  try {
+    return await chamar("idPessoa", { op: "registrarAnterior", colecao, id, idPessoa, motivo });
+  } finally { void pull(); }
+}
+
 /** Aviso do servidor sobre o que foi descartado de um envio aceito. */
 function avisar(mensagem: string) {
   if (!temWindow) return;

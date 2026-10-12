@@ -2,6 +2,8 @@
 // Modelo de dados da SPA (sem banco). Todas as coleções são arrays destes tipos,
 // persistidos em localStorage pela camada src/lib/store.ts.
 
+import type { IdAnterior } from "../../supabase/functions/_shared/idPessoa";
+
 export type Perfil = "ADMIN_RH" | "GESTOR" | "COLABORADOR";
 
 export interface Familiar {
@@ -104,6 +106,11 @@ export interface Colaborador {
   idPessoaPor?: string;
   /** Motivo da troca (ou do preenchimento das fichas antigas). */
   idPessoaMotivo?: string;
+  /** IDs que a pessoa já teve (a troca guarda o que sai; o admin registra o
+   *  de uma troca antiga). Não são dados a mais ninguém. Só o servidor escreve,
+   *  e ficha e contrato do mesmo CPF dividem a lista. Segue a régua do CPF:
+   *  só o RH e a própria pessoa recebem. */
+  idPessoaAnteriores?: IdAnterior[];
   email?: string;
   telefone?: string;
   dataNascimento?: string;
@@ -1160,6 +1167,11 @@ export interface Freelancer {
   idPessoaPor?: string;
   /** Motivo da troca (ou do preenchimento das fichas antigas). */
   idPessoaMotivo?: string;
+  /** IDs que a pessoa já teve (a troca guarda o que sai; o admin registra o
+   *  de uma troca antiga). Não são dados a mais ninguém. Só o servidor escreve,
+   *  e ficha e contrato do mesmo CPF dividem a lista. Segue a régua do CPF:
+   *  só o RH e a própria pessoa recebem. */
+  idPessoaAnteriores?: IdAnterior[];
   /** Quando presta como empresa. */
   cnpj?: string;
   telefone?: string;

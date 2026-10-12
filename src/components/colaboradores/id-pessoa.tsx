@@ -6,7 +6,8 @@ import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Textarea } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
 import { idDivergeDoCpf, idGravado, idQueVale, TITULO_ID_DIVERGENTE } from "@/lib/identidade";
-import { previaIdPessoa, preencherIdPessoa, trocarIdPessoa, type ItemIdPessoa } from "@/lib/sync";
+import { AVISO_CENTRAL_ID_NOVO, idsAnteriores } from "../../../supabase/functions/_shared/idPessoa";
+import { previaIdPessoa, preencherIdPessoa, registrarIdAnterior, trocarIdPessoa, type ItemIdPessoa } from "@/lib/sync";
 
 /* O ID DA PESSOA NA TELA DO RH (D-004, 12/10/2026).
  *
@@ -15,7 +16,10 @@ import { previaIdPessoa, preencherIdPessoa, trocarIdPessoa, type ItemIdPessoa } 
  * tela:
  *   · o selo, que mostra o ID que vale (o gravado; sem ele, o do CPF) e a
  *     mesma marca do PCP quando o gravado não bate com o CPF de hoje;
- *   · a troca, só do admin, com motivo (fica no histórico);
+ *   · a troca, só do admin, com motivo (fica no histórico); o ID que sai
+ *     fica guardado nos IDs anteriores da pessoa e não é dado a mais ninguém;
+ *   · o registro de um ID anterior, só do admin, para a troca feita antes de
+ *     o RH guardar os anteriores (auditoria de 12/10/2026, P1);
  *   · o botão "Gravar o ID nas fichas antigas", que mostra antes o que vai
  *     gravar e só grava com a confirmação (escrita em produção só pela tela,
  *     D-005).
@@ -24,7 +28,7 @@ import { previaIdPessoa, preencherIdPessoa, trocarIdPessoa, type ItemIdPessoa } 
  * não é o RH nem a própria pessoa), então quem não vê o CPF também não vê o
  * ID nem a marca. */
 
-type Cadastro = { id: string; nome?: string; cpf?: string; idPessoa?: string; idPessoaMotivo?: string; idPessoaEm?: string };
+type Cadastro = { id: string; nome?: string; cpf?: string; idPessoa?: string; idPessoaMotivo?: string; idPessoaEm?: string; idPessoaAnteriores?: unknown };
 
 export function SeloIdPessoa({
   cadastro, colecao, podeTrocar = false, compacto = false,
@@ -36,9 +40,12 @@ export function SeloIdPessoa({
   compacto?: boolean;
 }) {
   const [trocando, setTrocando] = useState(false);
+  const [registrando, setRegistrando] = useState(false);
   const id = idQueVale(colecao, cadastro);
   const gravado = idGravado(cadastro);
   const diverge = idDivergeDoCpf(cadastro);
+  // Os IDs que a pessoa já teve (a porta só os entrega ao RH e à própria pessoa).
+  const anteriores = idsAnteriores(cadastro).filter((a) => a !== gravado);
   if (!id && !podeTrocar) return null;
   const titulo = gravado
     ? `ID da pessoa, gravado no cadastro${cadastro.idPessoaMotivo ? ` (${cadastro.idPessoaMotivo})` : ""}. Não muda quando o CPF é corrigido.`
@@ -63,12 +70,31 @@ export function SeloIdPessoa({
           <AlertTriangle className="h-3 w-3" /> ID diferente do CPF
         </span>
       )}
+      {anteriores.length > 0 && (
+        <span
+          className="rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500"
+          title="IDs que esta pessoa já teve. Continuam sendo dela no histórico do PCP e não são dados a mais ninguém."
+        >
+          antes: {anteriores.join(", ")}
+        </span>
+      )}
       {podeTrocar && (
         <button type="button" className="btn-ghost min-h-10 px-2 py-0 text-xs" onClick={() => setTrocando(true)}>
           {gravado ? "trocar ID" : "gravar ID"}
         </button>
       )}
+      {podeTrocar && gravado && (
+        <button
+          type="button"
+          className="btn-ghost min-h-10 px-2 py-0 text-xs"
+          title="Registrar um ID que esta pessoa já teve (troca feita antes de o RH guardar os IDs anteriores)"
+          onClick={() => setRegistrando(true)}
+        >
+          ID anterior
+        </button>
+      )}
       {trocando && <TrocarIdPessoa cadastro={cadastro} colecao={colecao} fechar={() => setTrocando(false)} />}
+      {registrando && <RegistrarIdAnterior cadastro={cadastro} colecao={colecao} fechar={() => setRegistrando(false)} />}
     </span>
   );
 }
@@ -112,9 +138,68 @@ function TrocarIdPessoa({ cadastro, colecao, fechar }: { cadastro: Cadastro; col
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Corrigir o CPF não pede troca de ID: o ID nasce com o cadastro e fica. Troque só quando o ID foi gravado
           errado. A pessoa sai das O.S., equipes e divisões do PCP gravadas com o ID antigo.
+          {atual && " O ID antigo fica guardado como ID anterior desta pessoa e não é dado a mais ninguém."}
+          {colecao === "colaboradores" && ` ${AVISO_CENTRAL_ID_NOVO}`}
         </p>
         <Campo label="ID novo" obrigatorio hint="6 dígitos">
           <Input value={novo} inputMode="numeric" maxLength={6} autoComplete="off" onChange={(e) => setNovo(e.target.value)} />
+        </Campo>
+        <Campo label="Motivo" obrigatorio hint="fica no histórico de alterações">
+          <Textarea rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        </Campo>
+      </div>
+    </Modal>
+  );
+}
+
+/** Registrar um ID que a pessoa já teve e que nenhum campo guardou (a troca
+ *  feita antes de o RH guardar os IDs anteriores). Só o admin; o servidor
+ *  confere que o ID não é nem foi de outra pessoa, carimba e deixa a linha no
+ *  histórico (sem os valores). */
+function RegistrarIdAnterior({ cadastro, colecao, fechar }: { cadastro: Cadastro; colecao: "colaboradores" | "freelancers"; fechar: () => void }) {
+  const toast = useToast();
+  const atual = idGravado(cadastro);
+  const ja = idsAnteriores(cadastro);
+  const [anterior, setAnterior] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const limpo = anterior.replace(/\D/g, "");
+  const pronto = limpo.length === 6 && limpo !== atual && !ja.includes(limpo) && motivo.trim().length >= 10;
+  const salvar = async () => {
+    if (!pronto || enviando) return;
+    setEnviando(true);
+    try {
+      const r = await registrarIdAnterior(colecao, cadastro.id, limpo, motivo.trim());
+      toast(`ID anterior registrado: ${limpo}.`);
+      if (r.aviso) toast(r.aviso, "info");
+      fechar();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Não foi possível registrar o ID anterior.", "erro");
+    } finally { setEnviando(false); }
+  };
+  return (
+    <Modal
+      aberto
+      onFechar={fechar}
+      titulo="Registrar um ID anterior"
+      descricao={`${cadastro.nome ?? "Cadastro"}, hoje com o ID ${atual}.`}
+      rodape={
+        <>
+          <button className="btn-ghost" onClick={fechar}>Cancelar</button>
+          <button className="btn-primary" disabled={!pronto || enviando} onClick={salvar}>
+            {enviando ? "Registrando..." : "Registrar o ID anterior"}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Use quando o ID desta pessoa foi trocado antes de o RH guardar os IDs anteriores. O ID registrado continua
+          sendo desta pessoa (O.S. e histórico antigos do PCP) e não é dado a mais ninguém: ficha nova cujo CPF comece
+          por ele fica sem ID, com aviso.
+        </p>
+        <Campo label="ID anterior" obrigatorio hint="6 dígitos, o que a pessoa tinha antes da troca">
+          <Input value={anterior} inputMode="numeric" maxLength={6} autoComplete="off" onChange={(e) => setAnterior(e.target.value)} />
         </Campo>
         <Campo label="Motivo" obrigatorio hint="fica no histórico de alterações">
           <Textarea rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} />

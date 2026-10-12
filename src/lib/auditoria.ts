@@ -111,7 +111,7 @@ const MASCARADOS = new Set([
   "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia", "dataNascimento",
   // o ID da pessoa sai do CPF e chega só a quem vê o CPF (CAMPOS_SENSIVEIS do
   // sync); o histórico sincroniza para mais gente: registra só que mudou
-  "idPessoa", "idPessoaMotivo",
+  "idPessoa", "idPessoaMotivo", "idPessoaAnteriores",
   // dinheiro da folha
   "valor", "salarioAnterior", "salarioNovo",
   // anexos
@@ -142,7 +142,7 @@ const CAMPO: Record<string, string> = {
   dataPagamento: "Data de pagamento", perfil: "Perfil", modulos: "Módulos",
   ativo: "Ativo", observacao: "Observação", motivo: "Motivo", classe: "Classificação",
   idMubi: "Título no ERP", manual: "Lançado à mão", naoBatePonto: "Não bate ponto",
-  idPessoa: "ID da pessoa", idPessoaMotivo: "Motivo do ID da pessoa",
+  idPessoa: "ID da pessoa", idPessoaMotivo: "Motivo do ID da pessoa", idPessoaAnteriores: "IDs anteriores da pessoa",
 };
 export const rotuloCampo = (c: string) => CAMPO[c] ?? c;
 
