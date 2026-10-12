@@ -1,0 +1,29 @@
+diff --git a/supabase/functions/painel-acesso/index.ts b/supabase/functions/painel-acesso/index.ts
+index 40cf206..d11045c 100644
+--- a/supabase/functions/painel-acesso/index.ts
++++ b/supabase/functions/painel-acesso/index.ts
+@@ -394,6 +394,11 @@ async function senhaNaPortaDaFrente(conta: any, senha: string) {
+  * Ficha nao encontrada devolve vazio em vez de estourar: amarrar e opcional
+  * (terceirizado e conta de funcao nao tem ficha), e recusar aqui trancaria o
+  * cadastro de quem nao e do quadro.
++ *
++ * O ID GRAVADO NA FICHA MANDA (D-004 do RH, D-015 do PCP, 12/10/2026): a ficha
++ * guarda `idPessoa` (6 digitos), que nasce no RH e nao muda quando o CPF e
++ * corrigido. A conta copia esse campo; so calcula pelo CPF quando ele falta
++ * (ficha antiga, antes do botao do admin do RH).
+  */
+ async function amarrarNaFicha(nomeColaborador: string) {
+   const alvo = normalizar(nomeColaborador);
+@@ -405,9 +410,11 @@ async function amarrarNaFicha(nomeColaborador: string) {
+   // a ficha da outra, e o desligamento passa a valer para quem nao saiu.
+   if (acha.length !== 1) return {};
+   const cpf = String(acha[0].registro?.cpf ?? "").replace(/\D/g, "");
++  const gravado = String(acha[0].registro?.idPessoa ?? "");
++  const idPessoa = /^\d{6}$/.test(gravado) ? gravado : cpf.length === 11 ? cpf.slice(0, 6) : "";
+   return {
+     colaborador_id: String(acha[0].id),
+-    ...(cpf.length === 11 ? { id_pessoa: cpf.slice(0, 6) } : {}),
++    ...(idPessoa ? { id_pessoa: idPessoa } : {}),
+   };
+ }
+ 
