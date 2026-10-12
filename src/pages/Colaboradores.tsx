@@ -541,6 +541,30 @@ export default function Colaboradores() {
       .sort(comparar);
   }, [escopo, fStatus, busca, chips, mostrarInativos, foco, presente, d, comparar]);
 
+  /* A DIREÇÃO, EM GRUPO PRÓPRIO, FORA DO QUADRO. "a parte de direcao nao tem
+     como editar da direcao" (dono, 12/10/2026): a lista acima tira a Direção
+     (ela não conta no quadro, no headcount nem nos cards), e com isso a ficha
+     dela ficava sem caminho. Aqui ela volta só como atalho para a ficha: as
+     contas, os cards, os arquivos e os filtros de área continuam sem ela.
+     Vem do mesmo escopo de acesso (quem não vê a ficha não vê a linha), segue
+     a busca e o "Incluir inativos", e sai de cena quando um card, uma área ou
+     um status está filtrando, porque esses filtros são do quadro. */
+  const direcao = useMemo(() => {
+    if (foco || chips.size || fStatus) return [];
+    const termo = busca.trim().toLowerCase();
+    return escopo
+      .filter((c) => c.ehDirecao)
+      .filter((c) => mostrarInativos || !ehInativo(c))
+      .filter((c) =>
+        termo
+          ? c.nome.toLowerCase().includes(termo) ||
+            d.nomeCargo(c).toLowerCase().includes(termo) ||
+            (c.email ?? "").toLowerCase().includes(termo)
+          : true,
+      )
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [escopo, foco, chips, fStatus, busca, mostrarInativos, d]);
+
   /* Os contratos que a lista mostra, e a tag das fichas que têm contrato. A
      regra (quem é a mesma pessoa, quem entra, o que a busca e a área fazem)
      mora em lib/freelancerNoQuadro, com teste; aqui só se passa o estado da
@@ -1038,6 +1062,36 @@ export default function Colaboradores() {
         </div>
       </Card>
 
+      {direcao.length > 0 && (
+        <section aria-label="Direção" className="mb-4 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-soft">
+          <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-sm">
+            <span className="font-semibold text-slate-800">Direção</span>
+            <span className="text-xs text-slate-500">
+              {direcao.length} {direcao.length === 1 ? "ficha" : "fichas"} · fora do quadro: não entra na contagem, nos cards nem no headcount
+            </span>
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {direcao.map((c) => (
+              <Link
+                key={c.id}
+                to={`/colaboradores/${c.id}`}
+                className="flex min-h-[44px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 transition hover:border-slate-300 hover:shadow-md"
+              >
+                <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-800">
+                    {c.nome}
+                    {idDaPessoa(c) && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-normal text-slate-500" title="ID da pessoa (o gravado na ficha; sem ele, os 6 primeiros dígitos do CPF)">ID {idDaPessoa(c)}</span>}
+                  </p>
+                  <p className="truncate text-[11px] text-slate-500">{d.nomeCargo(c) || "Cargo não informado"}{ehInativo(c) ? " · inativo" : ""}</p>
+                </div>
+                <span className="shrink-0 text-[11px] font-semibold text-brand">Abrir ficha</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {!semLinhas && visao === 'lista' && <div className="grid gap-2 sm:hidden" aria-label="Pessoas encontradas">
         <div className="flex gap-2"><Select aria-label="Ordenar pessoas" value={ordem.campo} onChange={e => setOrdem({ ...ordem, campo: e.target.value as CampoOrdem })}>
           <option value="nome">Nome</option><option value="status">Situação</option>
@@ -1063,7 +1117,11 @@ export default function Colaboradores() {
       </div>}
 
       {semLinhas ? (
-        <EmptyState title="Nenhum colaborador encontrado" description="Ajuste a busca ou os filtros." icon={<Users className="h-8 w-8" />} />
+        <EmptyState
+          title={direcao.length ? "Ninguém do quadro encontrado" : "Nenhum colaborador encontrado"}
+          description={direcao.length ? "Só a Direção, acima, bate com a busca." : "Ajuste a busca ou os filtros."}
+          icon={<Users className="h-8 w-8" />}
+        />
       ) : visao === "lista" ? (
         <Card className="hidden overflow-hidden sm:block">
           <div className="overflow-x-auto">

@@ -81,6 +81,16 @@ export function podeVerGestao(
 export function ehRH(sessao: Sessao | null): boolean {
   return sessao?.perfil === "ADMIN_RH";
 }
+// Quem edita a ficha de uma pessoa: o RH, e só a ficha que ele pode ver. É a
+// regra do botão Editar da ficha (/colaboradores/:id) e do "Editar minha
+// ficha" do Meu perfil; uma regra só, para as duas portas não discordarem.
+export function podeEditarFicha(
+  sessao: Sessao | null,
+  colaboradorId: string,
+  colaboradores: Colaborador[],
+): boolean {
+  return ehRH(sessao) && podeVerColaborador(sessao, colaboradorId, colaboradores);
+}
 export function ehGestor(sessao: Sessao | null): boolean {
   return sessao?.perfil === "GESTOR";
 }

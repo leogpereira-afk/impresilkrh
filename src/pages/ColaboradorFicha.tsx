@@ -5,7 +5,7 @@ import { ResumoFerias } from '@/components/ferias/resumo-ferias';
 import { estadoFerias } from '@/lib/feriasPeriodos';
 import { tituloPago } from "@/lib/mubiPagamentos";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
   IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
@@ -27,7 +27,7 @@ import { useColecao } from "@/lib/store";
 import { useCicloAtivo } from "@/lib/ciclo";
 import { useDominio, senioridadeDe as senioridade, enquadrar, noQuadro, faixaDefinida } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, ehRH, colaboradoresVisiveis } from "@/lib/rbac";
+import { podeVerColaborador, podeVerDadosSensiveis, podeVerGestao, podeEditarFicha, colaboradoresVisiveis } from "@/lib/rbac";
 import { registrarAcesso } from "@/lib/lgpd";
 import { removerSenhaUsuario } from "@/lib/auth";
 import { formatBRL, formatCPF, maskCPF, formatDate, tempoDeCasa, parseData, diaLocalISO, diasDeCalendario } from "@/lib/format";
@@ -149,7 +149,7 @@ export default function ColaboradorFicha() {
     return <EmptyState title="Acesso restrito" description="Você não tem permissão para ver este colaborador." icon={<Lock className="h-8 w-8" />} />;
   }
 
-  return <FichaConteudo c={c} sens={sens} verGestao={verGestao} podeEditar={ehRH(sessao)} anterior={anterior} proximo={proximo} />;
+  return <FichaConteudo c={c} sens={sens} verGestao={verGestao} podeEditar={podeEditarFicha(sessao, id, d.colaboradores)} anterior={anterior} proximo={proximo} />;
 }
 
 type Colab = import("@/data/types").Colaborador;
@@ -177,6 +177,18 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
   const { atualizar } = useColecao("colaboradores");
   const fotoRef = useRef<HTMLInputElement>(null);
   const [editar, setEditar] = useState(false);
+  /* Veio do "Editar minha ficha" do Meu perfil (navigate com state): abre a
+     edição direto. Era o caminho que faltava para a Direção, que não aparece
+     na lista do quadro (pedido do dono de 12/10/2026). Quem não pode editar
+     cai na ficha normal. O state é limpo para um F5 não reabrir o modal. */
+  const local = useLocation();
+  const pedidoEditar = (local.state as { editar?: boolean } | null)?.editar === true;
+  useEffect(() => {
+    if (!pedidoEditar) return;
+    if (podeEditar) setEditar(true);
+    navegar({ pathname: local.pathname, search: local.search, hash: local.hash }, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoEditar]);
   const [desligar, setDesligar] = useState(false);
   const [aba, setAba] = useAbaNaUrl("ficha-colaborador", ABAS_FICHA, "resumo");
   const [experiencia, setExperiencia] = useState(false);

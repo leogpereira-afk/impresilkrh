@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   IdCard, Briefcase, FileText, Palmtree, Target, FileSignature,
-  ExternalLink, UserCircle, Wallet, KeyRound, Camera,
+  ExternalLink, UserCircle, Wallet, KeyRound, Camera, Pencil,
 } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Avatar, Field, EmptyState, Progress } from "@/components/ui/misc";
@@ -23,6 +23,7 @@ import { buscarArquivoNuvem } from "@/lib/sync";
 import { abrirAnexoEmNovaAba } from "@/lib/abrirArquivo";
 import { useDominio, senioridadeDe as senioridade } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
+import { podeEditarFicha } from "@/lib/rbac";
 import { logadoNoServidor, trocarMinhaSenha } from "@/lib/auth";
 import { Campo, Input } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
@@ -58,6 +59,11 @@ export default function MeuPerfil() {
 
   const enq = d.enquadrarColab(c);
   const corEnq = COR_POSICAO_FAIXA[enq];
+  /* "a parte de direcao nao tem como editar da direcao" (dono, 12/10/2026):
+     a ficha da Direção fica fora da lista do quadro, e o Meu perfil só
+     mostrava. Quem pode editar a própria ficha (a mesma regra do Editar da
+     ficha) tem aqui o caminho: abre /colaboradores/<id> já na edição. */
+  const editarFicha = podeEditarFicha(sessao, c.id, d.colaboradores);
 
   return (
     <div>
@@ -78,6 +84,11 @@ export default function MeuPerfil() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <DotBadge label={`Enquadramento: ${enq}`} cor={corEnq} />
+            {editarFicha && (
+              <Link to={`/colaboradores/${c.id}`} state={{ editar: true }} className="btn-outline">
+                <Pencil className="h-4 w-4" /> Editar minha ficha
+              </Link>
+            )}
           </div>
         </CardBody>
       </Card>
