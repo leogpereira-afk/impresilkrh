@@ -12,6 +12,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { projetarOrdem } from '../../supabase/functions/_shared/performanceOS';
 import { mapaPessoasPorId } from '../../supabase/functions/_shared/programacao';
 import { contaApontadaAoSocio, lerVinculosSocioConta } from '../../supabase/functions/_shared/socioConta';
+// A régua do ID da pessoa entra pela mesma porta (o import do servidor é apagado).
+import * as reguaIdPessoa from '../../supabase/functions/_shared/idPessoa';
 
 vi.mock('./auth', () => ({ MODO_JWT: true, tokenAtual: () => 'teste' }));
 vi.mock('./supabase', () => ({ FN_SYNC: 'http://rh-teste.local/sync' }));
@@ -35,7 +37,7 @@ function servidor(linhas: Linha[]) {
       then: (resolve: (r: unknown) => unknown) => Promise.resolve(resolve({ data: tabela === 'perfis' ? { colaborador_id: 'pessoa-teste', perfil: 'ADMIN_RH', ativo: true } : tabela === 'config_global' ? { config: {} } : individual ? (lista[0] ? structuredClone(lista[0]) : null) : structuredClone(lista.slice(0, limite)), error: null })) };
     return q;
   } };
-  runInNewContext(codigo, { Deno: { env: { get: () => '' }, serve: (h: typeof handler) => { handler = h; } }, createClient: () => admin, projetarOrdem, mapaPessoasPorId, contaApontadaAoSocio, lerVinculosSocioConta, preflight: () => null, json: (b: unknown, status = 200) => new Response(JSON.stringify(b), { status }), console: { ...console, warn: vi.fn(), error: vi.fn() }, crypto, Request, Response, Date, Set, Map, URL, Uint8Array, atob, btoa });
+  runInNewContext(codigo, { Deno: { env: { get: () => '' }, serve: (h: typeof handler) => { handler = h; } }, createClient: () => admin, ...reguaIdPessoa, projetarOrdem, mapaPessoasPorId, contaApontadaAoSocio, lerVinculosSocioConta, preflight: () => null, json: (b: unknown, status = 200) => new Response(JSON.stringify(b), { status }), console: { ...console, warn: vi.fn(), error: vi.fn() }, crypto, Request, Response, Date, Set, Map, URL, Uint8Array, atob, btoa });
   const fetchRoteado = vi.fn(async (_url: string, init: RequestInit) => {
     const corpo = JSON.parse(String(init.body));
     if (corpo.action === 'upsert' && corpo.colecao === 'performanceCiclos') enviados.push(structuredClone(corpo.registro));

@@ -10,6 +10,7 @@
 // Aqui mora a régua, e só ela: quem casa pagamento com pessoa usa estas
 // funções; quem mostra a pessoa na tela mostra o ID ao lado do nome.
 import type { Colaborador } from "@/data/types";
+import { idGravado as gravadoNoCadastro } from "../../supabase/functions/_shared/idPessoa";
 
 export const soDigitos = (v: unknown): string => String(v ?? "").replace(/\D/g, "");
 
@@ -18,6 +19,21 @@ export function idPessoa(cpf: unknown): string | null {
   const d = soDigitos(cpf);
   return d.length === 11 ? d.slice(0, 6) : null;
 }
+
+/* O ID GRAVADO (D-004, 12/10/2026). A ficha e o contrato de freelancer passam
+   a guardar o ID no campo `idPessoa`, que nasce no servidor e não muda com o
+   CPF corrigido. A régua mora em supabase/functions/_shared/idPessoa.ts (a
+   porta de dados usa a mesma). Para MOSTRAR a pessoa vale o gravado; sem ele,
+   o do CPF de hoje (`idPessoa(cpf)` acima continua sendo o cálculo). */
+export { idGravado, idDivergeDoCpf, idValido, idQueVale } from "../../supabase/functions/_shared/idPessoa";
+
+/** O ID para mostrar: o gravado; sem ele, o do CPF de hoje. */
+export function idDaPessoa(c: { idPessoa?: unknown; cpf?: unknown } | null | undefined): string | null {
+  return gravadoNoCadastro(c) || idPessoa(c?.cpf);
+}
+
+export const TITULO_ID_DIVERGENTE =
+  "O ID gravado na ficha é diferente do começo do CPF de hoje (o CPF foi corrigido depois). Vale o gravado: é com ele que a pessoa está nas O.S., equipes e divisões do PCP. Só o admin do RH troca o ID, com motivo.";
 
 /** ID → pessoa, só quando o ID é único (dois cadastros com o mesmo CPF não casam com ninguém). */
 export function mapaDeIds(colaboradores: Colaborador[]): Map<string, Colaborador> {

@@ -5,8 +5,9 @@ import ts from "typescript";
 // a régua compartilhada do apontamento ao sócio entra pela mesma porta.
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../../supabase/functions/_shared/socioConta";
 import { problemaCpfFreelancer } from "../../supabase/functions/_shared/freelancerContrato";
+import * as reguaIdPessoa from "../../supabase/functions/_shared/idPessoa";
 
-export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean } = {}) {
+export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false, rpcResposta }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean; rpcResposta?: (nome: string, args: any) => any } = {}) {
   let handler: (req: Request) => Promise<Response>;
   const escritas: any[] = [];
   const arquivos: any[] = [];
@@ -23,6 +24,8 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
         const atual = (rows.find((r: any) => r.id === true)?.config ?? {}) as Record<string, unknown>;
         return { data: { ...atual, ...(args?.p_patch ?? {}) }, error: null };
       }
+      const propria = rpcResposta?.(nome, args);
+      if (propria !== undefined) return { data: propria, error: null };
       return { data: { ok: true, versao: 2 }, error: null };
     },
     auth: { getUser: async () => ({ data: { user: { id: "auth-ficticio" } }, error: null }) },
@@ -67,6 +70,7 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
     json: (data: any, status = 200) => new Response(JSON.stringify(data), { status }), preflight: () => null,
     Response, Request, Blob, console, Date, crypto,
     contaApontadaAoSocio, lerVinculosSocioConta, problemaCpfFreelancer,
+    ...reguaIdPessoa,
   });
   return { escritas, arquivos, rpcs, async call(body: any) {
     const r = await handler(new Request("http://rh-teste.local", { method: "POST", headers: { authorization: "Bearer ficticio" }, body: JSON.stringify(body) }));

@@ -206,7 +206,12 @@ export async function trySync(): Promise<void> {
           // A confirmação pertence ao envio A. Uma edição B, mesmo no mesmo
           // milissegundo, tem outra identificação e continua aguardando envio.
           if (Number.isSafeInteger(resp.versao)) {
-            aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...r, _rhRev: resp.versao } : r)));
+            /* O ID da pessoa nasce no servidor (D-004): a resposta traz o que
+               ficou gravado, e a cópia do aparelho o recebe já, sem esperar o
+               pull. Edição seguinte manda o registro com ele, e o servidor o
+               preserva de qualquer jeito (campo ausente não apaga). */
+            const idGravadoAgora = typeof resp.idPessoa === "string" && /^\d{6}$/.test(resp.idPessoa) ? resp.idPessoa : null;
+            aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...r, _rhRev: resp.versao, ...(idGravadoAgora ? { idPessoa: idGravadoAgora } : {}) } : r)));
           }
           gravarFila(lerFila().filter(a => !(mesma(a, acao) && a.mutationId === acao.mutationId)).map(a => mesma(a, acao) && Number.isSafeInteger(resp.versao) ? { ...a, baseVersao: resp.versao } : a));
           // O servidor gravou, mas descartou parte do que foi enviado (ex.: vínculos
@@ -246,6 +251,38 @@ export async function trySync(): Promise<void> {
     recalcStatus();
     if (rebaixar) void pull();
   }
+}
+
+/* O ID DA PESSOA PELO ADMIN (D-004): prévia, preenchimento das fichas antigas
+   e troca com motivo. Vai direto ao servidor, FORA da fila: é uma decisão do
+   admin na hora, e a recusa (4xx) volta para a tela com o motivo. Depois de
+   gravar, a cópia do aparelho é rebaixada. */
+export interface ItemIdPessoa {
+  colecao: "colaboradores" | "freelancers";
+  id: string;
+  nome: string;
+  desligado: boolean;
+  /** O ID que o botão grava; "" quando o caso pede decisão. */
+  idPessoa: string;
+  herdado: boolean;
+  motivo: string | null;
+  outro: string | null;
+}
+export async function previaIdPessoa(): Promise<{ itens: ItemIdPessoa[]; total: number; comId: number }> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  return await chamar("idPessoa", { op: "previa" });
+}
+export async function preencherIdPessoa(itens: Pick<ItemIdPessoa, "colecao" | "id" | "idPessoa">[]): Promise<{ gravados: number; pulados: { nome: string; motivo: string }[]; aviso?: string }> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  try {
+    return await chamar("idPessoa", { op: "preencher", itens: itens.map(({ colecao, id, idPessoa }) => ({ colecao, id, idPessoa })) });
+  } finally { void pull(); }
+}
+export async function trocarIdPessoa(colecao: "colaboradores" | "freelancers", id: string, idPessoa: string, motivo: string): Promise<{ idPessoa: string; aviso?: string }> {
+  if (!syncHabilitado()) throw new Error("Entre e ative a sincronização para continuar.");
+  try {
+    return await chamar("idPessoa", { op: "trocar", colecao, id, idPessoa, motivo });
+  } finally { void pull(); }
 }
 
 /** Aviso do servidor sobre o que foi descartado de um envio aceito. */
