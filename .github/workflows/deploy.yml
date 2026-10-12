@@ -13,15 +13,23 @@ name: Deploy (GitHub Pages)
 # Se um dia o caminho oficial voltar, dá para reverter para o workflow anterior —
 # está no histórico deste arquivo.
 on:
+  # TODO push na main roda, inclusive o so da vez (pegar, passar, liberar e
+  # aceitar mexem so no VEZ.md e em docs/passagens/): republica o mesmo site e
+  # confere a vez. Nao ponha paths-ignore aqui: a conferencia parte do ultimo
+  # Deploy verde, e um push da vez que nao roda o Deploy deixa a main a frente
+  # do verde depois de cada pegar ou passar (no PCP isso travou o pcp_ref do
+  # painel ate a revisao final de 11/10/2026).
   push:
     branches: [main]
   workflow_dispatch: {}
 
 # contents: escrever a branch gh-pages, que é o que o Pages serve.
 # pages: pedir o build pela API no último passo (sem isto o POST devolve 403).
+# actions: ler o último Deploy verde, de onde parte a conferência da vez.
 permissions:
   contents: write
   pages: write
+  actions: read
 
 concurrency:
   group: pages
@@ -37,11 +45,60 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Historia inteira: a conferencia da vez olha CADA commit desde o
+          # ultimo Deploy verde.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+
+      # Um agente por repositorio de cada vez (AGENTS.md, secao 5), o mesmo
+      # protocolo do PCP (instalado aqui em 12/10/2026). Cada commit leva
+      # "Agente: X" e X e quem tem a vez no VEZ.md daquele commit.
+      #
+      # BASE = o ULTIMO DEPLOY VERDE da main, nao o "before" do push: assim o
+      # push que nao chegou a rodar tambem e conferido, e o commit recusado
+      # continua vermelho nos pushes seguintes ate o dono aceita-lo (nao vai ao
+      # ar junto com o proximo). O verde so vale como base se estiver na
+      # historia desta main (historia reescrita); senao vale o before, e sem ele
+      # o ultimo commit, com aviso.
+      # O CONFERIDOR vem da base: mexer no vez.cjs no proprio push nao o desliga.
+      # O primeiro push do protocolo parte de um verde sem scripts/vez.cjs: ai
+      # vale o do proprio push.
+      # A CHAVE do GitHub: commit do dono pelo site (editor ou botao de merge) vem
+      # assinado por ela e vale como "Agente: leo" sem a linha.
+      # Fica ANTES do build e da gh-pages: vermelho aqui nao publica nada.
+      - name: Commits dentro da vez?
+        env:
+          ANTES: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          if ! verde=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""'); then
+            echo "::error::Nao consegui ler o ultimo Deploy verde pela API do GitHub. Sem ele nao sei o que conferir: rode de novo."
+            exit 1
+          fi
+          na_historia() { [ -n "$1" ] && git cat-file -e "${1}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$1" HEAD; }
+          if na_historia "$verde"; then
+            base="$verde"
+          elif na_historia "$ANTES"; then
+            base="$ANTES"; echo "::warning::O ultimo Deploy verde (${verde:-nenhum}) nao esta na historia desta main (reescrita?): confiro so este push."
+          else
+            base=$(git rev-parse HEAD~1); echo "::warning::Nem o ultimo Deploy verde nem o before estao na historia desta main: confiro so o ultimo commit."
+          fi
+          echo "base da conferencia: $base (ultimo Deploy verde: ${verde:-nenhum})"
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p -m 700 "$GNUPGHOME"
+          curl -fsSL https://github.com/web-flow.gpg | gpg --batch --quiet --import || echo "::warning::Nao importei a chave do GitHub: commit do dono feito pelo site, sem a linha Agente, vai ficar vermelho."
+          if git cat-file -e "$base:scripts/vez.cjs" 2>/dev/null; then
+            git show "$base:scripts/vez.cjs" > "$RUNNER_TEMP/vez.cjs"
+          else
+            cp scripts/vez.cjs "$RUNNER_TEMP/vez.cjs"
+          fi
+          RH_RAIZ="$GITHUB_WORKSPACE" node "$RUNNER_TEMP/vez.cjs" conferir "$base..HEAD"
 
       - run: npm ci
 

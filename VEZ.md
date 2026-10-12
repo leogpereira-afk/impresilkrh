@@ -33,5 +33,5 @@ pela_metade: o ID da pessoa nasce com a ficha e não muda com o CPF corrigido (D
 decisoes: D-001 a D-005 (copiadas das memórias do Claude e da fila do PCP de 11/10/2026; nenhuma decisão nova do dono)
 perguntas_ao_dono: P-001 (apagar ramos), P-002 (regra do check Deploy na main), P-003 (trava do functions.yml do painel no rh_ref sem a vez nem o último Deploy verde do RH), P-004 (nome real em comentário antigo)
 nao_fazer: não trocar nem sugerir troca das senhas do RH (D-002); não voltar ao actions/deploy-pages nem apagar o site do Pages; function do RH não sobe no push (só pelo functions.yml do painel com rh_funcoes e rh_ref); não trabalhar no clone ~/Projetos/impresilkrh (atrasado, pode ter trabalho de outra sessão) nem na Dre/rh do iCloud
-testes: npm run verificar com Node 20 (lint, typecheck, vitest, test:vez, conferir:id) e npm run build: ver o commit do protocolo
+testes: npm run verificar com Node 20.18 em 12/10/2026: lint e typecheck ok, vitest 127 arquivos e 1952 testes passam, test:vez 22 passam (0 pulados), conferir:id 7 no padrão e 0 fora; npm run build ok
 dados: nenhum (só leitura: list_edge_functions e gh run list)

@@ -11,16 +11,67 @@ on:
   pull_request:
   workflow_dispatch: # permite rodar na mão pelo site do GitHub
 
+# contents: ler o código. actions: ler o último Deploy verde, de onde parte a
+# conferência da vez.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   verificar:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # História inteira: a conferência da vez olha CADA commit desde o
+          # último Deploy verde.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
+
+      # A MESMA conferência do deploy.yml (AGENTS.md, seção 5), aqui também em
+      # pull request e no disparo manual de qualquer ramo, para o vermelho
+      # aparecer ANTES de chegar à main. Num pull request o HEAD é o merge que o
+      # GitHub monta (sem a linha Agente): confere-se até a ponta do PR. A base
+      # é o último Deploy verde, se estiver na história da ponta; senão, o
+      # começo do PR (ou o before do push), e por último o commit anterior.
+      # O conferidor vem da base, como no deploy.yml.
+      - name: Commits dentro da vez?
+        env:
+          ANTES: ${{ github.event.before }}
+          PR_PONTA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          ATE="${PR_PONTA:-$(git rev-parse HEAD)}"
+          if ! verde=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""'); then
+            echo "::error::Nao consegui ler o ultimo Deploy verde pela API do GitHub. Sem ele nao sei o que conferir: rode de novo."
+            exit 1
+          fi
+          na_historia() { [ -n "$1" ] && git cat-file -e "${1}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$1" "$ATE"; }
+          if na_historia "$verde"; then
+            base="$verde"
+          elif [ -n "$PR_BASE" ] && pr_base=$(git merge-base "$PR_BASE" "$ATE" 2>/dev/null); then
+            base="$pr_base"; echo "::warning::O ultimo Deploy verde (${verde:-nenhum}) nao esta na historia deste PR: confiro so os commits do PR."
+          elif na_historia "$ANTES"; then
+            base="$ANTES"; echo "::warning::O ultimo Deploy verde (${verde:-nenhum}) nao esta na historia: confiro so este push."
+          else
+            base=$(git rev-parse "$ATE~1"); echo "::warning::Nem o ultimo Deploy verde nem o before estao na historia: confiro so o ultimo commit."
+          fi
+          echo "base da conferencia: $base ate $ATE (ultimo Deploy verde: ${verde:-nenhum})"
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p -m 700 "$GNUPGHOME"
+          curl -fsSL https://github.com/web-flow.gpg | gpg --batch --quiet --import || echo "::warning::Nao importei a chave do GitHub: commit do dono feito pelo site, sem a linha Agente, vai ficar vermelho."
+          if git cat-file -e "$base:scripts/vez.cjs" 2>/dev/null; then
+            git show "$base:scripts/vez.cjs" > "$RUNNER_TEMP/vez.cjs"
+          else
+            cp scripts/vez.cjs "$RUNNER_TEMP/vez.cjs"
+          fi
+          RH_RAIZ="$GITHUB_WORKSPACE" node "$RUNNER_TEMP/vez.cjs" conferir "$base..$ATE"
 
       # `npm ci` falha de propósito se o package-lock não bater com o
       # package.json — é exatamente a inconsistência que já quebrou o build.
@@ -35,6 +86,11 @@ jobs:
 
       - name: Testes
         run: npm test
+
+      # node:test, fora do vitest: o vez.cjs e a vez num git de verdade
+      # (tests/agentes.test.cjs e tests/vez-git.test.cjs).
+      - name: Testes do protocolo da vez
+        run: npm run test:vez
 
       # Build completo: garante que o que o GitHub Pages vai fazer funciona aqui.
       - name: Build de produção
