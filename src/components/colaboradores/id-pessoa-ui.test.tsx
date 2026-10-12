@@ -61,6 +61,9 @@ describe("selo do ID na ficha", () => {
   it("só o admin tem o botão de trocar, e a troca pede motivo", async () => {
     await desenhar(<SeloIdPessoa cadastro={{ id: "f1", nome: "Pessoa Fictícia", cpf: CPF_A, idPessoa: "123456" }} colecao="colaboradores" podeTrocar />);
     const botao = [...document.querySelectorAll("button")].find((b) => b.textContent === "trocar ID")!;
+    // Régua de dedo da casa: controle com 40 px de altura (era h-7, 28 px).
+    expect(botao.className).toContain("min-h-10");
+    expect(botao.className).not.toMatch(/(^|\s)h-7(\s|$)/);
     await act(async () => { botao.click(); });
     expect(texto()).toContain("Trocar o ID da pessoa");
     const confirmar = [...document.querySelectorAll("button")].find((b) => b.textContent === "Trocar o ID")!;

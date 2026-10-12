@@ -64,7 +64,7 @@ export function SeloIdPessoa({
         </span>
       )}
       {podeTrocar && (
-        <button type="button" className="btn-ghost h-7 px-2 py-0 text-xs" onClick={() => setTrocando(true)}>
+        <button type="button" className="btn-ghost min-h-10 px-2 py-0 text-xs" onClick={() => setTrocando(true)}>
           {gravado ? "trocar ID" : "gravar ID"}
         </button>
       )}
