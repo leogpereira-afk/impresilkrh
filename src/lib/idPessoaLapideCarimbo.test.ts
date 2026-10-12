@@ -15,15 +15,21 @@ const retratoDe = (s: ReturnType<typeof servidorRh>) => s.rpcs.find((x) => x.nom
 
 
 describe("ID da pessoa: carimbo e retrato depois da lápide", () => {
-  it("outro CPF com o mesmo começo ganha o ID do CPF dele, sem o carimbo (quem, quando, motivo) da pessoa apagada", async () => {
+  /* Mudou na verificação dos IDs anteriores (12/10/2026): o ID de quem saiu é
+     dessa pessoa no histórico do PCP. Outro CPF com o mesmo começo NÃO o
+     recebe mais: grava sem ID, com aviso, e a lápide fica guardada inteira
+     (com o carimbo) na linha de arquivo. */
+  it("outro CPF com o mesmo começo NÃO ganha o ID da pessoa apagada nem o carimbo; a lápide fica guardada", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", ficha("f1", { cpf: CPF_A, ...carimbo }))] });
     const r = await s.call({ action: "upsert", colecao: "colaboradores", baseVersao: 0, registro: ficha("f1", { cpf: CPF_OUTRO_123456 }) });
     expect(r.status).toBe(200);
-    const p = grav(s)[0].args.p_registro;
-    expect(p.idPessoa).toBe("123456");
+    expect(r.body.aviso).toContain("já foi de outra pessoa");
+    const p = grav(s).find((x) => x.args.p_id === "f1")!.args.p_registro;
+    expect(p).not.toHaveProperty("idPessoa");
     expect(p.idPessoaPor).toBeUndefined();
     expect(p.idPessoaMotivo).toBeUndefined();
-    expect(p.idPessoaEm).not.toBe(carimbo.idPessoaEm);
+    const arq = grav(s).find((x) => x.args.p_id === "f1.saiu-v7")!.args;
+    expect(arq).toMatchObject({ p_versao: 0, p_registro: { ...carimbo, cpf: CPF_A, _apagado: true, arquivadaDe: "f1" } });
   });
   it("o mesmo CPF da lápide volta com o carimbo de antes", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", ficha("f1", { cpf: CPF_A, ...carimbo }))] });

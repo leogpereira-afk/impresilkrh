@@ -43,7 +43,7 @@ describe("a troca guarda o ID que sai", () => {
     expect(JSON.stringify(hist)).not.toContain("123456");
     expect(JSON.stringify(r.body)).not.toContain("—");
   });
-  it("trocar de novo junta na lista (cada ID uma vez) e o contrato vivo do mesmo CPF recebe a mesma lista", async () => {
+  it("trocar de novo junta na lista (cada ID uma vez) e o contrato vivo do mesmo CPF recebe a mesma lista, sem o ID de hoje dele", async () => {
     const rows = [
       linha("colaboradores", trocada()),
       linha("freelancers", contrato("c1", { cpf: CPF_A_CORRIGIDO, idPessoa: "987654" })),
@@ -55,8 +55,8 @@ describe("a troca guarda o ID que sai", () => {
     expect(lista).toEqual(["123456", "987654"]);
     const doContrato = gravacoes(s, "freelancers")[0].args;
     expect(doContrato).toMatchObject({ p_id: "c1", p_versao: 3 });
-    expect(idsAnteriores(doContrato.p_registro)).toEqual(["123456", "987654"]);
     expect(doContrato.p_registro.idPessoa).toBe("987654"); // o ID do contrato não muda sozinho
+    expect(idsAnteriores(doContrato.p_registro)).toEqual(["123456"]); // e a lista dele não traz o ID de hoje dele
   });
   it("contrato de freelancer não fala da Central (a conta da Central é da ficha)", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [linha("freelancers", contrato("c1", { cpf: CPF_A_CORRIGIDO, idPessoa: "123456" }))] });
@@ -115,11 +115,111 @@ describe("o ID anterior de outra pessoa não é dado a ninguém", () => {
       expect(gravacoes(s)).toHaveLength(0);
     }
   });
-  it("a própria pessoa pode voltar a um ID anterior dela", async () => {
+  it("a própria pessoa pode voltar a um ID anterior dela, e ele sai da lista (a lista nunca traz o ID de hoje)", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [linha("colaboradores", trocada())] });
     const r = await s.call({ action: "idPessoa", op: "trocar", colecao: "colaboradores", id: "f1", idPessoa: "123456", motivo: "A troca anterior foi engano" });
     expect(r.status).toBe(200);
-    expect(idsAnteriores(gravacoes(s, "colaboradores")[0].args.p_registro)).toEqual(["123456", "987654"]);
+    const p = gravacoes(s, "colaboradores")[0].args.p_registro;
+    expect(p.idPessoa).toBe("123456");
+    expect(idsAnteriores(p)).toEqual(["987654"]);
+  });
+});
+
+/* VERIFICAÇÃO INDEPENDENTE DO CONSERTO (12/10/2026): a lápide da PRÓPRIA
+   linha e o ID de hoje de quem saiu. Casos T1, T2, T2b e T11 do verificador,
+   caso ruim primeiro. */
+describe("a lápide da própria linha ocupada por outra pessoa: o ID e a lista de quem saiu nunca se perdem", () => {
+  const CPF_X2 = "123.456.333-54"; // mais uma pessoa cujo CPF começa por 123456
+  const naLinha = (s: ReturnType<typeof servidorRh>, id: string) => gravacoes(s).find((x) => x.args.p_id === id)?.args;
+  it("T1 upsert: outro CPF que começa pelo ID anterior da lápide grava SEM ID, com aviso, e a lápide vai inteira para a linha de arquivo", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", trocada())] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f1", { cpf: CPF_OUTRO_123456 }), baseVersao: 0 });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toContain("já foi de outra pessoa");
+    const nova = naLinha(s, "f1")!.p_registro;
+    expect(nova).not.toHaveProperty("idPessoa");
+    expect(nova).not.toHaveProperty("idPessoaAnteriores"); // a pessoa nova não herda a lista de quem saiu
+    const arq = naLinha(s, "f1.saiu-v7")!;
+    expect(arq).toMatchObject({ p_versao: 0, p_registro: { id: "f1.saiu-v7", arquivadaDe: "f1", _apagado: true, cpf: CPF_A_CORRIGIDO, idPessoa: "987654", idPessoaAnteriores: ANTERIOR } });
+    // A linha de arquivo é gravada ANTES da linha da pessoa nova.
+    expect(gravacoes(s).findIndex((x) => x.args.p_id === "f1.saiu-v7")).toBeLessThan(gravacoes(s).findIndex((x) => x.args.p_id === "f1"));
+  });
+  it("T1b o ID de hoje da lápide da própria linha também não passa para o outro CPF", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", ficha("f1", { cpf: CPF_OUTRO_123456, idPessoa: "123456" }))] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f1", { cpf: CPF_X2 }), baseVersao: 0 });
+    expect(r.body.aviso).toContain("já foi de outra pessoa");
+    expect(naLinha(s, "f1")!.p_registro).not.toHaveProperty("idPessoa");
+    expect(naLinha(s, "f1.saiu-v7")!.p_registro).toMatchObject({ idPessoa: "123456", cpf: CPF_OUTRO_123456 });
+  });
+  it("T2 retrato: o item que ocupa a lápide com outro CPF entra sem ID e sem lista, e a lápide entra inteira na linha de arquivo", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", trocada())] });
+    await s.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1", { cpf: CPF_OUTRO_123456, idPessoaAnteriores: ANTERIOR })] } });
+    const itens = s.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores;
+    expect(itens[0]).not.toHaveProperty("idPessoa");
+    expect(itens[0]).not.toHaveProperty("idPessoaAnteriores");
+    expect(itens[1]).toMatchObject({ id: "f1.saiu-v7", _apagado: true, idPessoa: "987654", idPessoaAnteriores: ANTERIOR, cpf: CPF_A_CORRIGIDO });
+  });
+  it("T2b depois do retrato, a prévia não oferece à pessoa nova o ID de quem saiu", async () => {
+    const arquivo = { ...trocada(), id: "f1.saiu-v7", arquivadaDe: "f1" };
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [linha("colaboradores", ficha("f1", { cpf: CPF_OUTRO_123456 })), lapide("colaboradores", arquivo)] });
+    const previa = await s.call({ action: "idPessoa", op: "previa" });
+    const item = (previa.body.itens as { id: string; idPessoa: string; motivo: string }[]).find((i) => i.id === "f1")!;
+    expect(item.idPessoa).toBe("");
+    expect(item.motivo).toContain("já foi de outra pessoa");
+    const r = await s.call({ action: "idPessoa", op: "preencher", itens: [{ colecao: "colaboradores", id: "f1", idPessoa: "123456" }] });
+    expect(r.body.gravados).toBe(0);
+  });
+  it("a mesma pessoa (mesmo CPF) volta à lápide com o ID e a lista, sem linha de arquivo", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", trocada())] });
+    await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f1", { cpf: CPF_A_CORRIGIDO }), baseVersao: 0 });
+    expect(gravacoes(s)).toHaveLength(1);
+    expect(naLinha(s, "f1")!.p_registro).toMatchObject({ idPessoa: "987654", idPessoaAnteriores: ANTERIOR });
+  });
+  it("lápide sobre lápide no retrato não apaga o ID nem a lista", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", trocada())] });
+    await s.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [{ id: "f1", _apagado: true }] } });
+    const itens = s.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores;
+    expect(itens).toHaveLength(1);
+    expect(itens[0]).toMatchObject({ idPessoa: "987654", idPessoaAnteriores: ANTERIOR });
+  });
+});
+
+describe("o ID de HOJE de quem saiu (lápide de outra linha) é de outra pessoa", () => {
+  const CPF_X2 = "123.456.333-54";
+  const saiu = () => lapide("colaboradores", ficha("z9", { cpf: CPF_OUTRO_123456, idPessoa: "123456" }));
+  it("T11 upsert: ficha nova com outro CPF de mesmo começo não recebe o ID de quem saiu", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [saiu(), linha("colaboradores", ficha("f3", { cpf: "123.456.222-00", idPessoa: "999999" }))] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f4", { cpf: CPF_X2 }), baseVersao: 0 });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toContain("já foi de outra pessoa");
+    expect(gravacoes(s, "colaboradores")[0].args.p_registro).not.toHaveProperty("idPessoa");
+  });
+  it("a mesma pessoa (mesmo CPF da lápide) numa ficha nova recebe o ID dela de volta", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [saiu()] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f4", { cpf: CPF_OUTRO_123456 }), baseVersao: 0 });
+    expect(r.body.idPessoa).toBe("123456");
+  });
+  it("preencher, trocar e registrar recusam o ID de hoje de quem saiu", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [saiu(), linha("colaboradores", ficha("f4", { cpf: CPF_X2 })), linha("colaboradores", ficha("f5", { cpf: CPF_B, idPessoa: "654321" }))] });
+    const previa = await s.call({ action: "idPessoa", op: "previa" });
+    expect((previa.body.itens as { id: string; idPessoa: string }[]).find((i) => i.id === "f4")!.idPessoa).toBe("");
+    expect((await s.call({ action: "idPessoa", op: "preencher", itens: [{ colecao: "colaboradores", id: "f4", idPessoa: "123456" }] })).body.gravados).toBe(0);
+    expect(gravacoes(s)).toHaveLength(0);
+    // Sem a ficha f4 (que também usaria o 123456 pelo CPF), quem recusa é a lápide.
+    const s2 = servidorRh({ perfil: "ADMIN_RH", rows: [saiu(), linha("colaboradores", ficha("f5", { cpf: CPF_B, idPessoa: "654321" }))] });
+    const t = await s2.call({ action: "idPessoa", op: "trocar", colecao: "colaboradores", id: "f5", idPessoa: "123456", motivo: MOTIVO });
+    expect(t.status).toBe(409);
+    expect(t.body.erro).toContain("já foi de outra pessoa");
+    expect(t.body.erro).toContain("cadastro apagado");
+    const g = await s2.call({ action: "idPessoa", op: "registrarAnterior", colecao: "colaboradores", id: "f5", idPessoa: "123456", motivo: MOTIVO });
+    expect(g.status).toBe(409);
+    expect(gravacoes(s2)).toHaveLength(0);
+  });
+  it("retrato: o item que revive a lápide com o mesmo CPF não leva o ID dela se ele for o ID de hoje de outra pessoa que saiu", async () => {
+    const outraQueSaiu = lapide("colaboradores", ficha("z8", { cpf: CPF_C, idPessoa: "987654" }));
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide("colaboradores", ficha("f1", { cpf: CPF_A_CORRIGIDO, idPessoa: "987654" })), outraQueSaiu] });
+    await s.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1", { cpf: CPF_A_CORRIGIDO })] } });
+    expect(s.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores[0]).not.toHaveProperty("idPessoa");
   });
 });
 

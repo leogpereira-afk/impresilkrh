@@ -133,15 +133,15 @@ export interface CadastroComId {
   colecao: string;
   id: string;
   registro: Record<string, unknown>;
-  /** Lápide (cadastro apagado): entra na conferência só pelos IDs anteriores
-   *  dela, que continuam sendo de quem saiu. */
+  /** Lápide (cadastro apagado): o ID gravado dela e os IDs anteriores dela
+   *  continuam sendo de quem saiu (o histórico do PCP tem esses IDs). */
   apagado?: boolean;
 }
 
 export type MotivoSemId = "sem-cpf" | "id-de-outra-pessoa" | "mesmo-cpf-com-ids-diferentes";
 
 /** Quem já tem (ou já teve) o ID. `anterior`: o ID é um dos anteriores dele. */
-export interface OutroComId { colecao: string; id: string; nome: string; anterior?: boolean }
+export interface OutroComId { colecao: string; id: string; nome: string; anterior?: boolean; apagado?: boolean }
 
 export type DecisaoId =
   | { idPessoa: string; herdadoDe?: { colecao: string; id: string } }
@@ -157,9 +157,13 @@ const mesmaChave = (a: { colecao: string; id: string }, b: { colecao: string; id
   a.colecao === b.colecao && a.id === b.id;
 
 /** Quem, entre os outros cadastros, já usa este ID sendo OUTRA pessoa (CPF
- *  diferente do alvo, ou sem CPF). Conta o gravado e, para quem ainda não tem
- *  o campo, o do CPF de hoje; e conta os IDs ANTERIORES de cada um, vivo ou
- *  lápide (o ID que alguém já teve continua sendo dele no histórico do PCP). */
+ *  diferente do alvo, ou sem CPF). Conta, de cada um:
+ *    · vivo: o gravado e, para quem ainda não tem o campo, o do CPF de hoje;
+ *    · lápide: o gravado (a pessoa saiu, mas o histórico do PCP tem o ID dela);
+ *    · vivo ou lápide: os IDs ANTERIORES.
+ *  A lápide da PRÓPRIA linha também conta: reviver a vaga com outro CPF é
+ *  outra pessoa nascendo ali, e o que era de quem saiu continua de quem saiu
+ *  (verificação de 12/10/2026). Só o cadastro vivo da própria linha é pulado. */
 export function outraPessoaComId(
   id: string,
   cpfAlvo: string,
@@ -167,8 +171,8 @@ export function outraPessoaComId(
   outros: CadastroComId[],
 ): (CadastroComId & { anterior?: boolean }) | null {
   for (const o of outros) {
-    if (mesmaChave(o, alvo)) continue;
-    const hoje = !o.apagado && idQueVale(o.colecao, o.registro) === id;
+    if (!o.apagado && mesmaChave(o, alvo)) continue;
+    const hoje = (o.apagado ? idGravado(o.registro) : idQueVale(o.colecao, o.registro)) === id;
     const antes = !hoje && idsAnteriores(o.registro).includes(id);
     if (!hoje && !antes) continue;
     if (cpfAlvo && cpf11(o.registro.cpf) === cpfAlvo) continue; // mesma pessoa
@@ -202,7 +206,7 @@ export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[], lap
   const id = herdaveis[0] ?? cpf.slice(0, 6);
   const outro = outraPessoaComId(id, cpf, alvo, outros);
   if (outro) {
-    return { idPessoa: "", motivo: "id-de-outra-pessoa", outro: { colecao: outro.colecao, id: outro.id, nome: String(outro.registro.nome ?? ""), ...(outro.anterior ? { anterior: true } : {}) } };
+    return { idPessoa: "", motivo: "id-de-outra-pessoa", outro: { colecao: outro.colecao, id: outro.id, nome: String(outro.registro.nome ?? ""), ...(outro.anterior ? { anterior: true } : {}), ...(outro.apagado ? { apagado: true } : {}) } };
   }
   if (herdaveis[0]) {
     const de = mesmos.find((o) => idGravado(o.registro) === id);
@@ -240,12 +244,30 @@ export function comCamposDoId(registro: Record<string, unknown>, fonte: Reg): Re
   return r;
 }
 
-/** Põe a lista de IDs anteriores no registro (vazia: tira o campo). */
+/** Põe a lista de IDs anteriores no registro (vazia: tira o campo). A lista
+ *  nunca traz o ID de hoje do próprio cadastro. */
 export function comAnteriores(registro: Record<string, unknown>, lista: IdAnterior[]): Record<string, unknown> {
   const r: Record<string, unknown> = { ...registro };
-  if (lista.length) r.idPessoaAnteriores = lista; else delete r.idPessoaAnteriores;
+  const hoje = idGravado(r);
+  const fica = lista.filter((a) => a.idPessoa !== hoje);
+  if (fica.length) r.idPessoaAnteriores = fica; else delete r.idPessoaAnteriores;
   return r;
 }
+
+/** A lápide é da mesma pessoa que chega na mesma linha? Só com o mesmo CPF
+ *  dos dois lados (sem CPF de um lado, não dá para dizer que é a mesma). */
+export const mesmaPessoaDaLapide = (colecao: string, lapide: Reg, registro: Reg): boolean => {
+  const daLapide = cpf11(campo(lapide, "cpf"));
+  return !!daLapide && daLapide === cpfDoCadastro(colecao, registro);
+};
+
+/** A lápide guarda ID ou IDs anteriores (tem o que perder se a vaga for ocupada)? */
+export const lapideGuardaId = (lapide: Reg): boolean => !!idGravado(lapide) || idsAnteriores(lapide).length > 0;
+
+/** O id da linha onde a lápide fica guardada quando OUTRA pessoa ocupa a vaga
+ *  dela. Determinístico (a versão da lápide): a fila pode repetir o envio. */
+export const idDoArquivoDaLapide = (id: string, versao: number | null | undefined): string =>
+  `${id.slice(0, 170)}.saiu-v${Number.isSafeInteger(versao) ? versao : 0}`;
 
 /** O envio trouxe um ID diferente do que fica? (ausente não conta: ausente não apaga) */
 export const enviouOutroId = (registro: Reg, fica: string): boolean => {

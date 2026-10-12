@@ -21,6 +21,8 @@ const contrato = (id: string, extra: Record<string, unknown> = {}) => ({ id, nom
 const linha = (colecao: string, registro: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ colecao, id: registro.id, registro, apagado: false, rh_versao: 3, ...extra });
 const gravacoes = (s: ReturnType<typeof servidorRh>, colecao?: string) =>
   s.rpcs.filter((x) => x.nome === "rh_gravar_seguro" && (!colecao || x.args.p_colecao === colecao));
+// A gravação da própria linha (a lápide ocupada por outra pessoa grava antes a linha de arquivo).
+const naLinha = (s: ReturnType<typeof servidorRh>, id: string) => gravacoes(s).find((x) => x.args.p_id === id)!.args;
 
 describe("a régua do ID (compartilhada pela tela e pela porta de dados)", () => {
   it("cadastro novo recebe os 6 primeiros dígitos do CPF", () => {
@@ -146,8 +148,9 @@ describe("porta de dados: o ID gravado não muda", () => {
     const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f1", { cpf: CPF_B }), baseVersao: 0 });
     expect(r.status).toBe(200);
     expect(r.body.idPessoa).toBe("654321");
-    expect(gravacoes(s)[0].args.p_registro).toMatchObject({ cpf: CPF_B, idPessoa: "654321" });
-    expect(gravacoes(s)[0].args.p_registro.idPessoaMotivo).toBeUndefined(); // o carimbo da lápide não vem junto
+    expect(naLinha(s, "f1").p_registro).toMatchObject({ cpf: CPF_B, idPessoa: "654321" });
+    expect(naLinha(s, "f1").p_registro.idPessoaMotivo).toBeUndefined(); // o carimbo da lápide não vem junto
+    expect(naLinha(s, "f1.saiu-v7").p_registro).toMatchObject({ cpf: CPF_A, idPessoa: "123456", _apagado: true }); // e fica guardado
   });
   it("reviver a lápide com o MESMO CPF devolve o ID e o carimbo de antes", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe({ ...gravada().registro, cpf: CPF_A_CORRIGIDO })] });
@@ -163,15 +166,16 @@ describe("porta de dados: o ID gravado não muda", () => {
     expect(r.status).toBe(200);
     expect(r.body.aviso).toBeUndefined();
     expect(r.body.idPessoa).toBeUndefined();
-    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoa");
-    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoaEm");
+    expect(naLinha(s, "fulano-de-tal").p_registro).not.toHaveProperty("idPessoa");
+    expect(naLinha(s, "fulano-de-tal").p_registro).not.toHaveProperty("idPessoaEm");
+    expect(naLinha(s, "fulano-de-tal.saiu-v7").p_registro).toMatchObject({ idPessoa: "123456", cpf: CPF_A, _apagado: true });
   });
   it("a pessoa da lápide voltou numa ficha nova e um homônimo com outro CPF revive a lápide: não ficam dois vivos com o mesmo ID", async () => {
     const fichaNova = linha("colaboradores", ficha("colaboradores_abc1234", { cpf: CPF_A, idPessoa: "123456" }));
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro), fichaNova] });
     const r = await s.call({ action: "upsert", colecao: "colaboradores", baseVersao: 0, registro: ficha("f1", { cpf: CPF_OUTRO_123456 }) });
     expect(r.status).toBe(200);
-    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoa");
+    expect(naLinha(s, "f1").p_registro).not.toHaveProperty("idPessoa");
     expect(r.body.aviso).toContain("outra pessoa");
   });
   it("mesmo CPF da lápide, mas o ID dela já é de outra pessoa viva: fica sem ID, com aviso", async () => {
