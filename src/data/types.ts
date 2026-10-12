@@ -1146,6 +1146,10 @@ export interface Freelancer {
   /** O login dele nos sistemas — mesma regra do apelido do colaborador. */
   apelido?: string;
   cpf?: string;
+  /** CPF que chegou pela fila sem conferir (verificador errado) e por isso não
+   *  foi gravado em `cpf`: fica aqui, como foi digitado, para o RH conferir.
+   *  Sai quando o contrato recebe um CPF válido ou é salvo pela tela. */
+  cpfRecusado?: string;
   /** O ID DA PESSOA GRAVADO (D-004): 6 dígitos, nasce no servidor quando o
    *  cadastro é criado e não muda quando o CPF é corrigido. Só o admin troca,
    *  com motivo (ver supabase/functions/_shared/idPessoa.ts). */

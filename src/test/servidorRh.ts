@@ -4,7 +4,7 @@ import ts from "typescript";
 // O harness apaga os `import` do arquivo do servidor e injeta os símbolos aqui:
 // a régua compartilhada do apontamento ao sócio entra pela mesma porta.
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../../supabase/functions/_shared/socioConta";
-import { problemaCpfFreelancer } from "../../supabase/functions/_shared/freelancerContrato";
+import { contratoNaPorta } from "../../supabase/functions/_shared/freelancerContrato";
 import * as reguaIdPessoa from "../../supabase/functions/_shared/idPessoa";
 
 export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false, rpcResposta }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean; rpcResposta?: (nome: string, args: any) => any } = {}) {
@@ -69,7 +69,7 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
     Deno: { env: { get: (k: string) => (k === "RH_MASTER_COLAB_ID" ? undefined : "ficticio") }, serve: (fn: any) => { handler = fn; } },
     json: (data: any, status = 200) => new Response(JSON.stringify(data), { status }), preflight: () => null,
     Response, Request, Blob, console, Date, crypto,
-    contaApontadaAoSocio, lerVinculosSocioConta, problemaCpfFreelancer,
+    contaApontadaAoSocio, lerVinculosSocioConta, contratoNaPorta,
     ...reguaIdPessoa,
   });
   return { escritas, arquivos, rpcs, async call(body: any) {

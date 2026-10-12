@@ -5,7 +5,7 @@
  * contrato antigo que não pode ser apagado nem travar a importação.
  * Dados fictícios: o repositório é público. */
 import { describe, expect, it } from "vitest";
-import { cpfPendente, cpfValido, ehFuncaoInstalacao, exigeCpf, idDoContrato, problemaCpfFreelancer, MSG_CPF_INSTALADOR, MSG_CPF_INVALIDO } from "../../supabase/functions/_shared/freelancerContrato";
+import { cpfPendente, cpfValido, ehFuncaoInstalacao, exigeCpf, idDoContrato, problemaCpfFreelancer, MSG_CPF_INSTALADOR, MSG_CPF_INVALIDO, AVISO_CPF_MANTIDO, AVISO_CPF_PENDENTE, AVISO_CPF_RECUSADO_MANTIDO, AVISO_CPF_RECUSADO_SEM } from "../../supabase/functions/_shared/freelancerContrato";
 import { servidorRh } from "../test/servidorRh";
 
 const CPF_OK = "300.005.987-39";   // fictício, verificadores certos
@@ -42,19 +42,41 @@ describe("régua do CPF do contrato de freelancer", () => {
   });
 });
 
+/* A porta de dados recebe a gravação da FILA do aparelho: ela nunca responde
+ * 4xx para a régua do CPF (o 422 prendia a fila e deixava o contrato só no
+ * aparelho). Grava sem o que a régua recusa, com aviso, e devolve o registro. */
+const gravadoNoBanco = (s: ReturnType<typeof servidorRh>) =>
+  s.rpcs.filter((x) => x.nome === "rh_gravar_seguro").map((x) => x.args.p_registro as Record<string, unknown>);
+
 describe("porta de dados do RH: contrato de instalador sem CPF", () => {
-  it("é recusado sem gravar, com o motivo", async () => {
+  it("é salvo como está, fica com CPF pendente, e a resposta avisa e devolve o registro", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH" });
-    const r = await s.call({ action: "upsert", colecao: "freelancers", registro: contrato() });
-    expect(r.status).toBe(422);
-    expect(r.body.erro).toBe(MSG_CPF_INSTALADOR);
-    expect(s.rpcs.filter((x) => x.nome === "rh_gravar_seguro")).toHaveLength(0);
+    const r = await s.call({ action: "upsert", colecao: "freelancers", registro: contrato({ valor: 700 }) });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBe(AVISO_CPF_PENDENTE);
+    const [gravou] = gravadoNoBanco(s);
+    expect(gravou).toMatchObject({ id: "fl-1", funcao: "Instalador", valor: 700 });
+    expect(cpfPendente(gravou)).toBe(true);
+    expect(gravou.idPessoa).toBeUndefined();
+    expect(r.body.registro).toMatchObject({ id: "fl-1", valor: 700 });
   });
-  it("com CPF válido, grava", async () => {
+  it("com CPF válido, grava sem aviso e sem devolver o registro", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH" });
     const r = await s.call({ action: "upsert", colecao: "freelancers", registro: contrato({ cpf: CPF_OK }) });
     expect(r.status).toBe(200);
+    expect(r.body.aviso).toBeUndefined();
+    expect(r.body.registro).toBeUndefined();
     expect(s.rpcs.filter((x) => x.nome === "rh_gravar_seguro")).toHaveLength(1);
+  });
+  it("contrato novo com CPF que não confere: grava sem ele, guarda o digitado em cpfRecusado e não dá ID", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH" });
+    const r = await s.call({ action: "upsert", colecao: "freelancers", registro: contrato({ cpf: CPF_ERRADO }) });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBe(`${AVISO_CPF_RECUSADO_SEM} ${AVISO_CPF_PENDENTE}`);
+    const [gravou] = gravadoNoBanco(s);
+    expect(gravou.cpf).toBe("");
+    expect(gravou.cpfRecusado).toBe(CPF_ERRADO);
+    expect(gravou.idPessoa).toBeUndefined();
   });
   it("encerrar o contrato antigo sem CPF continua possível", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH" });
@@ -110,23 +132,55 @@ describe("porta de dados do RH: barra só o que cria ou piora a falta de CPF", (
     const inst = contrato({ cpf: CPF_ERRADO });
     expect(problemaCpfFreelancer({ ...inst, situacao: "encerrado" }, inst, { edicaoManual: true })).toBe("");
   });
-  it("o que piora continua barrado: CPF trocado errado, instalador reativado sem CPF, Designer que vira instalador sem CPF", async () => {
+  it("o que piora não entra no banco, e nada do resto se perde: CPF válido trocado por um errado", async () => {
+    const valido = contrato({ cpf: CPF_OK, idPessoa: "300005" });
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: gravado(valido) });
+    const r = await s.call({ action: "upsert", colecao: "freelancers", registro: { ...valido, cpf: CPF_ERRADO, valor: 1200 } });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBe(AVISO_CPF_RECUSADO_MANTIDO);
+    const [gravou] = gravadoNoBanco(s);
+    expect(gravou).toMatchObject({ cpf: CPF_OK, cpfRecusado: CPF_ERRADO, valor: 1200, idPessoa: "300005" });
+    expect(r.body.registro).toMatchObject({ cpf: CPF_OK, cpfRecusado: CPF_ERRADO });
+  });
+  it("envio sem CPF não apaga o CPF válido do instalador", async () => {
     const valido = contrato({ cpf: CPF_OK });
-    expect((await upsert(valido, { ...valido, cpf: CPF_ERRADO })).r.status).toBe(422);
+    const { r } = await upsert(valido, { ...valido, cpf: "", valor: 50 });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBe(AVISO_CPF_MANTIDO);
+    expect(r.body.registro).toMatchObject({ cpf: CPF_OK, valor: 50 });
+  });
+  it("instalador reativado sem CPF e Designer que vira instalador: salvos como digitados, com CPF pendente e aviso", async () => {
     const encerrado = contrato({ situacao: "encerrado" });
     const reativa = await upsert(encerrado, { ...encerrado, situacao: "ativo" });
-    expect(reativa.r.status).toBe(422);
-    expect(reativa.r.body.erro).toBe(MSG_CPF_INSTALADOR);
-    expect(reativa.gravou).toBe(0);
+    expect(reativa.r.status).toBe(200);
+    expect(reativa.r.body.aviso).toBe(AVISO_CPF_PENDENTE);
+    expect(reativa.r.body.registro).toMatchObject({ situacao: "ativo" });
+    expect(reativa.gravou).toBe(1);
     const designer = contrato({ funcao: "Designer" });
-    expect((await upsert(designer, { ...designer, funcao: "Instalador" })).r.status).toBe(422);
+    const virou = await upsert(designer, { ...designer, funcao: "Instalador" });
+    expect(virou.r.status).toBe(200);
+    expect(virou.r.body.registro).toMatchObject({ funcao: "Instalador" });
+    // CPF errado que já estava gravado: não é "recusado" de novo, só pendente.
     const designerDv = contrato({ funcao: "Designer", cpf: CPF_ERRADO });
-    expect((await upsert(designerDv, { ...designerDv, funcao: "Instalador" })).r.body.erro).toBe(MSG_CPF_INVALIDO);
+    const virouDv = await upsert(designerDv, { ...designerDv, funcao: "Instalador" });
+    expect(virouDv.r.body.aviso).toBe(AVISO_CPF_PENDENTE);
+    expect(virouDv.r.body.registro.cpfRecusado).toBeUndefined();
   });
-  it("contrato apagado (lápide) que volta conta como novo", async () => {
+  it("contrato apagado (lápide) que volta conta como novo: salvo com CPF pendente", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [{ colecao: "freelancers", id: "fl-1", registro: contrato(), apagado: true }] });
     const r = await s.call({ action: "upsert", colecao: "freelancers", registro: contrato() });
-    expect(r.status).toBe(422);
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBe(AVISO_CPF_PENDENTE);
+  });
+  it("o CPF certo resolve o recusado: o lembrete sai do contrato", async () => {
+    const antes = contrato({ cpfRecusado: CPF_ERRADO });
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: gravado(antes) });
+    const r = await s.call({ action: "upsert", colecao: "freelancers", registro: { ...antes, cpf: CPF_OK } });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBeUndefined();
+    const [gravou] = gravadoNoBanco(s);
+    expect(gravou.cpf).toBe(CPF_OK);
+    expect("cpfRecusado" in gravou).toBe(false);
   });
   it("na tela, abrir o contrato de instalador sem CPF e salvar pede o CPF", () => {
     const antes = contrato();

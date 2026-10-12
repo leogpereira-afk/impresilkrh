@@ -89,3 +89,65 @@ export function idDoContrato(f: ContratoMinimo | null | undefined): string {
   const cpf = soDigitosCpf(f?.cpf);
   return cpfValido(cpf) ? cpf.slice(0, 6) : "";
 }
+
+/* NA GRAVAÇÃO QUE PASSA PELA FILA, A RÉGUA NÃO RECUSA: AJUSTA E AVISA
+ * (12/10/2026). A porta respondia 422 com o motivo acima. Na tela isso não
+ * acontece (ela confere antes, com a mesma régua), mas a gravação que chega
+ * pela fila do aparelho (aba com o bundle antigo, cópia local diferente do
+ * banco, contrato apagado em outro aparelho) não tem quem leia o 422: o envio
+ * voltava a cada ciclo, contava 25 tentativas e ia para a caixa de falhas, e
+ * o contrato digitado ficava só no aparelho, diferente do banco.
+ *
+ * Regra da casa: nunca 4xx em gravação da fila. O contrato é salvo com tudo o
+ * que foi digitado, MENOS o que a régua recusa, e o aviso diz o que ficou de
+ * fora. O que a régua protege continua protegido:
+ *   - CPF novo ou trocado que não confere não vai para o campo `cpf` (viraria
+ *     o ID de outra pessoa): fica o CPF que estava gravado (ou nenhum, no
+ *     contrato novo). O número digitado não some: vai para `cpfRecusado`, que
+ *     a tela de Freelancers mostra no contrato para alguém conferir.
+ *   - Envio sem CPF de um instalador que tinha CPF válido no banco não apaga
+ *     o CPF: fica o gravado.
+ *   - Instalador que continua sem CPF válido (novo, reativado, ou que virou
+ *     instalador) é salvo como está e fica com "CPF pendente", o mesmo estado
+ *     do contrato antigo: sem ID, fora do ponto no PCP até alguém preencher.
+ *     Desfazer a função ou a situação seria descartar o que foi digitado.
+ * O aparelho adota o contrato que o servidor gravou (a resposta traz o
+ * registro), e o aviso aparece para quem está com o app aberto. */
+export const AVISO_CPF_RECUSADO_MANTIDO =
+  "O CPF enviado no contrato de freelancer não confere e não foi gravado: ficou o CPF que já estava. O número digitado ficou guardado no contrato para conferir em Freelancers.";
+export const AVISO_CPF_RECUSADO_SEM =
+  "O CPF enviado no contrato de freelancer não confere e não foi gravado. O número digitado ficou guardado no contrato para conferir em Freelancers.";
+export const AVISO_CPF_MANTIDO =
+  "O contrato de freelancer chegou sem o CPF: o CPF que estava gravado foi mantido.";
+export const AVISO_CPF_PENDENTE =
+  "Contrato de instalador salvo sem CPF válido: ele fica com CPF pendente, e o PCP não dá o ponto a essa pessoa até alguém preencher o CPF (ou encerrar o contrato) em Freelancers.";
+
+type ContratoNaPorta = Record<string, unknown> & ContratoMinimo;
+
+/** O contrato como a porta de dados grava, e o aviso do que ficou de fora
+ *  (null quando nada mudou). Nunca recusa: ver o comentário acima. */
+export function contratoNaPorta(
+  f: ContratoNaPorta,
+  atual: ContratoMinimo | null | undefined = null,
+): { registro: ContratoNaPorta; aviso: string | null } {
+  const registro: ContratoNaPorta = { ...f };
+  if (!problemaCpfFreelancer(f, atual)) {
+    // O CPF que estava recusado foi resolvido: o lembrete sai.
+    if ("cpfRecusado" in registro && cpfValido(registro.cpf)) delete registro.cpfRecusado;
+    return { registro, aviso: null };
+  }
+  const avisos: string[] = [];
+  const digitado = soDigitosCpf(f.cpf);
+  const cpfGravado = atual?.cpf;
+  if (digitado && !cpfValido(digitado) && digitado !== soDigitosCpf(cpfGravado)) {
+    const temAnterior = !!soDigitosCpf(cpfGravado);
+    registro.cpf = temAnterior ? cpfGravado : "";
+    registro.cpfRecusado = String(f.cpf);
+    avisos.push(temAnterior ? AVISO_CPF_RECUSADO_MANTIDO : AVISO_CPF_RECUSADO_SEM);
+  } else if (!digitado && cpfValido(cpfGravado)) {
+    registro.cpf = cpfGravado;
+    avisos.push(AVISO_CPF_MANTIDO);
+  }
+  if (cpfPendente(registro)) avisos.push(AVISO_CPF_PENDENTE);
+  return { registro, aviso: avisos.join(" ") || null };
+}

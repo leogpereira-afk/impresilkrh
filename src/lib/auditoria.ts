@@ -106,7 +106,7 @@ const MASCARADOS = new Set([
   // segredo puro
   "senhaHash", "senha", "token", "sessionSecret", "hash",
   // dado pessoal protegido no servidor (CAMPOS_SENSIVEIS do sync)
-  "cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial",
+  "cpf", "cpfRecusado", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial",
   "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep",
   "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia", "dataNascimento",
   // o ID da pessoa sai do CPF e chega só a quem vê o CPF (CAMPOS_SENSIVEIS do

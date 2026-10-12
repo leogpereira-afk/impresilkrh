@@ -416,6 +416,24 @@ describe("Freelancers: ficha no quadro sem contrato", () => {
     expect(estado.criar).not.toHaveBeenCalled();
   });
 
+  it("CPF recusado na fila (F07): a linha mostra, o formulário diz o número, e salvar pela tela tira o lembrete", () => {
+    const kR = contrato({ id: "k-r", nome: "Iota Recusado Fictício", funcao: "Instalador", cpf: "90000200263", cpfRecusado: "900.002.002-64" });
+    estado.colecoes = { freelancers: [kR] };
+    montar(<Freelancers />, "/freelancers");
+    const linha = linhaCom("Iota Recusado Fictício")!;
+    expect(linha.textContent).toContain("CPF recusado");
+    act(() => [...linha.querySelectorAll("button")].find((b) => b.textContent?.includes("Editar"))!.click());
+    expect(document.body.textContent).toContain("900.002.002-64");
+    expect(document.body.textContent).toContain("não foi gravado");
+    act(() => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Salvar")!.click());
+    expect(estado.toast.mock.calls.filter(([, tipo]) => tipo === "erro")).toEqual([]);
+    expect(estado.atualizar).toHaveBeenCalledTimes(1);
+    const [id, dados] = estado.atualizar.mock.calls[0];
+    expect(id).toBe("k-r");
+    expect(dados).toMatchObject({ cpf: "90000200263" });
+    expect(dados.cpfRecusado).toBeUndefined();
+  });
+
   it("quem chega pela linha de Colaboradores vê o contrato destacado", () => {
     montar(<Freelancers />, "/freelancers?contrato=k-b");
     expect(el.querySelector("#contrato-k-b")!.className).toContain("bg-amber-50");

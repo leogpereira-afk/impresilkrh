@@ -211,7 +211,14 @@ export async function trySync(): Promise<void> {
                pull. Edição seguinte manda o registro com ele, e o servidor o
                preserva de qualquer jeito (campo ausente não apaga). */
             const idGravadoAgora = typeof resp.idPessoa === "string" && /^\d{6}$/.test(resp.idPessoa) ? resp.idPessoa : null;
-            aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...r, _rhRev: resp.versao, ...(idGravadoAgora ? { idPessoa: idGravadoAgora } : {}) } : r)));
+            /* O servidor gravou outra coisa do que foi enviado (contrato de
+               freelancer ajustado pela régua do CPF, F07) e devolveu o que
+               ficou no banco: a cópia do aparelho passa a ser essa. Se já há
+               outra edição do mesmo registro na fila, ela fica por cima e o
+               servidor confere de novo quando ela subir. */
+            const doServidor = resp.registro && typeof resp.registro === "object" && !Array.isArray(resp.registro) && resp.registro.id === acao.id
+              && !lerFila().some(a => mesma(a, acao) && a.mutationId !== acao.mutationId) ? resp.registro as Reg : null;
+            aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...(doServidor ?? r), _rhRev: resp.versao, ...(idGravadoAgora ? { idPessoa: idGravadoAgora } : {}) } : r)));
           }
           gravarFila(lerFila().filter(a => !(mesma(a, acao) && a.mutationId === acao.mutationId)).map(a => mesma(a, acao) && Number.isSafeInteger(resp.versao) ? { ...a, baseVersao: resp.versao } : a));
           // O servidor gravou, mas descartou parte do que foi enviado (ex.: vínculos

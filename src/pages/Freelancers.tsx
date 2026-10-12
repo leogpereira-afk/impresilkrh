@@ -188,7 +188,10 @@ export default function Freelancers() {
     if (erroCpf) return toast(erroCpf, "erro");
     const valor = valorTexto.trim() ? parseBRL(valorTexto) : undefined;
     if (valorTexto.trim() && (valor == null || !Number.isFinite(valor) || /[-−]/.test(valorTexto))) return toast("Informe um valor válido, como 1.250,50.", "erro");
-    const dados = { ...form, valor: valor ?? undefined, nome, apelido, situacao: form.situacao ?? "ativo" };
+    /* O CPF RECUSADO (que chegou pela fila sem conferir) estava à vista no
+       formulário: quem salva por aqui já o viu, e o campo CPF passou pela
+       régua acima. O lembrete sai. */
+    const dados = { ...form, cpfRecusado: undefined, valor: valor ?? undefined, nome, apelido, situacao: form.situacao ?? "ativo" };
     if (form.id) { atualizar(form.id, dados); toast("Contrato atualizado."); }
     else { criar(dados); toast("Freelancer cadastrado."); }
     const colide = idRepetidoCom(dados);
@@ -326,6 +329,7 @@ export default function Freelancers() {
                               {f.apelido && <div className="font-mono text-xs text-slate-400">{f.apelido}</div>}
                               {(idDoFreelancer(f) || podeEditar) && <div className="text-xs"><SeloIdPessoa cadastro={f} colecao="freelancers" podeTrocar={podeEditar} compacto /></div>}
                               {cpfPendente(f) && <Badge variant="warning">CPF pendente</Badge>}
+                              {f.cpfRecusado && <Badge variant="warning">CPF recusado</Badge>}
                               {idRepetidoCom(f) && <Badge variant="danger">ID repetido</Badge>}
                             </div>
                           </div>
@@ -395,6 +399,12 @@ export default function Freelancers() {
             <Campo label="CPF" obrigatorio={exigeCpf(form)}
               hint={exigeCpf(form) ? "obrigatório para instalador: o ID de 6 dígitos do PCP sai daqui" : undefined}>
               <Input value={form.cpf ?? ""} inputMode="numeric" onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
+              {form.cpfRecusado && (
+                <p className="mt-1 text-xs text-amber-700">
+                  Chegou de um aparelho o CPF <b>{form.cpfRecusado}</b>, que não confere (os dois últimos dígitos não
+                  batem) e por isso não foi gravado. Confira o número com a pessoa e digite o certo aqui.
+                </p>
+              )}
             </Campo>
             <Campo label="CNPJ" hint="quando presta como empresa">
               <Input value={form.cnpj ?? ""} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} />

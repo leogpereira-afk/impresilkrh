@@ -12,7 +12,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json, preflight } from "../_shared/cors.ts";
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
-import { problemaCpfFreelancer } from "../_shared/freelancerContrato.ts";
+import { contratoNaPorta } from "../_shared/freelancerContrato.ts";
 // Numa linha só: o harness dos testes (src/test/servidorRh.ts) apaga as linhas de import e injeta os símbolos.
 import { AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, avisoSemId, comCamposDoId, cpfDoCadastro, cpf11, enviouOutroId, idGravado, idParaCadastro, idValido, outraPessoaComId, temIdGravavel, type CadastroComId } from "../_shared/idPessoa.ts";
 
@@ -49,7 +49,7 @@ const mesmasEntregas = (enviada: unknown, guardada: unknown) =>
 const entregasGuardadas = (linha: { apagado?: boolean; registro?: Record<string, unknown> } | null | undefined): unknown[] =>
   linha && !linha.apagado && Array.isArray(linha.registro?.entregas) ? linha.registro!.entregas as unknown[] : [];
 const AVISO_ENTREGAS = "Os vínculos de O.S. enviados foram descartados: a participação é lançada dentro da O.S., no PCP. O restante foi salvo.";
-const CAMPOS_SENSIVEIS = ["cpf", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia",
+const CAMPOS_SENSIVEIS = ["cpf", "cpfRecusado", "salario", "adicionais", "refMin", "refMax", "telefone", "matriculaEsocial", "enderecoRua", "enderecoNumero", "enderecoComplemento", "enderecoBairro", "enderecoCep", "conjugeNome", "conjugeTelefone", "filhos", "contatoEmergencia",
   /* PONTOS FORTES E DE MELHORIA sao AVALIACAO sobre a pessoa, escrita pelo RH.
      Sem entrar aqui, a colecao `colaboradores` (nivel "todos") entregaria a
      todos os 33 logados o que o RH escreveu sobre os pontos fracos de cada
@@ -544,24 +544,28 @@ Deno.serve(async (req) => {
         if (!ehAdmin && (colecao === "alteracoes" || colecao === "acessos") && atual) return json({ erro: "O histórico existente não pode ser reescrito." }, 403);
         /* CONTRATO DE INSTALADOR PRECISA DE CPF (F07 do PCP, 29/09/2026): o
            PCP lê esta coleção e a pessoa lá é o ID que sai do CPF. A mesma
-           régua da tela (Freelancers.tsx), para cliente velho ou envio por
-           fora da tela. Barra só o que cria ou piora a falta, comparando com
-           o contrato gravado (`atual`): o que já está no banco sem CPF aceita a
-           gravação que não mexe no CPF, na função nem na situação (limpar o
-           responsável de ficha apagada, renovar a data) e segue pendente na
-           tela. A importação de retrato não é barrada. Lápide não tem o que
-           conferir. */
-        if (colecao === "freelancers" && !registro._apagado) {
-          const gravado = atual && !atual.apagado ? (atual.registro as Record<string, unknown>) : null;
-          const erroCpf = problemaCpfFreelancer(registro as Record<string, unknown>, gravado);
-          if (erroCpf) return json({ erro: erroCpf }, 422);
-        }
+           régua da tela (Freelancers.tsx), comparando com o contrato gravado
+           (`atual`). A tela recusa antes de enfileirar; aqui a gravação vem
+           da fila do aparelho e NÃO é recusada (o 422 prendia a fila e deixava
+           o contrato digitado só no aparelho): o contrato é salvo sem o que a
+           régua recusa (CPF que não confere vai para `cpfRecusado`; envio sem
+           CPF não apaga o CPF válido), com aviso, e a resposta traz o registro
+           gravado para o aparelho adotar. Ver contratoNaPorta em
+           _shared/freelancerContrato.ts. A importação de retrato não passa por
+           aqui. Lápide não tem o que conferir. */
         let gravar: Record<string, unknown> = registro;
         let aviso: string | null = null;
+        let devolverRegistro = false;
+        if (colecao === "freelancers" && !registro._apagado) {
+          const gravado = atual && !atual.apagado ? (atual.registro as Record<string, unknown>) : null;
+          const r = contratoNaPorta(registro as Record<string, unknown>, gravado);
+          gravar = r.registro; aviso = r.aviso; devolverRegistro = !!r.aviso;
+        }
         let idDoCadastro: string | null = null;
         if (temIdGravavel(colecao)) {
-          const r = await idNaGravacao(colecao, registro as Record<string, unknown>, atual);
-          gravar = r.registro; aviso = r.aviso; idDoCadastro = r.idPessoa;
+          const r = await idNaGravacao(colecao, gravar, atual);
+          gravar = r.registro; idDoCadastro = r.idPessoa;
+          if (r.aviso) aviso = [aviso, r.aviso].filter(Boolean).join(" ");
         }
         if (colecao === "performanceCiclos") {
           const guardadas = entregasGuardadas(atual);
@@ -577,6 +581,9 @@ Deno.serve(async (req) => {
         // O ID que ficou gravado volta na resposta: a cópia do aparelho o recebe
         // sem esperar o próximo pull (só quem grava ficha e contrato é o RH).
         if (idDoCadastro && resultado && !resultado.conflito) resultado.idPessoa = idDoCadastro;
+        // O contrato ajustado pela régua da F07 volta inteiro: o aparelho troca a
+        // cópia dele pelo que ficou no banco (sem o CPF recusado), sem esperar o pull.
+        if (devolverRegistro && resultado && !resultado.conflito) resultado.registro = gravar;
         return json(resultado);
       }
 
