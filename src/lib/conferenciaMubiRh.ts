@@ -22,7 +22,7 @@
 // gravado o errado em silêncio.
 // ============================================================================
 import { idDaPessoa, idPessoa } from "./identidade";
-import { idsAnteriores } from "../../supabase/functions/_shared/idPessoa";
+import { idGravado as idGravadoNaFicha, idsAnteriores } from "../../supabase/functions/_shared/idPessoa";
 
 export interface LinhaMubisys {
   nome: string;
@@ -200,13 +200,25 @@ export function conferirComMubisys(fichas: FichaRh[], leitura: LeituraMubisys): 
   const porId = new Map<string, FichaRh>();
   const porCpf = new Map<string, FichaRh>();
   const porNome = new Map<string, FichaRh>();
+  /* Casa por ID só quando o ID é de UMA ficha (como o mapaDeIds; segunda
+     revisão do 36a7427). Conta o ID que vale e os anteriores de cada ficha, e
+     também o começo do CPF de quem não tem ID gravado (a ficha marcada
+     inclusive): um começo de CPF que aponta para duas fichas não decide. */
+  const idsDaFicha = (f: FichaRh) => [...new Set([idDaPessoa(f), ...idsAnteriores(f)].filter((x): x is string => !!x))];
+  const contagem = new Map<string, number>();
+  for (const f of fichas) {
+    const chaves = new Set(idsDaFicha(f));
+    const doCpf = idPessoa(f.cpf);
+    if (doCpf && !idGravadoNaFicha(f)) chaves.add(doCpf);
+    for (const k of chaves) contagem.set(k, (contagem.get(k) ?? 0) + 1);
+  }
+  for (const f of fichas) for (const id of idsDaFicha(f)) if (contagem.get(id) === 1) porId.set(id, f);
   for (const f of fichas) {
     /* O ID que vale (revisão do 80e7d8f): o gravado; sem ele, o do CPF, a não
        ser com a marca de bloqueio (o ID do CPF é de outra pessoa); e os IDs
        anteriores casam com a mesma pessoa. O CPF inteiro casa primeiro. */
     const cpf = soDigitos(f.cpf);
     if (cpf.length === 11 && !porCpf.has(cpf)) porCpf.set(cpf, f);
-    for (const id of [idDaPessoa(f), ...idsAnteriores(f)]) if (id && !porId.has(id)) porId.set(id, f);
     const n = norm(f.nome);
     if (n && !porNome.has(n)) porNome.set(n, f);
   }

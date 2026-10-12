@@ -192,19 +192,18 @@ export function outraPessoaComId(
   cpfAlvo: string,
   alvo: { colecao: string; id: string },
   outros: CadastroComId[],
-  /** IDs que o alvo já tem por direito (o herdado do mesmo CPF, os anteriores
-   *  dele, o devolvido pelo admin): a ficha MARCADA não os segura contra ele. */
-  doAlvo: string[] = [],
 ): (CadastroComId & { anterior?: boolean }) | null {
   for (const o of outros) {
     if ((!o.apagado && mesmaChave(o, alvo)) || devolvida(o)) continue;
     /* O ID que o cadastro segura: o gravado; sem ele, o do CPF, também na
        lápide sem ID gravado (quem saiu antes de 12/10 já estava por ID nas O.S.
-       do PCP desde 29/09) e também na ficha marcada (o ID do CPF dela não é
-       dela, mas também não é de uma terceira pessoa; revisão do 80e7d8f). */
+       do PCP desde 29/09). A ficha MARCADA não segura o ID do CPF contra
+       ninguém: ele não é dela, e o dono se segura sozinho (vivo, lápide ou
+       anterior). Segurar contra terceiros prendia o próprio dono quando o
+       direito dele vinha só do CPF (segunda revisão do 36a7427). Os IDs
+       anteriores dela, se houver, continuam dela. */
     const gravado = idGravado(o.registro);
-    const segura = gravado || cpfDoCadastro(o.colecao, o.registro).slice(0, 6);
-    if (!gravado && idBloqueado(o.registro) && !o.apagado && doAlvo.includes(id)) continue;
+    const segura = gravado || (idBloqueado(o.registro) ? "" : cpfDoCadastro(o.colecao, o.registro).slice(0, 6));
     const hoje = segura === id;
     const antes = !hoje && idsAnteriores(o.registro).includes(id);
     if (!hoje && !antes) continue;
@@ -243,7 +242,7 @@ export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[], lap
   }
   if (herdaveis.length > 1) return { idPessoa: "", motivo: "mesmo-cpf-com-ids-diferentes" };
   const id = herdaveis[0] ?? cpf.slice(0, 6);
-  const outro = outraPessoaComId(id, cpf, alvo, outros, herdaveis);
+  const outro = outraPessoaComId(id, cpf, alvo, outros);
   if (outro) {
     return { idPessoa: "", motivo: "id-de-outra-pessoa", outro: { colecao: outro.colecao, id: outro.id, nome: String(outro.registro.nome ?? ""), ...(outro.anterior ? { anterior: true } : {}), ...(outro.apagado ? { apagado: true } : {}) } };
   }

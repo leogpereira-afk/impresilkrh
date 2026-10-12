@@ -14,7 +14,7 @@ import { json, preflight } from "../_shared/cors.ts";
 import { contaApontadaAoSocio, lerVinculosSocioConta } from "../_shared/socioConta.ts";
 import { contratoNaPorta } from "../_shared/freelancerContrato.ts";
 // Numa linha só: o harness dos testes (src/test/servidorRh.ts) apaga as linhas de import e injeta os símbolos.
-import { AVISO_CENTRAL_ID_NOVO, AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, anterioresDe, anterioresDoCpf, avisoSemId, comAnteriores, comBloqueio, comCamposDoId, cpfDoCadastro, ehLinhaDeArquivo, semBloqueioComId, cpf11, enviouOutroId, idBloqueado, idDoArquivoDaLapide, idGravado, idParaCadastro, idValido, idsAnteriores, juntarAnteriores, cpfMascarado, guardaIdGravado, lapideGuardaId, mesmaPessoaDaLapide, outraPessoaComId, temIdGravavel, type CadastroComId, type IdAnterior } from "../_shared/idPessoa.ts";
+import { AVISO_CENTRAL_ID_NOVO, AVISO_ID_ANTIGO, AVISO_ID_MANTIDO, CAMPOS_DO_ID, MOTIVO_SEM_ID, anterioresDe, anterioresDoCpf, avisoSemId, comAnteriores, comBloqueio, comCamposDoId, cpfDoCadastro, ehLinhaDeArquivo, semBloqueioComId, cpf11, enviouOutroId, idBloqueado, idDoArquivoDaLapide, idGravado, idParaCadastro, idQueVale, idValido, idsAnteriores, juntarAnteriores, cpfMascarado, guardaIdGravado, lapideGuardaId, mesmaPessoaDaLapide, outraPessoaComId, temIdGravavel, type CadastroComId, type IdAnterior } from "../_shared/idPessoa.ts";
 
 const PAGINA = 150;
 
@@ -949,21 +949,24 @@ Deno.serve(async (req) => {
           const { colecao, id, valor: novo, motivo, c } = p;
           const antes = idGravado(c.registro);
           if (antes === novo) return json({ erro: `O ID gravado já é ${novo}.` }, 409);
-          const outro = outraPessoaComId(novo, cpf11(c.registro.cpf), c, regua, idsAnteriores(c.registro));
+          const outro = outraPessoaComId(novo, cpf11(c.registro.cpf), c, regua);
           if (outro) return json({ erro: quemTemOId(outro, novo) }, 409);
           // O ID que sai fica com a pessoa: vai para os IDs anteriores (com a
           // data; o motivo fica só no histórico) e não é dado a mais ninguém.
           const agora = agoraIso();
           // A lista nunca traz o ID de hoje (voltar a um ID anterior o tira dela).
-          const anteriores = (antes
-            ? juntarAnteriores(anterioresDe(c.registro), [{ idPessoa: antes, em: agora, por: meuId, como: "troca" }])
+          // Sem ID gravado, o que sai é o ID que valia (o do CPF, sem a marca): o PCP
+          // já usava esse ID nas O.S. (segunda revisão do 36a7427).
+          const queValia = antes || idQueVale(colecao, c.registro);
+          const anteriores = (queValia
+            ? juntarAnteriores(anterioresDe(c.registro), [{ idPessoa: queValia, em: agora, por: meuId, como: "troca" }])
             : anterioresDe(c.registro)).filter((a) => a.idPessoa !== novo);
           const r = await rpc("rh_gravar_seguro", {
             p_colecao: colecao, p_id: id, p_versao: c.versao, p_mutacao: null, p_apagar: false,
             p_registro: comAnteriores({ ...c.registro, idPessoa: novo, idPessoaEm: agora, idPessoaPor: meuId, idPessoaMotivo: motivo }, anteriores),
           });
           if (!r?.ok) return json({ erro: "O cadastro mudou em outro aparelho. Atualize a tela e tente de novo." }, 409);
-          const falhasIrmaos = antes ? await espalharAnteriores(c, anteriores) : [];
+          const falhasIrmaos = queValia ? await espalharAnteriores(c, anteriores) : [];
           const historico = await registrarNoHistorico({
             acao: "ALTEROU", recurso: `${colecao === "freelancers" ? "Contrato de freelancer" : "Colaborador"}: ${nomeDe(c)}`,
             colecao, registroId: id, colaboradorId: colecao === "colaboradores" ? id : null,
@@ -1025,7 +1028,7 @@ Deno.serve(async (req) => {
               : "A devolução é só para o cadastro que ficou sem ID porque o ID do CPF era de outra pessoa. Grave o ID pelo botão das fichas antigas." }, 409);
           }
           // Quem mais tem (ou teve) o ID, fora as linhas de arquivo desta linha: recusa.
-          const outro = outraPessoaComId(valor, cpf11(c.registro.cpf), c, regua.filter((o) => !daLinha.includes(o)), [valor]);
+          const outro = outraPessoaComId(valor, cpf11(c.registro.cpf), c, regua.filter((o) => !daLinha.includes(o)));
           if (outro) return json({ erro: quemTemOId(outro, valor) }, 409);
           const agora = agoraIso();
           if (!jaDevolvido) {
@@ -1071,7 +1074,7 @@ Deno.serve(async (req) => {
           if (!hoje) return json({ erro: "Grave primeiro o ID de hoje deste cadastro; depois registre o anterior." }, 409);
           if (anterior === hoje) return json({ erro: `${anterior} é o ID de hoje deste cadastro, não um anterior.` }, 409);
           if (idsAnteriores(c.registro).includes(anterior)) return json({ erro: `O ID ${anterior} já está entre os IDs anteriores deste cadastro.` }, 409);
-          const outro = outraPessoaComId(anterior, cpf11(c.registro.cpf), c, regua, [anterior]);
+          const outro = outraPessoaComId(anterior, cpf11(c.registro.cpf), c, regua);
           if (outro) return json({ erro: quemTemOId(outro, anterior) }, 409);
           const anteriores = juntarAnteriores(anterioresDe(c.registro), [{ idPessoa: anterior, em: agoraIso(), por: meuId, como: "registro" }]);
           const r = await rpc("rh_gravar_seguro", {
