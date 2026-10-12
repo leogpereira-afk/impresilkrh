@@ -122,12 +122,20 @@ export function outraPessoaComId(
 
 /** Que ID um cadastro SEM o campo deve receber, olhando os outros cadastros
  *  vivos (fichas e contratos). Não olha o próprio `idPessoa`: quem chama decide
- *  se o cadastro já tem um (e aí ele não muda). */
-export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[]): DecisaoId {
+ *  se o cadastro já tem um (e aí ele não muda).
+ *
+ *  `lapide` é o cadastro apagado que esta gravação revive (mesma coleção, mesmo
+ *  id). Reviver conta como cadastro que NASCE: o id da linha pode ser o mesmo
+ *  para outra pessoa (o Organograma cria a ficha com id = slug do nome, então
+ *  um homônimo cai na lápide de quem saiu). O ID da lápide só entra como o ID
+ *  de um cadastro do mesmo CPF (o CPF enviado igual ao da lápide), e passa pela
+ *  mesma conferência contra os vivos; sem CPF, não há ID. */
+export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[], lapide?: Reg): DecisaoId {
   const cpf = cpfDoCadastro(alvo.colecao, alvo.registro);
   if (!cpf) return { idPessoa: "", motivo: "sem-cpf" };
   const mesmos = outros.filter((o) => !mesmaChave(o, alvo) && cpf11(o.registro.cpf) === cpf);
-  const herdaveis = [...new Set(mesmos.map((o) => idGravado(o.registro)).filter(Boolean))];
+  const daLapide = cpf11(campo(lapide, "cpf")) === cpf ? idGravado(lapide) : "";
+  const herdaveis = [...new Set([daLapide, ...mesmos.map((o) => idGravado(o.registro))].filter(Boolean))];
   if (herdaveis.length > 1) return { idPessoa: "", motivo: "mesmo-cpf-com-ids-diferentes" };
   const id = herdaveis[0] ?? cpf.slice(0, 6);
   const outro = outraPessoaComId(id, cpf, alvo, outros);
@@ -135,8 +143,8 @@ export function idParaCadastro(alvo: CadastroComId, outros: CadastroComId[]): De
     return { idPessoa: "", motivo: "id-de-outra-pessoa", outro: { colecao: outro.colecao, id: outro.id, nome: String(outro.registro.nome ?? "") } };
   }
   if (herdaveis[0]) {
-    const de = mesmos.find((o) => idGravado(o.registro) === id)!;
-    return { idPessoa: id, herdadoDe: { colecao: de.colecao, id: de.id } };
+    const de = mesmos.find((o) => idGravado(o.registro) === id);
+    return de ? { idPessoa: id, herdadoDe: { colecao: de.colecao, id: de.id } } : { idPessoa: id };
   }
   return { idPessoa: id };
 }

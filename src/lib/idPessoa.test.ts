@@ -134,12 +134,73 @@ describe("porta de dados: o ID gravado não muda", () => {
     const p = gravacoes(s)[0].args.p_registro;
     expect(p).toMatchObject({ idPessoa: "123456", nome: "Nome Novo Fictício", idPessoaMotivo: "Gravado pelo botão do admin (cadastros antigos)" });
   });
-  it("a lápide guarda o ID, e reviver o cadastro não troca o ID", async () => {
-    const lapide = { ...gravada(), apagado: true, registro: { ...gravada().registro, _apagado: true } };
-    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapide] });
+  /* A LÁPIDE NÃO ENTREGA O ID A QUEM OCUPA A MESMA VAGA (revisão de
+     12/10/2026). Antes, reviver a lápide com OUTRO CPF levava o ID da pessoa
+     apagada: o id da linha não é a pessoa (o Organograma cria a ficha com
+     id = slug do nome, e um homônimo cai na lápide de quem saiu). Reviver
+     conta como cadastro que NASCE: o ID da lápide só volta com o mesmo CPF e
+     pela conferência contra os vivos. */
+  const lapideDe = (registro: Record<string, unknown>) => ({ colecao: "colaboradores", id: registro.id, apagado: true, rh_versao: 7, registro: { ...registro, _apagado: true } });
+  it("reviver a lápide com OUTRO CPF não leva o ID da pessoa apagada: nasce o ID do CPF novo", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro)] });
     const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f1", { cpf: CPF_B }), baseVersao: 0 });
     expect(r.status).toBe(200);
-    expect(gravacoes(s)[0].args.p_registro.idPessoa).toBe("123456");
+    expect(r.body.idPessoa).toBe("654321");
+    expect(gravacoes(s)[0].args.p_registro).toMatchObject({ cpf: CPF_B, idPessoa: "654321" });
+    expect(gravacoes(s)[0].args.p_registro.idPessoaMotivo).toBeUndefined(); // o carimbo da lápide não vem junto
+  });
+  it("reviver a lápide com o MESMO CPF devolve o ID e o carimbo de antes", async () => {
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe({ ...gravada().registro, cpf: CPF_A_CORRIGIDO })] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", registro: ficha("f1", { cpf: CPF_A_CORRIGIDO }), baseVersao: 0 });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBeUndefined();
+    expect(gravacoes(s)[0].args.p_registro).toMatchObject({ idPessoa: "123456", idPessoaEm: "2026-10-12T12:00:00.000Z", idPessoaMotivo: "Gravado pelo botão do admin (cadastros antigos)" });
+  });
+  it("homônimo criado pelo Organograma (id = slug do nome, sem CPF) revive a lápide e fica SEM ID, sem aviso", async () => {
+    const fichaApagada = { id: "fulano-de-tal", nome: "Fulano de Tal Fictício", statusId: "ativo", cpf: CPF_A, idPessoa: "123456", idPessoaEm: "2026-10-13T12:00:00.000Z" };
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(fichaApagada)] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", baseVersao: 0, registro: { id: "fulano-de-tal", nome: "Fulano de Tal Fictício", statusId: "ativo", perfil: "COLABORADOR", gestorId: "chefe" } });
+    expect(r.status).toBe(200);
+    expect(r.body.aviso).toBeUndefined();
+    expect(r.body.idPessoa).toBeUndefined();
+    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoa");
+    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoaEm");
+  });
+  it("a pessoa da lápide voltou numa ficha nova e um homônimo com outro CPF revive a lápide: não ficam dois vivos com o mesmo ID", async () => {
+    const fichaNova = linha("colaboradores", ficha("colaboradores_abc1234", { cpf: CPF_A, idPessoa: "123456" }));
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro), fichaNova] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", baseVersao: 0, registro: ficha("f1", { cpf: CPF_OUTRO_123456 }) });
+    expect(r.status).toBe(200);
+    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoa");
+    expect(r.body.aviso).toContain("outra pessoa");
+  });
+  it("mesmo CPF da lápide, mas o ID dela já é de outra pessoa viva: fica sem ID, com aviso", async () => {
+    // O admin trocou o ID de outra ficha para 123456 depois que esta foi apagada.
+    const outraViva = linha("colaboradores", ficha("f9", { cpf: CPF_C, idPessoa: "123456" }));
+    const s = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro), outraViva] });
+    const r = await s.call({ action: "upsert", colecao: "colaboradores", baseVersao: 0, registro: ficha("f1", { cpf: CPF_A }) });
+    expect(r.status).toBe(200);
+    expect(gravacoes(s)[0].args.p_registro).not.toHaveProperty("idPessoa");
+    expect(r.body.aviso).toContain("outra pessoa");
+  });
+  it("a importação de retrato não tira o ID da lápide para o item de mesmo id com outro CPF; com o mesmo CPF, devolve", async () => {
+    const outroCpf = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro)] });
+    expect((await outroCpf.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1", { cpf: CPF_B })] } })).status).toBe(200);
+    expect(outroCpf.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores[0]).not.toHaveProperty("idPessoa");
+    const semCpf = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro)] });
+    await semCpf.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1")] } });
+    expect(semCpf.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores[0]).not.toHaveProperty("idPessoa");
+    const mesmo = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro)] });
+    await mesmo.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1", { cpf: CPF_A })] } });
+    expect(mesmo.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores[0]).toMatchObject({ idPessoa: "123456", idPessoaMotivo: "Gravado pelo botão do admin (cadastros antigos)" });
+  });
+  it("a importação de retrato confere o ID da lápide contra os vivos do banco e os do próprio retrato", async () => {
+    const vivoNoBanco = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro), linha("colaboradores", ficha("f9", { cpf: CPF_C, idPessoa: "123456" }))] });
+    await vivoNoBanco.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1", { cpf: CPF_A })] } });
+    expect(vivoNoBanco.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores[0]).not.toHaveProperty("idPessoa");
+    const vivoNoRetrato = servidorRh({ perfil: "ADMIN_RH", rows: [lapideDe(gravada().registro)] });
+    await vivoNoRetrato.call({ action: "aplicarRetrato", rev: 1, dados: { colaboradores: [ficha("f1", { cpf: CPF_A }), ficha("f8", { cpf: CPF_OUTRO_123456 })] } });
+    expect(vivoNoRetrato.rpcs.find((x) => x.nome === "rh_aplicar_retrato")!.args.p_dados.colaboradores[0]).not.toHaveProperty("idPessoa");
   });
   it("cadastro antigo (com CPF, sem o campo) não ganha ID numa edição comum: espera o botão do admin", async () => {
     const s = servidorRh({ perfil: "ADMIN_RH", rows: [linha("colaboradores", ficha("f1", { cpf: CPF_A }))] });

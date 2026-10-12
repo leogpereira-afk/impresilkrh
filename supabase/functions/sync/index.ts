@@ -298,27 +298,39 @@ Deno.serve(async (req) => {
      gravação passa pela fila do aparelho, e um 4xx prenderia a ficha inteira
      (o mesmo princípio do F02 acima, e o do PCP): o que não pode entrar é
      DESCARTADO, o resto grava, e a resposta traz o `aviso`.
-       · cadastro com ID gravado (vivo ou lápide): o ID fica, venha o que vier
-         (ausente não apaga; outro valor é descartado com aviso);
-       · cadastro que nasce agora (ou revive a lápide sem ID), e o que ganha o
-         primeiro CPF: o ID nasce aqui, pela régua de idParaCadastro;
+       · cadastro VIVO com ID gravado: o ID fica, venha o que vier (ausente
+         não apaga; outro valor é descartado com aviso);
+       · cadastro que nasce agora, o que revive a lápide e o que ganha o
+         primeiro CPF: o ID nasce aqui, pela régua de idParaCadastro. A lápide
+         NÃO entrega o ID dela a quem ocupa a mesma vaga: o id da linha pode
+         ser de outra pessoa (o Organograma cria a ficha com id = slug do nome,
+         e um homônimo revive a lápide de quem saiu). O ID da lápide só volta
+         com o mesmo CPF da lápide e passando pela conferência contra os vivos;
+         sem CPF, o cadastro revivido fica sem ID;
        · cadastro antigo, com CPF e sem o campo: fica como está, até o botão do
          admin (Configurações do RH › Cadastros) gravar com a conferência. */
   const idNaGravacao = async (colecao: string, registro: Record<string, unknown>, atual: { registro?: unknown; apagado?: boolean } | null) => {
     const gravado = (atual?.registro ?? null) as Record<string, unknown> | null;
-    const guardado = idGravado(gravado);
+    const lapide = atual?.apagado ? gravado : null;
+    // Lápide sobre lápide: nada revive, o ID guardado fica como estava.
+    if (lapide && registro._apagado) return { registro: comCamposDoId(registro, lapide), idPessoa: "", aviso: null };
+    const guardado = lapide ? "" : idGravado(gravado);
     if (guardado) {
       return { registro: comCamposDoId(registro, gravado), idPessoa: guardado, aviso: enviouOutroId(registro, guardado) ? AVISO_ID_MANTIDO : null };
     }
-    const nasce = !atual || !!atual.apagado || (!cpfDoCadastro(colecao, gravado) && !!cpfDoCadastro(colecao, registro));
+    const nasce = !atual || !!lapide || (!cpfDoCadastro(colecao, gravado) && !!cpfDoCadastro(colecao, registro));
     if (!nasce || registro._apagado) {
       return { registro: comCamposDoId(registro, null), idPessoa: "", aviso: enviouOutroId(registro, "") ? AVISO_ID_ANTIGO : null };
     }
-    const decisao = idParaCadastro({ colecao, id: String(registro.id), registro }, await cadastrosVivos());
+    const decisao = idParaCadastro({ colecao, id: String(registro.id), registro }, await cadastrosVivos(), lapide);
     if (!decisao.idPessoa) {
       const aviso = decisao.motivo !== "sem-cpf" || enviouOutroId(registro, "") ? avisoSemId(decisao.motivo, decisao.outro?.nome) : null;
       if (decisao.motivo !== "sem-cpf") console.warn(`[sync] ${colecao}/${String(registro.id)} salvo sem o ID da pessoa: ${MOTIVO_SEM_ID[decisao.motivo]}`);
       return { registro: comCamposDoId(registro, null), idPessoa: "", aviso };
+    }
+    // A mesma pessoa voltou (mesmo CPF da lápide, conferida): fica o carimbo de antes.
+    if (lapide && decisao.idPessoa === idGravado(lapide)) {
+      return { registro: comCamposDoId(registro, lapide), idPessoa: decisao.idPessoa, aviso: enviouOutroId(registro, decisao.idPessoa) ? AVISO_ID_MANTIDO : null };
     }
     return {
       registro: { ...comCamposDoId(registro, null), idPessoa: decisao.idPessoa, idPessoaEm: agoraIso() },
@@ -618,29 +630,59 @@ Deno.serve(async (req) => {
         /* O ID DA PESSOA NÃO ANDA PELO RETRATO (D-004). "Enviar tudo", a
            importação e a restauração mandam a cópia do aparelho, que pode ser de
            antes do ID gravado: sem isto, restaurar um backup apagaria o ID de
-           todo mundo. Cada ficha e contrato do retrato leva os campos do ID do
-           banco (linha viva ou lápide); quem não tem ID no banco entra sem ele, e
-           o botão do admin grava depois, com a conferência. */
+           todo mundo. Cada ficha e contrato do retrato leva os campos do ID da
+           linha VIVA do banco; quem não tem ID no banco entra sem ele, e o botão
+           do admin grava depois, com a conferência. A lápide é a régua do
+           upsert: o item de mesmo id só leva o ID dela com o mesmo CPF da
+           lápide e se o ID não for de outra pessoa, entre os vivos do banco e
+           os do próprio retrato (o id da linha pode ser de outra pessoa). */
+        const juntarAviso = (msg: string) => { if (!avisoRetrato?.includes(msg)) avisoRetrato = [avisoRetrato, msg].filter(Boolean).join(" "); };
+        const lapidesComId: { col: string; indice: number; reg: Record<string, unknown>; lapide: Record<string, unknown> }[] = [];
         for (const col of ["colaboradores", "freelancers"]) {
           if (!(col in dadosDoRetrato)) continue;
           const itens = dadosDoRetrato[col];
           if (!Array.isArray(itens)) return json({ erro: "Coleções inválidas." }, 400);
           const guardados = new Map<string, Record<string, unknown>>();
+          const lapides = new Map<string, Record<string, unknown>>();
           for (let inicio = 0; ; inicio += 500) {
-            const { data, error } = await admin.from("registros").select("id, registro").eq("colecao", col).order("id").range(inicio, inicio + 499);
+            const { data, error } = await admin.from("registros").select("id, registro, apagado").eq("colecao", col).order("id").range(inicio, inicio + 499);
             if (error) throw new Error("Não foi possível conferir o ID da pessoa nos cadastros.");
-            for (const l of data ?? []) if (idGravado(l.registro)) guardados.set(l.id, l.registro as Record<string, unknown>);
+            for (const l of data ?? []) if (idGravado(l.registro)) (l.apagado ? lapides : guardados).set(l.id, l.registro as Record<string, unknown>);
             if (!data || data.length < 500) break;
           }
-          const repostos = itens.map((item: unknown) => {
+          const repostos = itens.map((item: unknown, indice: number) => {
             if (!item || typeof item !== "object" || Array.isArray(item)) return item;
             const reg = item as Record<string, unknown>;
             const doBanco = guardados.get(String(reg.id)) ?? null;
-            const msg = doBanco ? AVISO_ID_MANTIDO : AVISO_ID_ANTIGO;
-            if (enviouOutroId(reg, idGravado(doBanco)) && !avisoRetrato?.includes(msg)) avisoRetrato = [avisoRetrato, msg].filter(Boolean).join(" ");
-            return comCamposDoId(reg, doBanco);
+            const lapide = doBanco ? null : lapides.get(String(reg.id)) ?? null;
+            const reposto = comCamposDoId(reg, doBanco);
+            if (lapide && cpf11(reg.cpf) && cpf11(reg.cpf) === cpf11(lapide.cpf)) lapidesComId.push({ col, indice, reg: reposto, lapide });
+            else if (enviouOutroId(reg, idGravado(doBanco))) juntarAviso(doBanco ? AVISO_ID_MANTIDO : AVISO_ID_ANTIGO);
+            return reposto;
           });
           dadosDoRetrato = { ...dadosDoRetrato, [col]: repostos };
+        }
+        if (lapidesComId.length) {
+          const doRetrato: CadastroComId[] = [];
+          for (const col of ["colaboradores", "freelancers"]) {
+            for (const item of (dadosDoRetrato[col] as unknown[] | undefined) ?? []) {
+              if (item && typeof item === "object" && !Array.isArray(item)) doRetrato.push({ colecao: col, id: String((item as { id?: unknown }).id), registro: item as Record<string, unknown> });
+            }
+          }
+          const vivos: CadastroComId[] = [...await cadastrosVivos(), ...doRetrato];
+          for (const { col, indice, reg, lapide } of lapidesComId) {
+            const id = idGravado(lapide);
+            const outro = outraPessoaComId(id, cpf11(reg.cpf), { colecao: col, id: String(reg.id) }, vivos);
+            if (outro) {
+              console.warn(`[sync] retrato: ${col}/${String(reg.id)} entra sem o ID da lápide: ${MOTIVO_SEM_ID["id-de-outra-pessoa"]}`);
+              if (enviouOutroId(reg, "")) juntarAviso(AVISO_ID_ANTIGO);
+              continue;
+            }
+            (dadosDoRetrato[col] as unknown[])[indice] = comCamposDoId(reg, lapide);
+            // Quem vem depois na conferência já vê este ID com o dono dele.
+            const naLista = vivos.find((v) => v.colecao === col && v.id === String(reg.id));
+            if (naLista) naLista.registro = comCamposDoId(reg, lapide);
+          }
         }
         const aplicado = await rpc("rh_aplicar_retrato", { p_dados: dadosDoRetrato, p_rev: versao(body.rev), p_substituir: body.substituir === true, p_config: configDoRetrato });
         if (avisoRetrato && aplicado && !aplicado.conflito) aplicado.aviso = avisoRetrato;
