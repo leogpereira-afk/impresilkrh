@@ -64,14 +64,17 @@ export function resolverIdPCP(todas:FichaPessoa[],vinculos:unknown):(entrada:str
 }
 /** O que a projeção precisa saber das pessoas: ID -> ficha, e nome antigo -> ID. */
 export interface ContextoPessoas{porId:PessoaPorId;idDe:(entrada:string)=>string}
-/** Fichas do RH (id, nome, cpf; direto ou dentro de `registro`) -> ID -> pessoa.
+/** O ID da ficha: o gravado (`idPessoa`, D-004, não muda quando o CPF é
+ *  corrigido); sem ele, os 6 primeiros dígitos do CPF de 11 dígitos. */
+export const idDaFicha=(idGravado:unknown,cpf:unknown):string=>{const g=texto(idGravado);if(/^\d{6}$/.test(g))return g;const d=texto(cpf).replace(/\D/g,'');return d.length===11?d.slice(0,6):'';};
+/** Fichas do RH (id, nome, cpf, idPessoa; direto ou dentro de `registro`) -> ID -> pessoa.
  *  Mesma régua de src/lib/identidade.ts: dois cadastros com o mesmo ID não casam com ninguém. */
 export function mapaPessoasPorId(linhas:Record<string,unknown>[]):PessoaPorId{
   const conta=new Map<string,number>(),achadas:{id6:string;colaboradorId:string;nome:string;desligado:boolean}[]=[];
   for(const l of linhas){
-    const reg=objeto(l.registro),cpf=texto(l.cpf??reg.cpf).replace(/\D/g,'');
-    if(cpf.length!==11||!texto(l.id))continue;
-    const id=cpf.slice(0,6);conta.set(id,(conta.get(id)??0)+1);
+    const reg=objeto(l.registro),id=idDaFicha(l.idPessoa??reg.idPessoa,l.cpf??reg.cpf);
+    if(!id||!texto(l.id))continue;
+    conta.set(id,(conta.get(id)??0)+1);
     achadas.push({id6:id,colaboradorId:texto(l.id),nome:texto(l.nome??reg.nome).trim(),desligado:!!texto(l.dataDesligamento??reg.dataDesligamento).trim()});
   }
   const m:PessoaPorId=new Map();for(const a of achadas)if(conta.get(a.id6)===1)m.set(a.id6,{colaboradorId:a.colaboradorId,nome:a.nome,desligado:a.desligado});

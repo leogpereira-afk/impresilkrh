@@ -39,6 +39,23 @@ describe('Equipe do PCP pelo ID do RH', () => {
     expect([...m.values()].some(p => p.colaboradorId === 'sem-cpf')).toBe(false);
   });
 
+  it('ID gravado na ficha (D-004) vale mais que o CPF corrigido; gravado fora do formato não vale', () => {
+    // Fictício: a ficha "q" teve o CPF corrigido para 20000598765 e continua com o ID 200002.
+    const corrigida = { id: 'q', registro: { nome: 'Outra Pessoa', cpf: '20000598765', idPessoa: '200002' } };
+    const m = modelo.mapaPessoasPorId([corrigida, { id: 'x', registro: { nome: 'Formato Ruim', cpf: '20000611111', idPessoa: '2000' } }]);
+    expect(m.get('200002')?.colaboradorId).toBe('q');
+    expect(m.has('200005')).toBe(false);
+    expect(m.get('200006')?.colaboradorId).toBe('x');
+    expect(modelo.idDaFicha('200002', '20000598765')).toBe('200002');
+    expect(modelo.idDaFicha('', '200005.987-65')).toBe('200005');
+    expect(modelo.idDaFicha(undefined, '')).toBe('');
+  });
+
+  it('a Programação lê o ID gravado da ficha (seleciona registro->>idPessoa)', () => {
+    expect(readFileSync('supabase/functions/rh-programacao/index.ts', 'utf8')).toContain('registro->>idPessoa');
+    expect(readFileSync('supabase/functions/rh-performance/index.ts', 'utf8')).toContain('registro->>idPessoa');
+  });
+
   it('O.S. gravada por ID já chega ligada: sem "Conferir vínculo", com o nome da ficha', async () => {
     const r = await ambiente({ equipe: ['200001', 'Apelido'] }).chamar({ action: 'listar', mes: '2026-09' });
     expect(r.status).toBe(200);

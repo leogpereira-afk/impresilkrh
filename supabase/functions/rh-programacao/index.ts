@@ -2,7 +2,7 @@
 // agenda das O.S. do PCP para o ADMIN_RH. Não cria, não altera e não apaga O.S.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { json, preflight } from '../_shared/cors.ts';
-import { projetarProgramacao, diasDaOrdem, mapaPessoasPorId, resolverIdPCP } from '../_shared/programacao.ts';
+import { projetarProgramacao, diasDaOrdem, mapaPessoasPorId, resolverIdPCP, idDaFicha } from '../_shared/programacao.ts';
 import type { ContextoPessoas, FichaPessoa } from '../_shared/programacao.ts';
 const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 async function lerOrdens(){
@@ -22,11 +22,11 @@ async function lerOrdens(){
    não vierem, a lista sai sem a ligação automática (e diz no console), em
    vez de não sair. */
 async function lerPessoas(vinculos:unknown):Promise<ContextoPessoas>{
-  const {data,error}=await admin.from('registros').select('id,registro->>nome,registro->>apelido,registro->>cpf,registro->>dataDesligamento').eq('colecao','colaboradores').eq('apagado',false);
+  const {data,error}=await admin.from('registros').select('id,registro->>nome,registro->>apelido,registro->>cpf,registro->>idPessoa,registro->>dataDesligamento').eq('colecao','colaboradores').eq('apagado',false);
   if(error){console.warn('rh-programacao: fichas do RH indisponíveis',error.message);return {porId:new Map(),idDe:()=>''};}
   const linhas=(data??[]) as Record<string,unknown>[];
   const campo=(l:Record<string,unknown>,k:string)=>String(l[k]??(l.registro as Record<string,unknown>|undefined)?.[k]??'');
-  const fichas:FichaPessoa[]=linhas.map(l=>{const d=campo(l,'cpf').replace(/\D/g,'');return {id:d.length===11?d.slice(0,6):'',chave:String(l.id??''),nome:campo(l,'nome').trim(),apelido:campo(l,'apelido').trim(),desligado:!!campo(l,'dataDesligamento').trim()};});
+  const fichas:FichaPessoa[]=linhas.map(l=>{return {id:idDaFicha(campo(l,'idPessoa'),campo(l,'cpf')),chave:String(l.id??''),nome:campo(l,'nome').trim(),apelido:campo(l,'apelido').trim(),desligado:!!campo(l,'dataDesligamento').trim()};});
   return {porId:mapaPessoasPorId(linhas),idDe:resolverIdPCP(fichas,vinculos)};
 }
 Deno.serve(async(req:Request)=>{
