@@ -329,7 +329,9 @@ Deno.serve(async (req) => {
       return { registro: comCamposDoId(registro, null), idPessoa: "", aviso };
     }
     // A mesma pessoa voltou (mesmo CPF da lápide, conferida): fica o carimbo de antes.
-    if (lapide && decisao.idPessoa === idGravado(lapide)) {
+    // Outro CPF com o mesmo começo dá o mesmo ID, mas o carimbo (quem, quando, motivo) é da
+    // pessoa apagada e não passa adiante (verificação da correção, 12/10/2026).
+    if (lapide && decisao.idPessoa === idGravado(lapide) && cpf11((lapide as Record<string, unknown>).cpf) === cpfDoCadastro(colecao, registro)) {
       return { registro: comCamposDoId(registro, lapide), idPessoa: decisao.idPessoa, aviso: enviouOutroId(registro, decisao.idPessoa) ? AVISO_ID_MANTIDO : null };
     }
     return {
@@ -672,9 +674,12 @@ Deno.serve(async (req) => {
           const vivos: CadastroComId[] = [...await cadastrosVivos(), ...doRetrato];
           for (const { col, indice, reg, lapide } of lapidesComId) {
             const id = idGravado(lapide);
-            const outro = outraPessoaComId(id, cpf11(reg.cpf), { colecao: col, id: String(reg.id) }, vivos);
-            if (outro) {
-              console.warn(`[sync] retrato: ${col}/${String(reg.id)} entra sem o ID da lápide: ${MOTIVO_SEM_ID["id-de-outra-pessoa"]}`);
+            // A mesma régua do upsert (verificação da correção, 12/10/2026): o retrato só leva o ID da
+            // lápide quando a decisão de quem nasce daria esse mesmo ID, com o mesmo CPF; outro cadastro
+            // vivo do mesmo CPF com outro ID deixa sem ID, como no upsert.
+            const decisao = idParaCadastro({ colecao: col, id: String(reg.id), registro: reg }, vivos, lapide);
+            if (decisao.idPessoa !== id || cpf11((lapide as Record<string, unknown>).cpf) !== cpfDoCadastro(col, reg)) {
+              console.warn(`[sync] retrato: ${col}/${String(reg.id)} entra sem o ID da lápide: ${MOTIVO_SEM_ID[decisao.motivo ?? "id-de-outra-pessoa"]}`);
               if (enviouOutroId(reg, "")) juntarAviso(AVISO_ID_ANTIGO);
               continue;
             }
