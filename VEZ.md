@@ -9,9 +9,9 @@ seções 0, 5 e 6.
 
 agente: claude
 desde: 2026-10-12T11:59:41.000Z
-ramo: protocolo
-tarefa: protocolo da vez no RH (liberado pelo dono em 12/10/2026: "pode fazer"); em seguida, o ID da pessoa na ficha (D-004, item 5 da fila do PCP de 11/10/2026)
-sessao: -
+ramo: id-pessoa
+tarefa: ID da pessoa gravado na ficha e no contrato (idPessoa, D-004 do RH; plano docs/planos/2026-10-12-rh-id-pessoa.md do PCP)
+sessao: claude:a31aa7f6 (impresilkrh-id)
 versao_reservada: -
 arquivos_em_uso: -
 passou_por: -
