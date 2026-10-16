@@ -385,7 +385,7 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, emPreparo, onAlternar, onNo
           {cad.ultimo
             ? <span className="tabular-nums">
                 {formatDate(dataConversa(cad.ultimo))}
-                {cad.ultimo.tipo && <span className="text-slate-400"> · {tipoFeedbackLegado(cad.ultimo.tipo)}</span>}
+                {cad.ultimo.tipo && <span className="text-slate-400"> · {tipoFeedbackLegado(cad.ultimo.tipo) === "Reconhecimento" ? "Positivo" : "Corretivo"}</span>}
                 {/* Conversa com a EQUIPE precisa se identificar: sem o selo, a
                     ficha leria como se tivesse sido individual — e não foi. Ela
                     também não zera o relógio da cadência (ver feedbackCadencia). */}
@@ -598,7 +598,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
             className="flex w-full items-center gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4 text-left transition hover:border-emerald-300">
             <ThumbsUp className="h-5 w-5 shrink-0 text-emerald-600" />
             <span>
-              <span className="block font-semibold text-slate-800">Elogiar</span>
+              <span className="block font-semibold text-slate-800">Feedback positivo</span>
               <span className="block text-xs text-slate-500">Ele fez algo que deu certo e você quer que fique registrado.</span>
             </span>
           </button>
@@ -606,7 +606,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
             className="flex w-full items-center gap-3 rounded-xl border-2 border-amber-200 bg-amber-50/50 p-4 text-left transition hover:border-amber-300">
             <Wrench className="h-5 w-5 shrink-0 text-amber-600" />
             <span>
-              <span className="block font-semibold text-slate-800">Ajustar</span>
+              <span className="block font-semibold text-slate-800">Feedback corretivo</span>
               <span className="block text-xs text-slate-500">Algo precisa mudar daqui pra frente. Vocês combinam o quê.</span>
             </span>
           </button>
@@ -627,7 +627,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
       titulo={
         etapa === "preparar" ? `Preparar — ${colab.nome}`
         : etapa === "agendar" ? `Marcar o dia — ${colab.nome}`
-        : `${ajuste ? "Ajustar" : "Elogiar"} — ${colab.nome}`
+        : `${ajuste ? "Feedback corretivo" : "Feedback positivo"} — ${colab.nome}`
       }
       largura="max-w-lg"
       rodape={<>
@@ -642,6 +642,14 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
       </>}
     >
       <div className="space-y-4">
+        {etapa !== "agendar" && <fieldset>
+          <legend className="mb-1 text-xs font-medium text-slate-600">Tipo de feedback</legend>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" aria-pressed={!ajuste} onClick={() => setTipo("Reconhecimento")} className={`min-h-10 rounded-full border px-3 py-2 text-sm font-medium ${!ajuste ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-600"}`}>👍 Positivo</button>
+            <button type="button" aria-pressed={ajuste} onClick={() => setTipo("Ajuste")} className={`min-h-10 rounded-full border px-3 py-2 text-sm font-medium ${ajuste ? "border-amber-500 bg-amber-50 text-amber-800" : "border-slate-200 text-slate-600"}`}>🛠️ Corretivo</button>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">{ajuste ? "Orientar uma melhoria e combinar o próximo passo." : "Reconhecer uma atitude, entrega ou resultado positivo."}</p>
+        </fieldset>}
         {/* O DOSSIÊ: o que o sistema já sabe da pessoa. Vem ANTES do formulário
             porque é o que informa o que escrever — e depois do combinado, que
             é a única coisa mais urgente que ele. */}

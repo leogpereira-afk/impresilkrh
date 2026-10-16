@@ -91,3 +91,19 @@ it('ciclo e área limitam a matriz sem editar avaliações nem pessoas',async()=
  expect(el.textContent).toContain('1 de 1 pessoas com avaliação');
  expect(JSON.stringify(obter('avaliacoes'))).toBe(antes);
 });
+it('permite trocar feedback corretivo por positivo antes de salvar a preparação',async()=>{
+ const {default:Feedback}=await import('./Feedback');
+ definirColecao('feedbacks',[]);
+ await act(async()=>root.render(<MemoryRouter><Feedback/></MemoryRouter>));
+ await click('Preparar feedback');
+ const corretivo=[...document.querySelectorAll('button')].find(b=>b.textContent?.includes('Feedback corretivo'))!;
+ expect(corretivo).toBeTruthy(); await act(async()=>corretivo.click());
+ const texto=document.querySelector('textarea')!;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(texto,'Reconhecer a colaboração da equipe nesta entrega fictícia.');texto.dispatchEvent(new Event('input',{bubbles:true}));});
+ await click('👍 Positivo');
+ expect(texto.value).toContain('Reconhecer a colaboração');
+ await click('Salvar preparação');
+ expect(obter('feedbacks')).toHaveLength(1);
+ expect(obter('feedbacks')[0].tipo).toBe('Reconhecimento');
+ expect(obter('feedbacks')[0].roteiro).toContain('Reconhecer a colaboração');
+});

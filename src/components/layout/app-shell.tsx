@@ -72,7 +72,6 @@ const NAV: ItemNav[] = [
   { href: "/comportamental", label: "Guia de gestão de pessoas", icon: Brain, perfis: TODOS, grupo: "Comunicação e documentos" },
   // Administração — só RH
   { href: "/relatorios", label: "Relatórios do RH", icon: BarChart3, perfis: RH, grupo: "Administração" },
-  { href: "/aceites", label: "Termos e confirmações", icon: FileSignature, perfis: RH, grupo: "Administração" },
   { href: "/painel-controle", label: "Configurações do RH", icon: SlidersHorizontal, perfis: RH, grupo: "Administração" },
   { href: "/lgpd", label: "Histórico de acessos", icon: ShieldCheck, perfis: RH, grupo: "Administração" },
   // Conta
