@@ -65,6 +65,7 @@ const NAV: ItemNav[] = [
   /* Performance saiu do menu na F25 (01/10/2026): o programa das equipes mora no PCP.
      O endereço /performance continua de pé e mostra o aviso com o link. */
   // Comunicação e documentos — comunicação interna e material de referência
+  { href: "/endomarketing", label: "Endomarketing", icon: Megaphone, perfis: TODOS, grupo: "Comunicação e documentos" },
   { href: "/comunicacao", label: "Comunicação interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação e documentos" },
   { href: "/mensagens", label: "Mensagens e agendamentos", icon: Send, perfis: GESTAO, grupo: "Comunicação e documentos" },
   { href: "/documentos", label: "Documentos e procedimentos", icon: FileText, perfis: TODOS, grupo: "Comunicação e documentos" },
@@ -80,7 +81,7 @@ const NAV: ItemNav[] = [
 
 const GRUPOS = ["Visão geral", "Pessoas", "Estrutura e financeiro", "Comunicação e documentos", "Administração", "Conta"];
 const EMOJIS: Record<string, string> = {
-  painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
+  painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", endomarketing: "💜", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
 };
 
 /* NAVCONTEUDO E RODAPE MORAM AQUI FORA, e é de propósito.

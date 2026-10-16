@@ -344,6 +344,7 @@ export const MODULOS: { chave: string; label: string }[] = [
   { chave: "ferias", label: "Férias" },
   { chave: "integracao", label: "Integração / Desligamento" },
   { chave: "viagens", label: "Viagens e Diárias" },
+  { chave: "endomarketing", label: "Endomarketing" },
   { chave: "comunicacao", label: "Comunicação" },
   { chave: "mensagens", label: "Comunicação em Massa" },
   { chave: "pops", label: "POPs e Procedimentos" },

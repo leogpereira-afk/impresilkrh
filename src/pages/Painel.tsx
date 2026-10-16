@@ -812,7 +812,6 @@ export default function Painel() {
                   <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
                     <Link to={`/colaboradores/${c.id}`} className="truncate font-medium text-slate-700 hover:text-brand hover:underline">{c.nome}</Link>
                     <span className="flex shrink-0 items-center gap-2">
-                      {c.humor && <HumorIndicador humor={c.humor} tamanho="sm" comTexto={false} />}
                       <span className="text-slate-400">{ddmm(c.dataNascimento)}</span>
                     </span>
                   </div>
@@ -832,8 +831,7 @@ export default function Painel() {
                     <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
                       <Link to={`/colaboradores/${c.id}`} className="truncate font-medium text-slate-700 hover:text-brand hover:underline">{c.nome}</Link>
                       <span className="flex shrink-0 items-center gap-2">
-                        {c.perfilComportamental && <PerfilComportamentalBadge perfil={c.perfilComportamental} />}
-                        <span className="text-slate-400">{ddmm(c.dataAdmissao)} · {anos > 0 ? `${anos} ano(s)` : "1º ano"}</span>
+                        <span className="text-slate-400">{ddmm(c.dataAdmissao)} · {anos > 0 ? `${anos} ano(s)` : "Boas-vindas"}</span>
                       </span>
                     </div>
                   );

@@ -50,6 +50,7 @@ export const APELIDOS: Record<string, string[]> = {
   "/vagas": ["vaga", "recrutamento", "candidato", "curriculo", "selecao"],
   "/organograma": ["organograma", "hierarquia", "quem manda", "gestor"],
   "/documentos": ["documento", "politica", "manual", "regulamento"],
+  "/endomarketing": ["aniversario", "tempo de empresa", "bem-estar", "engajamento", "celebracao", "acolhimento", "reconhecimento"],
   "/comunicacao": ["comunicado", "aviso", "mural", "recado"],
   "/mensagens": ["whatsapp", "disparo", "mensagem", "enviar"],
   "/relatorios": ["relatorio", "indicador", "numero"],

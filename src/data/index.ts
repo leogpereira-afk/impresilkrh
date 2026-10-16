@@ -1,3 +1,4 @@
+import type { AcaoEndomarketing } from "./endomarketing";
 import type { Plantao, CicloPerformance, EquipePlantao } from './performance';
 // Registro central dos dados embutidos (defaults). A camada src/lib/store.ts
 // carrega estes valores na 1ª vez e depois persiste as edições no localStorage.
@@ -39,6 +40,7 @@ export const CONFIG_DEFAULT: Config = {
 
 // Mapa: nome da coleção → tipo do elemento. Garante tipagem do useColecao.
 export interface ColecaoMap {
+  endomarketing: AcaoEndomarketing;
   equipesPlantoes: EquipePlantao;
   plantoes: Plantao;
   performanceCiclos: CicloPerformance;
@@ -109,6 +111,7 @@ export type NomeColecao = keyof ColecaoMap;
 // falta, ponto, vaga — nasce vazio e vem da nuvem.
 export function defaultsColecoes(): { [K in NomeColecao]: ColecaoMap[K][] } {
   return structuredClone({
+    endomarketing: [],
     equipesPlantoes: [],
     plantoes: [],
     performanceCiclos: [],

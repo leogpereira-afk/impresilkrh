@@ -144,6 +144,7 @@ const ESCOPO: Record<string, { nivel: "rh" | "gestao" | "meu" | "todos"; campos?
   evolucao: { nivel: "rh" },
   candidatos: { nivel: "rh" },
   pesquisas: { nivel: "rh" },
+  endomarketing: { nivel: "rh" }, // planejamento e observações internos do RH
   respostasPesquisa: { nivel: "rh" },
   _diagnostico: { nivel: "rh" },
 

@@ -24,6 +24,7 @@ const Vagas = lazy(() => import("@/pages/Vagas"));
 const Freelancers = lazy(() => import("@/pages/Freelancers"));
 const FolhaVariavel = lazy(() => import("@/pages/FolhaVariavel"));
 const Integracao = lazy(() => import("@/pages/Integracao"));
+const Endomarketing = lazy(() => import("@/pages/Endomarketing"));
 const Comunicacao = lazy(() => import("@/pages/Comunicacao"));
 const Pops = lazy(() => import("@/pages/Pops"));
 // Mural de vagas internas: a tela existia pronta e NENHUMA rota chegava nela —
@@ -99,6 +100,7 @@ export default function App() {
             {/* A lista mora no rbac: Colaboradores mostra contrato de freelancer só a quem passa por esta porta. */}
             <Route path="/freelancers" element={<Restrito perfis={PERFIS_CONTRATOS_FREELANCER}><Freelancers /></Restrito>} />
             <Route path="/folha-variavel" element={<Restrito perfis={GESTAO}><FolhaVariavel /></Restrito>} />
+            <Route path="/endomarketing" element={<Endomarketing />} />
             <Route path="/comunicacao" element={<Comunicacao />} />
           <Route path="/mensagens" element={<Restrito perfis={GESTAO}><Mensagens /></Restrito>} />
             <Route path="/pops" element={<Pops />} />
