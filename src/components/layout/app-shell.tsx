@@ -68,7 +68,6 @@ const NAV: ItemNav[] = [
   { href: "/endomarketing", label: "Endomarketing", icon: Megaphone, perfis: TODOS, grupo: "Comunicação e documentos" },
   { href: "/comunicacao", label: "Comunicação interna", icon: Megaphone, perfis: TODOS, grupo: "Comunicação e documentos" },
   { href: "/mensagens", label: "Mensagens e agendamentos", icon: Send, perfis: GESTAO, grupo: "Comunicação e documentos" },
-  { href: "/documentos", label: "Documentos e procedimentos", icon: FileText, perfis: TODOS, grupo: "Comunicação e documentos" },
   { href: "/comportamental", label: "Guia de gestão de pessoas", icon: Brain, perfis: TODOS, grupo: "Comunicação e documentos" },
   // Administração — só RH
   { href: "/relatorios", label: "Relatórios do RH", icon: BarChart3, perfis: RH, grupo: "Administração" },

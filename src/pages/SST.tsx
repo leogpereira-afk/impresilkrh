@@ -27,12 +27,11 @@ import { CATEGORIAS_SST, JANELA_ALERTA_DIAS } from "@/lib/constants";
 import { mensagemAgendamento, telefoneWhatsApp, linkWhatsApp, quandoLegivel } from "@/lib/agendamentoExame";
 import { CATALOGO_NR, nomeNR, calcularValidadeNR } from "@/data/nrs";
 import { separarVigentes } from "@/lib/nrVigente";
-import { HOJE } from "@/data/_gen";
 
 // Conta ANCORADA no início do dia (diasDeCalendario). A conta crua de
 // milissegundos comparava a meia-noite do alvo com a HORA ATUAL: o mesmo
 // documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
-const dias = (d?: string | null) => diasDeCalendario(d, HOJE);
+const dias = (d?: string | null) => diasDeCalendario(d, new Date());
 
 type Situacao = SituacaoValidade;
 const situacaoDoc = (data?: string | null, hoje = new Date()) => situacaoValidade(data, hoje, JANELA_ALERTA_DIAS);
@@ -573,16 +572,19 @@ function ModalEditarExame({
       toast(`${nome} já tem outro “${categoria}” vencendo neste mesmo dia. Clique em Salvar de novo para gravar assim mesmo.`, "erro");
       return;
     }
+    try {
     onSalvar({
       categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null,
       agendadoPara: agendado || null, clinica: clinica.trim() || null, localExame: local.trim() || null,
     });
     onFechar();
+    } catch { toast("Não foi possível salvar o exame. Revise a conexão e tente novamente; os campos foram mantidos.", "erro"); }
   };
 
   // Grava ANTES de abrir o WhatsApp: se a pessoa mandar a mensagem e o
   // agendamento não estiver salvo, o combinado existe só na conversa dela.
   const avisar = () => {
+    if (emissao && vencimento && vencimento < emissao) return toast("O vencimento não pode ser antes da emissão.", "erro");
     if (!tel) return toast("Este colaborador não tem um telefone válido no cadastro.", "erro");
     if (!agendado) return toast("Informe a data e a hora antes de avisar.", "erro");
     /* Este botão TAMBÉM grava. Sem a mesma trava, bastava usar "Salvar e avisar"
@@ -593,6 +595,7 @@ function ModalEditarExame({
       toast(`${nome} já tem outro “${categoria}” vencendo neste mesmo dia. Clique de novo para gravar assim mesmo.`, "erro");
       return;
     }
+    try {
     onSalvar({
       categoria, dataEmissao: emissao || null, dataVencimento: vencimento || null,
       agendadoPara: agendado || null, clinica: clinica.trim() || null, localExame: local.trim() || null,
@@ -600,6 +603,7 @@ function ModalEditarExame({
     onAvisou();
     window.open(linkWhatsApp(tel, mensagem), "_blank", "noopener,noreferrer");
     onFechar();
+    } catch { toast("Não foi possível salvar o exame. Os campos foram mantidos para tentar novamente.", "erro"); }
   };
 
   return (
@@ -680,6 +684,7 @@ function ModalEditarExame({
 
 // ---------- Certificações de NR por colaborador (quem tem o quê + validade) ----------
 function AbaCertificacoesNR() {
+  const hoje = useHoje();
   const sessao = useSessao();
   const d = useDominio();
   const toast = useToast();
@@ -710,16 +715,17 @@ function AbaCertificacoesNR() {
   const idsSubstituidas = useMemo(() => new Set(substituidas.map((c) => c.id)), [substituidas]);
 
   const total = vigentes.length;
-  const vencidas = vigentes.filter((c) => situacaoDoc(c.dataValidade) === "Vencido").length;
-  const aVencer = vigentes.filter((c) => situacaoDoc(c.dataValidade) === "A vencer").length;
-  const validas = total - vencidas - aVencer;
+  const vencidas = vigentes.filter((c) => situacaoDoc(c.dataValidade, hoje) === "Vencido").length;
+  const aVencer = vigentes.filter((c) => situacaoDoc(c.dataValidade, hoje) === "A vencer").length;
+  const validas = vigentes.filter(c => situacaoDoc(c.dataValidade, hoje) === "Válido").length;
+  const semValidade = vigentes.filter(c => situacaoDoc(c.dataValidade, hoje) === "Sem validade informada").length;
 
   // Os números vêm da mesma listagem de NRs logo abaixo, então clicar filtra a listagem.
   const [foco, setFoco] = useState<Situacao | null>(null);
   const alternarFoco = (s: Situacao) => setFoco((atual) => (atual === s ? null : s));
   const certsVisiveis = useMemo(
-    () => (foco ? certs.filter((c) => situacaoDoc(c.dataValidade) === foco) : certs),
-    [certs, foco],
+    () => (foco ? vigentes.filter((c) => situacaoDoc(c.dataValidade, hoje) === foco) : certs),
+    [certs, vigentes, foco, hoje],
   );
 
   // Agrupa por NR (na ordem do catálogo), do vencimento mais próximo ao mais distante.
@@ -804,6 +810,7 @@ function AbaCertificacoesNR() {
   return (
     <div>
       <div className="mb-4 rh-stats">
+        <StatCard label="Sem validade" value={semValidade} icon={<Clock className="h-5 w-5" />} onClick={() => alternarFoco("Sem validade informada")} ativo={foco === "Sem validade informada"} />
         <StatCard label="Certificações" value={total} icon={<Award className="h-5 w-5" />} accent="brand" onClick={() => setFoco(null)} ativo={foco === null} title="Mostrar todas as certificações" />
         <StatCard label="Válidas" value={validas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={foco === "Válido"} title="Ver só as certificações válidas" />
         <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={foco === "A vencer"} title="Ver só as certificações a vencer" />
@@ -813,7 +820,7 @@ function AbaCertificacoesNR() {
       <Card className="overflow-hidden">
         <CardHeader
           title="NRs por colaborador"
-          subtitle="Quem está apto a cada Norma Regulamentadora e o vencimento do treinamento"
+          subtitle="Certificações registradas e vencimentos · histórico preservado"
           icon={<Award className="h-[18px] w-[18px]" />}
           action={gere ? <button className="btn-outline h-8 px-3 py-0 text-xs" onClick={abrirNovo}><Plus className="h-4 w-4" /> Registrar NR</button> : undefined}
         />
@@ -835,12 +842,12 @@ function AbaCertificacoesNR() {
                     <span className="ml-2 text-xs text-slate-500">{nr.nome}</span>
                   </div>
                   <span className="shrink-0 text-xs text-slate-400">
-                    {itens.length} apto(s){nr.validadeMeses ? ` · validade ${nr.validadeMeses} meses` : " · sem validade fixa"}
+                    {itens.length} registro(s){nr.validadeMeses ? ` · validade ${nr.validadeMeses} meses` : " · sem validade fixa"}
                   </span>
                 </div>
                 <ul className="divide-y divide-slate-50">
                   {itens.map((c) => {
-                    const sit = situacaoDoc(c.dataValidade);
+                    const sit = situacaoDoc(c.dataValidade, hoje);
                     return (
                       <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                         <LinkFicha id={c.colaboradorId} className="flex min-w-0 items-center gap-3">

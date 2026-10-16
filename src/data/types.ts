@@ -342,7 +342,17 @@ export interface CicloAvaliacao {
   mesesMinNivel: number;
 }
 
+export interface Calibracao9Box {
+  desempenho: "Baixo" | "Médio" | "Alto";
+  potencial: "Baixo" | "Médio" | "Alto";
+  motivo: string;
+  em: string;
+  por: string | null;
+}
+
 export interface Avaliacao {
+  calibracao9Box?: Calibracao9Box | null;
+  historico9Box?: Calibracao9Box[];
   id: string;
   cicloId: string;
   colaboradorId: string;

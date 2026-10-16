@@ -1,3 +1,5 @@
+import { posicao9Box, avaliacoesDoCiclo } from "@/lib/matriz9Box";
+import { Calibrar9Box } from "@/components/Calibrar9Box";
 import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { cicloVigente as escolherCiclo } from "@/lib/cicloVigente";
 import { faixaDesempenho as bucketDesempenho, faixaPotencial as bucketPotencial } from "@/lib/qualidadeIndicadores";
@@ -163,11 +165,7 @@ export default function Desempenho() {
 
   // Avaliação GESTOR do ciclo por colaborador.
   const avalGestorPorColab = useMemo(() => {
-    const m = new Map<string, Avaliacao>();
-    for (const a of avaliacoes) {
-      if (a.tipo === "GESTOR" && (!ciclo || a.cicloId === ciclo.id)) m.set(a.colaboradorId, a);
-    }
-    return m;
+    return avaliacoesDoCiclo(avaliacoes, ciclo?.id);
   }, [avaliacoes, ciclo]);
 
   // KPIs do topo (listas para drill-down + contagens derivadas).
@@ -232,7 +230,7 @@ export default function Desempenho() {
       id: "9box",
       label: "9-Box",
       icon: <Grid3x3 className="h-4 w-4" />,
-      conteudo: <NoveBox escopo={escopo} avalPorColab={avalGestorPorColab} d={d} drill={drill} />,
+      conteudo: <NoveBox escopo={escopo} avalPorColab={avalGestorPorColab} d={d} drill={drill} gerir={gerir} onSalvar={atualizarAval} />,
     },
     {
       id: "avaliacoes",
@@ -419,13 +417,17 @@ function NoveBox({
   escopo,
   avalPorColab,
   d,
-  drill,
+  drill, gerir, onSalvar,
 }: {
+  gerir: boolean;
+  onSalvar: (id: string, patch: Partial<Avaliacao>) => void;
   escopo: Colaborador[];
   avalPorColab: Map<string, Avaliacao>;
   d: ReturnType<typeof useDominio>;
   drill: ReturnType<typeof useDrill>;
 }) {
+  const [editar, setEditar] = useState<{ pessoa: Colaborador; des: Bucket; pot: Bucket } | null>(null);
+  const [arrastando, setArrastando] = useState<string | null>(null);
   // matriz[yPotencial][xDesempenho] => colaboradores
   const matriz = useMemo(() => {
     const m: Record<Bucket, Record<Bucket, Colaborador[]>> = {
@@ -434,14 +436,13 @@ function NoveBox({
       Baixo: { Baixo: [], Médio: [], Alto: [] },
     };
     for (const c of escopo) {
-      const des = bucketDesempenho(avalPorColab.get(c.id)?.notaFinal);
-      const pot = bucketPotencial(c.potencial);
+      const { desempenho: des, potencial: pot } = posicao9Box(avalPorColab.get(c.id), c.potencial);
       if (pot && des) m[pot][des].push(c);
     }
     return m;
   }, [escopo, avalPorColab]);
 
-  const semClassificacao = escopo.filter(c => !bucketDesempenho(avalPorColab.get(c.id)?.notaFinal) || !bucketPotencial(c.potencial));
+  const semClassificacao = escopo.filter(c => { const p = posicao9Box(avalPorColab.get(c.id), c.potencial); return !p.desempenho || !p.potencial; });
 
   // Retenção: risco de saída alto OU motivação baixa. Estratégicos = também alto potencial/desempenho.
   const retencao = useMemo(() => {
@@ -452,8 +453,8 @@ function NoveBox({
       (c) => c.riscoSaida === "Alto" && motivacaoBaixa(c.motivacao),
     );
     const estrategicos = emRisco.filter((c) => {
-      const des = bucketDesempenho(avalPorColab.get(c.id)?.notaFinal);
-      return bucketPotencial(c.potencial) === "Alto" || des === "Alto";
+      const { desempenho: des, potencial: pot } = posicao9Box(avalPorColab.get(c.id), c.potencial);
+      return pot === "Alto" || des === "Alto";
     });
     return { emRisco, criticos, estrategicos };
   }, [escopo, avalPorColab]);
@@ -463,14 +464,15 @@ function NoveBox({
 
   return (
     <div className="space-y-4">
+    {editar && gerir && avalPorColab.get(editar.pessoa.id) && <Calibrar9Box pessoa={editar.pessoa} avaliacao={avalPorColab.get(editar.pessoa.id)!} desempenho={editar.des} potencial={editar.pot} onSalvar={onSalvar} onFechar={() => setEditar(null)} />}
     <Card>
       <CardHeader
         title="Matriz 9-Box"
-        subtitle="Eixo X: Desempenho (avaliação do gestor) · Eixo Y: Potencial"
+        subtitle="Desempenho × potencial · ajustes manuais identificados no card"
         icon={<Grid3x3 className="h-[18px] w-[18px]" />}
         action={
           <span className="hidden text-xs text-slate-400 sm:inline">
-            Clique em uma célula para ver os nomes.
+            Clique na pessoa para ajustar. Arraste para outra posição.
           </span>
         }
       />
@@ -499,26 +501,12 @@ function NoveBox({
                   const dica = DICAS_9BOX[chave] ?? "";
                   const temPessoas = colabs.length > 0;
                   return (
-                    <button
+                    <section
                       key={`${pot}-${des}`}
-                      type="button"
-                      disabled={!temPessoas}
-                      title={dica}
-                      onClick={
-                        temPessoas
-                          ? () =>
-                              drill.abrir(
-                                `9-Box · ${pot} potencial × ${des} desempenho`,
-                                colabs,
-                                `${rotulo} · ${colabs.length} colaborador(es) · ${dica}`,
-                              )
-                          : undefined
-                      }
-                      className={`flex min-w-0 flex-col rounded-xl border p-3 text-left transition sm:min-h-[8rem] ${corCelula(idxDes, idxPot)} ${
-                        temPessoas
-                          ? "cursor-pointer hover:shadow-md hover:ring-2 hover:ring-brand/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
-                          : "cursor-default"
-                      }`}
+                      aria-label={`${rotulo}: desempenho ${des}, potencial ${pot}`}
+                      onDragOver={e => { if (gerir && arrastando) e.preventDefault(); }}
+                      onDrop={e => { e.preventDefault(); const pessoa = escopo.find(c => c.id === arrastando); if (gerir && pessoa && avalPorColab.has(pessoa.id)) setEditar({ pessoa, des, pot }); setArrastando(null); }}
+                      className={`flex min-w-0 flex-col rounded-xl border p-2.5 text-left ${corCelula(idxDes, idxPot)}`}
                     >
                       <div className="mb-1.5 flex items-start justify-between gap-2">
                         <div>
@@ -527,10 +515,10 @@ function NoveBox({
                             Desemp. {des} · Potenc. {pot}
                           </p>
                         </div>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        <button type="button" disabled={!temPessoas} onClick={() => drill.abrir(rotulo, colabs, dica)} className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-slate-600">
                           {colabs.length}
                           {temPessoas && <span className="font-medium text-brand">ver</span>}
-                        </span>
+                        </button>
                       </div>
                       {dica && (
                         <p className="mb-2 rounded-md bg-white/60 px-2 py-1 text-[11px] leading-snug text-slate-600 ring-1 ring-inset ring-white/70">
@@ -543,18 +531,24 @@ function NoveBox({
                           <span className="text-xs text-slate-400">—</span>
                         ) : (
                           colabs.map((c) => (
-                            <div
+                            <button
+                              type="button"
+                              disabled={!gerir}
+                              draggable={gerir}
+                              onDragStart={() => setArrastando(c.id)}
+                              onDragEnd={() => setArrastando(null)}
+                              onClick={() => setEditar({ pessoa: c, des, pot })}
                               key={c.id}
                               className="flex items-center gap-2 rounded-lg bg-white/80 px-2 py-1 ring-1 ring-inset ring-slate-200/70"
                               title={`${c.nome} · ${d.nomeCargo(c)}`}
                             >
                               <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
-                              <span className="truncate text-xs font-medium text-slate-700">{c.nome}</span>
-                            </div>
+                              <span className="truncate text-xs font-medium text-slate-700">{c.nome}{avalPorColab.get(c.id)?.calibracao9Box ? " · ajustado" : ""}</span>
+                            </button>
                           ))
                         )}
                       </div>
-                    </button>
+                    </section>
                   );
                 }),
               )}
