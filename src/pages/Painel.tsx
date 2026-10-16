@@ -544,7 +544,7 @@ export default function Painel() {
         </details>
       )}
 
-      <div className="rh-stats">
+      <section aria-label="Pessoas"><h2 className="mb-2 text-sm font-semibold">Pessoas</h2><div className="rh-stats">
         <StatCard
           label="Pessoas na empresa" value={ativos.length} icon={<Users className="h-5 w-5" />} accent="brand" hint="Quadro atual · inclui experiência e freelancer configurados como ativos"
           title="Ver quem está no quadro"
@@ -570,6 +570,7 @@ export default function Painel() {
           title="Ver quem está em capacitação"
           onClick={() => drill.abrir("Em treinamento", emTreinamento, "Colaboradores com treinamento em aberto")}
         />
+</div></section><section aria-label="Pendências" className="mt-3"><h2 className="mb-2 text-sm font-semibold">Pendências e desenvolvimento</h2><div className="rh-stats">
         <StatCard
           label="Documentos a vencer" value={docsAlerta.length} hint={`${docsVencidos.length} vencido(s)`} icon={<FileWarning className="h-5 w-5" />} accent={docsVencidos.length ? "red" : "amber"}
           title="Filtrar alertas por documentos (clique de novo para limpar)"
@@ -610,107 +611,11 @@ export default function Painel() {
             onClick={() => drill.abrir("Inativos", inativos, "Colaboradores inativos (fora das contagens por padrão)")}
           />
         )}
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader title="Colaboradores por área" subtitle="Distribuição do quadro por área" icon={<Users className="h-[18px] w-[18px]" />} />
-          <CardBody><BarrasVerticais data={porArea} onItemClick={(nome) => drill.abrir(`Área · ${nome}`, colabsPorArea(nome))} /></CardBody>
-        </Card>
-        <Card>
-          <CardHeader title="Distribuição por nível" subtitle="Régua de senioridade N1–N5" />
-          <CardBody><BarrasVerticais data={porNivel} cor="#c2a14d" onItemClick={(nome) => drill.abrir(`Nível ${nome}`, colabsPorNivel(nome))} /></CardBody>
-        </Card>
-        <Card>
-          <CardHeader title="Enquadramento salarial" subtitle="Posição frente à faixa do cargo" />
-          <CardBody>{enquadData.length ? <Rosca data={enquadData} onItemClick={(nome) => drill.abrir(`Enquadramento · ${nome}`, colabsPorEnquadramento(nome))} /> : <EmptyState title="Sem dados" />}</CardBody>
-        </Card>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader title="Clima / Engajamento" subtitle="Humor declarado da equipe" icon={<Laugh className="h-[18px] w-[18px]" />} />
-          <CardBody>
-            {humorData.length ? (
-              <>
-                <Rosca data={humorData} onItemClick={(nome) => drill.abrir(`Clima · ${nome}`, colabsPorHumor(nome))} />
-                <p className="mt-1 text-center text-xs text-slate-500"><span className="font-semibold text-green-600">{pctMotivado == null ? "—" : `${pctMotivado}%`}</span> {pctMotivado == null ? "Sem humor informado" : `motivados entre ${humorInformado} com informação`}</p>
-              </>
-            ) : (
-              <EmptyState title="Sem dados de clima" />
-            )}
-          </CardBody>
-        </Card>
-        <Card className="lg:col-span-2">
-          <CardHeader title="Perfil comportamental" subtitle="Distribuição por arquétipo (4 temperamentos)" icon={<Brain className="h-[18px] w-[18px]" />} />
-          <CardBody>
-            {perfilData.length ? (
-              <BarrasColoridas data={perfilData} onItemClick={(nome) => drill.abrir(`Perfil · ${nome}`, colabsPorPerfil(nome))} />
-            ) : (
-              <EmptyState title="Sem dados de perfil" />
-            )}
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* ---------- Treinamento (v3) ---------- */}
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader
-            title="Treinamento"
-            subtitle="Quem está em capacitação agora"
-            icon={<GraduationCap className="h-[18px] w-[18px]" />}
-            action={<Link to="/treinamento" className="text-xs font-medium text-brand hover:underline">Ver treinamentos →</Link>}
-          />
-          <CardBody className="space-y-3">
-            <button
-              type="button"
-              className="w-full rounded-lg border border-slate-100 px-3 py-2 text-left transition-colors hover:bg-slate-50/60"
-              onClick={() => drill.abrir("Em treinamento", emTreinamento, "Colaboradores com treinamento em aberto")}
-            >
-              <div className="flex items-end justify-between">
-                <span className="text-xl font-semibold tracking-tight text-brand-ink">{emTreinamento.length}</span>
-                <span className="mb-1 text-xs text-slate-400">colaborador(es)</span>
-              </div>
-              <p className="mt-1 text-xs text-slate-500">Em treinamento</p>
-            </button>
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>{treinosAbertos.length} treinamento(s) em aberto</span>
-              <span>{treinosEscopo.length - treinosAbertos.length} concluído(s)</span>
-            </div>
-          </CardBody>
-        </Card>
-        <Card className="lg:col-span-2">
-          <CardHeader title="O que precisa treinar" subtitle="Treinamentos pendentes por título" icon={<GraduationCap className="h-[18px] w-[18px]" />} />
-          <CardBody className="space-y-2">
-            {topTreinos.length === 0 ? (
-              <p className="text-sm text-slate-500"><span className="font-medium text-slate-600">{treinosEscopo.length ? "Sem pendências registradas." : "Sem dados de treinamento."}</span>{" "}{treinosEscopo.length ? "Não há pendências entre os treinamentos registrados. Confira se todos os cursos necessários foram cadastrados." : "Não há treinamentos registrados para conferir a capacitação da equipe."}</p>
-            ) : (
-              /* "Integração de Segurança — 7 pendente(s)" e nenhum jeito de
-                 saber quem são os 7 para montar a turma. */
-              topTreinos.map(([titulo, qtd]) => (
-                <button
-                  key={titulo}
-                  type="button"
-                  title={`Ver quem falta fazer "${titulo}"`}
-                  onClick={() => {
-                    const ids = new Set(treinosAbertos.filter((x) => x.titulo === titulo).map((x) => x.colaboradorId));
-                    drill.abrir(titulo, ativos.filter((c) => ids.has(c.id)), `${qtd} pendente(s)`);
-                  }}
-                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40"
-                >
-                  <span className="truncate text-sm font-medium text-slate-700">{titulo}</span>
-                  <Badge variant="warning">{qtd} pendente(s)</Badge>
-                </button>
-              ))
-            )}
-          </CardBody>
-        </Card>
-      </div>
+      </div></section>
 
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-3" ref={refAlertas}>
         <Card className="lg:col-span-2">
-          <CardHeader title="Alertas e pendências" subtitle="Conformidade de documentos, NRs e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
+          <CardHeader title="O que exige atenção" subtitle="Conformidade de documentos, NRs e avaliações" icon={<AlertTriangle className="h-[18px] w-[18px]" />} />
           <CardBody className="space-y-2">
             {semAlertas ? (
               <EmptyState title="Sem alertas neste filtro" description="Confira os cadastros e documentos: ausência de registros não confirma regularidade." icon={<ClipboardCheck className="h-8 w-8" />} />
@@ -797,8 +702,104 @@ export default function Painel() {
         </div>
       </div>
 
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <Card abertoInicial={false} idPersistencia="painel:analise-0">
+          <CardHeader title="Colaboradores por área" subtitle="Distribuição do quadro por área" icon={<Users className="h-[18px] w-[18px]" />} />
+          <CardBody><BarrasVerticais data={porArea} onItemClick={(nome) => drill.abrir(`Área · ${nome}`, colabsPorArea(nome))} /></CardBody>
+        </Card>
+        <Card abertoInicial={false} idPersistencia="painel:analise-1">
+          <CardHeader title="Distribuição por nível" subtitle="Régua de senioridade N1–N5" />
+          <CardBody><BarrasVerticais data={porNivel} cor="#c2a14d" onItemClick={(nome) => drill.abrir(`Nível ${nome}`, colabsPorNivel(nome))} /></CardBody>
+        </Card>
+        <Card abertoInicial={false} idPersistencia="painel:analise-2">
+          <CardHeader title="Enquadramento salarial" subtitle="Posição frente à faixa do cargo" />
+          <CardBody>{enquadData.length ? <Rosca data={enquadData} onItemClick={(nome) => drill.abrir(`Enquadramento · ${nome}`, colabsPorEnquadramento(nome))} /> : <EmptyState title="Sem dados" />}</CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <Card abertoInicial={false} idPersistencia="painel:analise-3">
+          <CardHeader title="Clima / Engajamento" subtitle="Humor declarado da equipe" icon={<Laugh className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            {humorData.length ? (
+              <>
+                <Rosca data={humorData} onItemClick={(nome) => drill.abrir(`Clima · ${nome}`, colabsPorHumor(nome))} />
+                <p className="mt-1 text-center text-xs text-slate-500"><span className="font-semibold text-green-600">{pctMotivado == null ? "—" : `${pctMotivado}%`}</span> {pctMotivado == null ? "Sem humor informado" : `motivados entre ${humorInformado} com informação`}</p>
+              </>
+            ) : (
+              <EmptyState title="Sem dados de clima" />
+            )}
+          </CardBody>
+        </Card>
+        <Card className="lg:col-span-2" abertoInicial={false} idPersistencia="painel:analise-4">
+          <CardHeader title="Perfil comportamental" subtitle="Distribuição por arquétipo (4 temperamentos)" icon={<Brain className="h-[18px] w-[18px]" />} />
+          <CardBody>
+            {perfilData.length ? (
+              <BarrasColoridas data={perfilData} onItemClick={(nome) => drill.abrir(`Perfil · ${nome}`, colabsPorPerfil(nome))} />
+            ) : (
+              <EmptyState title="Sem dados de perfil" />
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* ---------- Treinamento (v3) ---------- */}
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader
+            title="Treinamento"
+            subtitle="Quem está em capacitação agora"
+            icon={<GraduationCap className="h-[18px] w-[18px]" />}
+            action={<Link to="/treinamento" className="text-xs font-medium text-brand hover:underline">Ver treinamentos →</Link>}
+          />
+          <CardBody className="space-y-3">
+            <button
+              type="button"
+              className="w-full rounded-lg border border-slate-100 px-3 py-2 text-left transition-colors hover:bg-slate-50/60"
+              onClick={() => drill.abrir("Em treinamento", emTreinamento, "Colaboradores com treinamento em aberto")}
+            >
+              <div className="flex items-end justify-between">
+                <span className="text-xl font-semibold tracking-tight text-brand-ink">{emTreinamento.length}</span>
+                <span className="mb-1 text-xs text-slate-400">colaborador(es)</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Em treinamento</p>
+            </button>
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>{treinosAbertos.length} treinamento(s) em aberto</span>
+              <span>{treinosEscopo.length - treinosAbertos.length} concluído(s)</span>
+            </div>
+          </CardBody>
+        </Card>
         <Card className="lg:col-span-2">
+          <CardHeader title="O que precisa treinar" subtitle="Treinamentos pendentes por título" icon={<GraduationCap className="h-[18px] w-[18px]" />} />
+          <CardBody className="space-y-2">
+            {topTreinos.length === 0 ? (
+              <p className="text-sm text-slate-500"><span className="font-medium text-slate-600">{treinosEscopo.length ? "Sem pendências registradas." : "Sem dados de treinamento."}</span>{" "}{treinosEscopo.length ? "Não há pendências entre os treinamentos registrados. Confira se todos os cursos necessários foram cadastrados." : "Não há treinamentos registrados para conferir a capacitação da equipe."}</p>
+            ) : (
+              /* "Integração de Segurança — 7 pendente(s)" e nenhum jeito de
+                 saber quem são os 7 para montar a turma. */
+              topTreinos.map(([titulo, qtd]) => (
+                <button
+                  key={titulo}
+                  type="button"
+                  title={`Ver quem falta fazer "${titulo}"`}
+                  onClick={() => {
+                    const ids = new Set(treinosAbertos.filter((x) => x.titulo === titulo).map((x) => x.colaboradorId));
+                    drill.abrir(titulo, ativos.filter((c) => ids.has(c.id)), `${qtd} pendente(s)`);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40"
+                >
+                  <span className="truncate text-sm font-medium text-slate-700">{titulo}</span>
+                  <Badge variant="warning">{qtd} pendente(s)</Badge>
+                </button>
+              ))
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2" abertoInicial={false} idPersistencia="painel:analise-5">
           <CardHeader title="Risco de saída informado" subtitle="Cadastro atual · ausência de informação aparece separadamente" icon={<AlertTriangle className="h-[18px] w-[18px]" />} action={<Link to="/desempenho" className="text-xs font-medium text-brand hover:underline">Ver 9-Box →</Link>} />
           <CardBody>
             <BarrasColoridas

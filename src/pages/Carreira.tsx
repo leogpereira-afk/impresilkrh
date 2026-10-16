@@ -220,8 +220,38 @@ export default function Carreira() {
       </div>
 
       {/* Simulador */}
-      <Card className="mb-4">
-        <CardHeader title="Simulador de progressão" subtitle="Impacto salarial de subir de nível na faixa do cargo" icon={<Calculator className="h-[18px] w-[18px]" />} />
+      <Card className="overflow-hidden">
+        <CardHeader title="Tabela salarial por cargo" subtitle="Valores em R$ por nível (N1 → N5) — Plano de Carreira" icon={<GitBranch className="h-[18px] w-[18px]" />} />
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="border-y border-slate-100 bg-slate-50/50">
+              <tr>
+                <th className="th">Cargo</th>
+                {["N1", "N2", "N3", "N4", "N5"].map((n) => <th key={n} className="th px-2.5 text-right">{n}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {cargosPorArea.map((g) => (
+                <FragmentArea
+                  key={g.area.id}
+                  nome={g.area.nome}
+                  cargos={g.cargos}
+                  colabCargoId={cargo?.id}
+                  ativos={d.ativos}
+                  niveis={d.niveis}
+                  expandidos={cargosExpandidos}
+                  onToggle={alternarCargo}
+                  onCargo={abrirCargo}
+                  onCargoNivel={abrirCargoNivel}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card className="mb-4" abertoInicial={false} idPersistencia="carreira:simulador">
+        <CardHeader title="Simulador de progressão" subtitle="Simulação de impacto por nível; não altera salário nem cadastro" icon={<Calculator className="h-[18px] w-[18px]" />} />
         <CardBody>
           <div className="grid gap-4 lg:grid-cols-4">
             <label className="block lg:col-span-2">
@@ -390,36 +420,6 @@ export default function Carreira() {
       </Card>
 
       {/* Tabela salarial */}
-      <Card className="overflow-hidden">
-        <CardHeader title="Tabela salarial por cargo" subtitle="Valores em R$ por nível (N1 → N5) — Plano de Carreira" icon={<GitBranch className="h-[18px] w-[18px]" />} />
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="border-y border-slate-100 bg-slate-50/50">
-              <tr>
-                <th className="th">Cargo</th>
-                {["N1", "N2", "N3", "N4", "N5"].map((n) => <th key={n} className="th px-2.5 text-right">{n}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {cargosPorArea.map((g) => (
-                <FragmentArea
-                  key={g.area.id}
-                  nome={g.area.nome}
-                  cargos={g.cargos}
-                  colabCargoId={cargo?.id}
-                  ativos={d.ativos}
-                  niveis={d.niveis}
-                  expandidos={cargosExpandidos}
-                  onToggle={alternarCargo}
-                  onCargo={abrirCargo}
-                  onCargoNivel={abrirCargoNivel}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
       <DrillModal {...drill.props} />
 
       {/* Modal: adicionar etapa à trilha de evolução */}

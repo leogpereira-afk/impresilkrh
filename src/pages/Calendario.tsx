@@ -120,6 +120,7 @@ function CalendarioGeral() {
     [personalizados],
   );
   const gere = podeGerir(sessao);
+  const [verGradeMobile, setVerGradeMobile] = useState(false);
   const [ano, setAno] = useState(HOJE.getFullYear());
   const [mes, setMes] = useState(HOJE.getMonth()); // 0-based
   const [edit, setEdit] = useState<EventoCalendario | null>(null);
@@ -413,12 +414,13 @@ function CalendarioGeral() {
         }
       />
 
+      <button type="button" className="btn-outline mb-3 lg:hidden" aria-expanded={verGradeMobile} onClick={() => setVerGradeMobile(v => !v)}>{verGradeMobile ? "Ocultar grade do mês" : "Ver grade do mês"}</button>
       {/* Agenda NA LATERAL (26/09/2026): pedido do Léo, "com a agenda na lateral,
           mas menor que a do exemplo". 16-18rem à direita a partir de 1024px;
           no celular continua embaixo do quadro. */}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_16rem] xl:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="min-w-0">
-      <Card className="mb-4">
+      <Card className={cn("mb-4", !verGradeMobile && "hidden lg:block print:block")}>
         <CardBody className="p-0">
           <div className="grid grid-cols-7 border-b border-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             {DOW.map((x) => <div key={x} className="py-2">{x}</div>)}
@@ -483,7 +485,7 @@ function CalendarioGeral() {
                   title={focado
                     ? (foco.size === 1 ? "Voltar a ver todos" : `Tirar ${t.tipo} do filtro`)
                     : (foco.size ? `Somar ${t.tipo} ao filtro` : `Ver só ${t.tipo}`)}
-                  className="inline-flex items-center gap-1.5"
+                  className="inline-flex min-h-10 items-center gap-1.5"
                 >
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: on ? t.cor : "#cbd5e1" }} />
                   {t.tipo}

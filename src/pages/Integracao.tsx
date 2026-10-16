@@ -888,7 +888,7 @@ function CardChecklist({
   };
 
   return (
-    <Card>
+    <Card abertoInicial={pct < 100} idPersistencia={`integracao:${tipo}:${colaboradorId}`}>
       <CardHeader
         title={
           <div className="flex items-center gap-3">
@@ -903,6 +903,7 @@ function CardChecklist({
             </div>
           </div>
         }
+        subtitle={proximoPasso ? `Próximo: ${proximoPasso}` : `${feitas}/${total} itens concluídos`}
         action={
           <div className="flex shrink-0 items-center gap-2">
             <Badge variant={variantePorcentagem(pct)}>

@@ -508,3 +508,19 @@ main h1, main h2, main h3 { color: var(--rh-title); }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
+
+/* Modernização RH: densidade só altera distribuição; informação e tamanho do texto permanecem. */
+[data-densidade="compacta"] .rh-stats { gap: .5rem; }
+[data-densidade="compacta"] .rh-stat { box-shadow: none; border-radius: .75rem; padding: .65rem .75rem; }
+[data-densidade="compacta"] .rh-stat > :nth-child(2) { margin-top: .25rem; }
+[data-densidade="confortavel"] .td { padding-top: 1rem; padding-bottom: 1rem; }
+.rh-tabs { scrollbar-width: thin; scroll-padding-inline: .5rem; }
+@media (pointer: coarse) {
+  .rh-nav-item, .rh-tabs button { min-height: 44px; }
+  button[aria-label^="Editar"], button[aria-label^="Excluir"], button[aria-label^="Expandir"], button[aria-label^="Recolher"] { min-height: 40px; min-width: 40px; }
+}
+@media print { .rh-tabs, [aria-label="Grupos de relatórios"] { display: none; } }
+
+@media (min-width: 640px) {
+  [data-densidade="compacta"] .td { padding-top: .55rem; padding-bottom: .55rem; }
+}

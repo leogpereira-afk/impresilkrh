@@ -128,6 +128,7 @@ export default function Relatorios() {
   // -- Filtro de período (mês/ano), igual ao Painel. Controla a movimentação
   //    (admissões/desligamentos) e o turnover. mês 0 = "Ano inteiro".
   //    Padrão = ano inteiro do ano corrente (visão executiva anual). --
+  const [grupoRelatorio, setGrupoRelatorio] = useState("todos");
   const [filtroMes, setFiltroMes] = useState<number>(0);
   const [filtroAno, setFiltroAno] = useState<number>(HOJE.getFullYear());
   const anosDisponiveis = useMemo(() => {
@@ -652,6 +653,9 @@ export default function Relatorios() {
           cada número abre o detalhe de QUEM o compõe (drill-down). O onClick vai
           direto no StatCard — o <button> que embrulhava virava botão dentro de
           botão agora que o próprio card é um <button>. */}
+      <div className="mb-3 flex flex-wrap gap-2" aria-label="Grupos de relatórios">
+        {[["todos", "Todos"], ["pessoas", "Pessoas"], ["financeiro", "Financeiro"], ["desenvolvimento", "Desenvolvimento"]].map(([id, label]) => <button key={id} className={grupoRelatorio === id ? "btn-primary" : "btn-outline"} aria-pressed={grupoRelatorio === id} onClick={() => setGrupoRelatorio(id)}>{label}</button>)}
+      </div>
       <div className="rh-stats">
         <StatCard
           label="Pessoas na empresa"
@@ -716,7 +720,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4">
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "financeiro" ? "hidden" : ""}>
           <CardHeader
             title="Folha real (pagamentos)"
             subtitle={`Pagamentos confirmados, inclusive de quem já saiu · ${rotuloPeriodo}. Clique numa barra para ver as pessoas.`}
@@ -792,7 +796,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "financeiro" ? "hidden" : ""}>
           <CardHeader
             title="Folha por área"
             subtitle="Custo mensal de pessoal por área (R$)"
@@ -812,7 +816,7 @@ export default function Relatorios() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "financeiro" ? "hidden" : ""}>
           <CardHeader
             title="Salários cadastrados por área"
             subtitle="Quadro e salários do cadastro atual"
@@ -879,7 +883,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4">
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "desenvolvimento" ? "hidden" : ""}>
           <CardHeader
             title="Desempenho por setor"
             subtitle={
@@ -956,7 +960,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "desenvolvimento" ? "hidden" : ""}>
           <CardHeader
             title="Clima por setor"
             subtitle="Motivados, estáveis e desmotivados — setor com mais desmotivados no topo."
@@ -986,7 +990,7 @@ export default function Relatorios() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "desenvolvimento" ? "hidden" : ""}>
           <CardHeader
             title="Risco de saída por setor"
             subtitle="Baixo, médio e alto risco — setor com mais risco alto no topo."
@@ -1019,7 +1023,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "pessoas" ? "hidden" : "lg:col-span-2"}>
           <CardHeader
             title="Movimentação"
             subtitle={filtroMes === 0 ? `Admissões e desligamentos · ${filtroAno}` : `Admissões e desligamentos · 12 meses até ${rotuloPeriodo}`}
@@ -1053,7 +1057,7 @@ export default function Relatorios() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "financeiro" ? "hidden" : ""}>
           <CardHeader
             title="Enquadramento salarial"
             subtitle="Posição frente à faixa do cargo"
@@ -1070,7 +1074,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4">
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "pessoas" ? "hidden" : ""}>
           <CardHeader
             title="Tempo de casa"
             subtitle="Distribuição do quadro ativo por tempo de empresa"
@@ -1083,7 +1087,7 @@ export default function Relatorios() {
       </div>
 
       <div className="mt-4">
-        <Card>
+        <Card className={grupoRelatorio !== "todos" && grupoRelatorio !== "financeiro" ? "hidden" : ""}>
           <CardHeader
             title="Viagens e diárias"
             subtitle={`Custos de deslocamento — ${rotuloPeriodo}. As diárias também compõem os ganhos do colaborador (aba Financeiro).`}

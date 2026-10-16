@@ -222,7 +222,7 @@ function AcompanhamentoCard() {
     return colabs.map((c) => ({
       colab: c,
       aceite: aceiteDaVersao(aceites, c.id, TIPO_ETICA, doc?.versao),
-    }));
+    })).sort((a, b) => Number(!!a.aceite) - Number(!!b.aceite) || a.colab.nome.localeCompare(b.colab.nome, "pt-BR"));
   }, [d.colaboradores, aceites, incluirSaiu, doc?.versao]);
 
   const aceitos = linhas.filter((l) => l.aceite).length;

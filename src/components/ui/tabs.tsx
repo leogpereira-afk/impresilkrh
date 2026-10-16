@@ -35,8 +35,10 @@ export function Tabs({
   idPersistencia,
   ativa: ativaProp,
   aoMudar,
+  navegacao = "abas",
 }: {
   abas: { id: string; label: string; icon?: React.ReactNode; conteudo: React.ReactNode }[];
+  navegacao?: "abas" | "seletor";
   inicial?: string;
   // Quando definido, a aba ativa é lembrada (sessionStorage) entre remontagens —
   // ex.: navegar de um colaborador para outro mantém a mesma aba aberta.
@@ -63,7 +65,10 @@ export function Tabs({
 
   return (
     <div>
-      <div role="tablist" aria-label="Seções desta tela" className="mb-4 flex flex-wrap gap-1 border-b border-slate-200">
+      {navegacao === "seletor" && <label className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium">Seção
+        <select className="min-h-10 rounded-lg border border-slate-200 bg-white px-3" value={ativa} onChange={e => mudar(e.target.value)}>{abas.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}</select>
+      </label>}
+      <div role="tablist" aria-label="Seções desta tela" className={cn("rh-tabs mb-3 flex gap-1 overflow-x-auto border-b border-slate-200", navegacao === "seletor" && "hidden")}>
         {abas.map((a, indice) => {
           const ativo = a.id === ativa;
           return (
@@ -83,7 +88,7 @@ export function Tabs({
               }}
               onClick={() => mudar(a.id)}
               className={cn(
-                "relative flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                "relative flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors",
                 ativo
                   ? "text-brand"
                   : "text-slate-500 hover:text-slate-800",
@@ -92,7 +97,7 @@ export function Tabs({
               {a.icon}
               {a.label}
               {ativo && (
-                <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-brand" />
+                <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-brand" />
               )}
             </button>
           );

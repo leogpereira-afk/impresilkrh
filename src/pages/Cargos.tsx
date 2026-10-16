@@ -75,6 +75,7 @@ export default function Cargos() {
   const [criando, setCriando] = useState(false);
   const [apagando, setApagando] = useState<Cargo | null>(null);
   const [busca, setBusca] = useState("");
+  const [selecionado, setSelecionado] = useState("");
   const [area, setArea] = useState("");
   const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
 
@@ -149,8 +150,13 @@ export default function Cargos() {
           icon={<Briefcase className="h-8 w-8" />}
         />
       ) : (
-        <div className="space-y-2">
-          {lista.map((c, i) => {
+        <div className="grid items-start gap-3 lg:grid-cols-[15rem_minmax(0,1fr)]">
+          <nav aria-label="Lista de cargos" className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2 lg:sticky lg:top-20 lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
+            <button className="btn-ghost shrink-0 text-left" aria-pressed={!selecionado} onClick={() => setSelecionado("")}>Todos os cargos</button>
+            {lista.map(c => <button key={c.id} className={cn("min-h-10 shrink-0 rounded-lg px-3 py-2 text-left text-sm", selecionado === c.id ? "bg-brand text-white" : "hover:bg-slate-50")} aria-pressed={selecionado === c.id} onClick={() => { setSelecionado(c.id); setAbertos(new Set([c.id])); }}>{c.nome}</button>)}
+          </nav>
+          <div className="min-w-0 space-y-2">
+          {lista.filter(c => !lista.some(x => x.id === selecionado) || c.id === selecionado).map((c, i) => {
             const aberto = abertos.has(c.id);
             const ocupantes = ocupacao.get(c.id) ?? [];
             const quantos = ocupantes.length;
@@ -276,6 +282,7 @@ export default function Cargos() {
               </Card>
             );
           })}
+          </div>
         </div>
       )}
 

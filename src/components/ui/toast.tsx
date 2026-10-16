@@ -42,11 +42,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           return (
             <div
               key={t.id}
+              role={t.tipo === "erro" ? "alert" : "status"}
+              aria-atomic="true"
               className="pointer-events-auto flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card-hover animate-fade-in"
             >
               <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", cor[t.tipo])} />
               <p className="flex-1 text-sm text-slate-700">{t.msg}</p>
-              <button onClick={() => remover(t.id)} className="text-slate-400 hover:text-slate-600">
+              <button type="button" aria-label="Fechar aviso" onClick={() => remover(t.id)} className="flex min-h-10 min-w-10 items-center justify-center text-slate-500 hover:text-slate-700">
                 <X className="h-4 w-4" />
               </button>
             </div>

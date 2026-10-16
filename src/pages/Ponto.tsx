@@ -567,7 +567,8 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <details className="rounded-xl border border-slate-200 bg-white"><summary className="cursor-pointer px-4 py-3 text-sm font-medium">Importar cartão de ponto (PDF)</summary>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3">
         <div><p className="text-sm font-semibold text-slate-800">Cartão de ponto · Secullum</p><p className="text-xs text-slate-500">Importe o PDF e confira os vínculos antes de salvar.</p></div>
         <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onArquivo(f); }} />
         <button onClick={() => fileRef.current?.click()} disabled={ocupado} className="btn-primary disabled:opacity-50">
@@ -575,6 +576,7 @@ function AbaPontoMes({ podeEditar }: { podeEditar: boolean }) {
         </button>
       </div>
 
+      </details>
       {/* Prévia da importação */}
       {previa && (
         <Card>

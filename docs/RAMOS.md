@@ -37,3 +37,8 @@ frente) e `git cherry origin/main origin/<ramo>`.
 No clone ~/Projetos/impresilkrh há também o ramo local
 claude/lucid-clarke-pquyij (o mesmo f21f50a acima) e a main local 1 commit
 atrás da origem em 12/10/2026.
+
+## Atualização de 16/10/2026
+
+- `rh-fluxos-auditoria-20261016`: correções incorporadas por rebase em `rh-modernizacao-20261016`; não juntar novamente o ramo antigo.
+- `rh-modernizacao-20261016`: correções e modernização autorizadas para publicação; escopo e verificação em `docs/planos/2026-10-16-modernizacao-execucao.md`.

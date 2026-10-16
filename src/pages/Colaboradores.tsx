@@ -135,11 +135,15 @@ export default function Colaboradores() {
   const sessao = useSessao();
   const toast = useToast();
   const d = useDominio();
-  const [busca, setBusca] = useState("");
+  const chaveVista = `rh:colaboradores:vista:${sessao?.colaboradorId ?? "sem-sessao"}`;
+  const [vistaInicial] = useState(() => {
+    try { return (JSON.parse(sessionStorage.getItem(chaveVista) || "{}") ?? {}) as { busca?: string; inativos?: boolean; chips?: string[]; scroll?: number }; } catch { return {}; }
+  });
+  const [busca, setBusca] = useState(typeof vistaInicial.busca === "string" ? vistaInicial.busca : "");
   const [paramsStatus, setParamsStatus] = useSearchParams();
   const fStatus = paramsStatus.get("status") ?? "";
   const setFStatus = (status: string) => setParamsStatus(p => { const novo = new URLSearchParams(p); if (status) novo.set("status", status); else novo.delete("status"); return novo; }, { replace: true });
-  const [mostrarInativos, setMostrarInativos] = useState(false); // padrão: só ativos
+  const [mostrarInativos, setMostrarInativos] = useState(vistaInicial.inativos === true); // padrão: só ativos
   const [novo, setNovo] = useState(false);
   const [verNomes, setVerNomes] = useState(false); // lista simples de nomes (A–Z)
 
@@ -156,7 +160,14 @@ export default function Colaboradores() {
   // Um destino da busca pode trocar o status sem remontar a página.
   useEffect(() => setFoco(null), [fStatus]);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "nome", asc: true });
-  const [chips, setChips] = useState<Set<string>>(() => new Set());
+  const [chips, setChips] = useState<Set<string>>(() => new Set(Array.isArray(vistaInicial.chips) ? vistaInicial.chips : []));
+  useEffect(() => {
+    try { const anterior = JSON.parse(sessionStorage.getItem(chaveVista) || "{}"); sessionStorage.setItem(chaveVista, JSON.stringify({ ...anterior, busca, inativos: mostrarInativos, chips: [...chips] })); } catch { /* filtro segue funcionando sem armazenamento */ }
+  }, [chaveVista, busca, mostrarInativos, chips]);
+  useEffect(() => {
+    if (typeof vistaInicial.scroll === "number") requestAnimationFrame(() => window.scrollTo(0, vistaInicial.scroll!));
+    return () => { try { const anterior = JSON.parse(sessionStorage.getItem(chaveVista) || "{}"); sessionStorage.setItem(chaveVista, JSON.stringify({ ...anterior, scroll: window.scrollY })); } catch { /* preferência local */ } };
+  }, [chaveVista, vistaInicial]);
   // Sanfonas: primeira área aberta por padrão; subáreas começam fechadas.
   const [areasAbertas, setAreasAbertas] = useState<Set<string>>(
     () => new Set(areasNav.length ? [areasNav[0].id] : []),
@@ -646,6 +657,7 @@ export default function Colaboradores() {
         description={`${lista.length} colaborador(es) no seu escopo de acesso.${linhasContrato.length ? ` Mais ${linhasContrato.length} contrato(s) de freelancer, fora do quadro.` : ""}`}
       >
         {ehRH(sessao) && <Link className="btn-outline" to="/painel-controle?aba=cadastros">Conferir cadastros</Link>}
+        <details className="relative no-print"><summary className="btn-outline cursor-pointer">Exportar lista</summary><div className="absolute right-0 z-20 mt-1 grid w-56 gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
         <button className="btn-outline" onClick={exportarCsv} disabled={semLinhas} title="Exporta a lista filtrada para CSV">
           <Download className="h-4 w-4" /> Exportar CSV
         </button>
@@ -665,6 +677,7 @@ export default function Colaboradores() {
         >
           <FileText className="h-4 w-4" /> {baixandoFichas ? "Gerando…" : "Fichas completas"}
         </button>
+        </div></details>
         {ehRH(sessao) && (
           <button className="btn-primary" onClick={() => setNovo(true)}>
             <Plus className="h-4 w-4" /> Novo colaborador

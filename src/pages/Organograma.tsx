@@ -98,7 +98,7 @@ function Node({ c, filhosPorGestor, colapsados, toggle, acoes }: {
   const colapsado = colapsados.has(c.id);
 
   return (
-    <li>
+    <li id={`org-${c.id}`} tabIndex={-1} className="rounded-lg focus:outline focus:outline-2 focus:outline-brand">
       <div className="group flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 transition hover:bg-slate-50">
         {/* Chevron de expandir/recolher (ocupa espaço fixo mesmo sem filhos) */}
         {temFilhos ? (
@@ -233,6 +233,8 @@ export default function Organograma() {
   const [removerAlvo, setRemoverAlvo] = useState<Colaborador | null>(null);
   const [editarAlvo, setEditarAlvo] = useState<Colaborador | null>(null);
   const [visao, setVisao] = useState<Visao>("hierarquia");
+  const [buscaPessoa, setBuscaPessoa] = useState("");
+  const [destacado, setDestacado] = useState("");
   const [soAtivos, setSoAtivos] = useState(true);
   const fotoInputRef = useRef<HTMLInputElement>(null);
   const fotoAlvoRef = useRef<string | null>(null);
@@ -412,6 +414,18 @@ export default function Organograma() {
         )}
       </PageHeader>
 
+      <div className="mb-3">
+        <Input aria-label="Buscar pessoa no organograma" placeholder="Buscar pessoa ou cargo" value={buscaPessoa} onChange={e => setBuscaPessoa(e.target.value)} />
+        {buscaPessoa.trim() && <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
+          {visiveis.filter(c => `${c.nome} ${d.nomeCargo(c)}`.toLocaleLowerCase("pt-BR").includes(buscaPessoa.trim().toLocaleLowerCase("pt-BR"))).map(c => <button key={c.id} className="block min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => {
+            const caminho = new Set<string>(); let id: string | null = c.id;
+            while (id && !caminho.has(id)) { caminho.add(id); id = paiEfetivo.get(id) ?? null; }
+            setColapsados(prev => new Set([...prev].filter(x => !caminho.has(x)))); setVisao("hierarquia"); setDestacado(c.id); setBuscaPessoa("");
+            setTimeout(() => { const no = document.getElementById(`org-${c.id}`); no?.focus({ preventScroll: true }); no?.scrollIntoView({ block: "center", behavior: "auto" }); }, 0);
+          }}><strong>{c.nome}</strong><span className="block text-xs text-slate-500">{d.nomeCargo(c)} · {d.nomeArea(c.areaId)} · Gestor: {c.gestorId ? d.nomeColab(c.gestorId) : "Sem gestor informado"}</span></button>)}
+        </div>}
+        {destacado && <p className="mt-2 text-xs text-slate-500">Localizado: {d.nomeColab(destacado)} <button className="min-h-10 px-2 text-brand" onClick={() => setDestacado("")}>Limpar destaque</button></p>}
+      </div>
       {/* Seletor de visão + filtro de ativos */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">

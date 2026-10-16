@@ -66,6 +66,7 @@ export default function SST() {
   // ("quem eu posso ver"), não status — as duas eram confundidas aqui, e a
   // lista pedia ASO de gente que não trabalha mais na empresa, inflando o
   // contador de vencidos. O seletor deixa reabrir para conferência/auditoria.
+  const [buscaExame, setBuscaExame] = useState("");
   const [incluirSaiu, setIncluirSaiu] = useState(false);
   const exames = useMemo(() => {
     // `!ehDirecao` é o mesmo recorte de Aceites, Férias, Desempenho e
@@ -132,8 +133,8 @@ export default function SST() {
     setFocoExame((atual) => (atual === s ? null : s));
   };
   const examesVisiveis = useMemo(
-    () => (focoExame ? exames.filter((doc) => situacaoDoc(doc.dataVencimento, hoje) === focoExame) : exames),
-    [exames, focoExame, hoje],
+    () => (focoExame ? exames.filter((doc) => situacaoDoc(doc.dataVencimento, hoje) === focoExame) : exames).filter(doc => `${d.nomeColab(doc.colaboradorId)} ${doc.nome} ${doc.categoria}`.toLocaleLowerCase("pt-BR").includes(buscaExame.trim().toLocaleLowerCase("pt-BR"))),
+    [exames, focoExame, hoje, buscaExame, d],
   );
 
   /* UMA LINHA POR PESSOA. A tabela repetia o nome a cada exame: quem tem ASO e
@@ -205,7 +206,7 @@ export default function SST() {
   const abaExames = (
     <div>
       <div className="mb-4 rh-stats">
-        <StatCard label="Total de exames" value={total} icon={<FileText className="h-5 w-5" />} accent="brand" onClick={() => setFocoExame(null)} ativo={focoExame === null} title="Mostrar todos os exames" />
+        <StatCard label="Total de exames" value={total} icon={<FileText className="h-5 w-5" />} accent="brand" onClick={() => { setFocoExame(null); setVerSemExame(false); }} ativo={focoExame === null && !verSemExame} title="Mostrar todos os exames" />
         <StatCard label="Sem validade informada" value={semValidade} hint="Exames com prazo a conferir" icon={<FileText className="h-5 w-5" />} onClick={() => alternarFoco("Sem validade informada")} ativo={focoExame === "Sem validade informada"} />
         <StatCard label="Válidos" value={validos} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" onClick={() => alternarFoco("Válido")} ativo={focoExame === "Válido"} title="Ver só os exames válidos" />
         <StatCard label="A vencer" value={aVencer} hint={`em até ${JANELA_ALERTA_DIAS} dias`} icon={<Clock className="h-5 w-5" />} accent="amber" onClick={() => alternarFoco("A vencer")} ativo={focoExame === "A vencer"} title="Ver só os exames a vencer" />
@@ -222,6 +223,11 @@ export default function SST() {
         />
       </div>
 
+        <div className="my-3 flex flex-wrap items-center gap-2">
+          <Input aria-label="Buscar exame ou colaborador" placeholder="Buscar exame ou colaborador" value={buscaExame} onChange={e => setBuscaExame(e.target.value)} className="min-w-0 flex-1" />
+          <span className="text-xs text-slate-500">{verSemExame ? "Pessoas sem exame" : `${examesVisiveis.length} de ${total} exames`} {focoExame && `· ${focoExame}`}</span>
+          {(buscaExame || focoExame || verSemExame) && <button className="btn-ghost min-h-10" onClick={() => { setBuscaExame(""); setFocoExame(null); setVerSemExame(false); }}>Limpar filtros</button>}
+        </div>
       {/* A lista de quem não tem nada aparece ACIMA da tabela de exames: é o
           estado mais grave e o único que a tabela, por natureza, não mostra. */}
       {verSemExame && (
@@ -236,7 +242,7 @@ export default function SST() {
               <p className="text-sm text-slate-500">Todo mundo do quadro tem pelo menos um exame registrado.</p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {semExame.map((c) => (
+                {semExame.filter(c => c.nome.toLocaleLowerCase("pt-BR").includes(buscaExame.trim().toLocaleLowerCase("pt-BR"))).map((c) => (
                   <li key={c.id} className="flex items-center gap-3 py-2">
                     <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                     <div className="min-w-0 flex-1">

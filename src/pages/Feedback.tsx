@@ -408,6 +408,7 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, emPreparo, onAlternar, onNo
         </td>
         <td className="td hidden lg:table-cell tabular-nums text-slate-500">
           {cad.diasDesde != null ? `${cad.diasDesde} dias` : "—"}
+          {!cad.ultimo && <span className="block text-xs text-slate-500">Desde a admissão · sem conversa registrada</span>}
         </td>
         <td className="td text-right">
           {/* AS TRÊS ETAPAS. A tela só tinha "Registrar", que assume a conversa

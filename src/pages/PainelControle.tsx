@@ -120,7 +120,7 @@ export default function PainelControle() {
   return (
     <div>
       <PageHeader title="Configurações do RH" description="Gerencie cadastros e acessos. Confira o estado de salvamento na nuvem para saber se as alterações foram enviadas." />
-      <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
+      <Tabs navegacao="seletor" ativa={abaAtual} aoMudar={mudarAbaAtual}
         abas={[
           { id: "estrutura", label: "Estrutura", icon: <Building2 className="h-4 w-4" />, conteudo: <Estrutura /> },
           /* Todos os cadastros, com as fichas repetidas em cima (pedido do Léo

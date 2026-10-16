@@ -92,7 +92,7 @@ export default function Mensagens() {
       <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual}
         abas={[
           { id: "contatos", label: "Contatos", icon: <Users className="h-4 w-4" />, conteudo: <AbaContatos podeEditar={podeEditar} /> },
-          { id: "templates", label: "Templates", icon: <FileText className="h-4 w-4" />, conteudo: <AbaTemplates podeEditar={podeEditar} /> },
+          { id: "templates", label: "Modelos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaTemplates podeEditar={podeEditar} /> },
           { id: "agendamentos", label: "Agendamentos", icon: <Clock className="h-4 w-4" />, conteudo: <AbaAgendamentos podeEditar={podeEditar} /> },
         ]}
       />
@@ -141,7 +141,7 @@ function ModalEnvio({ contato, onFechar }: { contato: Contato; onFechar: () => v
       }
     >
       <div className="space-y-3">
-        <Campo label="Modelo" hint={templates.length ? "Escolher preenche o texto abaixo; dá para editar." : "Nenhum modelo cadastrado — escreva à mão ou crie um na aba Templates."}>
+        <Campo label="Modelo" hint={templates.length ? "Escolher preenche o texto abaixo; dá para editar." : "Nenhum modelo cadastrado — escreva à mão ou crie um na aba Modelos."}>
           <Select value={templateId} onChange={(e) => escolher(e.target.value)}>
             <option value="">— escrever do zero —</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.titulo}</option>)}
@@ -750,6 +750,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
 
   // Simula o disparo: marca como enviada e avisa quantos contatos receberiam.
   // O corpo é personalizado por destinatário (substitui {{nome}}); mostramos um exemplo real.
+  const [simular, setSimular] = useState<Agendamento | null>(null);
   const marcarEnviada = (a: Agendamento) => {
     const alvo = a.grupoAlvo;
     const destinatarios = !alvo || alvo === TODOS ? contatos : contatos.filter((c) => (c.grupo?.trim() || "") === alvo);
@@ -778,12 +779,13 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
 
   return (
     <div>
+      <ConfirmDialog aberto={!!simular} onFechar={() => setSimular(null)} onConfirmar={() => { if (simular) marcarEnviada(simular); setSimular(null); }} titulo="Registrar simulação?" mensagem="Nenhuma mensagem será enviada. Este registro serve para conferir o planejamento e não comprova entrega ao destinatário." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="rh-stats min-w-0 flex-[1_1_28rem]">
           <StatCard label="Agendadas" value={agendadas} icon={<Clock className="h-5 w-5" />} accent="blue" hint="Na fila de envio"
             onClick={() => alternarFoco("Agendada")} ativo={foco === "Agendada"} title="Ver só os envios ainda na fila" />
-          <StatCard label="Enviadas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados"
-            onClick={() => alternarFoco("Enviada")} ativo={foco === "Enviada"} title="Ver só os envios já disparados" />
+          <StatCard label="Simuladas" value={enviadas} icon={<CheckCircle2 className="h-5 w-5" />} accent="green" hint="Disparos simulados"
+            onClick={() => alternarFoco("Enviada")} ativo={foco === "Enviada"} title="Ver simulações registradas; não comprova entrega" />
           {/* Sem clique: os contatos não estão nesta aba e a aba de Contatos não pode
               ser aberta de fora — o número aqui é só referência da base. */}
           <StatCard label="Total de contatos" value={contatos.filter((c) => contatoAtivo(c, saiu)).length} icon={<Users className="h-5 w-5" />} accent="gold" hint="Quem ainda está na empresa" />
@@ -830,7 +832,7 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
                       <td className="td hidden md:table-cell text-slate-500">{n} contato(s)</td>
                       <td className="td whitespace-nowrap text-slate-500" title={formatDateLong(a.quando)}>{formatDate(a.quando)} · {new Date(a.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
                       <td className="td">
-                        <Badge variant={varianteStatus[a.status] ?? "neutral"}>{a.status}</Badge>
+                        <Badge variant={varianteStatus[a.status] ?? "neutral"}>{a.status === "Enviada" ? "Simulada · sem comprovação de envio" : a.status}</Badge>
                       </td>
                       {podeEditar && (
                         <td className="td text-right">
@@ -847,9 +849,9 @@ function AbaAgendamentos({ podeEditar }: { podeEditar: boolean }) {
                                 </button>
                                 <button
                                   className="btn-ghost p-1.5 text-green-600 hover:bg-green-50"
-                                  onClick={() => marcarEnviada(a)}
-                                  title="Marcar como enviada (simular disparo)"
-                                  aria-label={`Marcar ${a.titulo} como enviada`}
+                                  onClick={() => setSimular(a)}
+                                  title="Registrar simulação — nenhuma mensagem será enviada"
+                                  aria-label={`Simular envio de ${a.titulo}`}
                                 >
                                   <CheckCircle2 className="h-4 w-4" />
                                 </button>

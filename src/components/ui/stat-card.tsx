@@ -95,7 +95,7 @@ export function StatCard({
           </span>
         )}
       </div>
-      {hint && <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{hint}</p>}
+      {hint && <p className="mt-0.5 text-xs leading-snug text-slate-500">{hint}</p>}
     </Tag>
   );
 }

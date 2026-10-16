@@ -110,7 +110,7 @@ function CorpoGuia({
 
 function Secao({ titulo, descricao, Icon, children }: { titulo: string; descricao: string; Icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
   return (
-    <section className="space-y-3">
+    <section id={`guia-${titulo.split(" ")[0].toLowerCase()}`} className="scroll-mt-24 space-y-3">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand"><Icon className="h-[18px] w-[18px]" /></span>
         <div>
@@ -214,6 +214,9 @@ export function GlossarioComportamental({ focoPerfil }: { focoPerfil?: string | 
 
   return (
     <div className="space-y-6">
+      <nav aria-label="Assuntos do guia" className="flex flex-wrap gap-2">
+        {[["os", "Perfis"], ["clima", "Clima"], ["estilos", "Aprendizagem"], ["termômetro", "Motivação"], ["risco", "Retenção"]].map(([id, nome]) => <button key={id} className="btn-outline" onClick={() => document.getElementById(`guia-${id}`)?.scrollIntoView({ block: "start", behavior: "auto" })}>{nome}</button>)}
+      </nav>
       <details className="group rounded-2xl border border-slate-200/70 bg-gradient-to-br from-brand-50 to-white px-4">
         <summary className="flex min-h-11 cursor-pointer select-none items-center gap-2 text-sm font-semibold text-brand-ink">
           <Lightbulb className="h-4 w-4 text-gold-500" /> Como usar este guia

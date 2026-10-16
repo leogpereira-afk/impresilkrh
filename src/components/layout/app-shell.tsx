@@ -1,3 +1,4 @@
+import { usePreferenciaVisual } from "@/lib/preferenciasVisuais";
 import { destinosDaBusca } from "@/lib/buscaTelas";
 import { Modal } from "@/components/ui/modal";
 import { useEffect, useState } from "react";
@@ -7,7 +8,7 @@ import {
   ShieldCheck, Palmtree, ClipboardList, HardHat, BarChart3, FileSignature,
   Megaphone, Briefcase, SlidersHorizontal, Menu, X, LogOut, Clock, Send, GraduationCap, Lock, Coins, Brain, CalendarDays, MessageSquare,
   Sun, Moon, ChevronRight, Search,
-  Printer, MoreHorizontal,
+  Printer, MoreHorizontal, Star,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useTema } from "@/lib/tema";
@@ -79,10 +80,6 @@ const NAV: ItemNav[] = [
 ];
 
 const GRUPOS = ["Visão geral", "Pessoas", "Estrutura e financeiro", "Comunicação e documentos", "Administração", "Conta"];
-const EMOJIS: Record<string, string> = {
-  painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", endomarketing: "💜", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
-};
-
 /* NAVCONTEUDO E RODAPE MORAM AQUI FORA, e é de propósito.
  *
  * Os dois eram declarados DENTRO do AppShell. Um componente escrito dentro de
@@ -113,8 +110,9 @@ const EMOJIS: Record<string, string> = {
  * é isso que estar no escopo do módulo garante.
  */
 function NavConteudo({
-  itensVisiveis, recolhidos, alternarGrupo, caminho, aoNavegar, className,
+  itensVisiveis, recolhidos, alternarGrupo, caminho, aoNavegar, className, favoritos,
 }: {
+  favoritos: string[];
   itensVisiveis: ItemNav[];
   recolhidos: Set<string>;
   alternarGrupo: (grupo: string) => void;
@@ -128,6 +126,10 @@ function NavConteudo({
      ativo com fundo claro da marca e barra de 3px à esquerda. */
   return (
     <nav className={cn("rh-nav min-h-0 flex-1 overflow-y-auto", className)}>
+      {itensVisiveis.some(i => favoritos.includes(i.href)) && <div className="rh-nav-grupo">
+        <p className="rh-nav-titulo">Favoritos</p>
+        {itensVisiveis.filter(i => favoritos.includes(i.href)).map(i => <NavLink key={i.href} to={i.href} onClick={aoNavegar} className={cn("rh-nav-item", caminho === i.href && "ativo")}><Star className="h-4 w-4" /><span>{i.label}</span></NavLink>)}
+      </div>}
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
         if (!itens.length) return null;
@@ -166,7 +168,7 @@ function NavConteudo({
                       ativo && "ativo",
                     )}
                   >
-                    <span aria-hidden="true" className="rh-nav-ic">{EMOJIS[item.href.slice(1)] ?? <Icon />}</span>
+                    <span aria-hidden="true" className="rh-nav-ic"><Icon className="h-[18px] w-[18px]" /></span>
                     <span className="rh-nav-rotulo">{item.label}</span>
                   </NavLink>
                 );
@@ -181,6 +183,10 @@ function NavConteudo({
 
 export function AppShell() {
   const [opcoes, setOpcoes] = useState(false);
+  const [compacto, setCompacto] = usePreferenciaVisual("compacto", true);
+  const [favoritosSalvos, setFavoritos] = usePreferenciaVisual<string[]>("favoritos", []);
+  const favoritos = Array.isArray(favoritosSalvos) ? favoritosSalvos : [];
+
   const location = useLocation();
   const navigate = useNavigate();
   const sessao = useSessao();
@@ -274,7 +280,7 @@ export function AppShell() {
   const rotaBloqueada = !moduloAcessivel(moduloAtual, liberados);
 
   return (
-    <div className="flex min-h-screen bg-[var(--bg)]">
+    <div data-densidade={compacto ? "compacta" : "confortavel"} className="flex min-h-screen bg-[var(--bg)]">
       {/* Lateral no padrão da Central do Léo: 218px, presa na altura da tela
           (sticky, dentro do fluxo) em vez de fixa com o conteúdo empurrado por
           padding. Assim a largura mora num lugar só (.rh-side, em index.css). */}
@@ -282,7 +288,7 @@ export function AppShell() {
         <div className="rh-side-marca">
           <Logo variant="color" className="h-12 max-w-[190px]" />
         </div>
-        <NavConteudo itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
+        <NavConteudo favoritos={favoritos} itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
         {/* Sem rodapé com nome e Sair (26/09/2026): o Léo apontou que isso já
             está na barra de cima -- nome, perfil, foto e Sair a partir de 640px;
             no celular, pelo "Mais opções" (Opções da conta > Sair do sistema).
@@ -299,7 +305,7 @@ export function AppShell() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <NavConteudo className="px-3 py-3" itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
+            <NavConteudo favoritos={favoritos} className="px-3 py-3" itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
           </aside>
         </div>
       )}
@@ -372,13 +378,14 @@ export function AppShell() {
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">Sair</span>
               </button>
-              <button className="btn-ghost min-h-11 min-w-11 sm:hidden" aria-label="Mais opções" onClick={() => setOpcoes(true)}><MoreHorizontal className="h-5 w-5" /></button>
+              <button className="btn-ghost min-h-10 min-w-10" aria-label="Mais opções" onClick={() => setOpcoes(true)}><MoreHorizontal className="h-5 w-5" /></button>
             </div>
           </div>
         </header>
         <Modal aberto={opcoes} onFechar={() => setOpcoes(false)} titulo="Opções da conta" largura="max-w-sm">
           <p className="mb-3 text-sm">{user.nome} · {PERFIL_LABEL[user.perfil]}</p>
           <div className="grid gap-2">
+            <button className="btn-outline min-h-11" aria-pressed={compacto} onClick={() => setCompacto(!compacto)}>Densidade: {compacto ? "compacta" : "confortável"}</button>
             <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); navigate('/meu-perfil'); }}>Meu perfil</button>
             <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); setTimeout(() => window.print(), 0); }}>Salvar esta tela em PDF</button>
             <button className="btn-outline min-h-11" onClick={alternarTema}>{tema === 'escuro' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
@@ -387,7 +394,7 @@ export function AppShell() {
         </Modal>
 
         <main id="conteudo-rh" key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-4 sm:px-6 lg:px-8">
-          {telaAtual && <nav aria-label="Localização" className="no-print mb-1.5 flex items-center gap-1.5 text-xs text-slate-500"><span>{telaAtual.grupo}</span><ChevronRight className="h-3 w-3" /><span className="font-medium text-slate-700">{telaAtual.label}</span></nav>}
+          {telaAtual && <nav aria-label="Localização" className="no-print mb-1.5 flex items-center gap-1.5 text-xs text-slate-500"><span>{telaAtual.grupo}</span><ChevronRight className="h-3 w-3" /><span className="font-medium text-slate-700">{telaAtual.label}</span><button type="button" className="ml-auto inline-flex min-h-10 items-center gap-1 px-2" aria-pressed={favoritos.includes(telaAtual.href)} onClick={() => setFavoritos(favoritos.includes(telaAtual.href) ? favoritos.filter(f => f !== telaAtual.href) : [...favoritos, telaAtual.href])}><Star className={cn("h-4 w-4", favoritos.includes(telaAtual.href) && "fill-current text-amber-600")} />{favoritos.includes(telaAtual.href) ? "Favorito" : "Favoritar"}</button></nav>}
           {rotaBloqueada ? (
             <EmptyState
               title="Acesso restrito"

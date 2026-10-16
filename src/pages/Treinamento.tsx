@@ -220,54 +220,6 @@ export default function Treinamento() {
         <StatCard label="Progresso médio" value={lista.length ? formatPercent(progressoMedio, 0) : "—"} hint="Média de conclusão" icon={<Trophy className="h-5 w-5" />} accent="gold" />
       </div>
 
-      {/* Gráficos por tipo e por status */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Treinamentos por tipo"
-            subtitle="Distribuição da carga de capacitação"
-            icon={<BookOpen className="h-[18px] w-[18px]" />}
-          />
-          <CardBody>
-            {porTipo.length === 0 ? (
-              <p className="text-sm text-slate-500">Sem treinamentos. Nenhum treinamento registrado no seu escopo.</p>
-            ) : (
-              <BarrasColoridas
-                data={porTipo}
-                altura={200}
-                onItemClick={(nome) => {
-                  const regs = lista.filter((t) => t.tipo === nome);
-                  if (regs.length) drillRegs(`Treinamento ${nome}`, regs);
-                }}
-              />
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader
-            title="Treinamentos por status"
-            subtitle="Andamento geral das capacitações"
-            icon={<ListChecks className="h-[18px] w-[18px]" />}
-          />
-          <CardBody>
-            {porStatus.length === 0 ? (
-              <p className="text-sm text-slate-500">Sem treinamentos. Nenhum treinamento registrado no seu escopo.</p>
-            ) : (
-              <BarrasColoridas
-                data={porStatus}
-                altura={200}
-                onItemClick={(nome) => {
-                  const regs = lista.filter((t) => t.status === nome);
-                  if (regs.length) drillRegs(`Treinamentos: ${nome}`, regs);
-                }}
-              />
-            )}
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Quem está em treinamento */}
       <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="Quem está em treinamento"
@@ -568,6 +520,54 @@ export default function Treinamento() {
         }
       />
 
+      {/* Gráficos por tipo e por status */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card abertoInicial={false} idPersistencia="treinamento:tipo">
+          <CardHeader
+            title="Treinamentos por tipo"
+            subtitle="Distribuição da carga de capacitação"
+            icon={<BookOpen className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {porTipo.length === 0 ? (
+              <p className="text-sm text-slate-500">Sem treinamentos. Nenhum treinamento registrado no seu escopo.</p>
+            ) : (
+              <BarrasColoridas
+                data={porTipo}
+                altura={200}
+                onItemClick={(nome) => {
+                  const regs = lista.filter((t) => t.tipo === nome);
+                  if (regs.length) drillRegs(`Treinamento ${nome}`, regs);
+                }}
+              />
+            )}
+          </CardBody>
+        </Card>
+
+        <Card abertoInicial={false} idPersistencia="treinamento:status">
+          <CardHeader
+            title="Treinamentos por status"
+            subtitle="Andamento geral das capacitações"
+            icon={<ListChecks className="h-[18px] w-[18px]" />}
+          />
+          <CardBody>
+            {porStatus.length === 0 ? (
+              <p className="text-sm text-slate-500">Sem treinamentos. Nenhum treinamento registrado no seu escopo.</p>
+            ) : (
+              <BarrasColoridas
+                data={porStatus}
+                altura={200}
+                onItemClick={(nome) => {
+                  const regs = lista.filter((t) => t.status === nome);
+                  if (regs.length) drillRegs(`Treinamentos: ${nome}`, regs);
+                }}
+              />
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Quem está em treinamento */}
       <DrillModal {...drill.props} />
     </div>
   );

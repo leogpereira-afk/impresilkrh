@@ -33,6 +33,8 @@ na pasta Dre. A fonte de cada uma diz onde.
 
 - D-006 · 15/10/2026 · Endomarketing dentro do RH, aproveitando cadastro e calendário existentes. Acesso: "so que acessa o rh". Publicação e ampliação pesquisada autorizadas: "ok subir o endomarketing na lateral mas pesquisar sobre endomarketing e adicionar mais acoes necessarias". Agenda respeita o escopo de pessoas já existente; planejamento e observações são internos ao ADMIN_RH. Modelos são sugestões, não ações cadastradas automaticamente · fonte: conversa desta implementação · registrado por codex · src/pages/Endomarketing.tsx e escopo endomarketing na sync.
 
+- D-007 · 16/10/2026 · Modernizar a interface do RH conforme a auditoria e publicar junto das correções de feedback, matriz e SST. Autorização: “Aplicar a modernização da auditoria e publicar tudo”. Preservar registros, permissões, cálculos e documentos; retirar apenas o item Documentos e procedimentos da lateral. Calibração da matriz exige motivo e histórico, sem reescrever notas nem promoção. Nenhuma escrita de teste em produção · fonte: resposta direta do dono nesta conversa · registrado por codex.
+
 ## Pendentes (NÃO valem como regra até o dono responder)
 
 Quando o dono responder, a resposta vira uma D-NNN nova, com a frase dele, e a

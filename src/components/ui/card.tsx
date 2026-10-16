@@ -127,7 +127,7 @@ export function CardHeader({
             type="button"
             onClick={ctx.alternar}
             aria-label={ctx.aberto ? "Recolher" : "Expandir"}
-            className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-600"
           >
             <ChevronDown className={cn("h-4 w-4 transition-transform", !ctx.aberto && "-rotate-90")} />
           </button>
@@ -198,7 +198,7 @@ export function SecaoColapsavel({
             type="button"
             onClick={alternar}
             aria-label={aberto ? "Recolher" : "Expandir"}
-            className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-600"
           >
             <ChevronDown className={cn("h-4 w-4 transition-transform", !aberto && "-rotate-90")} />
           </button>

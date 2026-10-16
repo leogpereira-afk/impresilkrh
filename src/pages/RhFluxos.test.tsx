@@ -67,3 +67,27 @@ it('filtro de NRs vencidas não volta a cobrar certificado substituído',async()
  await click('Mostrar todas as certificações');
  expect(el.textContent).toContain('Instituição antiga fictícia');
 });
+it('busca de exames limita linhas sem alterar contadores e limpar restaura a lista',async()=>{
+ await act(async()=>root.render(<MemoryRouter><SST/></MemoryRouter>));
+ await fill(el.querySelector<HTMLInputElement>('input[aria-label="Buscar exame ou colaborador"]')!, 'Outra pessoa fictícia');
+ expect(el.querySelector('tbody')).toBeNull();
+ expect(el.textContent).toContain('0 de 1 exames');
+ await click('Limpar filtros');
+ expect(el.querySelector('tbody')?.textContent).toContain('Pessoa Fictícia');
+ expect(el.textContent).toContain('1 de 1 exames');
+});
+it('ciclo e área limitam a matriz sem editar avaliações nem pessoas',async()=>{
+ const {default:Desempenho}=await import('./Desempenho');
+ definirColecao('areas',[{id:'area-ficticia',nome:'Área fictícia'}] as never);
+ definirColecao('colaboradores',[{id:'p-ficticia',nome:'Pessoa Fictícia',idPessoa:'000001',statusId:'ativo',potencial:'Alto',areaId:'area-ficticia'}] as Colaborador[]);
+ definirColecao('ciclos',[{id:'c-atual',nome:'Ciclo atual fictício',dataInicio:'2026-01-01',status:'Aberto'},{id:'c-anterior',nome:'Ciclo anterior fictício',dataInicio:'2025-01-01',status:'Fechado'}] as never);
+ definirColecao('avaliacoes',[{id:'a-ficticia',colaboradorId:'p-ficticia',cicloId:'c-atual',tipo:'GESTOR',notaFinal:80,criadoEm:'2026-01-01'}] as never);
+ const antes=JSON.stringify(obter('avaliacoes'));
+ await act(async()=>root.render(<MemoryRouter><Desempenho/></MemoryRouter>));
+ const select=[...el.querySelectorAll('select')].find(x=>x.textContent?.includes('Ciclo anterior fictício'))!;
+ await act(async()=>{select.value='c-anterior';select.dispatchEvent(new Event('change',{bubbles:true}));});
+ expect(el.textContent).toContain('0 de 1 pessoas com avaliação');
+ await click('Limpar filtros');
+ expect(el.textContent).toContain('1 de 1 pessoas com avaliação');
+ expect(JSON.stringify(obter('avaliacoes'))).toBe(antes);
+});

@@ -22,3 +22,15 @@ it('link direto prevalece sobre aba lembrada; teclado muda foco e painel sem per
     expect(el.querySelector('[role="tabpanel"]')?.textContent).toBe('Títulos para conferir');
   } finally {act(()=>root.unmount());el.remove();sessionStorage.clear();}
 });
+it('seletor de seções abre o conteúdo escolhido e preserva a opção na sessão', () => {
+ const el=document.createElement('div');document.body.append(el);const root=createRoot(el);
+ const abas=[{id:'a',label:'Estrutura',conteudo:'Conteúdo da estrutura'},{id:'b',label:'Permissões',conteudo:'Conteúdo de permissões'}];
+ try {
+  act(()=>root.render(<Tabs navegacao="seletor" idPersistencia="teste-seletor" abas={abas}/>));
+  const select=el.querySelector('select')!;
+  act(()=>{select.value='b';select.dispatchEvent(new Event('change',{bubbles:true}));});
+  expect(el.querySelector('[role="tabpanel"]')?.textContent).toBe('Conteúdo de permissões');
+  expect(sessionStorage.getItem('tabs:teste-seletor')).toBe('b');
+  expect(el.querySelector('[role="tablist"]')?.classList.contains('hidden')).toBe(true);
+ } finally {act(()=>root.unmount());el.remove();sessionStorage.clear();}
+});

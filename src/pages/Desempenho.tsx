@@ -147,10 +147,12 @@ export default function Desempenho() {
 
   const gerir = podeGerir(sessao);
 
-  // Ciclo aberto (fallback para o primeiro cadastrado).
+  const [cicloId, setCicloId] = useState("");
+  const [areaSelecionada, setAreaSelecionada] = useState("");
+  // Seleção explícita; a opção automática mostra o ciclo de referência.
   const ciclo: CicloAvaliacao | undefined = useMemo(
-    () => escolherCiclo(ciclos),
-    [ciclos],
+    () => ciclos.find(c => c.id === cicloId) ?? escolherCiclo(ciclos),
+    [ciclos, cicloId],
   );
 
   // Escopo: colaboradores visíveis, sem direção e não inativos.
@@ -158,8 +160,9 @@ export default function Desempenho() {
     () =>
       colaboradoresVisiveis(sessao, d.colaboradores)
         .filter((c) => !c.ehDirecao && noQuadro(c))
+        .filter((c) => !areaSelecionada || c.areaId === areaSelecionada)
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
-    [sessao, d.colaboradores],
+    [sessao, d.colaboradores, areaSelecionada],
   );
   const idsEscopo = useMemo(() => new Set(escopo.map((c) => c.id)), [escopo]);
 
@@ -317,6 +320,18 @@ export default function Desempenho() {
         description={`9-Box, avaliações, metas, PDI, feedbacks, pesquisas e dinâmicas — ${ciclo?.nome ?? "ciclo atual"}.`}
       />
 
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <Campo label="Ciclo"><Select value={cicloId} onChange={e => setCicloId(e.target.value)}>
+          <option value="">Referência atual</option>
+          {ciclos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        </Select></Campo>
+        <Campo label="Área"><Select value={areaSelecionada} onChange={e => setAreaSelecionada(e.target.value)}>
+          <option value="">Todas as áreas do meu acesso</option>
+          {d.areas.filter(a => colaboradoresVisiveis(sessao, d.colaboradores).some(c => c.areaId === a.id)).map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+        </Select></Campo>
+        {(cicloId || areaSelecionada) && <button className="btn-ghost min-h-10" onClick={() => { setCicloId(""); setAreaSelecionada(""); }}>Limpar filtros</button>}
+      </div>
+
       {/* O próprio StatCard é o botão (o wrapper virava botão dentro de botão). */}
       <div className="rh-stats">
         <StatCard
@@ -340,7 +355,7 @@ export default function Desempenho() {
         <StatCard
           label="Elegíveis a promoção"
           value={elegiveis}
-          hint={ciclo ? `Nota mín. ${ciclo.notaMinPromocao}` : undefined}
+          hint={ciclo?.notaMinPromocao != null ? `Nota mín. ${ciclo.notaMinPromocao}` : "Regra de promoção não informada"}
           icon={<Award className="h-5 w-5" />}
           accent="green"
           title="Ver os elegíveis"
@@ -358,7 +373,10 @@ export default function Desempenho() {
       </div>
 
       <div className="mt-4">
-        <Card>
+        <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual} abas={abas} />
+      </div>
+      <div className="mt-4">
+        <Card idPersistencia="desempenho:media-setor" abertoInicial={false}>
           <CardHeader
             title="Média de desempenho por setor"
             subtitle="Soma das notas ÷ avaliados, do menor para o maior — comece a atuar pelo topo da lista."
@@ -403,9 +421,7 @@ export default function Desempenho() {
         </Card>
       </div>
 
-      <div className="mt-4">
-        <Tabs ativa={abaAtual} aoMudar={mudarAbaAtual} abas={abas} />
-      </div>
+
 
       <DrillModal {...drill.props} />
     </div>
@@ -521,10 +537,10 @@ function NoveBox({
                         </button>
                       </div>
                       {dica && (
-                        <p className="mb-2 rounded-md bg-white/60 px-2 py-1 text-[11px] leading-snug text-slate-600 ring-1 ring-inset ring-white/70">
-                          <span className="font-semibold text-slate-700">Ação: </span>
-                          {dica}
-                        </p>
+                        <details className="mb-2 rounded-md bg-white/60 px-2 text-xs text-slate-600">
+                          <summary className="min-h-10 cursor-pointer py-2.5 font-medium">Orientação</summary>
+                          <p className="pb-2">{dica}</p>
+                        </details>
                       )}
                       <div className="flex flex-1 flex-col gap-1.5">
                         {colabs.length === 0 ? (
