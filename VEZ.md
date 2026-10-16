@@ -7,12 +7,12 @@ passar, liberar, aceitar), que monta o commit em cima da origin/main; nunca à
 mão num ramo de trabalho. Regra completa no AGENTS.md (igual ao CLAUDE.md),
 seções 0, 5 e 6.
 
-agente: ninguem
-desde: 2026-10-16T16:47:34.250Z
-ramo: endomarketing-lateral-anexos
-tarefa: Corrigir feedback desenvolvimento SST e auditar design do RH
-sessao: -
-versao_reservada: -
+agente: codex
+desde: 2026-10-16T17:07:24.988Z
+ramo: rh-fluxos-auditoria-20261016
+tarefa: Modernizar RH conforme auditoria e publicar correcoes
+sessao: codex:c9206f9c (rh-endomarketing-20261015)
+versao_reservada: rh-v12
 arquivos_em_uso: -
 passou_por: codex
 passou_em: 2026-10-16T17:03:32.299Z
@@ -26,12 +26,12 @@ alguém, os campos podem estar em "-" enquanto ele trabalha; com a vez livre
 (ninguem), têm de estar todos cheios. "sessao: -" quer dizer que nenhuma
 sessão se registrou ainda: o primeiro `pegar` do mesmo agente a adota.
 
-no_ar: main 7a8ec49, Deploy 38934727730 success; site v11. Functions nao alteradas nem reconsultadas nesta vez; sync 97 segundo passagem anterior.
-ramos: rh-fluxos-auditoria-20261016 em origin, 1 a frente e 0 atras antes da passagem; commit 1bd5913 pronto para revisao e publicacao somente com aval. Demais ramos preservados.
-feito: Feedback pela data efetiva e fases; calibracao manual 9-Box; filtros SST; retirada de Documentos somente da lateral. Auditoria em docs/planos/2026-10-16-auditoria-design-rh.md no ramo.
-pela_metade: Publicacao nao autorizada nesta solicitacao. Perda geral de SST nao reproduzida na edicao local; confirmar caso exato se persistir. Melhorias visuais amplas sao propostas, nao implementadas.
-decisoes: nenhuma nova regra global; escopo do pedido registrado no plano do ramo.
-perguntas_ao_dono: Avaliar auditoria e autorizar publicacao da revisao. Se SST ainda falhar, informar campo e se some ao recarregar.
-nao_fazer: Nao publicar fixtures locais endo-preview nem rh-fluxos-preview. Nao inferir aptidao ou substituir exames antigos automaticamente. Calibracao nao altera notas nem promocao.
-testes: npm run verificar: 143 arquivos, 2127 testes e 22 protocolo passaram. Apos ultimo ajuste: lint, 50 testes direcionados e build passaram. UI local feedback completo e 9-Box persistidos; largura 390px; nuvem produtiva lida sem gravacao.
-dados: nenhum dado real alterado; nenhuma migration; fixtures ficticias locais sem sync.
+no_ar: -
+ramos: -
+feito: -
+pela_metade: -
+decisoes: -
+perguntas_ao_dono: -
+nao_fazer: -
+testes: -
+dados: -
