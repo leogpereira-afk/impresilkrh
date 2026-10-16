@@ -1,3 +1,5 @@
+import { conteudoEndo } from "@/lib/endomarketing";
+import { Link } from "react-router-dom";
 import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
 import { useMemo, useState } from "react";
 import {
@@ -439,7 +441,7 @@ interface FormTemplate {
 }
 const TEMPLATE_VAZIO: FormTemplate = { titulo: "", corpo: "" };
 
-function AbaTemplates({ podeEditar }: { podeEditar: boolean }) {
+export function AbaTemplates({ podeEditar, endomarketing = false }: { podeEditar: boolean; endomarketing?: boolean }) {
   const toast = useToast();
   const { items: templates, criar, atualizar, remover } = useColecao("templatesMensagem");
 
@@ -451,8 +453,8 @@ function AbaTemplates({ podeEditar }: { podeEditar: boolean }) {
   const setCampo = (campo: keyof FormTemplate, valor: string) => setForm((f) => ({ ...f, [campo]: valor }));
 
   const lista = useMemo(
-    () => templates.slice().sort((a, b) => a.titulo.localeCompare(b.titulo)),
-    [templates],
+    () => templates.filter(t => (t.endomarketing || conteudoEndo(t.titulo)) === endomarketing).sort((a, b) => a.titulo.localeCompare(b.titulo)),
+    [templates, endomarketing],
   );
 
   const abrirNovo = () => {
@@ -479,10 +481,10 @@ function AbaTemplates({ podeEditar }: { podeEditar: boolean }) {
       return;
     }
     if (editando) {
-      atualizar(editando.id, { titulo, corpo });
+      atualizar(editando.id, { titulo, corpo, endomarketing });
       toast(`Template "${titulo}" atualizado.`);
     } else {
-      criar({ titulo, corpo, criadoEm: new Date().toISOString() });
+      criar({ titulo, corpo, endomarketing, criadoEm: new Date().toISOString() });
       toast(`Template "${titulo}" criado.`);
     }
     fechar();
@@ -499,7 +501,7 @@ function AbaTemplates({ podeEditar }: { podeEditar: boolean }) {
     <div>
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-500">
-          {templates.length} modelo(s) de mensagem. Use <code className="rounded bg-slate-100 px-1 py-0.5 text-xs text-brand">{"{{nome}}"}</code> como placeholder.
+          {lista.length} modelo(s) de mensagem. Use <code className="rounded bg-slate-100 px-1 py-0.5 text-xs text-brand">{"{{nome}}"}</code> como placeholder.
         </p>
         {podeEditar && (
           <button className="btn-primary" onClick={abrirNovo}>
@@ -508,6 +510,7 @@ function AbaTemplates({ podeEditar }: { podeEditar: boolean }) {
         )}
       </div>
 
+      {!endomarketing && <Link className="mb-3 block text-xs text-brand" to="/endomarketing">Modelos de aniversários e comemorações no Endomarketing →</Link>}
       {lista.length === 0 ? (
         <EmptyState
           title="Nenhum template cadastrado"

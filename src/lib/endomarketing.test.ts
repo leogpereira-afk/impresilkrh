@@ -4,7 +4,7 @@ import type { Colaborador, EventoCalendario } from "@/data/types";
 import type { Sessao } from "./session";
 import { MODELOS_ENDO } from "@/data/endomarketing";
 import { defaultsColecoes } from "@/data";
-import { agendaEndo, pessoasEndo, novaAcaoEndo, registrarAcaoEndo, acaoAtrasada, hojeEndo } from "./endomarketing";
+import { agendaEndo, pessoasEndo, novaAcaoEndo, registrarAcaoEndo, acaoAtrasada, hojeEndo, eventoEndo } from "./endomarketing";
 import { servidorRh } from "@/test/servidorRh";
 const pessoa = (patch: Partial<Colaborador>) => ({ id: "ficticia-a", nome: "Pessoa Fictícia", statusId: "ativo", dataNascimento: "2000-10-15", dataAdmissao: "2020-10-20", ...patch } as Colaborador);
 const sessao = (perfil: Sessao["perfil"], colaboradorId = "ficticia-a") => ({ perfil, colaboradorId } as Sessao);
@@ -75,4 +75,23 @@ describe("porta de dados do planejamento", () => {
     expect((await s.call({ action: "upsert", colecao: "endomarketing", registro, baseVersao: 0, mutationId: "teste-endo" })).status).toBe(200);
     expect(s.rpcs.some(r => r.args.p_colecao === "endomarketing")).toBe(true);
   });
+});
+
+// Arquivos sintéticos; executa a autorização real do servidor.
+it.each(["COLABORADOR", "GESTOR"])("%s não lê nem envia anexos internos do endomarketing", async perfil => {
+  const s = servidorRh({ perfil });
+  for (const action of ["putPhoto", "getPhoto"]) expect((await s.call({ action, id: "endo:arquivo-ficticio", dataUrl: "data:application/pdf;base64,ZmFrZQ==" })).status).toBe(403);
+  expect(s.arquivos).toHaveLength(0);
+});
+it("RH envia e recupera anexo pela porta existente", async () => {
+  const s = servidorRh({ perfil: "ADMIN_RH" });
+  expect((await s.call({ action: "putPhoto", id: "endo:arquivo-ficticio", dataUrl: "data:application/pdf;base64,ZmFrZQ==" })).status).toBe(200);
+  expect(s.arquivos).toHaveLength(1);
+  expect((await s.call({ action: "getPhoto", id: "endo:arquivo-ficticio" })).status).toBe(200);
+});
+it("centraliza celebrações sem puxar prazos e reuniões operacionais", () => {
+  expect(eventoEndo({ tipo: "Comemorativa", titulo: "Data fictícia" })).toBe(true);
+  expect(eventoEndo({ tipo: "Empresa", titulo: "Aniversário da empresa" })).toBe(true);
+  expect(eventoEndo({ tipo: "Reunião", titulo: "Conferir documentos" })).toBe(false);
+  expect(eventoEndo({ tipo: "Feriado", titulo: "Feriado fictício" })).toBe(false);
 });

@@ -9,6 +9,7 @@ export interface MarcoEndo {
   id: string; data: string; titulo: string; detalhe: string;
   tipo: "Aniversário" | "Tempo de empresa" | "Acolhimento" | "Data especial";
   colaboradorId?: string;
+  descricao?: string;
 }
 export function dataValidaEndo(data: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(data) && !!parseData(data);
@@ -40,10 +41,10 @@ export function agendaEndo(pessoas: Colaborador[], eventos: EventoCalendario[], 
     }
   }
   for (const e of eventos) {
-    if (!["Comemorativa", "Empresa", "Reunião", "Feriado"].includes(e.tipo)) continue;
+    if (!eventoEndo(e)) continue;
     const data = e.recorrenteAnual ? noAno(e.data, ano) : e.data;
     if (!data || !dataValidaEndo(data) || Number(data.slice(0, 4)) !== ano || data < e.data) continue;
-    marcos.push({ id: `evento:${e.id}:${ano}`, data, titulo: e.titulo, detalhe: e.tipo, tipo: "Data especial" });
+    marcos.push({ id: `evento:${e.id}:${ano}`, data, titulo: e.titulo, detalhe: [e.tipo, e.hora].filter(Boolean).join(" · "), descricao: e.descricao ?? undefined, tipo: "Data especial" });
   }
   return marcos.sort((a, b) => a.data.localeCompare(b.data) || a.titulo.localeCompare(b.titulo, "pt-BR"));
 }
@@ -65,3 +66,11 @@ export function registrarAcaoEndo(rascunho: AcaoEndomarketing, anterior: AcaoEnd
 }
 export function dataCurtaEndo(data: string) { return data ? `${data.slice(8, 10)}/${data.slice(5, 7)}/${data.slice(0, 4)}` : "Sem data"; }
 export function hojeEndo(data: Date) { return diaLocalISO(data); }
+
+/** Classificação editorial conservadora pelo título; não altera registros. */
+export function conteudoEndo(titulo: string) {
+  return /endomarketing|aniversari|comemor|celebr|reconhecimento|engajamento|bem[ -]estar/.test(titulo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+}
+export function eventoEndo(evento: Pick<EventoCalendario, "tipo" | "titulo">) {
+  return evento.tipo === "Comemorativa" || conteudoEndo(evento.titulo);
+}

@@ -2,7 +2,9 @@ export const SITUACOES_ENDO = ["Planejada", "Em preparação", "Realizada", "Can
 export type SituacaoEndo = typeof SITUACOES_ENDO[number];
 export const TEMAS_ENDO = ["Acolhimento", "Reconhecimento", "Escuta", "Conexão", "Bem-estar", "Desenvolvimento", "Celebração"] as const;
 export type TemaEndo = typeof TEMAS_ENDO[number];
+export interface AnexoEndo { id: string; nome: string; tamanho: number; naNuvem: boolean }
 export interface AcaoEndomarketing {
+  anexos?: AnexoEndo[];
   id: string;
   titulo: string;
   tema: TemaEndo;

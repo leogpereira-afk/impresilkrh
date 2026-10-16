@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Pencil, UserMinus, FileText, Upload, ExternalLink, Trash2, Plus,
-  IdCard, Briefcase, Palmtree, Target, History, Lock, Cake, PartyPopper, Wallet, Brain, Smile, Activity, Camera,
+  IdCard, Briefcase, Palmtree, Target, History, Lock, Wallet, Brain, Smile, Activity, Camera,
   Eye, Ear, Hand, Plane, ChevronLeft, ChevronRight, LayoutGrid, AlertTriangle,
 } from "lucide-react";
 import { Card, CardBody, CardHeader, SecaoColapsavel } from "@/components/ui/card";
@@ -209,14 +209,6 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
   const cargo = c.cargoId ? d.cargoById.get(c.cargoId) : undefined;
   const enq = d.enquadrarColab(c);
   const corEnq = COR_POSICAO_FAIXA[enq];
-  const mesAtual = HOJE.getMonth();
-  const nascDt = parseData(c.dataNascimento);
-  const admDt = parseData(c.dataAdmissao);
-  const aniversario = !!nascDt && nascDt.getMonth() === mesAtual;
-  const diaAniv = nascDt ? nascDt.getDate() : null;
-  const aniversarioEmpresa = !!admDt && admDt.getMonth() === mesAtual;
-  const anosCasa = admDt ? HOJE.getFullYear() - admDt.getFullYear() : 0;
-
   const onFoto = async (f: File) => {
     if (!f.type.startsWith("image/")) {
       toast("Selecione um arquivo de imagem.", "erro");
@@ -266,21 +258,6 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
           </button>
         </div>
       </div>
-
-      {(aniversario || (aniversarioEmpresa && anosCasa > 0)) && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {aniversario && (
-            <div className="flex items-center gap-2 rounded-lg border border-gold-200 bg-gold-50/70 px-3 py-2 text-sm font-medium text-gold-700">
-              <Cake className="h-4 w-4" /> Aniversário este mês{diaAniv ? ` · dia ${diaAniv}` : ""} 🎉
-            </div>
-          )}
-          {aniversarioEmpresa && anosCasa > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-2 text-sm font-medium text-brand">
-              <PartyPopper className="h-4 w-4" /> {anosCasa} {anosCasa === 1 ? "ano" : "anos"} de casa este mês
-            </div>
-          )}
-        </div>
-      )}
 
       <Card className="mb-3">
         <CardBody className="flex flex-wrap items-center gap-x-4 gap-y-3">

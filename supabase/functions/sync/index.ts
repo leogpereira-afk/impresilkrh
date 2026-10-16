@@ -549,7 +549,7 @@ Deno.serve(async (req) => {
     const autorizarArquivo = async (id: string, escrita: boolean) => {
       if (!/^(?:doc:|cv:)?[a-zA-Z0-9_.:-]{1,180}$/.test(id)) return false;
       if (ehAdmin) return true;
-      if (id.startsWith("cv:")) return false;
+      if (id.startsWith("cv:") || id.startsWith("endo:")) return false;
       if (id.startsWith("doc:")) {
         const doc = await consulta("documentos", id.slice(4));
         if (doc) return !doc.apagado && (escrita ? podeEscrever("documentos", doc.registro) : !!mascarar({ colecao: "documentos", registro: doc.registro }));

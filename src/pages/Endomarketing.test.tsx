@@ -39,7 +39,7 @@ it("cria, conclui, reabre e conserva os dados ao remontar a tela", async () => {
   expect(Object.keys(localStorage).some(k => k.includes("endomarketing"))).toBe(true);
   await clicar("Ações e bem-estar"); await clicar("Concluir");
   expect(obter("endomarketing")[0].concluidaEm).toBeTruthy();
-  await clicar("Realizada"); await clicar("Reabrir"); await clicar("Abertas");
+  await act(async () => { const select = document.querySelector('[aria-label="Etapa da ação"]') as HTMLSelectElement; select.value = "Realizada"; select.dispatchEvent(new Event("change", { bubbles: true })); }); await clicar("Reabrir"); await clicar("Abertas");
   expect(obter("endomarketing")[0].historico).toHaveLength(3);
   await act(async () => root.render(<MemoryRouter><div /></MemoryRouter>)); await montar();
   expect(document.body.textContent).toContain("Ação fictícia de escuta");
@@ -62,4 +62,16 @@ it("recusa sobrescrever edição que mudou enquanto o formulário estava aberto"
   await clicar("Salvar ação");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("foi atualizada");
   expect(obter("endomarketing")[0].titulo).toBe("Edição mais recente");
+});
+
+it("seleciona à esquerda, edita data e conserva referências a arquivos após remontar", async () => {
+  const a = { ...novaAcaoEndo(), id: "lateral-ficticia", titulo: "Ação lateral fictícia", anexos: [{ id: "endo:anexo-ficticio", nome: "arte.pdf", tamanho: 100, naNuvem: true }] };
+  definirColecao("endomarketing", [a]); await montar(); await clicar("Ações e bem-estar");
+  await act(async () => (el.querySelector('[aria-label="Selecionar ação: Ação lateral fictícia"]') as HTMLButtonElement).click());
+  expect(el.querySelector('[aria-label="Detalhe da ação"]')?.textContent).toContain("arte.pdf");
+  await act(async () => (el.querySelector('[aria-label="Abrir ação: Ação lateral fictícia"]') as HTMLButtonElement).click());
+  await preencher('input[type="date"]', "2026-10-20"); await clicar("Salvar ação");
+  expect(obter("endomarketing")[0]).toMatchObject({ data: "2026-10-20", anexos: a.anexos });
+  await act(async () => root.render(<MemoryRouter><div /></MemoryRouter>)); await montar();
+  expect(el.textContent).toContain("arte.pdf");
 });

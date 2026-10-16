@@ -6,8 +6,8 @@ import { tituloPago } from "@/lib/mubiPagamentos";
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree, Cake,
-  AlertTriangle, CalendarClock, Award, Target, Laugh, Brain, PartyPopper,
+  Users, TrendingDown, TrendingUp, FileWarning, ClipboardCheck, Palmtree,
+  AlertTriangle, CalendarClock, Award, Target, Laugh, Brain,
   Wallet, ShieldAlert, GraduationCap, UserX, Trophy,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -35,15 +35,6 @@ import { HOJE } from "@/data/_gen";
 // documento dizia "vence hoje" de manhã e "vencido há 1 dia" depois das 12h.
 const dias = (d?: string | null) => diasDeCalendario(d, HOJE);
 const mesesAtras = (d?: string | null) => { const dt = parseData(d); return dt ? (HOJE.getTime() - dt.getTime()) / (86400000 * 30.44) : Infinity; };
-
-// dd/MM (dois dígitos) a partir de uma data ISO. Ex.: 02/06.
-const ddmm = (iso?: string | null) => {
-  const dt = parseData(iso);
-  if (!dt) return "—";
-  const dia = String(dt.getDate()).padStart(2, "0");
-  const mes = String(dt.getMonth() + 1).padStart(2, "0");
-  return `${dia}/${mes}`;
-};
 
 export default function Painel() {
   const hojeFerias=useHoje();
@@ -170,14 +161,6 @@ export default function Painel() {
   const docsVisiveis = foco === "docs" ? docsAlerta : foco ? [] : docsAlerta.slice(0, 6);
   const avaliacoesVisiveis = foco === "avaliacoes" ? avaliacoesPendentes : foco ? [] : avaliacoesPendentes.slice(0, 3);
   const semAlertas = nrsVisiveis.length === 0 && docsVisiveis.length === 0 && avaliacoesVisiveis.length === 0;
-
-  // Mês de referência para aniversários: o mês do filtro (ou HOJE quando "Ano inteiro").
-  const mesAniversario = filtroMes === 0 ? HOJE.getMonth() + 1 : filtroMes;
-  const mesDe = (iso?: string | null) => { const d = parseData(iso); return d ? d.getMonth() + 1 : 0; };
-  const diaDe = (iso?: string | null) => { const d = parseData(iso); return d ? d.getDate() : 0; };
-  const aniversariantes = ativos
-    .filter((c) => c.dataNascimento && mesDe(c.dataNascimento) === mesAniversario)
-    .sort((a, b) => diaDe(a.dataNascimento) - diaDe(b.dataNascimento));
 
   const risco = { Alto: 0, Médio: 0, Baixo: 0 } as Record<string, number>;
   ativos.forEach((c) => (risco[riscoInformado(c.riscoSaida)] = (risco[riscoInformado(c.riscoSaida)] ?? 0) + 1));
@@ -357,13 +340,6 @@ export default function Painel() {
       arquetipoParaTemp.set(nome, temp);
       return { nome, valor, cor: COR_PERFIL_COMPORTAMENTAL[temp] ?? "#94a3b8" };
     });
-
-  // Aniversário de empresa (tempo de casa) — admitidos no mês de referência
-  const anosDeCasa = (d?: string | null) => { const dt = parseData(d); return dt ? Math.max(0, filtroAno - dt.getFullYear()) : 0; };
-  const diaDoMes = (d?: string | null) => parseData(d)?.getDate() ?? 0;
-  const aniversariosEmpresa = ativos
-    .filter((c) => c.dataAdmissao && mesDe(c.dataAdmissao) === mesAniversario)
-    .sort((a, b) => diaDoMes(a.dataAdmissao) - diaDoMes(b.dataAdmissao));
 
   // Mapeia o rótulo clicado de volta para os colaboradores ativos correspondentes
   const colabsPorArea = (nome: string) => {
@@ -802,43 +778,7 @@ export default function Painel() {
         </Card>
 
         <div className="space-y-4">
-          <Card>
-            <CardHeader title="Aniversariantes do mês" subtitle={MESES_PT[mesAniversario - 1]} icon={<Cake className="h-[18px] w-[18px]" />} />
-            <CardBody className="space-y-2">
-              {aniversariantes.length === 0 ? (
-                <p className="text-sm text-slate-400">Nenhum aniversariante este mês.</p>
-              ) : (
-                aniversariantes.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
-                    <Link to={`/colaboradores/${c.id}`} className="truncate font-medium text-slate-700 hover:text-brand hover:underline">{c.nome}</Link>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <span className="text-slate-400">{ddmm(c.dataNascimento)}</span>
-                    </span>
-                  </div>
-                ))
-              )}
-            </CardBody>
-          </Card>
-          <Card>
-            <CardHeader title="Aniversário de empresa" subtitle={`Tempo de casa · ${MESES_PT[mesAniversario - 1]}`} icon={<PartyPopper className="h-[18px] w-[18px]" />} />
-            <CardBody className="space-y-2">
-              {aniversariosEmpresa.length === 0 ? (
-                <p className="text-sm text-slate-400">Nenhum aniversário de empresa este mês.</p>
-              ) : (
-                aniversariosEmpresa.map((c) => {
-                  const anos = anosDeCasa(c.dataAdmissao);
-                  return (
-                    <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
-                      <Link to={`/colaboradores/${c.id}`} className="truncate font-medium text-slate-700 hover:text-brand hover:underline">{c.nome}</Link>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="text-slate-400">{ddmm(c.dataAdmissao)} · {anos > 0 ? `${anos} ano(s)` : "Boas-vindas"}</span>
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </CardBody>
-          </Card>
+          <Link to="/endomarketing" className="block rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-brand">💜 Aniversários, comemorações e ações no Endomarketing →</Link>
           <Card>
             <CardHeader title="Próximos retornos de férias" icon={<CalendarClock className="h-[18px] w-[18px]" />} />
             <CardBody className="space-y-2">

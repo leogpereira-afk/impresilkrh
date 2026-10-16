@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { eventoEndo } from "@/lib/endomarketing";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { dataFerias, duracaoFerias } from '@/lib/feriasPeriodos';
 import { useHoje } from '@/lib/useHoje';
@@ -110,7 +112,7 @@ function CalendarioGeral() {
      sem entrada aqui fica sem cor e sem como filtrar. */
   const tiposDaLegenda = useMemo(
     () => [
-      ...TIPOS,
+      ...TIPOS.filter(t => !["Aniversário", "Tempo de empresa", "Comemorativa"].includes(t.tipo)),
       ...personalizados
         .filter((e) => !TIPOS.some((t) => t.tipo === e.nome))
         .map((e) => ({ tipo: e.nome, cor: e.cor, Icon: CalendarDays })),
@@ -145,22 +147,11 @@ function CalendarioGeral() {
     [d.colaboradores],
   );
 
-  // Eventos do mês = aniversários + tempo de empresa (derivados) + eventos salvos.
+  // Eventos operacionais. Celebrações e datas pessoais ficam no Endomarketing.
   const itens = useMemo<Item[]>(() => {
     const out: Item[] = [];
-    for (const c of d.ativos) {
-      const n = parseData(c.dataNascimento);
-      if (n && n.getMonth() === mes) {
-        const idade = ano - n.getFullYear();
-        out.push({ dia: n.getDate(), tipo: "Aniversário", titulo: c.nome, sub: idade > 0 ? `${idade} anos` : undefined });
-      }
-      const a = parseData(c.dataAdmissao);
-      if (a && a.getMonth() === mes) {
-        const anos = ano - a.getFullYear();
-        out.push({ dia: a.getDate(), tipo: "Tempo de empresa", titulo: c.nome, sub: anos > 0 ? `${anos} ${anos === 1 ? "ano" : "anos"} de casa` : "Entrou agora" });
-      }
-    }
     for (const e of eventos) {
+      if (eventoEndo(e)) continue;
       const dt = parseData(e.data);
       if (!dt) continue;
       const match = e.recorrenteAnual ? dt.getMonth() === mes : (dt.getFullYear() === ano && dt.getMonth() === mes);
@@ -361,6 +352,7 @@ function CalendarioGeral() {
         </div>
         {gere && <button className="btn-primary" onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo evento</button>}
       </PageHeader>
+      <Link className="mb-3 block text-xs text-brand" to="/endomarketing">Aniversários e comemorações agora estão no Endomarketing →</Link>
 
       {/* Filtro ligado com a legenda lá embaixo: sem este aviso, o quadro
           pareceria vazio de tudo que não é o tipo escolhido e ninguém saberia
@@ -568,7 +560,7 @@ function CalendarioGeral() {
               </span>{" "}
               {foco.size > 0
                 ? `O filtro está mostrando só ${[...foco].join(", ")}. Clique em “Ver todos” na legenda.`
-                : "Use “Novo evento” para adicionar reuniões e datas comemorativas."}
+                : "Use “Novo evento” para adicionar reuniões e prazos. Celebrações ficam no Endomarketing."}
             </p>
           ) : (
             <ul className="space-y-1">
@@ -615,7 +607,7 @@ function CalendarioGeral() {
   );
 }
 
-function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: EventoCalendario | null }) {
+export function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: EventoCalendario | null }) {
   const toast = useToast();
   const { criar, atualizar } = useColecao("eventos");
   const [form, setForm] = useState<Partial<EventoCalendario>>(editar ?? { tipo: "Comemorativa", recorrenteAnual: false, data: "" });
@@ -656,7 +648,7 @@ function EventoModal({ onFechar, editar }: { onFechar: () => void; editar: Event
       descricao: form.descricao || null,
     };
     if (editar) { atualizar(editar.id, dados); toast("Evento atualizado."); }
-    else { criar(dados); toast("Evento adicionado ao calendário."); }
+    else { criar(dados); toast(eventoEndo(dados) ? "Data adicionada ao Endomarketing." : "Evento adicionado ao calendário."); }
     onFechar();
   };
 

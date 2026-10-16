@@ -733,6 +733,7 @@ export interface Contato {
 }
 
 export interface TemplateMensagem {
+  endomarketing?: boolean;
   id: string;
   titulo: string;
   corpo: string; // pode conter {{nome}}

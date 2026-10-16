@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { conteudoEndo } from "@/lib/endomarketing";
 import { useMemo } from "react";
 import { Megaphone, Compass, Radio, Timer } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -21,7 +23,7 @@ const SLAS: { rotulo: string; prazo: string }[] = [
 
 export default function Comunicacao() {
   const { items } = useColecao("comunicacao");
-  const guias = useMemo(() => [...items].sort((a, b) => a.ordem - b.ordem), [items]);
+  const guias = useMemo(() => items.filter(g => !conteudoEndo(g.titulo)).sort((a, b) => a.ordem - b.ordem), [items]);
 
   return (
     <div>
@@ -30,6 +32,7 @@ export default function Comunicacao() {
         description="Consulte os canais, prazos e orientações de comunicação da empresa."
       />
 
+      <Link className="mb-3 block text-xs text-brand" to="/endomarketing">Celebrações, bem-estar e guias de endomarketing →</Link>
       {/* Modelo operacional */}
       <div className="mb-4 grid gap-3 md:grid-cols-3">
         <Card className="p-4">
