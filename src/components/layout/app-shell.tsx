@@ -80,6 +80,10 @@ const NAV: ItemNav[] = [
 ];
 
 const GRUPOS = ["Visão geral", "Pessoas", "Estrutura e financeiro", "Comunicação e documentos", "Administração", "Conta"];
+const EMOJIS: Record<string, string> = {
+  painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", endomarketing: "💜", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
+};
+
 /* NAVCONTEUDO E RODAPE MORAM AQUI FORA, e é de propósito.
  *
  * Os dois eram declarados DENTRO do AppShell. Um componente escrito dentro de
@@ -128,7 +132,7 @@ function NavConteudo({
     <nav className={cn("rh-nav min-h-0 flex-1 overflow-y-auto", className)}>
       {itensVisiveis.some(i => favoritos.includes(i.href)) && <div className="rh-nav-grupo">
         <p className="rh-nav-titulo">Favoritos</p>
-        {itensVisiveis.filter(i => favoritos.includes(i.href)).map(i => <NavLink key={i.href} to={i.href} onClick={aoNavegar} className={cn("rh-nav-item", caminho === i.href && "ativo")}><Star className="h-4 w-4" /><span>{i.label}</span></NavLink>)}
+        {itensVisiveis.filter(i => favoritos.includes(i.href)).map(i => <NavLink key={i.href} to={i.href} onClick={aoNavegar} className={cn("rh-nav-item", caminho === i.href && "ativo")}><span aria-hidden="true" className="rh-nav-ic">{EMOJIS[i.href.slice(1)] ?? "⭐"}</span><span>{i.label}</span></NavLink>)}
       </div>}
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
@@ -168,7 +172,7 @@ function NavConteudo({
                       ativo && "ativo",
                     )}
                   >
-                    <span aria-hidden="true" className="rh-nav-ic"><Icon className="h-[18px] w-[18px]" /></span>
+                    <span aria-hidden="true" className="rh-nav-ic">{EMOJIS[item.href.slice(1)] ?? <Icon className="h-[18px] w-[18px]" />}</span>
                     <span className="rh-nav-rotulo">{item.label}</span>
                   </NavLink>
                 );
