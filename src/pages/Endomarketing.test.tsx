@@ -37,7 +37,7 @@ it("cria, conclui, reabre e conserva os dados ao remontar a tela", async () => {
   expect(a.titulo).toBe("Ação fictícia de escuta");
   expect(fila).toHaveBeenCalledWith("endomarketing", "upsert", a.id, 0);
   expect(Object.keys(localStorage).some(k => k.includes("endomarketing"))).toBe(true);
-  await clicar("Ações e bem-estar"); await clicar("Marcar realizada");
+  await clicar("Ações e bem-estar"); await clicar("Concluir");
   expect(obter("endomarketing")[0].concluidaEm).toBeTruthy();
   await clicar("Realizada"); await clicar("Reabrir"); await clicar("Abertas");
   expect(obter("endomarketing")[0].historico).toHaveLength(3);

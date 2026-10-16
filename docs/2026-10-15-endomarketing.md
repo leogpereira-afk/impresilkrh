@@ -7,6 +7,8 @@
 
 Auditoria de conteúdo: celebrações não mostram humor ou perfil comportamental; ingresso no ano é Boas-vindas, não primeiro aniversário. A agenda sinaliza datas ausentes e o tratamento de 29/02. Pendências antigas permanecem acessíveis em Todos os meses.
 
+Ajuste pedido na revisão visual: ações em linhas compactas de duas linhas, filtros junto à busca e botão Concluir. Tema e informações extensas permanecem no detalhe; critérios recolhidos.
+
 ## Verificação local
 - npm run verificar: lint, TypeScript, 140 arquivos e 2112 testes aprovados; 22 testes do protocolo; conferir:id aprovado.
 - npm run build: aprovado.
