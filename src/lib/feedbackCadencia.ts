@@ -76,12 +76,15 @@ export interface Cadencia {
   situacao: SituacaoFeedback;
 }
 
-/** O mais recente da lista, por `criadoEm`. Empate: o último da lista. */
+/** Data da conversa; registros legados usam a data original. */
+export const dataConversa = (f: Pick<FeedbackLike, "ocorridoEm" | "criadoEm">) => f.ocorridoEm || f.criadoEm;
+
+/** Mais recente por data da conversa. Empate: o último da lista. */
 export function ultimoFeedback(lista: readonly FeedbackLike[]): FeedbackLike | null {
   let melhor: FeedbackLike | null = null;
   for (const f of lista) {
-    if (!f?.criadoEm) continue;
-    if (!melhor || f.criadoEm >= melhor.criadoEm) melhor = f;
+    if (!f || !dataConversa(f)) continue;
+    if (!melhor || dataConversa(f) >= dataConversa(melhor)) melhor = f;
   }
   return melhor;
 }
@@ -118,7 +121,7 @@ export function cadenciaDe(
   const ultimoIndividual = ultimoFeedback(
     dados.filter((f) => !f.grupoId && !f.origem),
   );
-  const marco = ultimoIndividual?.criadoEm ?? dataAdmissao ?? null;
+  const marco = (ultimoIndividual ? dataConversa(ultimoIndividual) : null) || dataAdmissao || null;
   if (!marco) return { ultimo, diasDesde: null, diasParaProximo: null, situacao: "nunca" };
 
   // `diasDeCalendario` ancora no início do dia — a conta crua de milissegundos

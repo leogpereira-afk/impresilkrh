@@ -33,7 +33,7 @@ import {
   AVISO_NAO_E_PUNICAO, tipoFeedbackLegado,
 } from "@/lib/constants";
 import {
-  cadenciaDe, jaFoiDado, cadenciaDaPessoa, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
+  cadenciaDe, dataConversa, jaFoiDado, cadenciaDaPessoa, compararFila, PESO_SITUACAO, CADENCIA_FEEDBACK_DIAS,
   bloqueio, combinadoEmAberto, combinadoVencido, ehRotaSeguranca, montarConteudo,
   type Cadencia, type SituacaoFeedback, type MotivoBloqueio,
 } from "@/lib/feedbackCadencia";
@@ -165,8 +165,8 @@ export default function Feedback() {
              falsa esconderia justamente quem mais precisa aparecer, então ele
              vai para o TOPO no crescente: "há mais tempo sem feedback" inclui
              "desde sempre". */
-          const va = a.cad.ultimo?.criadoEm ?? "";
-          const vb = b.cad.ultimo?.criadoEm ?? "";
+          const va = a.cad.ultimo ? dataConversa(a.cad.ultimo) : "";
+          const vb = b.cad.ultimo ? dataConversa(b.cad.ultimo) : "";
           if (va === vb) return a.c.nome.localeCompare(b.c.nome, "pt-BR");
           return dir * va.localeCompare(vb);
         }
@@ -305,6 +305,7 @@ export default function Feedback() {
             toast("Combinado anterior atualizado.");
           }}
           onSalvar={(dados) => {
+            try {
             /* Com `id`, ATUALIZA o registro que já foi preparado. Sem, cria.
                As três etapas escrevem no MESMO registro: preparar cria, marcar
                o dia e registrar completam. Criar um novo a cada etapa deixaria
@@ -328,6 +329,7 @@ export default function Feedback() {
               : `Conversa registrada para ${novoPara.nome}.`,
             );
             setNovoPara(null);
+            } catch { toast("Não foi possível salvar. Suas informações continuam nesta janela; tente novamente.", "erro"); }
           }}
         />
       )}
@@ -378,11 +380,11 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, emPreparo, onAlternar, onNo
           </span>
         </td>
         <td className="td hidden md:table-cell text-slate-500">{cargo}</td>
-        <td className="td"><Badge variant={selo.variante}>{selo.texto}</Badge></td>
+        <td className="td"><div className="flex flex-wrap gap-1"><Badge variant={selo.variante}>{selo.texto}</Badge>{emPreparo && <Badge variant="info">{emPreparo.agendadaPara ? "Agendada" : "Preparada"}</Badge>}</div></td>
         <td className="td hidden sm:table-cell text-slate-600">
           {cad.ultimo
             ? <span className="tabular-nums">
-                {formatDate(cad.ultimo.criadoEm)}
+                {formatDate(dataConversa(cad.ultimo))}
                 {cad.ultimo.tipo && <span className="text-slate-400"> · {tipoFeedbackLegado(cad.ultimo.tipo)}</span>}
                 {/* Conversa com a EQUIPE precisa se identificar: sem o selo, a
                     ficha leria como se tivesse sido individual — e não foi. Ela
@@ -497,7 +499,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
   onFechar: () => void;
 }) {
   const toast = useToast();
-  const [tipo, setTipo] = useState<"Reconhecimento" | "Ajuste" | null>(null);
+  const [tipo, setTipo] = useState<"Reconhecimento" | "Ajuste" | null>(() => preparo?.tipo === "Reconhecimento" || preparo?.tipo === "Ajuste" ? preparo.tipo : null);
   const [ocorridoEm, setOcorridoEm] = useState(() => diaLocalISO(new Date()));
   const [oQue, setOQue] = useState("");
   const [roteiro, setRoteiro] = useState(() => preparo?.roteiro ?? "");
@@ -521,7 +523,6 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
   const marcarDia = () => {
     if (!dia) return toast("Escolha o dia da conversa.", "erro");
     onSalvar({ id: preparo?.id, agendadaPara: dia } as Partial<FeedbackReg>);
-    onFechar();
   };
 
   const salvar = () => {
@@ -543,7 +544,6 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
            quando a conversa acontece. */
         conteudo: "",
       } as Partial<FeedbackReg>);
-      onFechar();
       return;
     }
 
@@ -557,6 +557,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
     if (ajuste && !combinado.trim()) return toast("Escreva o que ficou combinado.", "erro");
     if (ajuste && !prazo.data && !prazo.gatilho) return toast("Diga até quando.", "erro");
 
+    if (!ocorridoEm || ocorridoEm > diaLocalISO(new Date())) return toast("Informe a data em que a conversa aconteceu, até hoje.", "erro");
     if (!tipo) return; // o portão garante isto, mas o tipo precisa saber
     const base = {
       tipo, ocorridoEm, oQueAconteceu: oQue.trim(), efeito,

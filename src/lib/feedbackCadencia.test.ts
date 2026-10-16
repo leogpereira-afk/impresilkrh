@@ -307,3 +307,15 @@ describe("preparar não é conversar", () => {
     expect(c.situacao).toBe("em-dia");
   });
 });
+
+it("conversa realizada hoje encerra atraso mesmo preparada há meses", () => {
+  const antigo = { ...fb("preparo-ficticio", 200), preparadoEm: diasAtras(200), ocorridoEm: diasAtras(0).slice(0,10) };
+  expect(cadenciaDe([antigo], diasAtras(900), HOJE).diasDesde).toBeCloseTo(0);
+  expect(cadenciaDe([antigo], diasAtras(900), HOJE).situacao).toBe("em-dia");
+});
+it("registro retroativo e ordenação usam a data da conversa, não a digitação", () => {
+  const retroativo = { ...fb("retro-ficticio", 0), ocorridoEm: diasAtras(200).slice(0,10) };
+  const recente = { ...fb("recente-ficticio", 10), ocorridoEm: diasAtras(10).slice(0,10) };
+  expect(cadenciaDe([retroativo], null, HOJE).situacao).toBe("atrasado");
+  expect(ultimoFeedback([retroativo, recente])?.id).toBe("recente-ficticio");
+});
