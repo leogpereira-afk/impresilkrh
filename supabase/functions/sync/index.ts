@@ -561,8 +561,9 @@ Deno.serve(async (req) => {
     };
     switch (action) {
       // Respostas nunca passam por registros, exportação ou fila local.
+      case "entrevistas":
       case "nps": {
-        const { data, error } = await admin.rpc("rh_nps_operar", {
+        const { data, error } = await admin.rpc(action === "entrevistas" ? "rh_entrevistas_operar" : "rh_nps_operar", {
           p_user: sessao.auth_id, p_op: String(body.op ?? ""), p_dados: body.dados ?? {},
         });
         if (error) return json({ erro: error.code === "P0001" ? error.message : "Pesquisa indisponível. Peça ao RH para conferir a implantação e tente novamente." }, 400);

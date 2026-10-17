@@ -17,3 +17,8 @@ it("sync usa identidade autenticada, nunca a enviada no corpo",async()=>{
  expect(s.rpcs[0].args.p_user).toBe("auth-ficticio");
  expect(s.escritas).toHaveLength(0);
 });
+it("entrevistas usam identidade real da sessão, sem escrita na coleção geral",async()=>{
+ const s=servidorRh({rpcResposta:nome=>nome==='rh_entrevistas_operar'?{ok:true,entrevistas:[],pessoas:[]}:undefined});
+ const r=await s.call({action:"entrevistas",op:"listar",dados:{p_user:"forjado"},p_user:"forjado"});
+ expect(r.status).toBe(200);expect(s.rpcs[0].args.p_user).toBe("auth-ficticio");expect(s.escritas).toHaveLength(0);
+});

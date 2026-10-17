@@ -1,0 +1,342 @@
+[
+  {
+    "id": "selecao",
+    "titulo": "Entrevista de seleção",
+    "categoria": "selecao",
+    "momento": "Antes da contratação",
+    "objetivo": "Entender experiências e expectativas relacionadas à vaga.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Quais experiências suas se relacionam com as atividades desta vaga?"
+      },
+      {
+        "id": "q2",
+        "texto": "Conte uma situação de trabalho em que precisou resolver um problema. Como agiu e qual foi o resultado?"
+      },
+      {
+        "id": "q3",
+        "texto": "Como você organiza prioridades quando há mais de uma entrega?"
+      },
+      {
+        "id": "q4",
+        "texto": "Como costuma pedir ajuda ou lidar com uma orientação que não entendeu?"
+      },
+      {
+        "id": "q5",
+        "texto": "Que condições e informações sobre a vaga você precisa esclarecer?"
+      },
+      {
+        "id": "q6",
+        "texto": "Quais expectativas você tem sobre o trabalho e o desenvolvimento aqui?"
+      }
+    ]
+  },
+  {
+    "id": "entrada",
+    "titulo": "Boas-vindas e entrada",
+    "categoria": "entrada",
+    "momento": "Primeira semana",
+    "objetivo": "Alinhar expectativas e garantir apoio para começar.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Como foi sua chegada e o que ainda precisa ser explicado?"
+      },
+      {
+        "id": "q2",
+        "texto": "Você entendeu suas atividades, horários e a quem recorrer?"
+      },
+      {
+        "id": "q3",
+        "texto": "Os acessos, materiais e orientações necessários foram disponibilizados?"
+      },
+      {
+        "id": "q4",
+        "texto": "Como prefere receber orientações e tirar dúvidas?"
+      },
+      {
+        "id": "q5",
+        "texto": "Que experiência ou habilidade sua podemos aproveitar melhor?"
+      },
+      {
+        "id": "q6",
+        "texto": "O que precisamos providenciar para facilitar seus primeiros dias?"
+      }
+    ]
+  },
+  {
+    "id": "integracao30",
+    "titulo": "Integração · 30 dias",
+    "categoria": "entrada",
+    "momento": "Após o primeiro mês",
+    "objetivo": "Conferir adaptação e remover dificuldades iniciais.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "O trabalho está correspondendo ao que foi apresentado na entrada?"
+      },
+      {
+        "id": "q2",
+        "texto": "Quais atividades já consegue realizar com segurança e quais precisam de apoio?"
+      },
+      {
+        "id": "q3",
+        "texto": "As orientações e o treinamento inicial foram suficientes?"
+      },
+      {
+        "id": "q4",
+        "texto": "Como está a convivência com a equipe e a liderança?"
+      },
+      {
+        "id": "q5",
+        "texto": "Que dificuldade prática podemos resolver agora?"
+      },
+      {
+        "id": "q6",
+        "texto": "Qual será o foco de aprendizado para o próximo mês?"
+      }
+    ]
+  },
+  {
+    "id": "integracao60",
+    "titulo": "Integração · 60 dias",
+    "categoria": "entrada",
+    "momento": "Após dois meses",
+    "objetivo": "Acompanhar autonomia, feedback e aprendizado.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Em quais atividades ganhou autonomia desde a última conversa?"
+      },
+      {
+        "id": "q2",
+        "texto": "Que orientações ainda geram dúvida ou retrabalho?"
+      },
+      {
+        "id": "q3",
+        "texto": "Você recebe feedback claro sobre suas entregas?"
+      },
+      {
+        "id": "q4",
+        "texto": "Como estão a carga de trabalho e a organização da rotina?"
+      },
+      {
+        "id": "q5",
+        "texto": "Os apoios combinados anteriormente foram realizados?"
+      },
+      {
+        "id": "q6",
+        "texto": "Qual apoio ou treinamento deve ser priorizado agora?"
+      }
+    ]
+  },
+  {
+    "id": "integracao90",
+    "titulo": "Integração · 90 dias",
+    "categoria": "entrada",
+    "momento": "Após três meses",
+    "objetivo": "Consolidar a integração e combinar o desenvolvimento.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Como avalia sua adaptação ao trabalho e à equipe?"
+      },
+      {
+        "id": "q2",
+        "texto": "Quais entregas e aprendizados considera mais importantes até aqui?"
+      },
+      {
+        "id": "q3",
+        "texto": "O que ainda dificulta realizar bem suas atividades?"
+      },
+      {
+        "id": "q4",
+        "texto": "As expectativas do cargo estão claras para você?"
+      },
+      {
+        "id": "q5",
+        "texto": "Quais oportunidades de desenvolvimento gostaria de discutir?"
+      },
+      {
+        "id": "q6",
+        "texto": "O que vamos manter ou ajustar nos próximos meses?"
+      }
+    ]
+  },
+  {
+    "id": "acompanhamento",
+    "titulo": "Conversa de acompanhamento",
+    "categoria": "acompanhamento",
+    "momento": "Conversa periódica",
+    "objetivo": "Revisar a rotina, os apoios e os combinados.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "O que funcionou bem desde nossa última conversa?"
+      },
+      {
+        "id": "q2",
+        "texto": "Qual é a principal dificuldade do seu dia a dia hoje?"
+      },
+      {
+        "id": "q3",
+        "texto": "Como estão as prioridades e a distribuição das tarefas?"
+      },
+      {
+        "id": "q4",
+        "texto": "Você tem recebido o apoio necessário da liderança e da equipe?"
+      },
+      {
+        "id": "q5",
+        "texto": "O que aconteceu com os combinados da conversa anterior?"
+      },
+      {
+        "id": "q6",
+        "texto": "Qual próximo passo ajudaria mais e de quem depende?"
+      }
+    ]
+  },
+  {
+    "id": "permanencia",
+    "titulo": "Permanência e motivação",
+    "categoria": "acompanhamento",
+    "momento": "Antes de haver intenção de saída",
+    "objetivo": "Entender o que favorece a permanência e o que pode melhorar.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "O que faz você querer continuar trabalhando aqui?"
+      },
+      {
+        "id": "q2",
+        "texto": "Em quais momentos se sente mais valorizado no trabalho?"
+      },
+      {
+        "id": "q3",
+        "texto": "O que mais dificulta sua experiência hoje?"
+      },
+      {
+        "id": "q4",
+        "texto": "Que mudança tornaria seu trabalho mais satisfatório?"
+      },
+      {
+        "id": "q5",
+        "texto": "Como enxerga suas oportunidades de crescimento?"
+      },
+      {
+        "id": "q6",
+        "texto": "Existe algo que poderia levar você a procurar outra oportunidade e que queira compartilhar?"
+      }
+    ]
+  },
+  {
+    "id": "desenvolvimento",
+    "titulo": "Carreira e desenvolvimento",
+    "categoria": "desenvolvimento",
+    "momento": "Revisão do desenvolvimento",
+    "objetivo": "Transformar interesses e necessidades em combinados.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Que competências gostaria de desenvolver?"
+      },
+      {
+        "id": "q2",
+        "texto": "Que atividades ou responsabilidades gostaria de conhecer melhor?"
+      },
+      {
+        "id": "q3",
+        "texto": "Que exemplos mostram seus avanços e dificuldades?"
+      },
+      {
+        "id": "q4",
+        "texto": "Quais oportunidades de aprendizado seriam mais úteis?"
+      },
+      {
+        "id": "q5",
+        "texto": "Como podemos observar a evolução na prática?"
+      },
+      {
+        "id": "q6",
+        "texto": "Que ação de desenvolvimento vamos combinar e para quando?"
+      }
+    ]
+  },
+  {
+    "id": "treinamento",
+    "titulo": "Avaliação pós-treinamento",
+    "categoria": "desenvolvimento",
+    "momento": "Depois do treinamento",
+    "objetivo": "Conferir aprendizado, aplicação e apoio necessário.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Qual treinamento foi realizado e o que esperava aprender?"
+      },
+      {
+        "id": "q2",
+        "texto": "Quais aprendizados foram mais úteis?"
+      },
+      {
+        "id": "q3",
+        "texto": "O que ainda ficou sem clareza ou precisa ser praticado?"
+      },
+      {
+        "id": "q4",
+        "texto": "Onde conseguirá aplicar o aprendizado na rotina?"
+      },
+      {
+        "id": "q5",
+        "texto": "Que apoio ou recurso falta para colocar isso em prática?"
+      },
+      {
+        "id": "q6",
+        "texto": "Como e quando vamos conferir se o treinamento ajudou?"
+      }
+    ]
+  },
+  {
+    "id": "saida",
+    "titulo": "Entrevista de saída",
+    "categoria": "saida",
+    "momento": "Próximo ao desligamento",
+    "objetivo": "Aprender com a experiência e organizar a transição.",
+    "versao": 1,
+    "perguntas": [
+      {
+        "id": "q1",
+        "texto": "Quais fatores contribuíram para sua decisão ou como percebe o encerramento do vínculo?"
+      },
+      {
+        "id": "q2",
+        "texto": "O que foi positivo na sua experiência aqui?"
+      },
+      {
+        "id": "q3",
+        "texto": "O que poderia ter sido melhor na organização do trabalho e no apoio recebido?"
+      },
+      {
+        "id": "q4",
+        "texto": "Como avalia as oportunidades de aprendizado e reconhecimento?"
+      },
+      {
+        "id": "q5",
+        "texto": "Que sugestão deixaria para melhorar a experiência de quem permanece?"
+      },
+      {
+        "id": "q6",
+        "texto": "Quais informações ou pendências precisam ser repassadas na transição?"
+      }
+    ]
+  }
+]

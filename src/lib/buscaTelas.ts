@@ -46,7 +46,7 @@ export const APELIDOS: Record<string, string[]> = {
   "/carreira": ["salario", "faixa", "plano de carreira", "promocao"],
   "/desempenho": ["avaliacao", "nota", "9box", "pdi", "meta"],
   "/feedback": ["feedback", "conversa", "devolutiva"],
-  "/nps": ["nps", "enps", "pesquisa", "clima", "escuta"],
+  "/nps": ["nps", "enps", "pesquisa", "clima", "escuta", "entrevista", "entrada", "saida", "integracao", "permanencia"],
   "/treinamento": ["treinamento", "curso", "capacitacao", "nr"],
   "/vagas": ["vaga", "recrutamento", "candidato", "curriculo", "selecao"],
   "/organograma": ["organograma", "hierarquia", "quem manda", "gestor"],

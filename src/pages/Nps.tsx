@@ -1,76 +1,84 @@
 import { useCallback, useEffect, useState } from "react";
-import { ShieldCheck, RefreshCw, Plus, MessageSquare } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, ClipboardList, DoorOpen, GraduationCap, HeartHandshake, LockKeyhole, MessageSquare, Plus, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 import { Campo, Input, Select } from "@/components/ui/form";
 import { useSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
-import { chamarNps, DIMENSOES_NPS, PERGUNTA_NPS, estadoNps, pontuacaoNps, type CicloNps } from "@/lib/nps";
+import ClimaPesquisa from "@/components/pesquisas/ClimaPesquisa";
+import { chamarEntrevistas, MODELOS_ENTREVISTA, nomePessoaEntrevista, type Entrevista, type ModeloEntrevista, type PessoaEntrevista } from "@/lib/entrevistas";
+import EntrevistaEditor from "@/components/pesquisas/EntrevistaEditor";
 
-const bloco = "rounded-xl border border-slate-200 bg-white p-4";
-const data = (v: string | null) => v ? new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : "Ainda não aberta";
-const escala = ["Discordo totalmente", "Discordo", "Nem concordo nem discordo", "Concordo", "Concordo totalmente"];
-
+export const CATEGORIAS_ESCUTA = [
+ {id:"clima",nome:"Clima e eNPS",descricao:"Escuta coletiva",icon:HeartHandshake,cor:"border-sky-200 bg-sky-50 text-sky-900",ponto:"bg-sky-500"},
+ {id:"selecao",nome:"Seleção",descricao:"Antes de entrar",icon:Users,cor:"border-indigo-200 bg-indigo-50 text-indigo-900",ponto:"bg-indigo-500"},
+ {id:"entrada",nome:"Entrada e integração",descricao:"Boas-vindas · 30 / 60 / 90 dias",icon:DoorOpen,cor:"border-teal-200 bg-teal-50 text-teal-900",ponto:"bg-teal-500"},
+ {id:"acompanhamento",nome:"Acompanhamento",descricao:"Rotina e permanência",icon:MessageSquare,cor:"border-violet-200 bg-violet-50 text-violet-900",ponto:"bg-violet-500"},
+ {id:"desenvolvimento",nome:"Desenvolvimento",descricao:"Carreira e treinamento",icon:GraduationCap,cor:"border-amber-200 bg-amber-50 text-amber-950",ponto:"bg-amber-500"},
+ {id:"saida",nome:"Saída",descricao:"Aprendizado e transição",icon:DoorOpen,cor:"border-rose-200 bg-rose-50 text-rose-900",ponto:"bg-rose-500"},
+];
+const painel="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5";
+const dia=(d:string)=>d.split("-").reverse().join("/");
 export default function Nps() {
-  const sessao = useSessao(); const rh = ehRH(sessao);
-  const [ciclos, setCiclos] = useState<CicloNps[]>([]);
-  const [selecionado, setSelecionado] = useState("");
-  const [aba, setAba] = useState("Pesquisas");
-  const [carregando, setCarregando] = useState(true); const [ocupado, setOcupado] = useState(false);
-  const [erro, setErro] = useState(""); const [aviso, setAviso] = useState("");
-  const [titulo, setTitulo] = useState(""); const [dias, setDias] = useState(14); const [novo, setNovo] = useState(false);
-  const [nota, setNota] = useState<number | null>(null); const [dimensoes, setDimensoes] = useState<Record<string, number | null>>({}); const [prioridade, setPrioridade] = useState("");
-  const [acao, setAcao] = useState(""); const [responsavel, setResponsavel] = useState("RH"); const [prazo, setPrazo] = useState("");
-  const carregar = useCallback(async () => {
-    setCarregando(true); setErro("");
-    try { const r = await chamarNps("listar"); setCiclos(r.ciclos ?? []); }
-    catch (e) { setCiclos([]); setErro(e instanceof Error ? e.message : "Dados indisponíveis."); }
-    finally { setCarregando(false); }
-  }, []);
-  useEffect(() => { void carregar(); }, [carregar]);
-  const c = ciclos.find(x => x.id === selecionado) ?? ciclos[0];
-  const id = c?.id;
-  useEffect(() => { setNota(null); setDimensoes({}); setPrioridade(""); setAcao(""); setPrazo(""); }, [id]);
-  async function executar(op: string, dados: Record<string, unknown>, mensagem: string) {
-    setOcupado(true); setErro(""); setAviso("");
-    try { await chamarNps(op, dados); setAviso(mensagem); setNovo(false); setNota(null); setDimensoes({}); setPrioridade(""); setAcao(""); await carregar(); }
-    catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível salvar. Tente novamente."); }
-    finally { setOcupado(false); }
-  }
-  const r = c?.resultados; const estado = c ? estadoNps(c) : "";
-  return <div className="space-y-3">
-    <PageHeader title="NPS e pesquisas" description="Escutar a equipe, entender prioridades e acompanhar melhorias.">
-      <button className="btn-outline" disabled={carregando || ocupado} onClick={() => void carregar()}><RefreshCw className="h-4 w-4" />Atualizar</button>
-      {rh && <button className="btn-primary" disabled={ocupado} onClick={() => setNovo(!novo)}><Plus className="h-4 w-4" />Nova pesquisa</button>}
-    </PageHeader>
-    <div className="flex gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950"><ShieldCheck className="h-5 w-5 shrink-0" /><div><strong>Escuta confidencial</strong><p>Notas individuais não são exibidas nem armazenadas. O RH recebe apenas resultados agrupados após o prazo e com pelo menos 5 respostas. Sem filtros por pessoa ou setor.</p></div></div>
-    <nav className="flex flex-wrap gap-2" aria-label="Seções da pesquisa">{["Pesquisas", "Questionário e método"].map(a => <button key={a} className={aba === a ? "btn-primary" : "btn-outline"} aria-pressed={aba === a} onClick={() => setAba(a)}>{a}</button>)}</nav>
-    {erro && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro} Nenhum envio é guardado na fila offline. Se faltar conexão, tente novamente; o sistema impede respostas duplicadas.</div>}
-    {aviso && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}
-    {novo && rh && <form className={bloco + " space-y-3"} onSubmit={e => { e.preventDefault(); void executar("criar", { titulo, dias }, "Rascunho criado. Confira o questionário antes de abrir a coleta."); }}><h2 className="font-semibold">Preparar pesquisa</h2><div className="grid gap-3 sm:grid-cols-2"><Campo label="Nome do ciclo"><Input required minLength={3} maxLength={100} value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Pesquisa de clima · trimestre" /></Campo><Campo label="Duração da coleta"><Select value={dias} onChange={e => setDias(Number(e.target.value))}>{[7,14,21,30,60,90].map(n => <option key={n} value={n}>{n} dias</option>)}</Select></Campo></div><p className="text-sm text-slate-600">Público: pessoas com conta ativa no RH, congelado ao abrir. Uma participação por pessoa. Colaboradores sem acesso não são incluídos. Questionário v1 e confidencialidade não mudam durante o ciclo.</p><button className="btn-primary" disabled={ocupado}>Salvar rascunho</button></form>}
-    {aba === "Questionário e método" ? <div className={bloco + " space-y-4"}>
-      <h2 className="text-lg font-semibold">Questionário v1 · aproximadamente 3 minutos</h2>
-      <p className="text-sm text-slate-600">Participação voluntária. Pense na sua experiência recente. Somente a nota de recomendação é necessária para calcular o eNPS. As demais perguntas podem ficar sem resposta.</p>
-      <h3 className="font-semibold">1. {PERGUNTA_NPS}</h3><p className="text-sm">0 = nada provável · 10 = extremamente provável</p>
-      <ol className="space-y-3">{DIMENSOES_NPS.map((d,i) => <li key={d.id}><strong>{i+2}. {d.tema}</strong><p className="text-sm text-slate-600">{d.pergunta}</p></li>)}</ol>
-      <p className="text-sm">Escala de concordância de 1 a 5, com opção “Não se aplica / prefiro não responder”.</p>
-      <h3 className="font-semibold">11. Qual tema deve receber atenção primeiro?</h3><p className="text-sm">Escolha uma das nove dimensões ou deixe em branco. Não coletamos texto livre, para reduzir identificação pelo conteúdo.</p>
-      <details className="rounded-lg bg-slate-50 p-3 text-sm"><summary className="cursor-pointer font-semibold">Como interpretar e transformar em ação</summary><div className="mt-3 space-y-2"><p>eNPS = % de promotores (9–10) menos % de detratores (0–6). Passivos (7–8) entram no total. O índice vai de -100 a +100 pontos, não é uma nota média.</p><p>As dimensões têm média de 1 a 5 e base própria. Não se aplica fica fora da média. Itens com menos de cinco respostas não são exibidos. Prioridades só aparecem com cinco ou mais escolhas.</p><p>Sugestão: aplicar trimestralmente, comunicar o resultado, escolher até três melhorias e revisar os compromissos no próximo ciclo. Não usar eNPS para avaliar ou punir indivíduos. Não há classificação automática “bom/ruim” sem contexto.</p><p>A conta serve para impedir duplicidade. O controle de participação fica separado dos totais, sem guardar respostas individuais. O acesso técnico à infraestrutura continua restrito aos administradores do serviço.</p><p>Referências: <a className="underline" href="https://marketing-prod.qualtrics.com/articles/employee-experience/employee-net-promoter-score-enps-good-measure-engagement/" target="_blank" rel="noreferrer">Qualtrics: eNPS</a> · <a className="underline" href="https://support.cultureamp.com/en/articles/7048386-confidentiality-protections-in-reporting" target="_blank" rel="noreferrer">Culture Amp: confidencialidade</a>.</p></div></details>
-    </div> : <>
-      {carregando ? <p role="status" className={bloco}>Consultando pesquisas…</p> : !c ? !erro && <div className={bloco}><MessageSquare className="mb-2 h-6 w-6 text-brand" /><h2 className="font-semibold">Nenhuma pesquisa disponível</h2><p className="mt-1 text-sm text-slate-500">{rh ? "O questionário está pronto. Crie um ciclo e confira antes de abrir a coleta." : "As pesquisas destinadas a você aparecerão aqui quando o RH abrir a coleta."}</p></div> : <>
-        <div className={bloco + " flex flex-wrap items-end gap-3"}><Campo label="Ciclo" className="min-w-0 flex-1"><Select value={c.id} onChange={e => setSelecionado(e.target.value)}>{ciclos.map(x => <option key={x.id} value={x.id}>{x.titulo} · {estadoNps(x)}</option>)}</Select></Campo><span className="rounded-full bg-slate-100 px-3 py-2 text-sm font-medium">{estado}</span></div>
-        <div className={bloco + " flex flex-wrap items-center justify-between gap-3 text-sm"}><div><p><strong>{c.titulo}</strong> · Questionário v{c.versao}</p><p className="mt-1 text-slate-500">{c.abertura ? `${data(c.abertura)} até ${data(c.fim)} · Brasília` : `Coleta durante ${c.dias} dias após a abertura`}</p></div>{rh && <span>{c.recebidas ?? 0} respostas / {c.elegiveis} convidados</span>}{rh && estado === "Rascunho" && <button className="btn-primary" disabled={ocupado} onClick={() => { if (window.confirm(`Abrir esta pesquisa por ${c.dias} dias? O público será congelado e os resultados só aparecerão após o prazo, com pelo menos cinco respostas. Não será possível reabrir nem mudar as perguntas.`)) void executar("abrir", { id: c.id }, "Coleta aberta. Os convidados podem responder na aba NPS do RH."); }}>Abrir coleta</button>}</div>
-        {estado === "Em coleta" && c.convidado && !c.respondeu && <form className={bloco + " space-y-5"} onSubmit={e => { e.preventDefault(); if (nota !== null && window.confirm("Enviar sua participação? Depois do envio, não será possível alterar a resposta.")) void executar("responder", { id: c.id, nota, dimensoes, prioridade }, "Participação confirmada. Obrigado por contribuir."); }}>
-          <fieldset disabled={ocupado} className="space-y-4"><legend className="mb-3 font-semibold">{PERGUNTA_NPS}</legend><div className="flex flex-wrap gap-2">{Array.from({ length: 11 }, (_, n) => <label key={n} className={`flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border ${nota === n ? "border-brand bg-brand text-white" : "border-slate-300"}`}><input className="sr-only peer" type="radio" name="nps" value={n} checked={nota === n} onChange={() => setNota(n)} required /><span className="peer-focus-visible:outline peer-focus-visible:outline-2">{n}</span></label>)}</div><p className="text-xs text-slate-500">0: nada provável · 10: extremamente provável</p>
-          <div className="grid gap-4 md:grid-cols-2">{DIMENSOES_NPS.map(d => <Campo key={d.id} label={d.pergunta}><Select value={dimensoes[d.id] ?? ""} onChange={e => setDimensoes({ ...dimensoes, [d.id]: e.target.value === "" ? null : Number(e.target.value) })}><option value="">Não se aplica / prefiro não responder</option>{escala.map((s,i) => <option key={s} value={i+1}>{i+1} · {s}</option>)}</Select></Campo>)}</div><Campo label="Qual tema deve receber atenção primeiro?"><Select value={prioridade} onChange={e => setPrioridade(e.target.value)}><option value="">Prefiro não responder</option>{DIMENSOES_NPS.map(d => <option value={d.id} key={d.id}>{d.tema}</option>)}</Select></Campo><button className="btn-primary" disabled={nota === null || ocupado}>{ocupado ? "Confirmando…" : "Enviar participação confidencial"}</button></fieldset>
-        </form>}
-        {c.respondeu && <p className="text-sm text-emerald-800">Sua participação já foi confirmada neste ciclo.</p>}
-        {rh && <section className={bloco + " space-y-3"}><h2 className="font-semibold">Resultados agrupados</h2>{!r ? <p className="text-sm text-slate-600">{estado !== "Encerrada" ? "Resultados protegidos durante a coleta. Serão liberados após o prazo se houver pelo menos cinco respostas." : "Resultado não liberado: menos de cinco respostas. Não significa nota zero."}</p> : <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{[["eNPS", `${pontuacaoNps(r)} pontos`],["Participação", `${Math.round(r.n / c.elegiveis * 100)}%`],["Respostas", r.n],["Convidados", c.elegiveis]].map(([label,valor]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><span className="text-xs text-slate-500">{label}</span><strong className="block text-xl text-brand">{valor}</strong></div>)}</div>
-          <p className="text-sm text-slate-600">Promotores: {r.promotores} · Passivos: {r.passivos} · Detratores: {r.detratores}. Base: {r.n} respostas válidas. Resultado exclusivo deste ciclo e público.</p>
-          <div className="grid gap-2 md:grid-cols-2">{DIMENSOES_NPS.map(d => { const v = r.dimensoes[d.id]; return <div key={d.id} className="flex justify-between gap-3 border-b py-2 text-sm"><span>{d.tema}</span><strong>{v ? `${(v.soma/v.n).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/5 · base ${v.n}` : "Base insuficiente"}</strong></div>; })}</div><h3 className="font-semibold">Prioridades indicadas</h3><p className="text-sm">{Object.entries(r.prioridades).map(([k,n]) => `${DIMENSOES_NPS.find(d => d.id === k)?.tema}: ${n}`).join(" · ") || "Nenhum tema atingiu cinco escolhas. Contagens pequenas ficam protegidas."}</p>
-        </>}</section>}
-        {estado === "Encerrada" && <section className={bloco + " space-y-3"}><h2 className="font-semibold">Devolutiva e ações de melhoria</h2><p className="text-sm text-slate-500">Compartilhadas com os convidados. Registre compromissos da empresa, sem citar respostas ou pessoas que participaram.</p>{c.acoes.length === 0 && <p className="text-sm">Ainda não há ações publicadas pelo RH.</p>}{c.acoes.map(a => <article key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div><strong className="text-sm">{a.titulo}</strong><p className="text-xs text-slate-500">{a.responsavel} · Prazo {a.prazo.split("-").reverse().join("/")} · {a.concluida ? "Concluída" : "Em acompanhamento"}</p></div>{rh && !a.concluida && <button className="btn-outline" disabled={ocupado} onClick={() => void executar("concluir", { id: c.id, acaoId: a.id }, "Ação concluída.")}>Concluir</button>}</article>)}{rh && <form className="grid gap-3 md:grid-cols-3" onSubmit={e => { e.preventDefault(); void executar("acao", { id: c.id, acao: { titulo: acao, responsavel, prazo } }, "Ação publicada na devolutiva."); }}><Campo label="Melhoria combinada"><Input required minLength={3} maxLength={300} value={acao} onChange={e => setAcao(e.target.value)} /></Campo><Campo label="Área responsável"><Input required minLength={2} maxLength={80} value={responsavel} onChange={e => setResponsavel(e.target.value)} /></Campo><Campo label="Prazo"><Input type="date" required value={prazo} onChange={e => setPrazo(e.target.value)} /></Campo><button className="btn-primary justify-self-start" disabled={ocupado}>Registrar melhoria</button></form>}</section>}
-      </>}
-    </>}
-  </div>;
+ const sessao=useSessao();
+ // Quem participa da pesquisa não recebe sequer a requisição das entrevistas.
+ return ehRH(sessao) ? <CentralEscuta/> : <ClimaPesquisa/>;
+}
+function CentralEscuta() {
+ const [aba,setAba]=useState("modelos"); const [categoria,setCategoria]=useState("todas");
+ const [entrevistas,setEntrevistas]=useState<Entrevista[]>([]); const [pessoas,setPessoas]=useState<PessoaEntrevista[]>([]);
+ const [carregando,setCarregando]=useState(true); const [erro,setErro]=useState(""); const [aviso,setAviso]=useState(""); const [ocupado,setOcupado]=useState(false);
+ const [modelo,setModelo]=useState<ModeloEntrevista|null>(null); const [pessoa,setPessoa]=useState(""); const [data,setData]=useState(""); const [criacaoId,setCriacaoId]=useState("");
+ const [aberta,setAberta]=useState<string|null>(null); const [busca,setBusca]=useState(""); const [status,setStatus]=useState("Pendentes");
+ const carregar=useCallback(async(propagar=false)=>{
+  setCarregando(true);setErro("");
+  try {const r=await chamarEntrevistas("listar");setEntrevistas(r.entrevistas);setPessoas(r.pessoas);}
+  catch(e){setErro(e instanceof Error?e.message:"Entrevistas indisponíveis.");if(propagar)throw e;}
+  finally{setCarregando(false);}
+ },[]);
+ useEffect(()=>{void carregar();},[carregar]);
+ const identificar=(e:Entrevista)=>pessoas.find(p=>p.id===e.pessoa_id && p.colecao===e.pessoa_colecao);
+ const selecionada=entrevistas.find(e=>e.id===aberta);
+ const modelos=MODELOS_ENTREVISTA.filter(m=>categoria==="todas" || m.categoria===categoria);
+ const filtradas=entrevistas.filter(e=>{
+  const m=MODELOS_ENTREVISTA.find(x=>x.id===e.modelo);
+  return (categoria==="todas" || categoria===m?.categoria) && (status==="Todas" || (status==="Pendentes"?e.estado!=="Concluída":e.estado===status)) && `${nomePessoaEntrevista(identificar(e))} ${m?.titulo ?? ""}`.toLocaleLowerCase("pt-BR").includes(busca.toLocaleLowerCase("pt-BR"));
+ }).sort((a,b)=>status==="Concluída"?b.agendada.localeCompare(a.agendada):a.agendada.localeCompare(b.agendada));
+ function preparar(m:ModeloEntrevista){setModelo(m);setPessoa("");setData("");setCriacaoId(crypto.randomUUID());setAviso("");}
+ async function criar(){
+  if(!modelo) return;
+  setOcupado(true);setErro("");
+  try{await chamarEntrevistas("criar",{id:criacaoId,modelo:modelo.id,pessoa_id:pessoa,agendada:data});setModelo(null);setAberta(criacaoId);setAba("agenda");setCategoria("todas");setStatus("Pendentes");await carregar();setAviso("Entrevista agendada. Nenhum convite foi enviado automaticamente.");}
+  catch(e){setErro(e instanceof Error?e.message:"Não foi possível agendar.");}finally{setOcupado(false);}
+ }
+ if(selecionada) return <EntrevistaEditor entrevista={selecionada} pessoa={identificar(selecionada)} onVoltar={()=>setAberta(null)} onSalvo={()=>carregar(true)}/>;
+ return <div className="space-y-4">
+  <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-brand p-5 text-white sm:p-6">
+   <div><p className="mb-1 text-xs font-semibold uppercase tracking-widest text-white/75">Pessoas · escuta e relacionamento</p><h1 className="!text-white text-2xl font-bold sm:text-3xl">Pesquisas e entrevistas</h1><p className="mt-2 max-w-2xl text-sm text-white/90">Da primeira conversa à saída. Escolha o momento, use um roteiro e acompanhe os combinados.</p></div>
+   <button className="flex min-h-11 items-center gap-2 rounded-lg border border-white/40 px-4 py-2 text-sm hover:bg-white/10" disabled={carregando || ocupado} onClick={()=>void carregar()}><RefreshCw className="h-4 w-4"/>Atualizar</button>
+  </header>
+  <nav aria-label="Áreas da central" className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+   {[{id:"modelos",label:"Modelos e roteiros",icon:BookOpen},{id:"agenda",label:"Entrevistas e histórico",icon:CalendarDays},{id:"clima",label:"Pesquisas de clima e eNPS",icon:ShieldCheck}].map(a=><button key={a.id} aria-pressed={aba===a.id} onClick={()=>{setAba(a.id);setModelo(null);}} className={aba===a.id?"btn-primary":"btn-outline"}><a.icon className="h-4 w-4"/>{a.label}</button>)}
+  </nav>
+  {aba==="clima" ? <ClimaPesquisa/> : <>
+   <div className="grid grid-cols-2 gap-2 lg:grid-cols-6" aria-label="Tipos de pesquisa e entrevista">{CATEGORIAS_ESCUTA.map(c=><button key={c.id} aria-pressed={categoria===c.id} className={`min-h-28 rounded-xl border p-3 text-left transition hover:shadow-sm ${c.cor} ${categoria===c.id?"ring-2 ring-brand ring-offset-2":""}`} onClick={()=>{if(c.id==="clima")setAba("clima");else setCategoria(categoria===c.id?"todas":c.id);setModelo(null);}}><c.icon className="mb-2 h-5 w-5"/><span className="block text-sm font-bold">{c.nome}</span><span className="mt-1 block text-xs leading-relaxed">{c.descricao}</span></button>)}</div>
+   <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="flex items-center gap-2 text-slate-600"><LockKeyhole className="h-4 w-4"/>Entrevistas identificadas · somente o RH tem acesso</span>{categoria!=="todas" && <button className="btn-outline" onClick={()=>setCategoria("todas")}>Ver todos os tipos</button>}</div>
+   {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro} Os roteiros continuam disponíveis. Os registros não são salvos offline; tente atualizar com conexão.</div>}
+   {aviso && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{aviso}</p>}
+   {modelo && <section className={painel+" border-teal-200 bg-teal-50/40"} aria-label="Agendar entrevista">
+    <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold">{modelo.titulo}</h2><p className="text-sm text-slate-600">{modelo.objetivo}</p></div><button className="btn-outline" disabled={ocupado} onClick={()=>setModelo(null)}>Cancelar</button></div>
+    <form onSubmit={e=>{e.preventDefault();void criar();}} className="grid gap-3 sm:grid-cols-[1fr_200px_auto]">
+     <Campo label={modelo.categoria==="selecao"?"Candidato do recrutamento":"Colaborador do RH"}><Select required value={pessoa} disabled={carregando || !!erro || ocupado} onChange={e=>setPessoa(e.target.value)}><option value="">Selecione o cadastro</option>{pessoas.filter(p=>p.colecao===(modelo.categoria==="selecao"?"candidatos":"colaboradores")).map(p=><option key={p.id} value={p.id}>{nomePessoaEntrevista(p)}</option>)}</Select></Campo>
+     <Campo label="Data da conversa"><Input type="date" required value={data} onChange={e=>setData(e.target.value)}/></Campo><button className="btn-primary self-end" disabled={carregando || !!erro || ocupado}>{ocupado?"Agendando…":"Agendar entrevista"}</button>
+    </form><p className="mt-3 text-xs text-slate-600">O cadastro é o mesmo do RH. Na seleção, use o candidato já cadastrado em Recrutamento. A agenda desta central é interna; o agendamento não envia mensagens.</p>
+   </section>}
+   {aba==="modelos" ? <section className="space-y-3">
+    <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">Escolha um roteiro</h2><span className="text-sm text-slate-500">{modelos.length} modelos de entrevista</span></div>
+    <div className="grid gap-3 md:grid-cols-2">{modelos.map(m=>{const c=CATEGORIAS_ESCUTA.find(c=>c.id===m.categoria)!;return <article key={m.id} className={painel+" relative overflow-hidden"}><span className={`absolute inset-y-0 left-0 w-1 ${c.ponto}`}/><div className="flex flex-wrap items-center justify-between gap-2"><span className={`rounded-full border px-2 py-1 text-xs font-semibold ${c.cor}`}>{c.nome}</span><span className="text-xs text-slate-500">{m.momento}</span></div><h3 className="mt-3 text-lg font-bold text-brand-ink">{m.titulo}</h3><p className="mt-1 text-sm text-slate-600">{m.objetivo}</p><details className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><summary className="cursor-pointer font-medium">Ver roteiro · {m.perguntas.length} perguntas</summary><ol className="mt-3 list-decimal space-y-2 pl-5 text-slate-700">{m.perguntas.map(q=><li key={q.id}>{q.texto}</li>)}</ol></details><button className="btn-outline mt-3 w-full justify-between" onClick={()=>preparar(m)}><span>Usar este roteiro</span><ArrowRight className="h-4 w-4"/></button></article>;})}</div>
+    <aside className={painel+" text-sm text-slate-600"}><strong className="text-slate-800">Conversa com propósito</strong><p className="mt-1">Explique a finalidade e quem pode ler o registro. As perguntas abertas são opcionais; respeite a decisão de não responder. Registre somente informações necessárias ao trabalho, sem diagnósticos ou detalhes da vida pessoal. Combine o próximo passo e a data de revisão.</p><details className="mt-3"><summary className="cursor-pointer font-medium">Referências e registros anteriores</summary><p className="mt-2">Roteiros originais apoiados nas orientações de <a className="underline" href="https://www.cipd.org/en/knowledge/guides/employee-induction/" target="_blank" rel="noreferrer">integração da CIPD</a> e de <a className="underline" href="https://www.gallup.com/workplace/236051/real-value-getting-exit-interview-right.aspx" target="_blank" rel="noreferrer">entrevistas de saída da Gallup</a>. A entrevista de desenvolvimento apoia o PDI existente; não altera avaliações automaticamente.</p><a className="mt-2 inline-block underline" href="#/desempenho?aba=pesquisas">Consultar acervo anterior de pesquisas e dinâmicas</a><p className="mt-1 text-xs">Os registros anteriores permanecem no acervo e não são misturados aos ciclos confidenciais desta central.</p></details></aside>
+   </section> : <section className={painel+" space-y-4"}>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Entrevistas e histórico</h2><p className="text-sm text-slate-500">Próximas conversas, registros e combinados em um só lugar.</p></div><button className="btn-primary" onClick={()=>setAba("modelos")}><Plus className="h-4 w-4"/>Agendar entrevista</button></div>
+    <div className="grid gap-3 sm:grid-cols-[1fr_220px]"><Campo label="Buscar pessoa ou roteiro"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400"/><Input className="pl-9" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Nome, ID ou tipo de entrevista"/></div></Campo><Campo label="Situação"><Select value={status} onChange={e=>setStatus(e.target.value)}>{["Pendentes","Agendada","Em andamento","Concluída","Todas"].map(s=><option key={s}>{s}</option>)}</Select></Campo></div>
+    {carregando?<p role="status">Consultando entrevistas…</p>:erro?null:filtradas.length===0?<div className="rounded-xl bg-slate-50 p-6 text-center"><ClipboardList className="mx-auto mb-2 h-6 w-6 text-slate-400"/><strong>Nenhuma entrevista neste filtro</strong><p className="mt-1 text-sm text-slate-500">Agende usando um roteiro ou altere o tipo e a situação acima.</p></div>:<div className="divide-y divide-slate-100">{filtradas.map(e=>{const m=MODELOS_ENTREVISTA.find(m=>m.id===e.modelo);const c=CATEGORIAS_ESCUTA.find(c=>c.id===m?.categoria);return <article key={e.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div className="min-w-0 flex-1"><div className="mb-2 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2 py-1 text-xs font-semibold ${c?.cor??""}`}>{m?.titulo}</span><span className="text-xs font-medium text-slate-600">{e.estado}</span></div><strong className="break-words text-sm">{nomePessoaEntrevista(identificar(e))}</strong><p className="mt-1 text-xs text-slate-500">Conversa: {dia(e.agendada)}{e.revisao?` · Revisar combinados: ${dia(e.revisao)}`:""}</p></div><button className="btn-outline" onClick={()=>setAberta(e.id)}>{e.estado==="Concluída"?<CheckCircle2 className="h-4 w-4"/>:<MessageSquare className="h-4 w-4"/>}{e.estado==="Concluída"?"Ver registro":"Registrar conversa"}</button></article>;})}<p className="pt-3 text-xs text-slate-500">{filtradas.length} de {entrevistas.length} entrevistas</p></div>}
+   </section>}
+  </>}
+ </div>;
 }
