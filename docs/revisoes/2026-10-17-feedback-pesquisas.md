@@ -42,3 +42,9 @@ Perguntas próprias, linguagem neutra e uso de acompanhamento, sem diagnóstico 
 - CCL, feedback por situação/comportamento/impacto: https://www.ccl.org/categories/feedback-sbi/
 - Qualtrics, eNPS: https://marketing-prod.qualtrics.com/articles/employee-experience/employee-net-promoter-score-enps-good-measure-engagement/
 - Culture Amp, confidencialidade: https://support.cultureamp.com/en/articles/7048386-confidentiality-protections-in-reporting
+
+## Ajuste visual solicitado após a prévia
+
+Emojis decorativos nos sete chips e nas categorias de entrevista; títulos continuam acessíveis por texto. Rosto transparente do Silk reutilizado do ativo já existente do Painel, sem recorte adicional, recoloração ou círculo. Cabeçalho responsivo com 64 px no celular e 96 px no desktop. Ajuste somente local, sem alteração de dados ou permissões.
+
+Verificação deste ajuste: `npm run verificar` aprovado (2.169 testes, protocolo e IDs), `npm run build` aprovado e conferência visual em 390 e 1280 pixels. Navegação das entrevistas conferida com os emojis decorativos.

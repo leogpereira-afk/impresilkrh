@@ -14,7 +14,7 @@ import Nps from './Nps';
 (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
 let root:Root,el:HTMLDivElement;
 const montar=(url='/nps')=>act(async()=>root.render(<MemoryRouter initialEntries={[url]}><Nps/></MemoryRouter>));
-const click=async(label:string)=>act(async()=>{Array.from(el.querySelectorAll('button')).find(b=>b.textContent?.trim()===label)!.click();});
+const click=async(label:string)=>act(async()=>{Array.from(el.querySelectorAll('button')).find(b=>{const clone=b.cloneNode(true) as HTMLElement;clone.querySelectorAll('[aria-hidden="true"]').forEach(node=>node.remove());return clone.textContent?.trim()===label;})!.click();});
 beforeEach(()=>{mock.perfil='ADMIN_RH';mock.usuarios=[];mock.api.mockReset();mock.api.mockResolvedValue({ok:true,pessoas:[],individuais:[],acoes:[],origens:[]});mock.entrevistas.mockReset();mock.entrevistas.mockResolvedValue({ok:true,pessoas:[],entrevistas:[]});el=document.createElement('div');document.body.appendChild(el);root=createRoot(el);});
 afterEach(()=>{act(()=>root.unmount());el.remove();});
 it('tem sete chips, separa instrumentos e preserva painel ao trocar de área',async()=>{

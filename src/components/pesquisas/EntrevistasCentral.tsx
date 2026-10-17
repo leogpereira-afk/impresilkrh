@@ -8,12 +8,12 @@ import { chamarEntrevistas, MODELOS_ENTREVISTA, nomePessoaEntrevista, type Entre
 import EntrevistaEditor from "@/components/pesquisas/EntrevistaEditor";
 
 export const CATEGORIAS_ESCUTA = [
- {id:"clima",nome:"Clima e eNPS",descricao:"Escuta coletiva",icon:HeartHandshake,cor:"border-sky-200 bg-sky-50 text-sky-900",ponto:"bg-sky-500"},
- {id:"selecao",nome:"Seleção",descricao:"Antes de entrar",icon:Users,cor:"border-indigo-200 bg-indigo-50 text-indigo-900",ponto:"bg-indigo-500"},
- {id:"entrada",nome:"Entrada e integração",descricao:"Boas-vindas · 7 / 30 / 60 / 90 dias",icon:DoorOpen,cor:"border-teal-200 bg-teal-50 text-teal-900",ponto:"bg-teal-500"},
- {id:"acompanhamento",nome:"Acompanhamento",descricao:"Rotina e permanência",icon:MessageSquare,cor:"border-violet-200 bg-violet-50 text-violet-900",ponto:"bg-violet-500"},
- {id:"desenvolvimento",nome:"Desenvolvimento",descricao:"Carreira e treinamento",icon:GraduationCap,cor:"border-amber-200 bg-amber-50 text-amber-950",ponto:"bg-amber-500"},
- {id:"saida",nome:"Saída",descricao:"Aprendizado e transição",icon:DoorOpen,cor:"border-rose-200 bg-rose-50 text-rose-900",ponto:"bg-rose-500"},
+ {id:"clima",emoji:"🌤️",nome:"Clima e eNPS",descricao:"Escuta coletiva",icon:HeartHandshake,cor:"border-sky-200 bg-sky-50 text-sky-900",ponto:"bg-sky-500"},
+ {id:"selecao",emoji:"🔎",nome:"Seleção",descricao:"Antes de entrar",icon:Users,cor:"border-indigo-200 bg-indigo-50 text-indigo-900",ponto:"bg-indigo-500"},
+ {id:"entrada",emoji:"👋",nome:"Entrada e integração",descricao:"Boas-vindas · 7 / 30 / 60 / 90 dias",icon:DoorOpen,cor:"border-teal-200 bg-teal-50 text-teal-900",ponto:"bg-teal-500"},
+ {id:"acompanhamento",emoji:"💬",nome:"Acompanhamento",descricao:"Rotina e permanência",icon:MessageSquare,cor:"border-violet-200 bg-violet-50 text-violet-900",ponto:"bg-violet-500"},
+ {id:"desenvolvimento",emoji:"🌱",nome:"Desenvolvimento",descricao:"Carreira e treinamento",icon:GraduationCap,cor:"border-amber-200 bg-amber-50 text-amber-950",ponto:"bg-amber-500"},
+ {id:"saida",emoji:"🚪",nome:"Saída",descricao:"Aprendizado e transição",icon:DoorOpen,cor:"border-rose-200 bg-rose-50 text-rose-900",ponto:"bg-rose-500"},
 ];
 const painel="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5";
 const dia=(d:string)=>d.split("-").reverse().join("/");
@@ -55,7 +55,7 @@ export default function EntrevistasCentral({modoInicial="modelos",consulta=0,onA
    {[{id:"modelos",label:"Modelos e roteiros",icon:BookOpen},{id:"agenda",label:"Entrevistas e histórico",icon:CalendarDays}].map(a=><button key={a.id} aria-pressed={aba===a.id} onClick={()=>{setAba(a.id);setModelo(null);}} className={aba===a.id?"btn-primary":"btn-outline"}><a.icon className="h-4 w-4"/>{a.label}</button>)}
   </nav>
   {aba==="clima" ? <ClimaPesquisa/> : <>
-   <div className="grid grid-cols-2 gap-2 lg:grid-cols-5" aria-label="Tipos de pesquisa e entrevista">{CATEGORIAS_ESCUTA.filter(c=>c.id!=="clima").map(c=><button key={c.id} aria-pressed={categoria===c.id} className={`min-h-28 rounded-xl border p-3 text-left transition hover:shadow-sm ${c.cor} ${categoria===c.id?"ring-2 ring-brand ring-offset-2":""}`} onClick={()=>{if(c.id==="clima")setAba("clima");else setCategoria(categoria===c.id?"todas":c.id);setModelo(null);}}><c.icon className="mb-2 h-5 w-5"/><span className="block text-sm font-bold">{c.nome}</span><span className="mt-1 block text-xs leading-relaxed">{c.descricao}</span></button>)}</div>
+   <div className="grid grid-cols-2 gap-2 lg:grid-cols-5" aria-label="Tipos de pesquisa e entrevista">{CATEGORIAS_ESCUTA.filter(c=>c.id!=="clima").map(c=><button key={c.id} aria-pressed={categoria===c.id} className={`min-h-28 rounded-xl border p-3 text-left transition hover:shadow-sm ${c.cor} ${categoria===c.id?"ring-2 ring-brand ring-offset-2":""}`} onClick={()=>{if(c.id==="clima")setAba("clima");else setCategoria(categoria===c.id?"todas":c.id);setModelo(null);}}><span aria-hidden="true" className="mb-2 block text-2xl leading-none">{c.emoji}</span><span className="block text-sm font-bold">{c.nome}</span><span className="mt-1 block text-xs leading-relaxed">{c.descricao}</span></button>)}</div>
    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="flex items-center gap-2 text-slate-600"><LockKeyhole className="h-4 w-4"/>Entrevistas identificadas · somente o RH tem acesso</span>{categoria!=="todas" && <button className="btn-outline" onClick={()=>setCategoria("todas")}>Ver todos os tipos</button>}</div>
    {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro} Os roteiros continuam disponíveis. Os registros não são salvos offline; tente atualizar com conexão.</div>}
    {aviso && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{aviso}</p>}

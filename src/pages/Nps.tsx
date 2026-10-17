@@ -1,3 +1,4 @@
+import silkRosto from '@/assets/brand/silk-rosto.webp';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Activity, ArrowRight, CheckCheck, ClipboardList, HeartHandshake, History, MessageSquare, RefreshCw, Smile, Users } from 'lucide-react';
@@ -14,13 +15,13 @@ const Feedback=lazy(()=>import('./Feedback'));
 const Entrevistas=lazy(()=>import('@/components/pesquisas/EntrevistasCentral'));
 const Acervo=lazy(()=>import('./Desempenho').then(m=>({default:m.AcervoPesquisas})));
 const abas=[
- {id:'visao',nome:'Visão geral',icon:Activity,cor:'border-slate-300 bg-slate-100 text-slate-900'},
- {id:'feedbacks',nome:'Feedbacks',icon:MessageSquare,cor:'border-blue-300 bg-blue-100 text-blue-950'},
- {id:'clima',nome:'Clima',icon:HeartHandshake,cor:'border-teal-300 bg-teal-100 text-teal-950'},
- {id:'enps',nome:'eNPS',icon:Smile,cor:'border-sky-300 bg-sky-100 text-sky-950'},
- {id:'individuais',nome:'Individuais',icon:ClipboardList,cor:'border-violet-300 bg-violet-100 text-violet-950'},
- {id:'entrevistas',nome:'Entrevistas',icon:Users,cor:'border-amber-300 bg-amber-100 text-amber-950'},
- {id:'acoes',nome:'Ações e histórico',icon:History,cor:'border-rose-300 bg-rose-100 text-rose-950'},
+ {id:'visao',emoji:'🏠',nome:'Visão geral',icon:Activity,cor:'border-slate-300 bg-slate-100 text-slate-900'},
+ {id:'feedbacks',emoji:'💬',nome:'Feedbacks',icon:MessageSquare,cor:'border-blue-300 bg-blue-100 text-blue-950'},
+ {id:'clima',emoji:'🌤️',nome:'Clima',icon:HeartHandshake,cor:'border-teal-300 bg-teal-100 text-teal-950'},
+ {id:'enps',emoji:'⭐',nome:'eNPS',icon:Smile,cor:'border-sky-300 bg-sky-100 text-sky-950'},
+ {id:'individuais',emoji:'📝',nome:'Individuais',icon:ClipboardList,cor:'border-violet-300 bg-violet-100 text-violet-950'},
+ {id:'entrevistas',emoji:'🤝',nome:'Entrevistas',icon:Users,cor:'border-amber-300 bg-amber-100 text-amber-950'},
+ {id:'acoes',emoji:'✅',nome:'Ações e histórico',icon:History,cor:'border-rose-300 bg-rose-100 text-rose-950'},
 ];
 const vazio:ListaEscuta={ok:false,pessoas:[],individuais:[],acoes:[],origens:[]};
 export default function Nps(){ const s=useSessao();return s?<Central key={`${s.perfil}:${s.colaboradorId}`}/>:null;}
@@ -38,8 +39,8 @@ function Central(){
  const origens=[...dados.origens,...dados.individuais.map(i=>({tipo:'individual',id:i.id,pessoa_id:i.pessoa_id,titulo:i.roteiro.titulo})),...entrevistas.filter(e=>e.pessoa_colecao==='colaboradores').map(e=>({tipo:'entrevista',id:e.id,pessoa_id:e.pessoa_id,titulo:e.roteiro?.titulo??MODELOS_ENTREVISTA.find(m=>m.id===e.modelo)?.titulo??"Entrevista"}))];
  const hoje=diaLocalISO();const proximas=entrevistas.filter(e=>e.estado!=='Concluída').sort((a,b)=>a.agendada.localeCompare(b.agendada));const revisoes=dados.acoes.filter(a=>pendenteAcao(a,hoje));
  const pessoa=(id:string,colecao='colaboradores')=>dados.pessoas.find(p=>p.id===id&&p.colecao===colecao);
- return <div className="space-y-4"><header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand p-5 text-white"><div><p className="text-xs font-semibold uppercase tracking-widest text-white/75">Pessoas · escutar, combinar e acompanhar</p><h1 className="mt-1 !text-white text-2xl font-bold sm:text-3xl">Feedback & Pesquisas</h1><p className="mt-2 text-sm text-white/90">Cada conversa no seu lugar. Cada próximo passo com acompanhamento.</p></div><button className="flex min-h-11 items-center gap-2 rounded-lg border border-white/40 px-4 py-2 text-sm" disabled={loading} onClick={()=>void carregar().catch(()=>{})}><RefreshCw className="h-4 w-4"/>Atualizar</button></header>
- <nav aria-label="Áreas de Feedback e Pesquisas" className="flex flex-wrap gap-2">{permitidas.map(a=><button key={a.id} aria-pressed={aba===a.id} onClick={()=>navegar(a.id)} className={`flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${aba===a.id?a.cor+' ring-2 ring-brand/20':'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><a.icon className="h-4 w-4"/>{a.nome}</button>)}</nav>
+ return <div className="space-y-4"><header className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center rounded-2xl bg-brand p-4 text-white sm:p-5"><div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4"><img src={silkRosto} alt="Silk, mascote da Impresilk" width={96} height={96} className="h-16 w-16 shrink-0 object-contain sm:h-24 sm:w-24"/><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-widest text-white/75">Pessoas · RH Impresilk</p><h1 className="mt-1 !text-white text-2xl font-bold sm:text-3xl">Feedback & Pesquisas</h1><p className="mt-2 text-sm text-white/90">Cada conversa no seu lugar. Cada próximo passo com acompanhamento.</p></div></div><button className="flex min-h-11 shrink-0 self-start items-center gap-2 rounded-lg border border-white/40 px-4 py-2 text-sm" disabled={loading} onClick={()=>void carregar().catch(()=>{})}><RefreshCw className="h-4 w-4"/>Atualizar</button></header>
+ <nav aria-label="Áreas de Feedback e Pesquisas" className="flex flex-wrap gap-2">{permitidas.map(a=><button key={a.id} aria-pressed={aba===a.id} onClick={()=>navegar(a.id)} className={`flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${aba===a.id?a.cor+' ring-2 ring-brand/20':'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><span aria-hidden="true" className="text-lg leading-none">{a.emoji}</span>{a.nome}</button>)}</nav>
  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{rh?'Gestão e registros identificados: RH autorizado':'Somente conteúdos autorizados para o seu perfil'}</span>{atualizado&&<span>Fonte: RH · consulta em {atualizado}</span>}</div>
  {erro&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro} A consulta não foi concluída. Atualize com conexão; os dados desta central não entram na fila offline.</p>}
  {aba==='visao'&&rh&&<div className="space-y-4">{loading?<p role="status">Consultando acompanhamentos…</p>:erro?null:<><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
