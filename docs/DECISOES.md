@@ -54,3 +54,7 @@ O dono autorizou entrevistas individuais vinculadas ao cadastro da pessoa e rest
 ## D-010 · 17/10/2026 · Feedback & Pesquisas
 
 O dono aprovou a central com chips de tela inteira, reaproveitamento dos feedbacks, clima e eNPS separados, entrevistas e individuais identificados restritos ao RH. Preservar IDs, históricos e cadastros. Pesquisa coletiva continua confidencial e agrupada, nunca eNPS individual. Fonte: pedido completo no chat. Registrado pelo Codex; plano em docs/planos/2026-10-17-feedback-pesquisas.md.
+
+## D-011 · 17/10/2026 · Publicação da central
+
+Após a prévia com Silk e emojis, o dono autorizou “subir”. Escopo: as cinco migrations, a função sync e a interface Feedback & Pesquisas já verificadas. Nenhum ciclo, convite, entrevista ou resposta real será criado automaticamente.

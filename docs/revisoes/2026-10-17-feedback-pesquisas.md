@@ -48,3 +48,13 @@ Perguntas próprias, linguagem neutra e uso de acompanhamento, sem diagnóstico 
 Emojis decorativos nos sete chips e nas categorias de entrevista; títulos continuam acessíveis por texto. Rosto transparente do Silk reutilizado do ativo já existente do Painel, sem recorte adicional, recoloração ou círculo. Cabeçalho responsivo com 64 px no celular e 96 px no desktop. Ajuste somente local, sem alteração de dados ou permissões.
 
 Verificação deste ajuste: `npm run verificar` aprovado (2.169 testes, protocolo e IDs), `npm run build` aprovado e conferência visual em 390 e 1280 pixels. Navegação das entrevistas conferida com os emojis decorativos.
+
+## Publicação autorizada em 17/10/2026
+
+O dono autorizou “subir” após conferir a prévia com Silk e emojis. Migrações aplicadas via MCP em ordem: nps_confidencial (20261017154435), entrevistas_rh (20261017154439), modelos_escuta (20261017154444), central_escuta (20261017154448), pesquisas_separadas (20261017154457). As versões são as atribuídas pelo ambiente remoto; o SQL corresponde aos cinco arquivos desta frente. Não reaplicar os arquivos só pela diferença de timestamp.
+
+Conferência no banco produtivo: sete tabelas com RLS e sem SELECT para anon/authenticated; seis funções sem EXECUTE para esses papéis. Funções de operação restritas ao servidor e com validação do perfil ativo. Os avisos de RLS sem políticas nestas tabelas são esperados: acesso direto intencionalmente fechado. Quatorze modelos presentes, nenhum ciclo, entrevista, resposta individual ou ação criado pela publicação. Leitura administrativa das três operações retornou ok. Uma chamada sem sessão à sync foi recusada com HTTP 401. Nenhum registro existente de colaborador foi alterado.
+
+Verificações frescas antes da publicação: 2.169 testes em 151 arquivos, 22 testes do protocolo, lint, TypeScript, IDs e build aprovados. Workflow de servidor: painel-impresilk/actions/runs/39046536332, rh_ref=rh-nps-20261017, rh_funcoes=sync.
+
+Servidor publicado: workflow 39046536332 concluído com sucesso. `sync` v98 ACTIVE; corpo index.ts no ar idêntico ao arquivo do ramo (84.197 caracteres). Outras funções do RH permaneceram nas versões admin-users 71, backup-registros 67, mubi-pagamentos 89, rh-performance 18 e rh-programacao 17.
