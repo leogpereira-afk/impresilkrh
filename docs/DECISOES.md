@@ -35,6 +35,8 @@ na pasta Dre. A fonte de cada uma diz onde.
 
 - D-007 · 16/10/2026 · Modernizar a interface do RH conforme a auditoria e publicar junto das correções de feedback, matriz e SST. Autorização: “Aplicar a modernização da auditoria e publicar tudo”. Preservar registros, permissões, cálculos e documentos; retirar apenas o item Documentos e procedimentos da lateral. Calibração da matriz exige motivo e histórico, sem reescrever notas nem promoção. Nenhuma escrita de teste em produção · fonte: resposta direta do dono nesta conversa · registrado por codex.
 
+- D-008 · 17/10/2026 · NPS em Pessoas com "Confidenciais, com resultados agrupados". Não exibir notas individuais a gestores. Fonte: resposta direta do dono; registrado por codex; plano docs/planos/2026-10-17-nps.md.
+
 ## Pendentes (NÃO valem como regra até o dono responder)
 
 Quando o dono responder, a resposta vira uma D-NNN nova, com a frase dele, e a

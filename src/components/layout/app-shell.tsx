@@ -48,6 +48,7 @@ const NAV: ItemNav[] = [
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho e desenvolvimento", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/feedback", label: "Conversas e feedbacks", icon: MessageSquare, perfis: GESTAO, grupo: "Pessoas", sub: true },
+  { href: "/nps", label: "NPS e pesquisas", icon: MessageSquare, perfis: TODOS, grupo: "Pessoas", sub: true },
   { href: "/treinamento", label: "Treinamentos", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/vagas", label: "Recrutamento e vagas", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
   /* Contratos e participação no quadro são informações distintas. O status
@@ -80,7 +81,7 @@ const NAV: ItemNav[] = [
 
 const GRUPOS = ["Visão geral", "Pessoas", "Estrutura e financeiro", "Comunicação e documentos", "Administração", "Conta"];
 const EMOJIS: Record<string, string> = {
-  painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", endomarketing: "💜", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
+  nps: "📊", painel: "🏠", calendario: "📅", colaboradores: "👥", desempenho: "📈", feedback: "💬", treinamento: "🎓", vagas: "💼", freelancers: "🤝", organograma: "🌳", ponto: "⏰", ferias: "🌴", integracao: "🧭", sst: "🦺", cargos: "🗂️", carreira: "🚀", custos: "💰", endomarketing: "💜", comunicacao: "📣", mensagens: "✉️", documentos: "📚", comportamental: "🧠", relatorios: "📊", aceites: "✅", "painel-controle": "⚙️", lgpd: "🔐", "meu-perfil": "👤",
 };
 
 /* NAVCONTEUDO E RODAPE MORAM AQUI FORA, e é de propósito.

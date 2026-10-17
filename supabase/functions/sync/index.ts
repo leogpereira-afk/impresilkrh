@@ -560,6 +560,15 @@ Deno.serve(async (req) => {
       return !!pessoa && !pessoa.apagado && (escrita ? id === meuId : equipe.has(id));
     };
     switch (action) {
+      // Respostas nunca passam por registros, exportação ou fila local.
+      case "nps": {
+        const { data, error } = await admin.rpc("rh_nps_operar", {
+          p_user: sessao.auth_id, p_op: String(body.op ?? ""), p_dados: body.dados ?? {},
+        });
+        if (error) return json({ erro: error.code === "P0001" ? error.message : "Pesquisa indisponível. Peça ao RH para conferir a implantação e tente novamente." }, 400);
+        return json(data);
+      }
+
       case "ping":
         return json({ ok: true, ts: new Date().toISOString() });
 
