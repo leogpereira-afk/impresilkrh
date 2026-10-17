@@ -5,7 +5,7 @@ const mock=vi.hoisted(()=>({perfil:"ADMIN_RH",api:vi.fn()}));
 vi.mock("@/lib/session",()=>({useSessao:()=>({perfil:mock.perfil})}));
 vi.mock("@/lib/entrevistas",async original=>({...await original<typeof import("@/lib/entrevistas")>(),chamarEntrevistas:mock.api}));
 vi.mock("@/components/pesquisas/ClimaPesquisa",()=>({default:()=> <div>Pesquisa coletiva confidencial</div>}));
-import Nps from "./Nps";
+import Nps from "@/components/pesquisas/EntrevistasCentral";
 (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
 let el:HTMLDivElement;let root:Root;
 const button=(s:string)=>Array.from(el.querySelectorAll("button")).find(b=>b.textContent?.includes(s))!;
@@ -14,14 +14,10 @@ const montar=()=>act(async()=>root.render(<Nps/>));
 beforeEach(()=>{mock.perfil="ADMIN_RH";mock.api.mockReset();mock.api.mockResolvedValue({ok:true,pessoas:[],entrevistas:[]});el=document.createElement("div");document.body.appendChild(el);root=createRoot(el);});
 afterEach(()=>{act(()=>root.unmount());el.remove();vi.restoreAllMocks();});
 it("agrupa roteiros por categoria e leva clima para coleta confidencial",async()=>{
- await montar();expect(el.querySelectorAll("article")).toHaveLength(10);
- await click("Entrada e integração");expect(el.querySelectorAll("article")).toHaveLength(4);
+ await montar();expect(el.querySelectorAll("article")).toHaveLength(14);
+ await click("Entrada e integração");expect(el.querySelectorAll("article")).toHaveLength(5);
  expect(el.textContent).toContain("Integração · 90 dias");expect(el.textContent).not.toContain("Entrevista de saída");
- await click("Clima e eNPS");expect(el.textContent).toContain("Pesquisa coletiva confidencial");
-});
-it("colaborador e gestor não consultam entrevistas ou cadastros",async()=>{
- for(const perfil of ["COLABORADOR","GESTOR"]){mock.perfil=perfil;await montar();expect(el.textContent).toBe("Pesquisa coletiva confidencial");}
- expect(mock.api).not.toHaveBeenCalled();
+
 });
 it("falha de conexão mantém modelos e não finge lista vazia",async()=>{
  mock.api.mockRejectedValue(new Error("Servidor indisponível"));await montar();expect(el.querySelector('[role="alert"]')?.textContent).toContain("Servidor indisponível");

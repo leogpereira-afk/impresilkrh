@@ -17,7 +17,6 @@ const ColaboradorFicha = lazy(() => import("@/pages/ColaboradorFicha"));
 const Organograma = lazy(() => import("@/pages/Organograma"));
 const Carreira = lazy(() => import("@/pages/Carreira"));
 const Cargos = lazy(() => import("@/pages/Cargos"));
-const Feedback = lazy(() => import("@/pages/Feedback"));
 const Desempenho = lazy(() => import("@/pages/Desempenho"));
 const Ferias = lazy(() => import("@/pages/Ferias"));
 const Vagas = lazy(() => import("@/pages/Vagas"));
@@ -87,7 +86,7 @@ export default function App() {
             <Route path="/cargos" element={<Restrito perfis={RH}><Cargos /></Restrito>} />
             <Route path="/carreira" element={<Restrito perfis={RH}><Carreira /></Restrito>} />
             <Route path="/desempenho" element={<Restrito perfis={GESTAO}><Desempenho /></Restrito>} />
-            <Route path="/feedback" element={<Restrito perfis={GESTAO}><Feedback /></Restrito>} />
+            <Route path="/feedback" element={<Restrito perfis={GESTAO}><Navigate to="/nps?aba=feedbacks" replace /></Restrito>} />
             <Route path="/comportamental" element={<Comportamental />} />
             {/* F25: a tela saiu do menu. O endereço antigo mostra o aviso de que o programa
                 das equipes mora no PCP; as apurações antigas só aparecem, para consulta, ao RH. */}

@@ -1,3 +1,4 @@
+import { Navigate } from "react-router-dom";
 import { posicao9Box, avaliacoesDoCiclo } from "@/lib/matriz9Box";
 import { Calibrar9Box } from "@/components/Calibrar9Box";
 import { useAbaNaUrl } from "@/lib/useAbaNaUrl";
@@ -142,7 +143,7 @@ export default function Desempenho() {
   const [excluirPdi, setExcluirPdi] = useState<(typeof pdis)[number] | null>(null);
   const { items: metas, criar: criarMeta, atualizar: atualizarMeta, remover: removerMeta } = useColecao("metas");
   const { items: pdis, criar: criarPdi, atualizar: atualizarPdi, remover: removerPdi } = useColecao("pdis");
-  const { items: feedbacks, criar: criarFeedback, atualizar: atualizarFeedback, remover: removerFeedback } = useColecao("feedbacks");
+
   const { items: ciclos } = useColecao("ciclos");
 
   const gerir = podeGerir(sessao);
@@ -220,13 +221,7 @@ export default function Desempenho() {
     [metas, idsEscopo],
   );
   const pdisVisiveis = useMemo(() => pdis.filter((p) => idsEscopo.has(p.colaboradorId)), [pdis, idsEscopo]);
-  const feedbacksVisiveis = useMemo(
-    () =>
-      feedbacks
-        .filter((f) => idsEscopo.has(f.colaboradorId))
-        .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : -1)),
-    [feedbacks, idsEscopo],
-  );
+
 
   const abas = [
     {
@@ -292,24 +287,13 @@ export default function Desempenho() {
       id: "feedbacks",
       label: "Feedbacks",
       icon: <MessageSquare className="h-4 w-4" />,
-      conteudo: (
-        <AbaFeedbacks
-          feedbacks={feedbacksVisiveis}
-          escopo={escopo}
-          gerir={gerir}
-          d={d}
-          toast={toast}
-          criarFeedback={criarFeedback}
-          atualizarFeedback={atualizarFeedback}
-          removerFeedback={removerFeedback}
-        />
-      ),
+      conteudo: <Navigate to="/nps?aba=feedbacks" replace />,
     },
     {
       id: "pesquisas",
       label: "Pesquisas e Dinâmicas",
       icon: <ClipboardList className="h-4 w-4" />,
-      conteudo: <AbaPesquisas />,
+      conteudo: <Navigate to="/nps?aba=acervo" replace />,
     },
   ];
 
@@ -1556,184 +1540,8 @@ interface EdicaoFeedback {
   conteudo: string;
 }
 
-function AbaFeedbacks({
-  feedbacks,
-  escopo,
-  gerir,
-  d,
-  toast,
-  criarFeedback,
-  atualizarFeedback,
-  removerFeedback,
-}: {
-  feedbacks: Feedback[];
-  escopo: Colaborador[];
-  gerir: boolean;
-  d: ReturnType<typeof useDominio>;
-  toast: ReturnType<typeof useToast>;
-  criarFeedback: ReturnType<typeof useColecao<"feedbacks">>["criar"];
-  atualizarFeedback: ReturnType<typeof useColecao<"feedbacks">>["atualizar"];
-  removerFeedback: ReturnType<typeof useColecao<"feedbacks">>["remover"];
-}) {
-  const sessao = useSessao();
-  const cicloNome = useCicloAtivo();
-  const [edicao, setEdicao] = useState<EdicaoFeedback | null>(null);
-  const [excluir, setExcluir] = useState<string | null>(null);
-  const ehEdicao = !!edicao?.id;
-
-  function abrirNovo() {
-    setEdicao({ colaboradorId: escopo[0]?.id ?? "", tipo: "Positivo", conteudo: "" });
-  }
-
-  function abrirEdicao(f: Feedback) {
-    setEdicao({ id: f.id, colaboradorId: f.colaboradorId, tipo: f.tipo, conteudo: f.conteudo });
-  }
-
-  function salvar() {
-    if (!edicao) return;
-    if (!edicao.colaboradorId) {
-      toast("Selecione o colaborador.", "erro");
-      return;
-    }
-    if (!edicao.conteudo.trim()) {
-      toast("Escreva o conteúdo do feedback.", "erro");
-      return;
-    }
-    if (edicao.id) {
-      atualizarFeedback(edicao.id, {
-        colaboradorId: edicao.colaboradorId,
-        tipo: edicao.tipo,
-        conteudo: edicao.conteudo.trim(),
-      });
-      toast("Feedback atualizado.", "sucesso");
-    } else {
-      criarFeedback({
-        colaboradorId: edicao.colaboradorId,
-        autorId: sessao?.colaboradorId ?? null,
-        tipo: edicao.tipo,
-        conteudo: edicao.conteudo.trim(),
-        contexto: cicloNome,
-        criadoEm: new Date().toISOString(),
-      });
-      toast("Feedback registrado.", "sucesso");
-    }
-    setEdicao(null);
-  }
-
-  return (
-    <>
-      <Card>
-        <CardHeader
-          title="Feedbacks"
-          subtitle="Reconhecimento e orientações de desenvolvimento"
-          icon={<MessageSquare className="h-[18px] w-[18px]" />}
-          action={
-            gerir ? (
-              <button className="btn-primary px-3 py-1.5 text-xs" onClick={abrirNovo}>
-                <Plus className="h-3.5 w-3.5" />
-                Novo feedback
-              </button>
-            ) : undefined
-          }
-        />
-        <CardBody className="space-y-3">
-          {feedbacks.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum feedback registrado.</p>
-          ) : (
-            feedbacks.map((f) => (
-              <div key={f.id} className="rounded-xl border border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Avatar nome={d.nomeColab(f.colaboradorId)} foto={d.fotoColab(f.colaboradorId)} size="sm" />
-                    <div>
-                      <p className="text-sm font-medium text-slate-700"><LinkFicha id={f.colaboradorId}>{d.nomeColab(f.colaboradorId)}</LinkFicha></p>
-                      <p className="text-xs text-slate-400">
-                        por {f.autorId ? <LinkFicha id={f.autorId}>{d.nomeColab(f.autorId)}</LinkFicha> : "—"} · {formatDate(f.criadoEm)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={variantTipoFeedback(f.tipo)}>{f.tipo}</Badge>
-                    {gerir && (
-                      <div className="flex items-center gap-1">
-                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-brand" onClick={() => abrirEdicao(f)} aria-label="Editar feedback">
-                          <PencilLine className="h-4 w-4" />
-                        </button>
-                        <button className="btn-ghost p-1.5 text-slate-400 hover:text-red-600" onClick={() => setExcluir(f.id)} aria-label="Excluir feedback">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">{f.conteudo}</p>
-              </div>
-            ))
-          )}
-        </CardBody>
-      </Card>
-
-      <Modal
-        aberto={!!edicao}
-        onFechar={() => setEdicao(null)}
-        titulo={ehEdicao ? "Editar feedback" : "Novo feedback"}
-        rodape={
-          <>
-            <button className="btn-outline" onClick={() => setEdicao(null)}>Cancelar</button>
-            <button className="btn-primary" onClick={salvar}>{ehEdicao ? "Salvar" : "Registrar"}</button>
-          </>
-        }
-      >
-        {edicao && (
-          <div className="space-y-3">
-            <Campo label="Colaborador" obrigatorio>
-              <Select value={edicao.colaboradorId} onChange={(e) => setEdicao({ ...edicao, colaboradorId: e.target.value })}>
-                <option value="">— Selecionar —</option>
-                {escopo.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-              </Select>
-            </Campo>
-            <Campo label="Tipo">
-              <Select value={edicao.tipo} onChange={(e) => setEdicao({ ...edicao, tipo: e.target.value })}>
-                {TIPOS_FEEDBACK.map((t) => <option key={t} value={t}>{t}</option>)}
-              </Select>
-            </Campo>
-            <Campo label="Conteúdo" obrigatorio>
-              <Textarea
-                rows={4}
-                value={edicao.conteudo}
-                onChange={(e) => setEdicao({ ...edicao, conteudo: e.target.value })}
-              />
-            </Campo>
-          </div>
-        )}
-      </Modal>
-
-      <ConfirmDialog
-        aberto={!!excluir}
-        onFechar={() => setExcluir(null)}
-        onConfirmar={() => {
-          if (excluir) {
-            removerFeedback(excluir);
-            toast("Feedback removido.", "sucesso");
-          }
-          setExcluir(null);
-        }}
-        titulo="Excluir feedback"
-        mensagem="Tem certeza que deseja excluir este feedback? Esta ação não pode ser desfeita."
-      />
-    </>
-  );
-}
-
-// ===================== Pesquisas e Dinâmicas =====================
-const VAR_STATUS_PESQ: Record<StatusPesquisa, "success" | "neutral" | "warning"> = {
-  Ativa: "success", Rascunho: "neutral", Encerrada: "warning",
-};
-const LABEL_PERGUNTA: Record<TipoPergunta, string> = {
-  Escala: "Escala (1–5)", Texto: "Texto livre", SimNao: "Sim / Não", Multipla: "Múltipla escolha", Nps: "NPS (0–10)",
-};
-
-// eNPS = % promotores (9–10) − % detratores (0–6). Vai de -100 a +100.
+const VAR_STATUS_PESQ: Record<StatusPesquisa, "success" | "neutral" | "warning"> = {Ativa:"success",Rascunho:"neutral",Encerrada:"warning"};
+const LABEL_PERGUNTA: Record<TipoPergunta,string> = {Escala:"Escala (1–5)",Texto:"Texto livre",SimNao:"Sim / Não",Multipla:"Múltipla escolha",Nps:"NPS (0–10)"};
 function calcularEnps(notas: number[]) {
   if (!notas.length) return null;
   const prom = notas.filter((n) => n >= 9).length;
@@ -1743,7 +1551,7 @@ function calcularEnps(notas: number[]) {
   return { score, prom, neu, det, total: notas.length };
 }
 
-function AbaPesquisas() {
+export function AcervoPesquisas() {
   const sessao = useSessao();
   const toast = useToast();
   const { items, criar, atualizar, remover } = useColecao("pesquisas");

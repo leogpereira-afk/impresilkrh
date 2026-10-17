@@ -3,8 +3,8 @@ import { tokenAtual } from "./auth";
 import { FN_SYNC, ANON_PUBLICA } from "./supabase";
 export const MODELOS_ENTREVISTA = modelos;
 export type ModeloEntrevista = typeof modelos[number];
-export type PessoaEntrevista = {id:string;colecao:"colaboradores"|"candidatos";nome:string;idPessoa:string|null};
-export type Entrevista = {id:string;modelo:string;pessoa_colecao:string;pessoa_id:string;agendada:string;estado:"Agendada"|"Em andamento"|"Concluída";respostas:Record<string,string>;sintese:string;combinados:string;revisao:string|null;versao:number;atualizado_em:string;concluido_em:string|null;historico:Omit<Entrevista,"historico">[]};
+export type PessoaEntrevista = {id:string;colecao:"colaboradores"|"candidatos";nome:string;idPessoa:string|null;anteriores?:unknown[];pendencia?:string;arquivado?:boolean;status?:string};
+export type Entrevista = {id:string;modelo:string;roteiro?:ModeloEntrevista;pessoa_colecao:string;pessoa_id:string;agendada:string;estado:"Agendada"|"Em andamento"|"Concluída";respostas:Record<string,string>;sintese:string;combinados:string;revisao:string|null;versao:number;atualizado_em:string;concluido_em:string|null;historico:Omit<Entrevista,"historico">[]};
 export type ListaEntrevistas = {ok:boolean;entrevistas:Entrevista[];pessoas:PessoaEntrevista[];id?:string};
 export async function chamarEntrevistas(op:string,dados:Record<string,unknown>={}):Promise<ListaEntrevistas> {
  const token=tokenAtual();
@@ -20,5 +20,5 @@ export async function chamarEntrevistas(op:string,dados:Record<string,unknown>={
 }
 export function nomePessoaEntrevista(p:PessoaEntrevista|undefined) {
  if(!p) return "Cadastro indisponível";
- return `${p.nome} · ${p.colecao === "candidatos" ? "Candidato" : p.idPessoa ? `ID ${p.idPessoa}` : "ID pendente"}`;
+ return `${p.nome}${p.arquivado?" (histórico)":""} · ${p.colecao === "candidatos" ? "Candidato" : p.idPessoa ? `ID ${p.idPessoa}${p.pendencia?" · conferir vínculo":""}` : "ID pendente"}`;
 }

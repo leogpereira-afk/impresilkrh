@@ -42,3 +42,7 @@ atrás da origem em 12/10/2026.
 
 - `rh-fluxos-auditoria-20261016`: correções incorporadas por rebase em `rh-modernizacao-20261016`; não juntar novamente o ramo antigo.
 - `rh-modernizacao-20261016`: correções e modernização autorizadas para publicação; escopo e verificação em `docs/planos/2026-10-16-modernizacao-execucao.md`.
+
+## Atualização de 17/10/2026 — Feedback & Pesquisas
+
+- `rh-nps-20261017`, clone isolado em `/tmp/rh-nps-20261017`: central e dados privados, incluindo os commits locais anteriores de NPS e entrevistas. Desenvolvimento e testes autorizados; publicação ainda depende do dono. Ver `docs/revisoes/2026-10-17-feedback-pesquisas.md`. Não misturar esta frente com o ramo antigo anterior ao rebase de 17/10.

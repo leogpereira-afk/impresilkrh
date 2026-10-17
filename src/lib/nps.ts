@@ -14,8 +14,8 @@ export const DIMENSOES_NPS = [
   { id: "comunicacao", tema: "Comunicação", pergunta: "Recebo com clareza as informações que preciso para trabalhar." },
 ] as const;
 export type ResultadoNps = { n: number; promotores: number; detratores: number; passivos: number; dimensoes: Record<string, { n: number; soma: number }>; prioridades: Record<string, number> };
-export type AcaoNps = { id: string; titulo: string; responsavel: string; prazo: string; concluida: boolean };
-export type CicloNps = { id: string; titulo: string; dias: number; versao: number; abertura: string | null; fim: string | null; convidado: boolean; respondeu: boolean; elegiveis: number; recebidas: number | null; resultados: ResultadoNps | null; acoes: AcaoNps[] };
+export type AcaoNps = { id: string; titulo: string; responsavel: string; prazo: string; concluida: boolean; resultado?:string; concluido_em?:string };
+export type CicloNps = { id: string; instrumento?:"clima"|"enps"|"pulso"|"legado"; publico?:string[]; titulo: string; dias: number; versao: number; abertura: string | null; fim: string | null; convidado: boolean; respondeu: boolean; elegiveis: number; recebidas: number | null; resultados: ResultadoNps | null; acoes: AcaoNps[] };
 export function pontuacaoNps(r: ResultadoNps): number | null { return r.n >= 5 ? Math.round(1000 * (r.promotores - r.detratores) / r.n) / 10 : null; }
 export function estadoNps(c: CicloNps, agora = Date.now()) { return !c.abertura ? "Rascunho" : c.fim && Date.parse(c.fim) <= agora ? "Encerrada" : "Em coleta"; }
 export async function chamarNps(op: string, dados: Record<string, unknown> = {}): Promise<{ ok: boolean; ciclos?: CicloNps[]; jaRespondida?: boolean }> {
@@ -29,4 +29,9 @@ export async function chamarNps(op: string, dados: Record<string, unknown> = {})
     if (!resposta.ok || r.erro || !r.ok) throw new Error(r.erro || "Não foi possível confirmar a operação. Tente novamente.");
     return r;
   } finally { clearTimeout(timer); }
+}
+
+export function cicloComparavel(atual:CicloNps,anterior:CicloNps){
+ const a=atual.publico??[],b=anterior.publico??[];
+ return atual.id!==anterior.id && !!atual.abertura && !!anterior.abertura && anterior.abertura<atual.abertura && atual.instrumento===anterior.instrumento && atual.versao===anterior.versao && a.length>=5 && a.length===b.length && [...a].sort().join('|')===[...b].sort().join('|') && (atual.resultados?.n??0)>=5 && (anterior.resultados?.n??0)>=5;
 }

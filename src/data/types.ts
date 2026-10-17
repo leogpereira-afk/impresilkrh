@@ -449,6 +449,9 @@ export interface Feedback {
       esquadro" e "voltou para retrabalho" são a mesma frase na cabeça de quem
       estava lá, e separar produzia repetição ou metade vazia. */
   oQueAconteceu?: string;
+  finalidade?: string;
+  perspectivaRegistrada?: string; // Anotação do RH/gestor; não substitui a réplica enviada pela pessoa.
+  apoioNecessario?: string;
   /** No que deu — lista FECHADA (EFEITOS_AJUSTE / EFEITOS_ELOGIO). */
   efeito?: string;
   /** O.S. do Mubisys, só quando a pessoa souber de cabeça. */

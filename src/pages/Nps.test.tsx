@@ -5,6 +5,7 @@ import type { CicloNps } from "@/lib/nps";
 const estado = vi.hoisted(() => ({ perfil: "ADMIN_RH", api: vi.fn() }));
 vi.mock("@/lib/session", () => ({ useSessao: () => ({ perfil: estado.perfil, colaboradorId: "pessoa-ficticia" }) }));
 vi.mock("@/lib/nps", async original => ({ ...await original<typeof import("@/lib/nps")>(), chamarNps: estado.api }));
+vi.mock("@/lib/escuta",()=>({chamarEscuta:async()=>({ok:true,pessoas:[]})}));
 import Nps from "@/components/pesquisas/ClimaPesquisa";
 (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
 let root: Root; let el: HTMLDivElement;

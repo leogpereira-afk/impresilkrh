@@ -14,6 +14,7 @@ beforeAll(async()=>{
  for(let n=1;n<=4;n++)await db.query("insert into perfis values($1,$2,$3)",[uuid(n),n===1||n===4?"ADMIN_RH":n===2?"GESTOR":"COLABORADOR",n!==4]);
  await db.exec(`insert into registros values('colaboradores','pessoa-ficticia','{"nome":"Pessoa fictícia","idPessoa":"000001"}',false),('candidatos','candidato-ficticio','{"nome":"Candidato fictício"}',false),('colaboradores','apagada','{}',true);`);
  await db.exec(fs.readFileSync("supabase/migrations/20261017140000_entrevistas_rh.sql","utf8"));
+ await db.exec(fs.readFileSync("supabase/migrations/20261017150000_modelos_escuta.sql","utf8"));
 },30000);
 afterAll(async()=>{await db.close();});
 describe.sequential("Entrevistas individuais restritas ao RH",()=>{

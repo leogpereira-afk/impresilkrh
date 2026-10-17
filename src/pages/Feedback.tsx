@@ -1,3 +1,4 @@
+import { idDaPessoa } from "@/lib/identidade";
 import { useHoje } from "@/lib/useHoje";
 /* FEEDBACK — a fila de quem está esperando.
  *
@@ -90,6 +91,7 @@ export default function Feedback() {
   const { items: pagamentos } = useColecao("pagamentos");
   const { items: treinamentos } = useColecao("treinamentos");
   const { items: avaliacoes } = useColecao("avaliacoes");
+  const [buscaHistorico,setBuscaHistorico]=useState("");
   const [busca, setBusca] = useState("");
   const [foco, setFoco] = useState<SituacaoFeedback | null>(null);
   const [ordem, setOrdem] = useState<Ordem>({ campo: "fila", asc: true });
@@ -153,7 +155,7 @@ export default function Feedback() {
     const filtrada = porPessoa
       .filter(({ cad }) => (foco ? cad.situacao === foco : true))
       .filter(({ c }) => (termo
-        ? c.nome.toLowerCase().includes(termo) || d.nomeCargo(c).toLowerCase().includes(termo)
+        ? c.nome.toLowerCase().includes(termo) || (idDaPessoa(c)??"").includes(termo) || JSON.stringify(c.idPessoaAnteriores??[]).includes(termo) || d.nomeCargo(c).toLowerCase().includes(termo)
         : true));
     const dir = ordem.asc ? 1 : -1;
     return [...filtrada].sort((a, b) => {
@@ -194,6 +196,7 @@ export default function Feedback() {
         title="Conversas e feedbacks"
         description={`Quem está esperando conversa, há quanto tempo, e como falar com cada um. A cada ${CADENCIA_FEEDBACK_DIAS} dias.`}
       />
+      <details className="mb-4 rounded-xl border bg-white p-4"><summary className="cursor-pointer font-semibold">Histórico de feedbacks · preservar conversas e vínculos</summary><Input className="mt-3" aria-label="Buscar no histórico de feedbacks" placeholder="Nome, ID ou assunto" value={buscaHistorico} onChange={e=>setBuscaHistorico(e.target.value)}/><div className="mt-3 max-h-96 space-y-2 overflow-auto">{feedbacks.filter(f=>{const c=d.colaboradores.find(c=>c.id===f.colaboradorId);const permitido=sessao?.perfil==="ADMIN_RH"||!!c&&colaboradoresVisiveis(sessao,d.colaboradores).some(x=>x.id===c.id);return permitido&&`${c?.nome??""} ${idDaPessoa(c)??""} ${f.conteudo}`.toLowerCase().includes(buscaHistorico.toLowerCase());}).sort((a,b)=>b.criadoEm.localeCompare(a.criadoEm)).map(f=>{const c=d.colaboradores.find(c=>c.id===f.colaboradorId);return <details className="rounded-lg border p-3 text-sm" key={f.id}><summary className="cursor-pointer"><strong>{c?`${c.nome} · ID ${idDaPessoa(c)??"pendente"}`:"Vínculo indisponível: conferir cadastro"}</strong> · {formatDate(f.ocorridoEm??f.criadoEm)} · {f.finalidade??f.tipo} · {jaFoiDado(f)?"Realizado":f.agendadaPara?"Agendado":"Preparado"}</summary><p className="mt-2 whitespace-pre-wrap">{f.conteudo||f.roteiro||"Sem texto registrado"}</p>{f.perspectivaRegistrada&&<p className="mt-2">Perspectiva anotada por quem conduziu: {f.perspectivaRegistrada}</p>}{f.apoioNecessario&&<p>Apoio: {f.apoioNecessario}</p>}{f.replica&&<p className="mt-2">Réplica enviada pela pessoa: {f.replica}</p>}{f.combinado&&<p className="mt-2">Combinado: {f.combinado} · {f.combinadoPrazo?formatDate(f.combinadoPrazo):"Próxima oportunidade"}</p>}{sessao?.perfil==="ADMIN_RH"&&<a className="mt-2 inline-block underline" href={`#/nps?aba=acoes&origem=${encodeURIComponent(`feedback:${f.id}`)}`}>Acompanhar ações deste feedback</a>}</details>;})}</div></details>
 
       {/* Cards CLICÁVEIS: filtram a lista abaixo, em vez de serem só enfeite. */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -458,7 +461,7 @@ function LinhaPessoa({ n, colab, cad, cargo, aberta, emPreparo, onAlternar, onNo
                       ? `Último registro — treinamento${(cad.ultimo as FeedbackReg).origemTitulo ? `: ${(cad.ultimo as FeedbackReg).origemTitulo}` : ""}`
                       : "Último feedback"}
                   </p>
-                  <p className="whitespace-pre-line text-sm text-slate-600">{cad.ultimo.conteudo}</p>
+                  <p className="whitespace-pre-line text-sm text-slate-600">{cad.ultimo.conteudo}</p>{cad.ultimo.perspectivaRegistrada&&<p className="mt-2 text-sm">Perspectiva anotada na conversa: {cad.ultimo.perspectivaRegistrada}</p>}{cad.ultimo.apoioNecessario&&<p className="mt-2 text-sm">Apoio: {cad.ultimo.apoioNecessario}</p>}
                   {(cad.ultimo as FeedbackReg).origem === "treinamento" && (
                     <p className="mt-1 text-[11px] text-slate-400">
                       Fala do treinamento — não substitui a conversa sobre o trabalho, e por isso
@@ -505,6 +508,9 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
   const [oQue, setOQue] = useState("");
   const [roteiro, setRoteiro] = useState(() => preparo?.roteiro ?? "");
   const [efeito, setEfeito] = useState("");
+  const [finalidade,setFinalidade]=useState(preparo?.finalidade??"");
+  const [perspectiva,setPerspectiva]=useState("");
+  const [apoio,setApoio]=useState("");
   const [os, setOs] = useState("");
   const [combinado, setCombinado] = useState("");
   const [prazo, setPrazo] = useState<{ data: string | null; gatilho: string | null }>(
@@ -538,7 +544,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
       onSalvar({
         id: preparo?.id,
         tipo,
-        roteiro: roteiro.trim(),
+        finalidade, roteiro: roteiro.trim(),
         preparadoEm: new Date().toISOString(),
         /* `conteudo` fica vazio de propósito: ele é o que a PESSOA vê na ficha
            dela, e roteiro é anotação de quem vai falar. Só vira conteúdo
@@ -551,7 +557,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
     if (oQue.trim().length < 15) return toast("Conte o que aconteceu — uma frase basta.", "erro");
     /* Bloqueio ANTES de gravar, e sem guardar o texto: avisar, permitir e
        guardar seria a pior das três opções. */
-    const b = bloqueio(`${oQue} ${combinado}`);
+    const b = bloqueio(`${oQue} ${combinado} ${perspectiva} ${apoio}`);
     if (b) { setBarrado(b); return; }
     if (ehRotaSeguranca(efeito)) { setBarrado("grave"); return; }
     if (!efeito) return toast("Marque no que deu.", "erro");
@@ -561,7 +567,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
     if (!ocorridoEm || ocorridoEm > diaLocalISO(new Date())) return toast("Informe a data em que a conversa aconteceu, até hoje.", "erro");
     if (!tipo) return; // o portão garante isto, mas o tipo precisa saber
     const base = {
-      tipo, ocorridoEm, oQueAconteceu: oQue.trim(), efeito,
+      tipo, finalidade, perspectivaRegistrada:perspectiva.trim(), apoioNecessario:apoio.trim(), ocorridoEm, oQueAconteceu: oQue.trim(), efeito,
       os: os.trim() || undefined,
       ...(ajuste ? { combinado: combinado.trim(), combinadoPrazo: prazo.data, combinadoGatilho: prazo.gatilho } : {}),
     };
@@ -594,7 +600,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
       <Modal aberto onFechar={onFechar} titulo={`Conversa com ${colab.nome}`} largura="max-w-md"
         descricao="O que você quer registrar?">
         <div className="space-y-2">
-          <button type="button" onClick={() => setTipo("Reconhecimento")}
+          <button type="button" onClick={() => {setFinalidade("Reconhecimento");setTipo("Reconhecimento");}}
             className="flex w-full items-center gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4 text-left transition hover:border-emerald-300">
             <ThumbsUp className="h-5 w-5 shrink-0 text-emerald-600" />
             <span>
@@ -602,7 +608,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
               <span className="block text-xs text-slate-500">Ele fez algo que deu certo e você quer que fique registrado.</span>
             </span>
           </button>
-          <button type="button" onClick={() => setTipo("Ajuste")}
+          <button type="button" onClick={() => {setFinalidade("Orientação de melhoria");setTipo("Ajuste");}}
             className="flex w-full items-center gap-3 rounded-xl border-2 border-amber-200 bg-amber-50/50 p-4 text-left transition hover:border-amber-300">
             <Wrench className="h-5 w-5 shrink-0 text-amber-600" />
             <span>
@@ -610,6 +616,7 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
               <span className="block text-xs text-slate-500">Algo precisa mudar daqui pra frente. Vocês combinam o quê.</span>
             </span>
           </button>
+          {["Alinhamento de expectativas","Acompanhamento de desenvolvimento"].map(f=><button key={f} type="button" className="w-full rounded-xl border border-blue-200 bg-blue-50/50 p-4 text-left" onClick={()=>{setFinalidade(f);setTipo("Ajuste");}}><span className="block font-semibold text-slate-800">{f}</span><span className="block text-xs text-slate-500">Conferir fatos, ouvir a pessoa e combinar apoio e revisão.</span></button>)}
           {/* Não abre nada de propósito. */}
           <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
             <strong className="font-medium text-slate-700">É coisa grave?</strong> Briga, assédio, EPI, furto, bebida,
@@ -645,8 +652,8 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
         {etapa !== "agendar" && <fieldset>
           <legend className="mb-1 text-xs font-medium text-slate-600">Tipo de feedback</legend>
           <div className="flex flex-wrap gap-2">
-            <button type="button" aria-pressed={!ajuste} onClick={() => setTipo("Reconhecimento")} className={`min-h-10 rounded-full border px-3 py-2 text-sm font-medium ${!ajuste ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-600"}`}>👍 Positivo</button>
-            <button type="button" aria-pressed={ajuste} onClick={() => setTipo("Ajuste")} className={`min-h-10 rounded-full border px-3 py-2 text-sm font-medium ${ajuste ? "border-amber-500 bg-amber-50 text-amber-800" : "border-slate-200 text-slate-600"}`}>🛠️ Corretivo</button>
+            <button type="button" aria-pressed={!ajuste} onClick={() => {setFinalidade("Reconhecimento");setTipo("Reconhecimento");}} className={`min-h-10 rounded-full border px-3 py-2 text-sm font-medium ${!ajuste ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-600"}`}>👍 Positivo</button>
+            <button type="button" aria-pressed={ajuste} onClick={() => {setFinalidade("Orientação de melhoria");setTipo("Ajuste");}} className={`min-h-10 rounded-full border px-3 py-2 text-sm font-medium ${ajuste ? "border-amber-500 bg-amber-50 text-amber-800" : "border-slate-200 text-slate-600"}`}>🛠️ Corretivo</button>
           </div>
           <p className="mt-1 text-xs text-slate-500">{ajuste ? "Orientar uma melhoria e combinar o próximo passo." : "Reconhecer uma atitude, entrega ou resultado positivo."}</p>
         </fieldset>}
@@ -727,6 +734,8 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
             duas etapas: na preparação a conversa ainda não houve, e ao marcar
             o dia o líder só escolhe a data. */}
         {etapa === "registrar" && <>
+        {finalidade&&<p className="text-sm font-semibold text-brand">{finalidade}</p>}
+        <p className="text-xs text-slate-500">Registre fatos observados e diferencie sua interpretação da perspectiva compartilhada pela pessoa. Este registro não gera advertência ou avaliação automaticamente.</p>
         <Campo label="Quando foi a conversa">
           <div className="mb-2 flex flex-wrap gap-1.5">
             {[["Hoje", 0], ["Ontem", -1]].map(([r, n]) => (
@@ -747,6 +756,8 @@ function ModalNovoFeedback({ colab, setor, dossie, etapa, preparo, aberto: emAbe
           <Textarea autoFocus value={oQue} onChange={(e) => setOQue(e.target.value)} rows={3} />
         </Campo>
 
+        <Campo label="Perspectiva compartilhada pela pessoa (opcional)" hint="Anotação de quem conduziu a conversa. Não substitui a réplica ou a ciência da pessoa."><Textarea value={perspectiva} maxLength={4000} onChange={e=>setPerspectiva(e.target.value)}/></Campo>
+        <Campo label="Apoio necessário (opcional)"><Textarea value={apoio} maxLength={4000} onChange={e=>setApoio(e.target.value)}/></Campo>
         {/* Lista FECHADA, um toque. É o único campo que precisa somar em
             relatório, e é o que mantém a conversa na TAREFA em vez de na pessoa. */}
         <Campo label="No que deu" obrigatorio>

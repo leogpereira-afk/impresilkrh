@@ -47,8 +47,7 @@ const NAV: ItemNav[] = [
   // sob Colaboradores (subitens indentados).
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
   { href: "/desempenho", label: "Desempenho e desenvolvimento", icon: TrendingUp, perfis: GESTAO, grupo: "Pessoas", sub: true },
-  { href: "/feedback", label: "Conversas e feedbacks", icon: MessageSquare, perfis: GESTAO, grupo: "Pessoas", sub: true },
-  { href: "/nps", label: "Pesquisas e entrevistas", icon: MessageSquare, perfis: TODOS, grupo: "Pessoas", sub: true },
+  { href: "/nps", label: "Feedback & Pesquisas", icon: MessageSquare, perfis: TODOS, grupo: "Pessoas", sub: true },
   { href: "/treinamento", label: "Treinamentos", icon: GraduationCap, perfis: GESTAO, grupo: "Pessoas", sub: true },
   { href: "/vagas", label: "Recrutamento e vagas", icon: Briefcase, perfis: RH, grupo: "Pessoas" },
   /* Contratos e participação no quadro são informações distintas. O status

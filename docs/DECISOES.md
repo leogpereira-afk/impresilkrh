@@ -50,3 +50,7 @@ pendente ganha `RESPONDIDA em AAAA-MM-DD por D-NNN`.
 ## D-009 · Entrevistas identificadas, acesso exclusivo do RH (17/10/2026)
 
 O dono autorizou entrevistas individuais vinculadas ao cadastro da pessoa e restritas ao RH. Clima e eNPS continuam confidenciais e agrupados conforme D-008. A central deve organizar seleção, entrada/integração, acompanhamento/permanência, desenvolvimento/treinamento e saída. Candidatos usam o cadastro de recrutamento; colaboradores usam a chave da ficha e seu ID estável. Sem gerar nova ficha de pessoa. Sem envio automático de convites.
+
+## D-010 · 17/10/2026 · Feedback & Pesquisas
+
+O dono aprovou a central com chips de tela inteira, reaproveitamento dos feedbacks, clima e eNPS separados, entrevistas e individuais identificados restritos ao RH. Preservar IDs, históricos e cadastros. Pesquisa coletiva continua confidencial e agrupada, nunca eNPS individual. Fonte: pedido completo no chat. Registrado pelo Codex; plano em docs/planos/2026-10-17-feedback-pesquisas.md.

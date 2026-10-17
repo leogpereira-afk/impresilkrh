@@ -34,6 +34,8 @@ export interface FeedbackLike {
   tipo?: string;
   autorId?: string | null;
   conteudo?: string;
+  perspectivaRegistrada?: string;
+  apoioNecessario?: string;
   /** Conversa com a EQUIPE: mesmo texto em várias fichas. */
   grupoId?: string | null;
   /** "treinamento" = fala do curso, não do serviço do dia a dia. */

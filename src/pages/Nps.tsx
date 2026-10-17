@@ -1,84 +1,68 @@
-import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, ClipboardList, DoorOpen, GraduationCap, HeartHandshake, LockKeyhole, MessageSquare, Plus, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
-import { Campo, Input, Select } from "@/components/ui/form";
-import { useSessao } from "@/lib/session";
-import { ehRH } from "@/lib/rbac";
-import ClimaPesquisa from "@/components/pesquisas/ClimaPesquisa";
-import { chamarEntrevistas, MODELOS_ENTREVISTA, nomePessoaEntrevista, type Entrevista, type ModeloEntrevista, type PessoaEntrevista } from "@/lib/entrevistas";
-import EntrevistaEditor from "@/components/pesquisas/EntrevistaEditor";
-
-export const CATEGORIAS_ESCUTA = [
- {id:"clima",nome:"Clima e eNPS",descricao:"Escuta coletiva",icon:HeartHandshake,cor:"border-sky-200 bg-sky-50 text-sky-900",ponto:"bg-sky-500"},
- {id:"selecao",nome:"Seleção",descricao:"Antes de entrar",icon:Users,cor:"border-indigo-200 bg-indigo-50 text-indigo-900",ponto:"bg-indigo-500"},
- {id:"entrada",nome:"Entrada e integração",descricao:"Boas-vindas · 30 / 60 / 90 dias",icon:DoorOpen,cor:"border-teal-200 bg-teal-50 text-teal-900",ponto:"bg-teal-500"},
- {id:"acompanhamento",nome:"Acompanhamento",descricao:"Rotina e permanência",icon:MessageSquare,cor:"border-violet-200 bg-violet-50 text-violet-900",ponto:"bg-violet-500"},
- {id:"desenvolvimento",nome:"Desenvolvimento",descricao:"Carreira e treinamento",icon:GraduationCap,cor:"border-amber-200 bg-amber-50 text-amber-950",ponto:"bg-amber-500"},
- {id:"saida",nome:"Saída",descricao:"Aprendizado e transição",icon:DoorOpen,cor:"border-rose-200 bg-rose-50 text-rose-900",ponto:"bg-rose-500"},
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Activity, ArrowRight, CheckCheck, ClipboardList, HeartHandshake, History, MessageSquare, RefreshCw, Smile, Users } from 'lucide-react';
+import { useSessao } from '@/lib/session';
+import { ehRH, podeGerir, modulosLiberados, moduloAcessivel } from '@/lib/rbac';
+import { useColecao } from '@/lib/store';
+import { chamarEscuta, pendenteAcao, type ListaEscuta } from '@/lib/escuta';
+import { chamarEntrevistas, MODELOS_ENTREVISTA, nomePessoaEntrevista, type Entrevista } from '@/lib/entrevistas';
+import { diaLocalISO } from '@/lib/format';
+import ClimaPesquisa from '@/components/pesquisas/ClimaPesquisa';
+import Individuais from '@/components/pesquisas/Individuais';
+import AcoesEscuta from '@/components/pesquisas/AcoesEscuta';
+const Feedback=lazy(()=>import('./Feedback'));
+const Entrevistas=lazy(()=>import('@/components/pesquisas/EntrevistasCentral'));
+const Acervo=lazy(()=>import('./Desempenho').then(m=>({default:m.AcervoPesquisas})));
+const abas=[
+ {id:'visao',nome:'Visão geral',icon:Activity,cor:'border-slate-300 bg-slate-100 text-slate-900'},
+ {id:'feedbacks',nome:'Feedbacks',icon:MessageSquare,cor:'border-blue-300 bg-blue-100 text-blue-950'},
+ {id:'clima',nome:'Clima',icon:HeartHandshake,cor:'border-teal-300 bg-teal-100 text-teal-950'},
+ {id:'enps',nome:'eNPS',icon:Smile,cor:'border-sky-300 bg-sky-100 text-sky-950'},
+ {id:'individuais',nome:'Individuais',icon:ClipboardList,cor:'border-violet-300 bg-violet-100 text-violet-950'},
+ {id:'entrevistas',nome:'Entrevistas',icon:Users,cor:'border-amber-300 bg-amber-100 text-amber-950'},
+ {id:'acoes',nome:'Ações e histórico',icon:History,cor:'border-rose-300 bg-rose-100 text-rose-950'},
 ];
-const painel="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5";
-const dia=(d:string)=>d.split("-").reverse().join("/");
-export default function Nps() {
- const sessao=useSessao();
- // Quem participa da pesquisa não recebe sequer a requisição das entrevistas.
- return ehRH(sessao) ? <CentralEscuta/> : <ClimaPesquisa/>;
+const vazio:ListaEscuta={ok:false,pessoas:[],individuais:[],acoes:[],origens:[]};
+export default function Nps(){ const s=useSessao();return s?<Central key={`${s.perfil}:${s.colaboradorId}`}/>:null;}
+function Central(){
+ const sessao=useSessao();const rh=ehRH(sessao);const {items:usuarios}=useColecao('usuarios');const feedback=podeGerir(sessao)&&moduloAcessivel('feedback',modulosLiberados(sessao,usuarios));
+ const [params,setParams]=useSearchParams();const [dados,setDados]=useState<ListaEscuta>(vazio);const [entrevistas,setEntrevistas]=useState<Entrevista[]>([]);const [erro,setErro]=useState('');const [loading,setLoading]=useState(true);const [atualizado,setAtualizado]=useState('');
+ const permitidas=abas.filter(a=>rh||['clima','enps','individuais'].includes(a.id)||(a.id==='feedbacks'&&feedback));
+ const pedida=params.get('aba')??(rh?'visao':'individuais');const aba=(permitidas.some(a=>a.id===pedida)||rh&&pedida==='acervo')?pedida:permitidas[0].id;
+ const [visitadas,setVisitadas]=useState<string[]>([aba]);
+ const [consulta,setConsulta]=useState({area:"",filtro:"Pendentes",modo:"agenda",seq:0});
+ useEffect(()=>{setVisitadas(v=>v.includes(aba)?v:[...v,aba]);},[aba]);
+ function navegar(a:string,filtro?:string,modo="agenda",listar=false){if(listar&&document.querySelector(`[data-area="${a}"] [data-dirty="true"]`)&&!window.confirm("Há anotações não salvas nesta área. Descartar e abrir a lista do indicador?"))return;if(listar)setConsulta(v=>({area:a,filtro:filtro??"Pendentes",modo,seq:v.seq+1}));setParams(p=>{p.set('aba',a);if(a==='entrevistas')p.set('modo',modo);else p.delete('modo');p.delete('origem');if(filtro)p.set('filtro',filtro);else p.delete('filtro');return p;});}
+ const carregar=useCallback(async()=>{setLoading(true);setErro('');try{const [r,e]=await Promise.all([chamarEscuta('listar'),rh?chamarEntrevistas('listar'):Promise.resolve(null)]);setDados(r);setEntrevistas(e?.entrevistas??[]);setAtualizado(new Date().toLocaleString('pt-BR'));}catch(e){setErro((e as Error).message);throw e;}finally{setLoading(false);}},[rh]);
+ useEffect(()=>{void carregar().catch(()=>{});},[carregar]);
+ const origens=[...dados.origens,...dados.individuais.map(i=>({tipo:'individual',id:i.id,pessoa_id:i.pessoa_id,titulo:i.roteiro.titulo})),...entrevistas.filter(e=>e.pessoa_colecao==='colaboradores').map(e=>({tipo:'entrevista',id:e.id,pessoa_id:e.pessoa_id,titulo:e.roteiro?.titulo??MODELOS_ENTREVISTA.find(m=>m.id===e.modelo)?.titulo??"Entrevista"}))];
+ const hoje=diaLocalISO();const proximas=entrevistas.filter(e=>e.estado!=='Concluída').sort((a,b)=>a.agendada.localeCompare(b.agendada));const revisoes=dados.acoes.filter(a=>pendenteAcao(a,hoje));
+ const pessoa=(id:string,colecao='colaboradores')=>dados.pessoas.find(p=>p.id===id&&p.colecao===colecao);
+ return <div className="space-y-4"><header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand p-5 text-white"><div><p className="text-xs font-semibold uppercase tracking-widest text-white/75">Pessoas · escutar, combinar e acompanhar</p><h1 className="mt-1 !text-white text-2xl font-bold sm:text-3xl">Feedback & Pesquisas</h1><p className="mt-2 text-sm text-white/90">Cada conversa no seu lugar. Cada próximo passo com acompanhamento.</p></div><button className="flex min-h-11 items-center gap-2 rounded-lg border border-white/40 px-4 py-2 text-sm" disabled={loading} onClick={()=>void carregar().catch(()=>{})}><RefreshCw className="h-4 w-4"/>Atualizar</button></header>
+ <nav aria-label="Áreas de Feedback e Pesquisas" className="flex flex-wrap gap-2">{permitidas.map(a=><button key={a.id} aria-pressed={aba===a.id} onClick={()=>navegar(a.id)} className={`flex min-h-11 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${aba===a.id?a.cor+' ring-2 ring-brand/20':'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><a.icon className="h-4 w-4"/>{a.nome}</button>)}</nav>
+ <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{rh?'Gestão e registros identificados: RH autorizado':'Somente conteúdos autorizados para o seu perfil'}</span>{atualizado&&<span>Fonte: RH · consulta em {atualizado}</span>}</div>
+ {erro&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro} A consulta não foi concluída. Atualize com conexão; os dados desta central não entram na fila offline.</p>}
+ {aba==='visao'&&rh&&<div className="space-y-4">{loading?<p role="status">Consultando acompanhamentos…</p>:erro?null:<><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+  {titulo:'Conversas agendadas',n:proximas.length,ir:'entrevistas',icon:Users},
+  {titulo:'Individuais pendentes',n:dados.individuais.filter(i=>i.estado!=='Concluída').length,ir:'individuais',icon:ClipboardList},
+  {titulo:'Ações em aberto',n:dados.acoes.filter(a=>a.estado!=='Concluída').length,ir:'acoes',icon:CheckCheck},
+  {titulo:'Ações para revisar',n:revisoes.length,ir:'acoes',filtro:'Revisar',icon:History},
+ ].map(c=><button key={c.titulo} onClick={()=>navegar(c.ir,c.filtro,"agenda",true)} className="rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-brand"><span className="flex items-center justify-between gap-2 text-xs text-slate-600">{c.titulo}<c.icon className="h-4 w-4"/></span><strong className="mt-2 block text-2xl text-brand">{c.n}</strong><span className="text-xs text-slate-500">Abrir registros →</span></button>)}</div>
+ <section className="rounded-xl border bg-white p-4"><h2 className="font-bold">Próximas conversas</h2><p className="mt-1 text-sm text-slate-500">As mais antigas aparecem primeiro. Concluir preserva o registro no histórico.</p>{proximas.length===0?<p className="mt-3 text-sm">Nenhuma entrevista pendente.</p>:proximas.slice(0,5).map(e=><div className="flex flex-wrap justify-between gap-2 border-b py-3 text-sm" key={e.id}><div><strong>{nomePessoaEntrevista(pessoa(e.pessoa_id,e.pessoa_colecao))}</strong><p className="text-xs text-slate-500">{e.roteiro?.titulo??MODELOS_ENTREVISTA.find(m=>m.id===e.modelo)?.titulo??"Entrevista"} · {e.agendada.split('-').reverse().join('/')} · {e.agendada<hoje?'Conversa em atraso':e.estado}</p></div><button className="btn-outline" onClick={()=>navegar('entrevistas',undefined,'agenda',true)}>Abrir agenda</button></div>)}</section>
+ <div className="grid gap-3 md:grid-cols-2"><section className="rounded-xl border border-blue-200 bg-blue-50 p-4"><h2 className="font-bold">Conversas e devolutivas</h2><p className="my-2 text-sm text-slate-600">A fila de feedbacks mantém os registros, a cadência e os combinados existentes. Preparar uma conversa continua diferente de realizá-la.</p><button className="btn-outline" onClick={()=>navegar('feedbacks')}>Abrir meus feedbacks <ArrowRight className="h-4 w-4"/></button></section><section className="rounded-xl border border-teal-200 bg-teal-50 p-4"><h2 className="font-bold">Uma pergunta, um propósito</h2><p className="my-2 text-sm text-slate-600">Clima identifica temas da experiência de trabalho. eNPS mede recomendação. Individuais e entrevistas ajudam a acompanhar cada pessoa.</p><button className="btn-outline" onClick={()=>navegar('entrevistas',undefined,'modelos',true)}>Explorar biblioteca de roteiros</button></section></div>
+ <details className="rounded-xl border bg-white p-4"><summary className="cursor-pointer font-semibold">Linha do tempo por pessoa e vínculos a conferir</summary><LinhaTempo dados={dados} entrevistas={entrevistas}/></details>
+ <button className="text-sm underline" onClick={()=>navegar('acervo')}>Consultar acervo anterior de pesquisas e dinâmicas</button></> }</div>}
+ <Suspense fallback={<p role="status">Abrindo área…</p>}>
+ {feedback&&visitadas.includes('feedbacks')&&<div hidden={aba!=='feedbacks'}><Feedback/></div>}
+ {visitadas.includes('clima')&&<div hidden={aba!=='clima'}><ClimaPesquisa instrumento="clima"/></div>}
+ {visitadas.includes('enps')&&<div hidden={aba!=='enps'}><ClimaPesquisa instrumento="enps"/></div>}
+ {visitadas.includes('individuais')&&<div data-area="individuais" hidden={aba!=='individuais'}>{!dados.ok?<p>Questionários ainda não consultados.</p>:<Individuais consulta={consulta.area==="individuais"?consulta.seq:0} dados={dados} rh={rh} recarregar={carregar}/>}</div>}
+ {rh&&visitadas.includes('entrevistas')&&<div data-area="entrevistas" hidden={aba!=='entrevistas'}><Entrevistas consulta={consulta.area==="entrevistas"?consulta.seq:0} modoInicial={consulta.area==="entrevistas"?consulta.modo:"agenda"} onAtualizado={()=>void carregar().catch(()=>{})}/></div>}
+ {rh&&visitadas.includes('acoes')&&<div data-area="acoes" hidden={aba!=='acoes'}>{dados.ok&&<AcoesEscuta consulta={consulta.area==="acoes"?consulta.seq:0} origemInicial={params.get('origem')??''} filtroInicial={params.get('filtro')??'Pendentes'} dados={dados} origens={origens} recarregar={carregar}/>}</div>}
+ {rh&&aba==='acervo'&&<section><p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm">Acervo anterior. Mantém as regras originais de acesso; estes registros não são os novos ciclos confidenciais de Clima ou eNPS.</p><Acervo/></section>}
+ </Suspense></div>;
 }
-function CentralEscuta() {
- const [aba,setAba]=useState("modelos"); const [categoria,setCategoria]=useState("todas");
- const [entrevistas,setEntrevistas]=useState<Entrevista[]>([]); const [pessoas,setPessoas]=useState<PessoaEntrevista[]>([]);
- const [carregando,setCarregando]=useState(true); const [erro,setErro]=useState(""); const [aviso,setAviso]=useState(""); const [ocupado,setOcupado]=useState(false);
- const [modelo,setModelo]=useState<ModeloEntrevista|null>(null); const [pessoa,setPessoa]=useState(""); const [data,setData]=useState(""); const [criacaoId,setCriacaoId]=useState("");
- const [aberta,setAberta]=useState<string|null>(null); const [busca,setBusca]=useState(""); const [status,setStatus]=useState("Pendentes");
- const carregar=useCallback(async(propagar=false)=>{
-  setCarregando(true);setErro("");
-  try {const r=await chamarEntrevistas("listar");setEntrevistas(r.entrevistas);setPessoas(r.pessoas);}
-  catch(e){setErro(e instanceof Error?e.message:"Entrevistas indisponíveis.");if(propagar)throw e;}
-  finally{setCarregando(false);}
- },[]);
- useEffect(()=>{void carregar();},[carregar]);
- const identificar=(e:Entrevista)=>pessoas.find(p=>p.id===e.pessoa_id && p.colecao===e.pessoa_colecao);
- const selecionada=entrevistas.find(e=>e.id===aberta);
- const modelos=MODELOS_ENTREVISTA.filter(m=>categoria==="todas" || m.categoria===categoria);
- const filtradas=entrevistas.filter(e=>{
-  const m=MODELOS_ENTREVISTA.find(x=>x.id===e.modelo);
-  return (categoria==="todas" || categoria===m?.categoria) && (status==="Todas" || (status==="Pendentes"?e.estado!=="Concluída":e.estado===status)) && `${nomePessoaEntrevista(identificar(e))} ${m?.titulo ?? ""}`.toLocaleLowerCase("pt-BR").includes(busca.toLocaleLowerCase("pt-BR"));
- }).sort((a,b)=>status==="Concluída"?b.agendada.localeCompare(a.agendada):a.agendada.localeCompare(b.agendada));
- function preparar(m:ModeloEntrevista){setModelo(m);setPessoa("");setData("");setCriacaoId(crypto.randomUUID());setAviso("");}
- async function criar(){
-  if(!modelo) return;
-  setOcupado(true);setErro("");
-  try{await chamarEntrevistas("criar",{id:criacaoId,modelo:modelo.id,pessoa_id:pessoa,agendada:data});setModelo(null);setAberta(criacaoId);setAba("agenda");setCategoria("todas");setStatus("Pendentes");await carregar();setAviso("Entrevista agendada. Nenhum convite foi enviado automaticamente.");}
-  catch(e){setErro(e instanceof Error?e.message:"Não foi possível agendar.");}finally{setOcupado(false);}
- }
- if(selecionada) return <EntrevistaEditor entrevista={selecionada} pessoa={identificar(selecionada)} onVoltar={()=>setAberta(null)} onSalvo={()=>carregar(true)}/>;
- return <div className="space-y-4">
-  <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-brand p-5 text-white sm:p-6">
-   <div><p className="mb-1 text-xs font-semibold uppercase tracking-widest text-white/75">Pessoas · escuta e relacionamento</p><h1 className="!text-white text-2xl font-bold sm:text-3xl">Pesquisas e entrevistas</h1><p className="mt-2 max-w-2xl text-sm text-white/90">Da primeira conversa à saída. Escolha o momento, use um roteiro e acompanhe os combinados.</p></div>
-   <button className="flex min-h-11 items-center gap-2 rounded-lg border border-white/40 px-4 py-2 text-sm hover:bg-white/10" disabled={carregando || ocupado} onClick={()=>void carregar()}><RefreshCw className="h-4 w-4"/>Atualizar</button>
-  </header>
-  <nav aria-label="Áreas da central" className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-   {[{id:"modelos",label:"Modelos e roteiros",icon:BookOpen},{id:"agenda",label:"Entrevistas e histórico",icon:CalendarDays},{id:"clima",label:"Pesquisas de clima e eNPS",icon:ShieldCheck}].map(a=><button key={a.id} aria-pressed={aba===a.id} onClick={()=>{setAba(a.id);setModelo(null);}} className={aba===a.id?"btn-primary":"btn-outline"}><a.icon className="h-4 w-4"/>{a.label}</button>)}
-  </nav>
-  {aba==="clima" ? <ClimaPesquisa/> : <>
-   <div className="grid grid-cols-2 gap-2 lg:grid-cols-6" aria-label="Tipos de pesquisa e entrevista">{CATEGORIAS_ESCUTA.map(c=><button key={c.id} aria-pressed={categoria===c.id} className={`min-h-28 rounded-xl border p-3 text-left transition hover:shadow-sm ${c.cor} ${categoria===c.id?"ring-2 ring-brand ring-offset-2":""}`} onClick={()=>{if(c.id==="clima")setAba("clima");else setCategoria(categoria===c.id?"todas":c.id);setModelo(null);}}><c.icon className="mb-2 h-5 w-5"/><span className="block text-sm font-bold">{c.nome}</span><span className="mt-1 block text-xs leading-relaxed">{c.descricao}</span></button>)}</div>
-   <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="flex items-center gap-2 text-slate-600"><LockKeyhole className="h-4 w-4"/>Entrevistas identificadas · somente o RH tem acesso</span>{categoria!=="todas" && <button className="btn-outline" onClick={()=>setCategoria("todas")}>Ver todos os tipos</button>}</div>
-   {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro} Os roteiros continuam disponíveis. Os registros não são salvos offline; tente atualizar com conexão.</div>}
-   {aviso && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{aviso}</p>}
-   {modelo && <section className={painel+" border-teal-200 bg-teal-50/40"} aria-label="Agendar entrevista">
-    <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold">{modelo.titulo}</h2><p className="text-sm text-slate-600">{modelo.objetivo}</p></div><button className="btn-outline" disabled={ocupado} onClick={()=>setModelo(null)}>Cancelar</button></div>
-    <form onSubmit={e=>{e.preventDefault();void criar();}} className="grid gap-3 sm:grid-cols-[1fr_200px_auto]">
-     <Campo label={modelo.categoria==="selecao"?"Candidato do recrutamento":"Colaborador do RH"}><Select required value={pessoa} disabled={carregando || !!erro || ocupado} onChange={e=>setPessoa(e.target.value)}><option value="">Selecione o cadastro</option>{pessoas.filter(p=>p.colecao===(modelo.categoria==="selecao"?"candidatos":"colaboradores")).map(p=><option key={p.id} value={p.id}>{nomePessoaEntrevista(p)}</option>)}</Select></Campo>
-     <Campo label="Data da conversa"><Input type="date" required value={data} onChange={e=>setData(e.target.value)}/></Campo><button className="btn-primary self-end" disabled={carregando || !!erro || ocupado}>{ocupado?"Agendando…":"Agendar entrevista"}</button>
-    </form><p className="mt-3 text-xs text-slate-600">O cadastro é o mesmo do RH. Na seleção, use o candidato já cadastrado em Recrutamento. A agenda desta central é interna; o agendamento não envia mensagens.</p>
-   </section>}
-   {aba==="modelos" ? <section className="space-y-3">
-    <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">Escolha um roteiro</h2><span className="text-sm text-slate-500">{modelos.length} modelos de entrevista</span></div>
-    <div className="grid gap-3 md:grid-cols-2">{modelos.map(m=>{const c=CATEGORIAS_ESCUTA.find(c=>c.id===m.categoria)!;return <article key={m.id} className={painel+" relative overflow-hidden"}><span className={`absolute inset-y-0 left-0 w-1 ${c.ponto}`}/><div className="flex flex-wrap items-center justify-between gap-2"><span className={`rounded-full border px-2 py-1 text-xs font-semibold ${c.cor}`}>{c.nome}</span><span className="text-xs text-slate-500">{m.momento}</span></div><h3 className="mt-3 text-lg font-bold text-brand-ink">{m.titulo}</h3><p className="mt-1 text-sm text-slate-600">{m.objetivo}</p><details className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><summary className="cursor-pointer font-medium">Ver roteiro · {m.perguntas.length} perguntas</summary><ol className="mt-3 list-decimal space-y-2 pl-5 text-slate-700">{m.perguntas.map(q=><li key={q.id}>{q.texto}</li>)}</ol></details><button className="btn-outline mt-3 w-full justify-between" onClick={()=>preparar(m)}><span>Usar este roteiro</span><ArrowRight className="h-4 w-4"/></button></article>;})}</div>
-    <aside className={painel+" text-sm text-slate-600"}><strong className="text-slate-800">Conversa com propósito</strong><p className="mt-1">Explique a finalidade e quem pode ler o registro. As perguntas abertas são opcionais; respeite a decisão de não responder. Registre somente informações necessárias ao trabalho, sem diagnósticos ou detalhes da vida pessoal. Combine o próximo passo e a data de revisão.</p><details className="mt-3"><summary className="cursor-pointer font-medium">Referências e registros anteriores</summary><p className="mt-2">Roteiros originais apoiados nas orientações de <a className="underline" href="https://www.cipd.org/en/knowledge/guides/employee-induction/" target="_blank" rel="noreferrer">integração da CIPD</a> e de <a className="underline" href="https://www.gallup.com/workplace/236051/real-value-getting-exit-interview-right.aspx" target="_blank" rel="noreferrer">entrevistas de saída da Gallup</a>. A entrevista de desenvolvimento apoia o PDI existente; não altera avaliações automaticamente.</p><a className="mt-2 inline-block underline" href="#/desempenho?aba=pesquisas">Consultar acervo anterior de pesquisas e dinâmicas</a><p className="mt-1 text-xs">Os registros anteriores permanecem no acervo e não são misturados aos ciclos confidenciais desta central.</p></details></aside>
-   </section> : <section className={painel+" space-y-4"}>
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Entrevistas e histórico</h2><p className="text-sm text-slate-500">Próximas conversas, registros e combinados em um só lugar.</p></div><button className="btn-primary" onClick={()=>setAba("modelos")}><Plus className="h-4 w-4"/>Agendar entrevista</button></div>
-    <div className="grid gap-3 sm:grid-cols-[1fr_220px]"><Campo label="Buscar pessoa ou roteiro"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400"/><Input className="pl-9" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Nome, ID ou tipo de entrevista"/></div></Campo><Campo label="Situação"><Select value={status} onChange={e=>setStatus(e.target.value)}>{["Pendentes","Agendada","Em andamento","Concluída","Todas"].map(s=><option key={s}>{s}</option>)}</Select></Campo></div>
-    {carregando?<p role="status">Consultando entrevistas…</p>:erro?null:filtradas.length===0?<div className="rounded-xl bg-slate-50 p-6 text-center"><ClipboardList className="mx-auto mb-2 h-6 w-6 text-slate-400"/><strong>Nenhuma entrevista neste filtro</strong><p className="mt-1 text-sm text-slate-500">Agende usando um roteiro ou altere o tipo e a situação acima.</p></div>:<div className="divide-y divide-slate-100">{filtradas.map(e=>{const m=MODELOS_ENTREVISTA.find(m=>m.id===e.modelo);const c=CATEGORIAS_ESCUTA.find(c=>c.id===m?.categoria);return <article key={e.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div className="min-w-0 flex-1"><div className="mb-2 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2 py-1 text-xs font-semibold ${c?.cor??""}`}>{m?.titulo}</span><span className="text-xs font-medium text-slate-600">{e.estado}</span></div><strong className="break-words text-sm">{nomePessoaEntrevista(identificar(e))}</strong><p className="mt-1 text-xs text-slate-500">Conversa: {dia(e.agendada)}{e.revisao?` · Revisar combinados: ${dia(e.revisao)}`:""}</p></div><button className="btn-outline" onClick={()=>setAberta(e.id)}>{e.estado==="Concluída"?<CheckCircle2 className="h-4 w-4"/>:<MessageSquare className="h-4 w-4"/>}{e.estado==="Concluída"?"Ver registro":"Registrar conversa"}</button></article>;})}<p className="pt-3 text-xs text-slate-500">{filtradas.length} de {entrevistas.length} entrevistas</p></div>}
-   </section>}
-  </>}
- </div>;
+function LinhaTempo({dados,entrevistas}:{dados:ListaEscuta;entrevistas:Entrevista[]}){
+ const [id,setId]=useState('');const itens=[...entrevistas.map(e=>({id:'e'+e.id,pessoa:`${e.pessoa_colecao}:${e.pessoa_id}`,data:e.agendada,titulo:e.roteiro?.titulo??MODELOS_ENTREVISTA.find(m=>m.id===e.modelo)?.titulo??"Entrevista",estado:e.estado})),...dados.individuais.map(i=>({id:'i'+i.id,pessoa:`colaboradores:${i.pessoa_id}`,data:i.prazo,titulo:i.roteiro.titulo,estado:i.estado})),...dados.acoes.map(a=>({id:'a'+a.id,pessoa:`colaboradores:${a.pessoa_id}`,data:a.prazo,titulo:a.titulo,estado:a.estado}))].filter(i=>i.pessoa===id).sort((a,b)=>b.data.localeCompare(a.data));
+ return <div className="mt-3 space-y-3"><label className="block text-sm font-semibold">Pessoa e ID<select className="mt-1 block w-full rounded-lg border p-2 font-normal" value={id} onChange={e=>setId(e.target.value)}><option value="">Selecione uma pessoa</option>{dados.pessoas.map(p=><option key={p.colecao+p.id} value={`${p.colecao}:${p.id}`}>{nomePessoaEntrevista(p)}{p.pendencia?` · ${p.pendencia}`:''}</option>)}</select></label>{id&&<><p className="text-xs text-slate-500">Entrevistas, questionários e ações desta central. Feedbacks e PDI preservam o histórico nas áreas correspondentes.</p>{itens.length===0?<p className="text-sm">Sem registros nesta central para esse vínculo.</p>:itens.map(i=><p key={i.id} className="border-l-2 border-brand py-2 pl-3 text-sm"><strong>{i.titulo}</strong><br/>{i.data.split('-').reverse().join('/')} · {i.estado}</p>)}</>}</div>;
 }
