@@ -3,7 +3,7 @@ import { diaLocalISO, parseData } from './format';
 
 /** Conferência apenas dos campos editados: um dado legado não impede corrigir outro. */
 export function erroDatasCadastro(dados: Partial<Colaborador>, antes?: Partial<Colaborador> | null, hoje = new Date()): string | null {
-  const campos = ['dataNascimento', 'dataAdmissao', 'dataDesligamento'] as const;
+  const campos = ['dataNascimento', 'dataAdmissao', 'dataDesligamento', 'dataInicioCargo'] as const;
   for (const campo of campos) {
     if (dados[campo] && dados[campo] !== antes?.[campo] && !parseData(dados[campo])) return 'Confira a data informada: esse dia não existe.';
   }
@@ -11,6 +11,29 @@ export function erroDatasCadastro(dados: Partial<Colaborador>, antes?: Partial<C
   if (nascimento && nascimento !== antes?.dataNascimento?.slice(0, 10) && nascimento > diaLocalISO(hoje)) return 'A data de nascimento não pode estar no futuro.';
   if (nascimento && dados.dataAdmissao && (dados.dataNascimento !== antes?.dataNascimento || dados.dataAdmissao !== antes?.dataAdmissao) && nascimento > dados.dataAdmissao.slice(0, 10)) return 'A admissão não pode ser anterior ao nascimento.';
   if (dados.dataAdmissao && dados.dataDesligamento && (dados.dataAdmissao !== antes?.dataAdmissao || dados.dataDesligamento !== antes?.dataDesligamento) && dados.dataDesligamento.slice(0, 10) < dados.dataAdmissao.slice(0, 10)) return 'O desligamento não pode ser anterior à admissão.';
+  const inicio = dados.dataInicioCargo?.slice(0, 10);
+  if (inicio && dados.dataInicioCargo !== antes?.dataInicioCargo && inicio > diaLocalISO(hoje)) return 'O início no cargo não pode estar no futuro.';
+  if (inicio && dados.dataAdmissao && (dados.dataInicioCargo !== antes?.dataInicioCargo || dados.dataAdmissao !== antes?.dataAdmissao) && inicio < dados.dataAdmissao.slice(0, 10)) return 'O início no cargo não pode ser anterior à admissão.';
+  if (inicio && dados.dataDesligamento && (dados.dataInicioCargo !== antes?.dataInicioCargo || dados.dataDesligamento !== antes?.dataDesligamento) && inicio > dados.dataDesligamento.slice(0, 10)) return 'O início no cargo não pode ser posterior ao desligamento.';
+  return null;
+}
+
+/** Valida só contatos alterados, preservando cadastros legados ao corrigir outro campo. */
+export function erroContatosCadastro(dados: Partial<Colaborador>, antes?: Partial<Colaborador> | null): string | null {
+  const telefones = [
+    ['Telefone', dados.telefone, antes?.telefone],
+    ['Telefone do cônjuge', dados.conjugeTelefone, antes?.conjugeTelefone],
+    ['Telefone de emergência', dados.contatoEmergencia?.telefone, antes?.contatoEmergencia?.telefone],
+  ];
+  for (const [nome, valor, anterior] of telefones) {
+    if (!valor?.trim() || valor === anterior) continue;
+    const digitos = valor.replace(/\D/g, '');
+    const internacional = valor.trim().startsWith('+');
+    if (!/^\+?[\d\s().-]+$/.test(valor.trim()) || (internacional ? digitos.length < 7 || digitos.length > 15 : ![10, 11].includes(digitos.length) && !(/^55/.test(digitos) && [12, 13].includes(digitos.length)))) {
+      return `${nome}: informe DDD e número. Para outro país, comece com + e o código do país.`;
+    }
+  }
+  if (dados.enderecoCep?.trim() && dados.enderecoCep !== antes?.enderecoCep && !/^\d{5}-?\d{3}$/.test(dados.enderecoCep.trim())) return 'CEP: informe 8 dígitos, como 00000-000.';
   return null;
 }
 

@@ -1,4 +1,4 @@
-import { quantidadeFilhos, erroDatasCadastro } from "@/lib/edicaoCadastro";
+import { quantidadeFilhos, erroDatasCadastro, erroContatosCadastro } from "@/lib/edicaoCadastro";
 import { useHoje } from '@/lib/useHoje';
 import { FormularioFerias } from '@/components/ferias/formulario-ferias';
 import { ResumoFerias } from '@/components/ferias/resumo-ferias';
@@ -144,6 +144,7 @@ export default function ColaboradorFicha() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  if (sessao?.conferindoAcesso) return <EmptyState title="Conferindo acesso" description="Aguarde a validação das permissões para consultar esta ficha." />;
   if (!c) return <EmptyState title="Colaborador não encontrado" />;
   if (!podeVer) {
     return <EmptyState title="Acesso restrito" description="Você não tem permissão para ver este colaborador." icon={<Lock className="h-8 w-8" />} />;
@@ -347,7 +348,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
         aoMudar={(id) => { setAba(id); setPedido(null); }}
         abas={[
           { id: "resumo", label: "Resumo 360º", icon: <LayoutGrid className="h-4 w-4" />, conteudo: <AbaResumo360 c={c} onAgir={podeEditar ? executar : undefined} /> },
-          { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados c={c} sens={sens} cargo={cargo} podeEditar={podeEditar} /> },
+          { id: "dados", label: "Dados", icon: <IdCard className="h-4 w-4" />, conteudo: <AbaDados key={c.id} c={c} sens={sens} cargo={cargo} podeEditar={podeEditar} verGestao={verGestao} onEditarCompleto={() => setEditar(true)} /> },
           { id: "docs", label: "Documentos", icon: <FileText className="h-4 w-4" />, conteudo: <AbaDocumentos colaboradorId={c.id} podeEditar={podeEditar} sens={sens} nome={c.nome} pedido={pedido?.tipo === "documento" ? pedido : null} onConsumir={consumir} /> },
           { id: "ferias", label: "Férias", icon: <Palmtree className="h-4 w-4" />, conteudo: <AbaFerias colaboradorId={c.id} podeEditar={podeEditar} pedido={pedido?.tipo === "ferias" ? pedido : null} onConsumir={consumir} /> },
           { id: "financeiro", label: "Financeiro", icon: <Wallet className="h-4 w-4" />, conteudo: <AbaFinanceiro key={c.id} c={c} sens={sens} /> },
@@ -357,7 +358,7 @@ function FichaConteudo({ c, sens, verGestao, podeEditar, anterior, proximo }: { 
         ]}
       />
 
-      {editar && <ColaboradorForm aberto={editar} onFechar={() => setEditar(false)} editar={c} />}
+      {editar && podeEditar && <ColaboradorForm aberto={editar} onFechar={() => setEditar(false)} editar={c} />}
       <DesligarModal aberto={desligar} onFechar={() => setDesligar(false)} c={c} />
       <DecidirExperienciaModal
         aberto={experiencia}
@@ -584,7 +585,7 @@ function AbaResumo360({ c, onAgir }: { c: Colaborador; onAgir?: (a: AcaoFicha) =
   );
 }
 
-function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Colaborador; sens: boolean; cargo?: import("@/data/types").Cargo; podeEditar: boolean }) {
+export function AbaDados({ c, sens, cargo, podeEditar, verGestao = false, onEditarCompleto }: { c: import("@/data/types").Colaborador; sens: boolean; cargo?: import("@/data/types").Cargo; podeEditar: boolean; verGestao?: boolean; onEditarCompleto?: () => void }) {
   const d = useDominio();
   const toast = useToast();
   const { atualizar } = useColecao("colaboradores");
@@ -602,10 +603,12 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
   // recalcula os derivados exatamente como o formulário faz ao salvar.
   // ---------------------------------------------------------------------
   const gravar = (patch: Partial<Colaborador>) => {
+    if (!podeEditar) return "Seu acesso de edição foi retirado.";
     const depois = { ...c, ...patch } as Colaborador;
-    const erroData = erroDatasCadastro(depois, c);
+    const erroData = erroDatasCadastro(depois, c) || erroContatosCadastro(depois, c);
     if (erroData) return erroData;
     const cargoNovo = depois.cargoId ? d.cargoById.get(depois.cargoId) : undefined;
+    if ("cargoId" in patch && patch.cargoId && (!cargoNovo || (depois.areaId && cargoNovo.areaId !== depois.areaId))) return "Este cargo não pertence à área atual. Confira a área e escolha o cargo novamente.";
     const mexeuNoDinheiro = "salario" in patch || "cargoId" in patch || "nivelId" in patch;
     atualizar(c.id, mexeuNoDinheiro
       ? {
@@ -644,7 +647,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
       <SecaoColapsavel title="Dados pessoais" subtitle={edit ? "Clique em um valor para editar" : undefined} icon={<IdCard className="h-[18px] w-[18px]" />}>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
             <CampoEditavel
               label="CPF" exibicao={sens ? formatCPF(c.cpf) : maskCPF(c.cpf)} valor={c.cpf ?? ""}
               editavel={editSens} placeholder="Somente números" dica="11 dígitos"
@@ -654,7 +657,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 // Dois cadastros com o mesmo CPF é a mesma pessoa duas vezes.
                 const outro = n && d.colaboradores.find((x) => x.id !== c.id && soDigitos(x.cpf ?? "") === n);
                 if (outro) return `Este CPF já é de ${outro.nome}.`;
-                gravar({ cpf: n });
+                return gravar({ cpf: n });
               }}
             />
             {/* O APELIDO É O LOGIN DA PESSOA EM TODOS OS SISTEMAS. Fica ao lado
@@ -675,7 +678,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 if (outro) return `Este apelido já é de ${outro.nome}. Use outro — por exemplo com o sobrenome.`;
                 // Grava o normalizado, não o digitado: quem escrever "Adilando"
                 // ou "adilando " entra com `adilando` do mesmo jeito.
-                gravar({ apelido: a });
+                return gravar({ apelido: a });
               }}
             />
             <CampoEditavel
@@ -692,24 +695,26 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               onSalvar={(v) => {
                 const t = v.trim();
                 if (t && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return "E-mail inválido.";
-                gravar({ email: t });
+                return gravar({ email: t });
               }}
             />
-            <CampoEditavel label="Telefone" exibicao={c.telefone || "—"} valor={c.telefone ?? ""} editavel={edit}
+            <CampoEditavel label="Telefone" exibicao={sens ? (c.telefone || "—") : "•••"} valor={sens ? (c.telefone ?? "") : ""} editavel={editSens}
               placeholder="(00) 00000-0000" onSalvar={(v) => gravar({ telefone: v.trim() })} />
             <CampoEditavel
-              label="Endereço (rua)" exibicao={c.enderecoRua || "—"} valor={c.enderecoRua ?? ""} editavel={edit}
-              className="col-span-2" onSalvar={(v) => gravar({ enderecoRua: v.trim() })}
+              label="Endereço (rua)" exibicao={sens ? (c.enderecoRua || "—") : "•••"} valor={sens ? (c.enderecoRua ?? "") : ""} editavel={editSens}
+              className="sm:col-span-2" onSalvar={(v) => gravar({ enderecoRua: v.trim() })}
             />
             <CampoEditavel
-              label="Número" exibicao={c.enderecoNumero || "—"} valor={c.enderecoNumero ?? ""} editavel={edit}
+              label="Número" exibicao={sens ? (c.enderecoNumero || "—") : "•••"} valor={sens ? (c.enderecoNumero ?? "") : ""} editavel={editSens}
               placeholder="nº" onSalvar={(v) => gravar({ enderecoNumero: v.trim() })}
             />
-            <CampoEditavel label="Bairro" exibicao={c.enderecoBairro || "—"} valor={c.enderecoBairro ?? ""} editavel={edit}
+            <CampoEditavel label="Complemento" exibicao={sens ? (c.enderecoComplemento || "—") : "•••"} valor={sens ? (c.enderecoComplemento ?? "") : ""}
+              editavel={editSens} onSalvar={(v) => gravar({ enderecoComplemento: v.trim() || null })} />
+            <CampoEditavel label="Bairro" exibicao={sens ? (c.enderecoBairro || "—") : "•••"} valor={sens ? (c.enderecoBairro ?? "") : ""} editavel={editSens}
               onSalvar={(v) => gravar({ enderecoBairro: v.trim() })} />
             <CampoEditavel label="Cidade" exibicao={c.cidade || "—"} valor={c.cidade ?? ""} editavel={edit}
               onSalvar={(v) => gravar({ cidade: v.trim() })} />
-            <CampoEditavel label="CEP" exibicao={c.enderecoCep || "—"} valor={c.enderecoCep ?? ""} editavel={edit}
+            <CampoEditavel label="CEP" exibicao={sens ? (c.enderecoCep || "—") : "•••"} valor={sens ? (c.enderecoCep ?? "") : ""} editavel={editSens}
               placeholder="00000-000" onSalvar={(v) => gravar({ enderecoCep: v.trim() })} />
             {sens && (
               <CampoEditavel label="Cônjuge" exibicao={c.conjugeNome ?? "—"} valor={c.conjugeNome ?? ""} editavel={editSens}
@@ -717,6 +722,8 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
             )}
             {/* Filhos vem da LISTA de filhos (nome + nascimento); um número solto
                 aqui brigaria com a lista. Edita no cadastro completo. */}
+            <CampoEditavel label="Telefone do cônjuge" exibicao={sens ? (c.conjugeTelefone || "—") : "•••"} valor={sens ? (c.conjugeTelefone ?? "") : ""}
+              editavel={editSens} onSalvar={(v) => gravar({ conjugeTelefone: v.trim() || null })} />
             {sens && <Field label="Filhos" value={quantidadeFilhos(c) ?? "Não informado"} />}
           </dl>
           {/* UNIFORME (pedido do Léo, 28/09/2026): para comprar uniforme e EPI
@@ -724,10 +731,10 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               em vez de numa seção nova: seção nova mexeria na grade da ficha. */}
           <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Uniforme</p>
-            <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2">
+            <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
               <CampoEditavel
                 label="Camisa (modelo)" exibicao={c.camisaModelo || "Não informado"} valor={c.camisaModelo ?? ""}
-                tipo="select" editavel={edit} opcoes={lista(MODELOS_CAMISA, "Não informado")}
+                tipo="chips" editavel={edit} opcoes={lista(MODELOS_CAMISA, "Não informado")}
                 onSalvar={(v) => gravar({ camisaModelo: v || null })}
               />
               <CampoEditavel
@@ -756,18 +763,22 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                   return (
                     <li key={i} className="flex items-center justify-between text-sm text-slate-600">
                       <span className="font-medium text-slate-700">{f.nome}</span>
-                      <span className="text-xs text-slate-400">{idade != null ? `${idade} ${idade === 1 ? "ano" : "anos"}` : "idade não informada"}</span>
+                      <span className="text-xs text-slate-500">{f.nascimento ? `${formatDate(f.nascimento)} · ` : ""}{idade != null ? `${idade} ${idade === 1 ? "ano" : "anos"}` : "idade não informada"}</span>
                     </li>
                   );
                 })}
               </ul>
             </div>
           )}
-          {sens && c.contatoEmergencia && (
+          {sens && (
             <div className="mt-3 rounded-lg border border-red-100 bg-red-50/40 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-red-700">Contato de emergência</p>
-              <p className="mt-1.5 text-sm font-medium text-slate-700">{c.contatoEmergencia.nome} <span className="text-xs font-normal text-slate-400">({c.contatoEmergencia.parentesco})</span></p>
-              <p className="text-sm text-slate-600">{c.contatoEmergencia.telefone}</p>
+              <p className="text-xs font-semibold text-red-700">Contato de emergência</p>
+              <dl className="mt-2 grid gap-3 sm:grid-cols-2">
+                {([{ chave: "nome", label: "Nome do contato" }, { chave: "parentesco", label: "Parentesco" }, { chave: "telefone", label: "Telefone de emergência" }] as const).map(({ chave, label }) => (
+                  <CampoEditavel key={chave} label={label} exibicao={c.contatoEmergencia?.[chave] || "Não informado"} valor={c.contatoEmergencia?.[chave] ?? ""} editavel={editSens}
+                    onSalvar={(v) => gravar({ contatoEmergencia: { nome: "", parentesco: "", telefone: "", ...c.contatoEmergencia, [chave]: v.trim() } })} />
+                ))}
+              </dl>
             </div>
           )}
           {!sens && (
@@ -795,7 +806,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               Ou apague a data, ou mude o status — do jeito que está, ela sai do quadro a partir do mês seguinte a essa data.
             </p>
           )}
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
             <CampoEditavel
               label="Cargo" exibicao={d.nomeCargo(c)} valor={c.cargoId ?? ""} tipo="select" editavel={edit}
               opcoes={[{ valor: "", rotulo: "—" }].concat(cargosDaArea.map((x) => ({ valor: x.id, rotulo: x.nome })))}
@@ -815,7 +826,8 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 // faixa o enquadramento vira "Dentro" — selo VERDE para quem
                 // pode estar abaixo do piso. Por isso o aviso.
                 const cargoContinuaValendo = c.cargoId && d.cargoById.get(c.cargoId)?.areaId === v;
-                gravar({ areaId: v, cargoId: cargoContinuaValendo ? c.cargoId : null });
+                const erro = gravar({ areaId: v, cargoId: cargoContinuaValendo ? c.cargoId : null });
+                if (erro) return erro;
                 if (c.cargoId && !cargoContinuaValendo) {
                   toast(`Cargo "${d.cargoById.get(c.cargoId)?.nome ?? "—"}" não existe na nova área: escolha o cargo certo, senão a faixa e o enquadramento ficam sem base.`, "info");
                 }
@@ -837,7 +849,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               onSalvar={(v) => {
                 // Chefe de si mesmo ou ciclo A→B→A trava a árvore do organograma.
                 if (v && criaCicloDeGestor(c.id, v, d.colabById)) return "Isso criaria um ciclo na hierarquia.";
-                gravar({ gestorId: v || null });
+                return gravar({ gestorId: v || null });
               }}
             />
             {/* AS DUAS DATAS FICAM AQUI, no grid, e não escondidas embaixo dos
@@ -896,7 +908,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                 if (c.salario && (cent > c.salario * 3 || cent < c.salario / 3)) {
                   return `Confirme: ${formatBRL(cent)} é muito diferente do atual (${formatBRL(c.salario)}). Se está certo, use o botão Editar.`;
                 }
-                gravar({ salario: cent });
+                return gravar({ salario: cent });
               }}
             />
             <Field label="Faixa do nível" value={faixa ? formatBRL(faixa) : "—"} />
@@ -905,18 +917,20 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
               editavel={editSens} onSalvar={(v) => gravar({ matriculaEsocial: v.trim() })}
             />
             <CampoEditavel
-              label="Vale-transporte" exibicao={c.valeTransporte ? "Sim" : "Não"} valor={c.valeTransporte ? "sim" : "nao"}
-              tipo="select" editavel={edit} opcoes={[{ valor: "sim", rotulo: "Sim" }, { valor: "nao", rotulo: "Não" }]}
+              label="Vale-transporte" exibicao={c.valeTransporte == null ? "Não informado" : c.valeTransporte ? "Sim" : "Não"} valor={c.valeTransporte == null ? "" : c.valeTransporte ? "sim" : "nao"}
+              tipo="chips" editavel={edit} opcoes={[{ valor: "sim", rotulo: "Sim" }, { valor: "nao", rotulo: "Não" }]}
               onSalvar={(v) => gravar({ valeTransporte: v === "sim" })}
             />
             {/* Enquadramento e Faixa do nível são CALCULADOS (salário × faixa do
                 cargo). Deixar editar aqui seria deixar mentir sobre o cálculo. */}
             <Field label="Enquadramento" value={<Badge variant={enqVar(d.enquadrarColab(c))}>{d.enquadrarColab(c)}</Badge>} />
+            {verGestao && (
             <CampoEditavel
               // Ausência de avaliação permanece explícita, como no painel.
-              label="Risco de saída" exibicao={c.riscoSaida || "Não informado"} valor={c.riscoSaida || ""} tipo="select" editavel={edit}
+              label="Risco de saída" exibicao={c.riscoSaida || "Não informado"} valor={c.riscoSaida || ""} tipo="chips" editavel={edit}
               opcoes={lista(NIVEIS_RISCO, "Não informado")} onSalvar={(v) => gravar({ riscoSaida: v })}
             />
+            )}
             <CampoEditavel
               label="Categoria CNH" exibicao={c.cnh ? c.cnh : "Não informado"} valor={c.cnh ?? ""} tipo="select" editavel={edit}
               opcoes={lista(CATEGORIAS_CNH, "Não informado")} onSalvar={(v) => gravar({ cnh: v })}
@@ -956,7 +970,7 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
                     if (v && !anoOk(v)) return "Ano fora do razoável — confira a data.";
                     if (v && v > diaLocalISO(HOJE)) return "Data no futuro.";
                     if (v && c.dataAdmissao && v < c.dataAdmissao.slice(0, 10)) return "Anterior à admissão.";
-                    gravar({ dataInicioCargo: v });
+                    return gravar({ dataInicioCargo: v });
                   }}
                 />
               </dl>
@@ -990,23 +1004,41 @@ function AbaDados({ c, sens, cargo, podeEditar }: { c: import("@/data/types").Co
 
       <SecaoColapsavel title="Clima & estilo" subtitle={edit ? "Clique em um valor para editar" : "Engajamento, estilo de aprendizagem e enquadramento na empresa"} icon={<Smile className="h-[18px] w-[18px]" />}>
           <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+            {verGestao && <>
             <CampoEditavel
               label="Humor / engajamento" exibicao={<HumorIndicador humor={c.humor} tamanho="lg" />} valor={c.humor ?? ""}
-              tipo="select" editavel={edit} opcoes={lista(HUMORES)} onSalvar={(v) => gravar({ humor: v })}
+              tipo="chips" editavel={edit} opcoes={lista(HUMORES)} onSalvar={(v) => gravar({ humor: v })}
             />
             <CampoEditavel
               label="Estilo de aprendizagem" exibicao={c.estiloAprendizagem || "—"} valor={c.estiloAprendizagem ?? ""}
-              tipo="select" editavel={edit} opcoes={lista(ESTILOS_APRENDIZAGEM)} onSalvar={(v) => gravar({ estiloAprendizagem: v })}
+              tipo="chips" editavel={edit} opcoes={lista(ESTILOS_APRENDIZAGEM)} onSalvar={(v) => gravar({ estiloAprendizagem: v })}
             />
+            </>}
             <CampoEditavel
-              label="Empresa" exibicao={c.empresa || "—"} valor={c.empresa ?? ""} tipo="select" editavel={edit}
+              label="Empresa" exibicao={c.empresa || "—"} valor={c.empresa ?? ""} tipo="chips" editavel={edit}
               opcoes={lista(EMPRESAS)} onSalvar={(v) => gravar({ empresa: v })}
             />
             <CampoEditavel
-              label="Sexo" exibicao={c.sexo || "—"} valor={c.sexo ?? ""} tipo="select" editavel={edit}
+              label="Sexo" exibicao={c.sexo || "—"} valor={c.sexo ?? ""} tipo="chips" editavel={edit}
               opcoes={lista(["Masculino", "Feminino"])} onSalvar={(v) => gravar({ sexo: v })}
             />
           </dl>
+      </SecaoColapsavel>
+      <SecaoColapsavel title="Outros dados do cadastro" subtitle="Vínculos e informações complementares" icon={<IdCard className="h-[18px] w-[18px]" />}>
+        <dl className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+          <CampoEditavel label="Setor" exibicao={c.setor || "Não informado"} valor={c.setor ?? ""} editavel={edit} onSalvar={(v) => gravar({ setor: v.trim() })} />
+          <CampoEditavel label="Padrinho (mentor)" exibicao={d.nomeColab(c.padrinhoId)} valor={c.padrinhoId ?? ""} tipo="select" editavel={edit}
+            opcoes={[{ valor: "", rotulo: "Sem padrinho" }, ...d.colaboradores.filter(x => x.id !== c.id && (noQuadro(x) || x.id === c.padrinhoId)).map(x => ({ valor: x.id, rotulo: x.nome }))]}
+            onSalvar={(v) => gravar({ padrinhoId: v || null })} />
+          <Field label="Função de origem" value={c.funcao || "Não informado"} />
+          <Field label="Cargo livre" value={c.cargoLivre || "Não informado"} />
+          <Field label="Status" value={d.nomeStatus(c.statusId)} />
+          <Field label="Registro de ponto" value={c.naoBatePonto ? "Dispensado" : "Registra ponto"} />
+          {sens && <Field label="Adicionais" value={c.adicionais == null ? "Não informado" : formatBRL(c.adicionais)} />}
+          {verGestao && <Field label="Observação de enquadramento" value={c.observacaoEnquadramento || "Não informado"} />}
+        </dl>
+        {edit && onEditarCompleto && <button type="button" className="btn-outline mt-3" onClick={onEditarCompleto}><Pencil className="h-4 w-4" /> Abrir cadastro completo</button>}
+        <p className="mt-2 text-xs text-slate-500">Nome, status e familiares podem ser ajustados no cadastro completo. Pontos fortes e de melhoria ficam na aba Comportamental.</p>
       </SecaoColapsavel>
     </div>
   );

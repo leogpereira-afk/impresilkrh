@@ -54,3 +54,7 @@ atrás da origem em 12/10/2026.
 - `codex/rh-visual-3d-20261024`, worktree local `/tmp/rh-visual-3d-20261024`: ícones em relevo, sombras, movimentos, campos e navegação. Base `c85147a`; desenvolvimento e prévia autorizados por D-013. Publicação depende da aprovação desta versão. Não juntar automaticamente. Plano em `docs/planos/2026-10-24-visual-3d-rh.md`.
 
 - Atualização da mesma rodada: publicação autorizada por D-014. Commit da prévia `94085a5` integrado por rebase sobre a nova reserva; não juntar a versão antiga novamente.
+
+## Atualização de 24/10/2026 · Auditoria da aba Dados
+
+- `codex/rh-dados-auditoria`, clone local `/tmp/rh-calendario-acesso-20261024`: revisão dos 39 editores, campos complementares visíveis, chips e correções de validação, cancelamento, conflitos e permissões. Base `33d5319`; desenvolvimento e testes autorizados. Publicação desta implementação ainda depende da aprovação do dono. Registro em `docs/auditorias/2026-10-24-aba-dados.md`. Não juntar automaticamente nem incluir os arquivos locais de prévia.

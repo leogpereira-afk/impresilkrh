@@ -5,7 +5,7 @@ import { UserMinus, Trash2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useColecao, obter, obterDinamico, definirColecaoDinamica } from "@/lib/store";
-import { erroDatasCadastro, camposEmConflito } from "@/lib/edicaoCadastro";
+import { erroDatasCadastro, erroContatosCadastro, camposEmConflito } from "@/lib/edicaoCadastro";
 import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 import { useDominio, enquadrar, noQuadro, faixaDefinida } from "@/lib/dominio";
 import { useToast } from "@/components/ui/toast";
@@ -223,11 +223,12 @@ export function ColaboradorForm({
   };
 
   const salvar = () => {
+    if (!rh) { toast("Seu acesso de edição foi retirado.", "erro"); return; }
     if (!form.nome?.trim()) {
       toast("Informe o nome do colaborador.", "erro");
       return;
     }
-    const erroData = erroDatasCadastro(form, retrato);
+    const erroData = erroDatasCadastro(form, retrato) || erroContatosCadastro(form, retrato);
     if (erroData) { toast(erroData, "erro"); return; }
     if (form.cpf?.trim() && !cpfValido(form.cpf)) {
       toast("CPF inválido. Confira os números (11 dígitos).", "erro");

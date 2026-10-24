@@ -24,7 +24,7 @@ import { Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/cn";
 
 export type OpcaoCampo = { valor: string; rotulo: string };
-export type TipoCampoEditavel = "texto" | "numero" | "data" | "select";
+export type TipoCampoEditavel = "texto" | "numero" | "data" | "select" | "chips";
 
 export function CampoEditavel({
   label,
@@ -62,21 +62,30 @@ export function CampoEditavel({
   // Input/Select do projeto não repassam ref (React 18 exigiria forwardRef);
   // o foco vai pelo container, que é o dono real do elemento.
   const caixa = useRef<HTMLDivElement>(null);
-  const focar = () => caixa.current?.querySelector<HTMLElement>("input,select")?.focus();
+  const focar = () => caixa.current?.querySelector<HTMLElement>("input,select,[aria-pressed=true],button")?.focus();
   // "Ainda há uma edição em aberto?" — é o que impede o mesmo clique de gravar
   // duas vezes. Cancelar e salvar fecham a edição; um blur que chegue depois
   // (o navegador pode disparar ao tirar o campo da tela) encontra false e é
   // ignorado. Sem isso, o blur tardio de um select gravaria o valor ANTIGO por
   // cima do que acabou de ser escolhido — desfazendo a escolha em silêncio.
   const emAberto = useRef(false);
+  const valorAoAbrir = useRef(valor);
 
   // Enquanto NÃO houve digitação, o campo aberto continua acompanhando o valor
   // de fora. Isso importa porque a sincronização faz pull sozinha (a cada 20s e
   // ao voltar para a aba): sem isto, um campo aberto por engano e abandonado
   // gravaria o valor velho por cima da correção que outra pessoa acabou de
-  // fazer em outro computador. Depois de digitar, o rascunho manda — ninguém
-  // perde o que escreveu.
-  useEffect(() => { if (!editando || !tocado) setRascunho(valor); }, [valor, editando, tocado]);
+  // fazer em outro computador. Depois de digitar, mantemos o rascunho e exigimos
+  // revisão se esse mesmo campo mudar em outro acesso.
+  useEffect(() => {
+    if (!editando || !tocado) { setRascunho(valor); valorAoAbrir.current = valor; }
+  }, [valor, editando, tocado]);
+  useEffect(() => {
+    if (!editavel) {
+      emAberto.current = false;
+      setEditando(false); setTocado(false); setRascunho(valor); setErro(null); setSalvouAgora(false);
+    }
+  }, [editavel, valor]);
   // O "✓ salvo" some sozinho; sem o clearTimeout, trocar de campo depressa
   // deixava o aviso preso no campo anterior.
   useEffect(() => {
@@ -85,7 +94,7 @@ export function CampoEditavel({
     return () => clearTimeout(t);
   }, [salvouAgora]);
 
-  const abrir = () => { if (!editavel) return; emAberto.current = true; setRascunho(valor); setTocado(false); setErro(null); setEditando(true); };
+  const abrir = () => { if (!editavel) return; emAberto.current = true; valorAoAbrir.current = valor; setRascunho(valor); setTocado(false); setErro(null); setEditando(true); };
   const fechar = () => { emAberto.current = false; setEditando(false); setTocado(false); setErro(null); };
   const cancelar = () => { fechar(); setRascunho(valor); };
   // "tocado" volta a false quando o texto retorna ao original: digitar e apagar
@@ -111,13 +120,19 @@ export function CampoEditavel({
    *    ele vazio não apaga nada: o editor fica aberto avisando.
    */
   const confirmar = (texto: string, explicito: boolean) => {
-    if (!emAberto.current) return; // já resolvido: blur atrasado não repete a gravação
+    if (!emAberto.current || !editavel) return; // já resolvido: blur atrasado não repete a gravação
     if (texto === valor) { fechar(); return; }
+    if (valor !== valorAoAbrir.current) {
+      setErro("Este campo foi atualizado em outro acesso. Seu rascunho foi mantido. Cancele e reabra para conferir o valor atual.");
+      return;
+    }
     if (!explicito && texto.trim() === "" && valor !== "") {
       setErro("Sair do campo não apaga o valor. Corrija, ou aperte Esc para desistir.");
       return;
     }
-    const problema = onSalvar(texto);
+    let problema: string | void;
+    try { problema = onSalvar(texto); }
+    catch { problema = "Não foi possível salvar. Seu texto foi mantido. Tente novamente."; }
     if (typeof problema === "string" && problema) { setErro(problema); if (explicito) focar(); return; }
     fechar();
     setSalvouAgora(true);
@@ -129,13 +144,13 @@ export function CampoEditavel({
   // opção como se fosse a atual — o editor mentia sobre o que está salvo, e
   // escolher justo essa opção não disparava mudança nenhuma: fechava sem gravar,
   // em silêncio. Com ela, o que aparece é o que está gravado.
-  const opcoesFinais = tipo === "select" && opcoes && !opcoes.some((o) => o.valor === rascunho)
-    ? [{ valor: rascunho, rotulo: rascunho ? "(valor atual, fora da lista)" : "—" }, ...opcoes]
+  const opcoesFinais = (tipo === "select" || tipo === "chips") && opcoes && !opcoes.some((o) => o.valor === rascunho)
+    ? [{ valor: rascunho, rotulo: rascunho ? `${rascunho} (fora da lista)` : "—" }, ...opcoes]
     : opcoes ?? [];
 
   return (
     <div className={cn("group", className)}>
-      <dt className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+      <dt className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
         <span id={labelId}>{label}</span>
         {salvouAgora && <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold normal-case text-green-700"><Check className="h-3 w-3" /> salvo</span>}
       </dt>
@@ -145,7 +160,7 @@ export function CampoEditavel({
           apertar e o soltar do mouse, o clique caía no vazio e o campo de
           destino não abria. */}
       <dd className="relative mt-1 min-h-[2rem] text-sm text-slate-800">
-        {!editando ? (
+        {!editando || !editavel ? (
           editavel ? (
             <button
               type="button"
@@ -167,8 +182,22 @@ export function CampoEditavel({
             <span>{exibicao}</span>
           )
         ) : (
-          <div ref={caixa} className="flex items-center gap-1">
-            {tipo === "select" ? (
+          <div ref={caixa} className="flex items-start gap-1"
+            onBlur={(e) => {
+              if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+              confirmar(rascunho, false);
+            }}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancelar(); } }}
+          >
+            {tipo === "chips" ? (
+              <div role="group" aria-labelledby={labelId} aria-describedby={erro || dica ? mensagemId : undefined} className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                {opcoesFinais.map((o, i) => <button key={o.valor} type="button" autoFocus={o.valor === rascunho || (!rascunho && i === 0)}
+                  aria-pressed={rascunho === o.valor} onClick={() => digitou(o.valor)}
+                  className={cn("min-h-9 rounded-full border px-3 py-1 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand",
+                    rascunho === o.valor ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100")}
+                >{o.rotulo === "—" ? "Não informado" : o.rotulo}</button>)}
+              </div>
+            ) : tipo === "select" ? (
               /* O onChange NÃO grava — só anota a escolha. Gravar a cada change
                  fechava a lista na PRIMEIRA tecla: num select fechado, digitar
                  "mar" para achar "Maria" já seleciona "Marcos" no "m", grava e
@@ -189,7 +218,6 @@ export function CampoEditavel({
                 // e no Firefox: rolar a página para conferir outro dado mudava a
                 // escolha, e o clique seguinte gravava isso.
                 onWheel={(e) => e.preventDefault()}
-                onBlur={() => confirmar(rascunho, false)}
                 className="h-8 py-0 text-sm"
               >
                 {opcoesFinais.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
@@ -215,7 +243,6 @@ export function CampoEditavel({
                   if (e.key === "Enter") { e.preventDefault(); confirmar(rascunho, true); }
                   if (e.key === "Escape") { e.preventDefault(); cancelar(); }
                 }}
-                onBlur={() => confirmar(rascunho, false)}
                 className="h-8 py-0 text-sm"
               />
             )}
@@ -245,8 +272,8 @@ export function CampoEditavel({
         )}
         {(erro || (editando && dica)) && (
           <p id={mensagemId} role={erro ? "alert" : undefined} className={cn(
-            "absolute left-0 top-full z-10 mt-0.5 max-w-[22rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm",
-            erro ? "font-medium text-red-600" : "text-slate-500",
+            "rounded-md border border-slate-200 bg-white px-2 py-1 text-xs",
+            erro ? "mt-2 font-medium text-red-600" : "absolute left-0 top-full z-10 mt-0.5 max-w-[22rem] text-slate-500 shadow-sm",
           )}>
             {erro ?? dica}
           </p>
