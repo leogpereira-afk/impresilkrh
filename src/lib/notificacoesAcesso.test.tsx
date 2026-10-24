@@ -47,3 +47,14 @@ it('RH mantém os alertas e troca para Comercial remove imediatamente o sino abe
   expect(el.querySelector('button[title="Notificações"]')).toBeNull();
   expect(el.textContent).not.toContain('Documento fictício');
 });
+it('revalidação pendente esconde alertas mesmo com perfil RH e cache carregado',async()=>{
+  const {suspenderAcessoRH,confirmarAcessoRH,renovarSessao}=await import('@/lib/session');
+  montar('ADMIN_RH');
+  act(()=>suspenderAcessoRH());
+  expect(el.querySelector('output')?.textContent).toBe('');
+  expect(el.querySelector('button[title="Notificações"]')).toBeNull();
+  act(()=>renovarSessao());
+  expect(el.querySelector('output')?.textContent).toBe('');
+  act(()=>confirmarAcessoRH({perfil:'ADMIN_RH',colaboradorId:'comercial-ficticio'}));
+  expect(el.querySelector('output')?.textContent).toContain('doc-doc-proprio');
+});

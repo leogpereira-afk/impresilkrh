@@ -35,6 +35,7 @@ const VALIDADE_LEMBRAR_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias parados
 export interface Sessao {
   perfil: Perfil;
   colaboradorId: string;
+  conferindoAcesso?: boolean;
 }
 interface SessaoGravada extends Sessao {
   visto?: number;    // instante do último uso (ms)
@@ -73,7 +74,7 @@ function ler(): Sessao | null {
 
 function gravar(s: Sessao, visto: number, lembrar = false) {
   if (!temWindow) return;
-  try { window.localStorage.setItem(SESSAO_KEY, JSON.stringify({ ...s, visto, lembrar } satisfies SessaoGravada)); } catch { /* cota: segue em memória */ }
+  try { window.localStorage.setItem(SESSAO_KEY, JSON.stringify({ perfil: s.perfil, colaboradorId: s.colaboradorId, visto, lembrar } satisfies SessaoGravada)); } catch { /* cota: segue em memória */ }
 }
 
 function emit() {
@@ -89,6 +90,19 @@ export function entrar(perfil: Perfil, colaboradorId: string, lembrar = false): 
   if (temWindow) { try { window.dispatchEvent(new CustomEvent("impresilk:autenticado")); } catch { /* ignora */ } }
 }
 
+/** Oculta conteúdo do RH enquanto a autorização remota não foi confirmada. */
+export function suspenderAcessoRH(): void {
+  const s = ler();
+  if (s && !s.conferindoAcesso) { cache = { ...s, conferindoAcesso: true }; emit(); }
+}
+export function confirmarAcessoRH(s: Sessao): void {
+  const atual = ler();
+  if (!atual) return; // uma consulta tardia não pode ressuscitar logout
+  if (atual.perfil !== s.perfil || atual.colaboradorId !== s.colaboradorId) {
+    entrar(s.perfil, s.colaboradorId, lembrarGravado());
+  } else { cache = { perfil: s.perfil, colaboradorId: s.colaboradorId }; emit(); }
+}
+
 /** Marca atividade: adia a expiração. Chamado a cada navegação/interação. */
 export function renovarSessao(): void {
   const antes = cache;
@@ -97,7 +111,10 @@ export function renovarSessao(): void {
   // PRESERVA o "manter conectado". Sem repassar `lembrar`, o default `false`
   // apagava a marcação no primeiro clique depois do login — 30 dias viravam 12h,
   // à revelia de quem marcou a caixa.
-  if (s) gravar(s, Date.now(), lembrarGravado());
+  if (s) {
+    if (antes?.conferindoAcesso) cache = { ...s, conferindoAcesso: true };
+    gravar(s, Date.now(), lembrarGravado());
+  }
   else if (antes) { emit(); avisarSaida(); }
 }
 
@@ -144,7 +161,9 @@ if (temWindow) {
   const conferir = () => {
     const antes = cache;
     cache = undefined;
-    if (antes && !ler()) { emit(); avisarSaida(); } // estava logado e expirou
+    const atual = ler();
+    if (atual && antes?.conferindoAcesso) cache = { ...atual, conferindoAcesso: true };
+    if (antes && !atual) { emit(); avisarSaida(); } // estava logado e expirou
   };
   window.addEventListener("storage", (e) => {
     if (e.key === SESSAO_KEY || e.key === null) { cache = undefined; emit(); if (!ler()) avisarSaida(); }

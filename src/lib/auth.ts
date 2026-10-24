@@ -11,7 +11,9 @@
 // ============================================================================
 import type { Session } from "@supabase/supabase-js";
 import { supabase, SUPABASE_CONFIGURADO, FN_ADMIN_USERS, FN_ACESSO_ENTRAR, ANON_PUBLICA } from "@/lib/supabase";
-import { entrar, sair, obterSessao, lembrarGravado, type Sessao } from "@/lib/session";
+import { entrar, sair, obterSessao, type Sessao } from "@/lib/session";
+import { criarVigiaAcesso } from "@/lib/vigiaAcesso";
+import { suspenderAcessoRH, confirmarAcessoRH } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 
 export const MODO_JWT: boolean = SUPABASE_CONFIGURADO;
@@ -32,46 +34,60 @@ export class ErroAuth extends Error {
 // SÍNCRONA do token atual. Mantida em dia pelo listener + getSession inicial.
 let sessaoAtual: Session | null = null;
 if (temWindow && supabase) {
+  const vigia = criarVigiaAcesso<Sessao>({
+    consultar: perfilDoUsuario,
+    suspender: suspenderAcessoRH,
+    aplicar: confirmarAcessoRH,
+    revogar: () => sair(),
+    podeConferir: () => !!obterSessao() && navigator.onLine && document.visibilityState !== "hidden",
+    observar: (id, sinal, conectado) => {
+      // O canal carrega só um sinal do próprio usuário; nunca dados de RH.
+      const canal = supabase!.channel(`rh-acesso:${id}`).on("postgres_changes", {
+        event: "*", schema: "public", table: "rh_acesso_sinais", filter: `user_id=eq.${id}`,
+      }, sinal).subscribe(status => conectado(status === "SUBSCRIBED"));
+      return () => { void supabase!.removeChannel(canal); };
+    },
+  });
+  suspenderAcessoRH();
   window.addEventListener("impresilk:sessao-encerrada", () => {
     const tinhaSessao = !!sessaoAtual;
-    sessaoAtual = null; // interrompe chamadas imediatamente, inclusive offline.
+    sessaoAtual = null;
+    vigia.parar();
     if (tinhaSessao) void supabase!.auth.signOut({ scope: "local" });
   });
-  supabase.auth.onAuthStateChange((_ev, s) => { sessaoAtual = s; });
-  supabase.auth.getSession().then(async ({ data }) => {
-    sessaoAtual = data.session ?? null;
-    if (!data.session) { sair(); return; } // sem sessão válida → não deixa sessão pendurada
-
-    /* QUEM DIZ O PERFIL É O SERVIDOR, NÃO O NAVEGADOR.
-       A sessão do app é um JSON no localStorage: dá para abrir o console,
-       trocar "COLABORADOR" por "ADMIN_RH" e recarregar — as telas são guardadas
-       no cliente e passariam a aparecer. Os DADOS não vêm (o sync confere o
-       perfil no servidor a cada chamada), mas a pessoa vê o que já está no
-       aparelho e o menu inteiro, o que é confuso e ruim.
-       Então, com sessão de verdade na mão, o perfil é relido de `perfis` e
-       sobrescreve o que estiver gravado. */
-    try {
-      const real = await perfilDoUsuario(data.session.user.id);
-      if (!real) { await supabase!.auth.signOut(); sair(); return; }
-      const local = obterSessao();
-      /* SEM SESSÃO LOCAL DO APP = expirou por inatividade (o vigia de 12h/30d de
-         session.ts removeu o SESSAO_KEY). NÃO ressuscitar: a sessão do Supabase
-         persiste no navegador e seu refresh token não vence sozinho, então um F5
-         num computador compartilhado da gráfica reentrava como o RH horas depois
-         de a pessoa sair — exatamente o que a expiração existe para impedir.
-         Aqui a sessão do app é a fonte da verdade de "ainda logado": se ela
-         morreu, encerra a do Supabase também. */
-      if (!local) { await supabase!.auth.signOut(); sair(); return; }
-      /* Perfil divergente (adulterado no console, ou mudou no servidor): corrige
-         PRESERVANDO o "manter conectado" que a pessoa escolheu — nunca `true`
-         fixo, que dava 30 dias a quem não pediu. */
-      if (local.perfil !== real.perfil || local.colaboradorId !== real.colaboradorId) {
-        entrar(real.perfil, real.colaboradorId, lembrarGravado());
-      } else {
-        window.dispatchEvent(new CustomEvent("impresilk:autenticado"));
-      }
-    } catch { /* offline: fica com o que tem, e o sync recusa o que não puder */ }
+  let eventoAuth = 0;
+  supabase.auth.onAuthStateChange((ev, s) => {
+    eventoAuth++;
+    sessaoAtual = s;
+    vigia.suspender();
+    // Não executar consultas dentro do lock do callback do Supabase Auth.
+    const versao = eventoAuth;
+    queueMicrotask(() => {
+      if (versao !== eventoAuth) return;
+      if (!s) { vigia.usuario(null); if (ev === "SIGNED_OUT") sair(); return; }
+      vigia.usuario(s.user.id);
+    });
   });
+  const inicio = eventoAuth;
+  void supabase.auth.getSession().then(({ data }) => {
+    if (inicio !== eventoAuth) return;
+    sessaoAtual = data.session ?? null;
+    if (!data.session || !obterSessao()) { sair(); return; }
+    vigia.usuario(data.session.user.id);
+  }).catch(() => vigia.suspender());
+  // Login termina depois do callback Auth: reconfere quando a sessão local nasce.
+  window.addEventListener("impresilk:autenticado", () => { if (sessaoAtual) void vigia.conferir(); });
+  window.addEventListener("offline", () => vigia.desconectar());
+  window.addEventListener("online", () => { void vigia.conferir(); });
+  window.addEventListener("focus", () => { void vigia.conferir(); });
+  window.addEventListener("storage", e => {
+    if (e.key === "impresilk.rh.v1:sessao" || e.key === null) void vigia.conferir();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") vigia.suspender(); else void vigia.conferir();
+  });
+  // Recuperação auxiliar; a revogação normal chega pelo canal, sem esperar o timer.
+  setInterval(() => { if (obterSessao() && navigator.onLine && document.visibilityState !== "hidden") void vigia.conferir(); }, 60_000);
 }
 
 // Token guardado, se ainda válido (o supabase-js já cuida do refresh sozinho).

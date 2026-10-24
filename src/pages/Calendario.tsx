@@ -78,6 +78,7 @@ type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?
 
 export default function Calendario() {
   const sessao = useSessao();
+  if (sessao?.conferindoAcesso) return <EmptyState title="Conferindo acesso" description="Os avisos ficam ocultos até confirmar sua permissão de RH." />;
   if (!ehRH(sessao)) return <EmptyState title="Acesso restrito" description="O calendário de RH está disponível somente para a equipe autorizada do RH." />;
   return <CalendarioGeral/>;
 }
