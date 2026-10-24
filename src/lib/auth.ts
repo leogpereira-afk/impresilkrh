@@ -78,7 +78,7 @@ if (temWindow && supabase) {
   // Login termina depois do callback Auth: reconfere quando a sessão local nasce.
   window.addEventListener("impresilk:autenticado", () => { if (sessaoAtual) void vigia.conferir(); });
   window.addEventListener("offline", () => vigia.desconectar());
-  window.addEventListener("online", () => { void vigia.conferir(); });
+  window.addEventListener("online", () => vigia.reconectar());
   window.addEventListener("focus", () => { void vigia.conferir(); });
   window.addEventListener("storage", e => {
     if (e.key === "impresilk.rh.v1:sessao" || e.key === null) void vigia.conferir();

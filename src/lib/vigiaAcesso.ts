@@ -38,6 +38,7 @@ export function criarVigiaAcesso<T>(d: {
       });
       void conferir();
     },
+    reconectar() { const id = usuario; this.usuario(null); if (id) this.usuario(id); },
     parar() { usuario = null; conectado = false; suspender(); limpar?.(); limpar = undefined; },
   };
 }

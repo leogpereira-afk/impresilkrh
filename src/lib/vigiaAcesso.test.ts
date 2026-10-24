@@ -29,3 +29,8 @@ it('erro de rede e logout descartam consultas pendentes',async()=>{
  const x=montar();x.status(true);await tick();x.d.aplicar.mockClear();x.d.consultar.mockRejectedValueOnce(Error('offline'));await x.v.conferir();expect(x.d.aplicar).not.toHaveBeenCalled();
  let responder!:(s:string|null)=>void;x.d.consultar.mockImplementation(()=>new Promise(r=>{responder=r}));void x.v.conferir();x.v.parar();responder('RH');await tick();expect(x.d.aplicar).not.toHaveBeenCalled();
 });
+it('retorno da rede recria canal, evitando ficar preso após queda breve',async()=>{
+ const x=montar();x.status(true);await tick();x.d.aplicar.mockClear();x.v.desconectar();x.v.reconectar();
+ expect(x.d.observar).toHaveBeenCalledTimes(2);await tick();expect(x.d.aplicar).not.toHaveBeenCalled();
+ x.status(true);await tick();expect(x.d.aplicar).toHaveBeenCalledWith('RH');
+});
