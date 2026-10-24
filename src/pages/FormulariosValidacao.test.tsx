@@ -21,7 +21,7 @@ import {ToastProvider} from '@/components/ui/toast';
 let el:HTMLDivElement;let root:ReturnType<typeof createRoot>;
 async function mount(C:ComponentType,entry='/'){await act(async()=>root.render(<MemoryRouter initialEntries={[entry]}><ToastProvider><C/></ToastProvider></MemoryRouter>));}
 async function click(text:string){const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.trim()===text||x.getAttribute('aria-label')===text||x.getAttribute('title')===text);expect(b,`button ${text}`).toBeTruthy();await act(async()=>b!.click());}
-function field(label:string){const l=[...document.querySelectorAll('label')].find(x=>x.querySelector('.label')?.textContent?.replace(/\*/g,'').replace(/\bfalta\b/g,'').trim()===label);expect(l,`field ${label}`).toBeTruthy();return l!.querySelector('input,select,textarea')! as HTMLInputElement;}
+function field(label:string){const l=[...document.querySelectorAll('label')].find(x=>x.textContent?.replace(/\*/g,'').replace(/\bfalta\b/g,'').trim()===label);expect(l,`field ${label}`).toBeTruthy();return l!.control as HTMLInputElement;}
 async function fill(e:HTMLInputElement,value:string){await act(async()=>{const p=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(p,'value')!.set!.call(e,value);e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));});}
 beforeEach(()=>{
  rede.pausar=false;rede.falhar=false;rede.rejeitar=false;rede.resolver=null;localStorage.clear();sessionStorage.clear();registrarMutacao(()=>{});for(const n of NOMES_COLECOES)definirColecao(n,[] as never);

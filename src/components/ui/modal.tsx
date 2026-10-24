@@ -138,7 +138,7 @@ export function Modal({
         ref={dialogRef}
         tabIndex={-1}
         className={cn(
-          "relative my-8 w-full animate-fade-in rounded-2xl bg-white shadow-xl outline-none",
+          "rh-modal relative my-8 w-full animate-fade-in rounded-2xl bg-white shadow-xl outline-none",
           largura,
         )}
         role="dialog"

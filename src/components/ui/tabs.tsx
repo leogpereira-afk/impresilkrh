@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { IconeVolume } from "./icone-volume";
 
 const chaveDe = (id: string) => `tabs:${id}`;
 
@@ -94,7 +95,7 @@ export function Tabs({
                   : "text-slate-500 hover:text-slate-800",
               )}
             >
-              {a.icon}
+              {a.icon && <IconeVolume pequeno>{a.icon}</IconeVolume>}
               {a.label}
               {ativo && (
                 <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-brand" />

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { IconeVolume } from "./icone-volume";
 
 /* O CARTÃO DE NÚMERO, compacto.
  *
@@ -66,15 +67,7 @@ export function StatCard({
     >
       <div className="flex min-w-0 items-start gap-1.5">
         {icon && (
-          <span
-            aria-hidden
-            className={cn(
-              "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-md [&_svg]:h-3.5 [&_svg]:w-3.5",
-              cores[accent ?? "brand"],
-            )}
-          >
-            {icon}
-          </span>
+          <IconeVolume pequeno className={cores[accent ?? "brand"]}>{icon}</IconeVolume>
         )}
         <span className="min-w-0 break-words text-xs font-medium leading-snug text-slate-500">
           {label}

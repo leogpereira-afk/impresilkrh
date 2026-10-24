@@ -14,7 +14,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 import { entrar, sair } from "@/lib/session";
 import type { Perfil } from "@/data/types";
@@ -23,6 +23,14 @@ import type { Perfil } from "@/data/types";
 
 let el: HTMLDivElement | null = null;
 let root: Root | null = null;
+const scrollOriginal = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+const rolarParaOpcao = vi.fn();
+
+beforeEach(() => {
+  // JSDOM não calcula rolagem; a busca real mantém a opção escolhida à vista.
+  rolarParaOpcao.mockClear();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: rolarParaOpcao });
+});
 
 async function abrir(perfil: Perfil, caminho: string, esperar = "mudou para o PCP") {
   entrar(perfil, "1");
@@ -45,6 +53,8 @@ afterEach(() => {
   root = null; el = null;
   sair();
   window.localStorage.clear();
+  if (scrollOriginal) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", scrollOriginal);
+  else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
 describe("F25: Performance fora do menu do RH", () => {
@@ -73,9 +83,10 @@ describe("F25: Performance fora do menu do RH", () => {
     await abrir("ADMIN_RH", "/painel", "Painel");
     await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true })); });
     // Sem termo, a busca lista todas as telas da sessão: é o índice do sistema.
-    const itens = () => Array.from(document.body.querySelectorAll("li button")).map((b) => b.textContent ?? "");
+    const itens = () => Array.from(document.body.querySelectorAll('[role="listbox"] [role="option"]')).map((b) => b.textContent ?? "");
     expect(itens().some((t) => t.startsWith("Financeiro do RH"))).toBe(true);
     expect(itens().some((t) => t.startsWith("Performance"))).toBe(false);
+    expect(rolarParaOpcao).toHaveBeenCalledWith({ block: "nearest" });
     // Os apelidos antigos ("bonificacao", "bonus", "instaladores") também não levam lá.
     const campo = document.body.querySelector<HTMLInputElement>('input[aria-label="Buscar tela"]')!;
     const digitar = (termo: string) => act(async () => {

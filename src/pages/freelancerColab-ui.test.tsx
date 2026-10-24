@@ -331,8 +331,8 @@ describe("os arquivos mostram o que a tela mostra", () => {
 /* O formulário do contrato: os campos são achados pelo rótulo, como a pessoa acha. */
 const campo = (rotulo: string) =>
   [...document.body.querySelectorAll("label")]
-    .find((l) => l.querySelector(".label")?.textContent?.trim().startsWith(rotulo))
-    ?.querySelector("input, select, textarea") as HTMLInputElement;
+    .find((l) => l.textContent?.trim().startsWith(rotulo))
+    ?.control as HTMLInputElement;
 function digitar(input: HTMLInputElement, valor: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   act(() => {

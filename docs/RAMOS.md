@@ -48,3 +48,7 @@ atrás da origem em 12/10/2026.
 - `rh-nps-20261017`, clone isolado em `/tmp/rh-nps-20261017`: central e dados privados, incluindo os commits locais anteriores de NPS e entrevistas. Desenvolvimento e testes autorizados; publicação ainda depende do dono. Ver `docs/revisoes/2026-10-17-feedback-pesquisas.md`. Não misturar esta frente com o ramo antigo anterior ao rebase de 17/10.
 
 - Atualização desta frente: publicação do ramo rh-nps-20261017 autorizada pelo dono em 17/10/2026 após a prévia, incluindo Silk e emojis (D-011).
+
+## Atualização de 24/10/2026 · Prévia visual
+
+- `codex/rh-visual-3d-20261024`, worktree local `/tmp/rh-visual-3d-20261024`: ícones em relevo, sombras, movimentos, campos e navegação. Base `c85147a`; desenvolvimento e prévia autorizados por D-013. Publicação depende da aprovação desta versão. Não juntar automaticamente. Plano em `docs/planos/2026-10-24-visual-3d-rh.md`.

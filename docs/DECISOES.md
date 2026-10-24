@@ -62,3 +62,7 @@ Após a prévia com Silk e emojis, o dono autorizou “subir”. Escopo: as cinc
 ## D-012 · 24/10/2026 · Publicação das correções da auditoria e compactação
 
 Após a prévia local dos dezesseis achados, o dono autorizou “subir”. Escopo: as correções de acessos, persistência, formulários e acessibilidade, a compactação de Treinamentos, Vagas e Colaboradores e a function sync correspondente. Preservar IDs, históricos e cadastros. Nenhuma migration ou escrita de teste em produção integra esta publicação. Fonte: resposta direta do dono nesta conversa; registrado pelo Codex.
+
+## D-013 · 24/10/2026 · Prévia visual com relevo
+
+O dono pediu melhoria de navegação e layout e esclareceu: “3d nos icones internos , e nos cartoes sompras e movimentos, e melhorias nas caixas de textos etc”. Aplicar relevo nos ícones, sombras e movimento suave nos controles interativos, melhorar campos e navegação e apresentar prévia local. Preservar dados, regras e permissões. A autorização de publicação D-012 se refere à rodada anterior; esta versão visual aguarda aprovação da prévia. Fonte: resposta direta do dono nesta conversa; registrado pelo Codex; plano docs/planos/2026-10-24-visual-3d-rh.md.

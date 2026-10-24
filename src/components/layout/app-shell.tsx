@@ -1,6 +1,7 @@
 import { usePreferenciaVisual } from "@/lib/preferenciasVisuais";
 import { destinosDaBusca } from "@/lib/buscaTelas";
 import { Modal } from "@/components/ui/modal";
+import { IconeVolume } from "@/components/ui/icone-volume";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -125,14 +126,13 @@ function NavConteudo({
   /** Espaçamento de fora: a lateral fixa já tem o recuo dela; a gaveta do celular não. */
   className?: string;
 }) {
-  /* O desenho dos itens mora em index.css (.rh-nav-*), no padrão da lateral da
-     Central do Léo: 13px, 36px de altura, título de grupo discreto e o item
-     ativo com fundo claro da marca e barra de 3px à esquerda. */
+  /* Navegação agrupada e recolhível. Os ícones em relevo e a altura dos
+     alvos ficam no visual-rh.css; o item ativo mantém a marca à esquerda. */
   return (
-    <nav className={cn("rh-nav min-h-0 flex-1 overflow-y-auto", className)}>
+    <nav aria-label="Navegação do RH" className={cn("rh-nav min-h-0 flex-1 overflow-y-auto", className)}>
       {itensVisiveis.some(i => favoritos.includes(i.href)) && <div className="rh-nav-grupo">
         <p className="rh-nav-titulo">Favoritos</p>
-        {itensVisiveis.filter(i => favoritos.includes(i.href)).map(i => <NavLink key={i.href} to={i.href} onClick={aoNavegar} className={cn("rh-nav-item", caminho === i.href && "ativo")}><span aria-hidden="true" className="rh-nav-ic">{EMOJIS[i.href.slice(1)] ?? "⭐"}</span><span>{i.label}</span></NavLink>)}
+        {itensVisiveis.filter(i => favoritos.includes(i.href)).map(i => <NavLink key={i.href} to={i.href} onClick={aoNavegar} className={cn("rh-nav-item", (caminho === i.href || caminho.startsWith(i.href + "/")) && "ativo")}><IconeVolume className="rh-nav-ic">{EMOJIS[i.href.slice(1)] ?? "⭐"}</IconeVolume><span className="rh-nav-rotulo">{i.label}</span></NavLink>)}
       </div>}
       {GRUPOS.map((grupo) => {
         const itens = itensVisiveis.filter((i) => i.grupo === grupo);
@@ -172,7 +172,7 @@ function NavConteudo({
                       ativo && "ativo",
                     )}
                   >
-                    <span aria-hidden="true" className="rh-nav-ic">{EMOJIS[item.href.slice(1)] ?? <Icon className="h-[18px] w-[18px]" />}</span>
+                    <IconeVolume className="rh-nav-ic">{EMOJIS[item.href.slice(1)] ?? <Icon className="h-[18px] w-[18px]" />}</IconeVolume>
                     <span className="rh-nav-rotulo">{item.label}</span>
                   </NavLink>
                 );
@@ -190,8 +190,16 @@ export function AppShell() {
   const configAntigaPendente = configLegadaSemConta();
   const [opcoes, setOpcoes] = useState(false);
   const [compacto, setCompacto] = usePreferenciaVisual("compacto", true);
+  const [movimentos, setMovimentos] = usePreferenciaVisual("movimentos", true);
   const [favoritosSalvos, setFavoritos] = usePreferenciaVisual<string[]>("favoritos", []);
   const favoritos = Array.isArray(favoritosSalvos) ? favoritosSalvos : [];
+
+  // No html para alcançar também os diálogos em portal. O sistema operacional
+  // pode reduzir os movimentos independentemente desta preferência local.
+  useEffect(() => {
+    document.documentElement.dataset.movimentoRh = movimentos ? "suave" : "reduzido";
+    return () => { delete document.documentElement.dataset.movimentoRh; };
+  }, [movimentos]);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -286,13 +294,14 @@ export function AppShell() {
   const rotaBloqueada = !moduloAcessivel(moduloAtual, liberados);
 
   return (
-    <div data-densidade={compacto ? "compacta" : "confortavel"} className="flex min-h-screen bg-[var(--bg)]">
-      {/* Lateral no padrão da Central do Léo: 218px, presa na altura da tela
+    <div data-densidade={compacto ? "compacta" : "confortavel"} className="rh-app flex min-h-screen bg-[var(--bg)]">
+      <a href="#conteudo-rh" className="rh-pular-conteudo" onClick={e => { e.preventDefault(); document.getElementById("conteudo-rh")?.focus(); }}>Ir para o conteúdo</a>
+      {/* Lateral presa na altura da tela
           (sticky, dentro do fluxo) em vez de fixa com o conteúdo empurrado por
-          padding. Assim a largura mora num lugar só (.rh-side, em index.css). */}
+          padding. A largura é definida em .rh-side, no visual-rh.css. */}
       <aside className="rh-sidebar rh-side z-30 hidden flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="rh-side-marca">
-          <Logo variant="color" className="h-12 max-w-[190px]" />
+          <Logo variant={tema === "escuro" ? "white" : "color"} className="h-12 max-w-[190px]" />
         </div>
         <NavConteudo favoritos={favoritos} itensVisiveis={itensVisiveis} recolhidos={recolhidos} alternarGrupo={alternarGrupo} caminho={location.pathname} aoNavegar={() => setAberto(false)} />
         {/* Sem rodapé com nome e Sair (26/09/2026): o Léo apontou que isso já
@@ -306,7 +315,7 @@ export function AppShell() {
           <div className="absolute inset-0 bg-brand-ink/40 backdrop-blur-sm animate-fade-in" onClick={() => setAberto(false)} />
           <aside data-menu-rh role="dialog" aria-modal="true" aria-label="Menu do RH" className="rh-sidebar absolute inset-y-0 left-0 flex w-72 max-w-[90vw] flex-col bg-white shadow-soft animate-scale-in">
             <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
-              <Logo variant="color" className="h-11" />
+              <Logo variant={tema === "escuro" ? "white" : "color"} className="h-11" />
               <button aria-label="Fechar menu" onClick={() => setAberto(false)} className="btn-ghost min-h-11 min-w-11 p-2 text-slate-600">
                 <X className="h-5 w-5" />
               </button>
@@ -325,7 +334,7 @@ export function AppShell() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
+        <header className="rh-topbar glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200/70 px-4 sm:px-6">
           <button onClick={() => setAberto(true)} className="btn-ghost min-h-11 min-w-11 p-1.5 lg:hidden" aria-label="Abrir menu">
             <Menu className="h-5 w-5" />
           </button>
@@ -333,16 +342,16 @@ export function AppShell() {
               numa tela sem abrir a gaveta e rolar 25 itens. */}
           <button
             onClick={() => setBuscando(true)}
-            className="btn-ghost flex min-h-11 min-w-11 items-center gap-2 px-2 py-1.5 text-slate-500"
+            className="rh-abrir-busca flex min-h-11 min-w-11 items-center gap-2 px-3 py-1.5 text-slate-600"
             aria-label="Ir para uma tela"
             title="Ir para uma tela (Ctrl+K)"
           >
             <Search className="h-[18px] w-[18px]" />
-            <span className="hidden text-sm sm:inline">Buscar no RH</span><kbd className="hidden rounded border border-slate-200 px-1.5 text-[10px] text-slate-400 xl:inline">Ctrl+K</kbd>
+            <span className="text-sm"><span className="sm:hidden">Buscar</span><span className="hidden sm:inline">Buscar no RH</span></span><kbd className="hidden rounded border border-slate-200 px-1.5 text-[10px] text-slate-500 xl:inline">Ctrl+K</kbd>
           </button>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <div className="hidden md:block lg:hidden">
-              <Logo variant="color" className="h-7" />
+              <Logo variant={tema === "escuro" ? "white" : "color"} className="h-7" />
             </div>
             <div className="hidden lg:block" />
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -397,6 +406,7 @@ export function AppShell() {
           <p className="mb-3 text-sm">{user.nome} · {PERFIL_LABEL[user.perfil]}</p>
           <div className="grid gap-2">
             <button className="btn-outline min-h-11" aria-pressed={compacto} onClick={() => setCompacto(!compacto)}>Densidade: {compacto ? "compacta" : "confortável"}</button>
+            <button className="btn-outline min-h-11" aria-pressed={movimentos} onClick={() => setMovimentos(!movimentos)}>Movimentos: {movimentos ? "suaves" : "reduzidos"}</button>
             <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); navigate('/meu-perfil'); }}>Meu perfil</button>
             <button className="btn-outline min-h-11" onClick={() => { setOpcoes(false); setTimeout(() => window.print(), 0); }}>Salvar esta tela em PDF</button>
             <button className="btn-outline min-h-11" onClick={alternarTema}>{tema === 'escuro' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
@@ -404,8 +414,8 @@ export function AppShell() {
           </div>
         </Modal>
 
-        <main id="conteudo-rh" key={location.pathname} className="mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-4 sm:px-6 lg:px-8">
-          {telaAtual && <nav aria-label="Localização" className="no-print mb-1.5 flex items-center gap-1.5 text-xs text-slate-500"><span>{telaAtual.grupo}</span><ChevronRight className="h-3 w-3" /><span className="font-medium text-slate-700">{telaAtual.label}</span><button type="button" className="ml-auto inline-flex min-h-10 items-center gap-1 px-2" aria-pressed={favoritos.includes(telaAtual.href)} onClick={() => setFavoritos(favoritos.includes(telaAtual.href) ? favoritos.filter(f => f !== telaAtual.href) : [...favoritos, telaAtual.href])}><Star className={cn("h-4 w-4", favoritos.includes(telaAtual.href) && "fill-current text-amber-600")} />{favoritos.includes(telaAtual.href) ? "Favorito" : "Favoritar"}</button></nav>}
+        <main id="conteudo-rh" tabIndex={-1} key={location.pathname} className="rh-conteudo mx-auto w-full max-w-7xl flex-1 animate-fade-in px-4 py-4 sm:px-6 lg:px-8">
+          {telaAtual && <nav aria-label="Localização" className="rh-localizacao no-print mb-3 flex items-center gap-2 text-xs text-slate-500"><div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"><span>{telaAtual.grupo}</span><ChevronRight aria-hidden="true" className="h-3 w-3" /><span aria-current="page" className="font-semibold text-slate-700">{telaAtual.label}</span></div><button type="button" className="rh-favoritar ml-auto inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3" aria-pressed={favoritos.includes(telaAtual.href)} onClick={() => setFavoritos(favoritos.includes(telaAtual.href) ? favoritos.filter(f => f !== telaAtual.href) : [...favoritos, telaAtual.href])}><Star aria-hidden="true" className={cn("h-4 w-4", favoritos.includes(telaAtual.href) && "fill-current text-amber-600")} />{favoritos.includes(telaAtual.href) ? "Favorito" : "Favoritar"}</button></nav>}
           {rotaBloqueada ? (
             <EmptyState
               title="Acesso restrito"

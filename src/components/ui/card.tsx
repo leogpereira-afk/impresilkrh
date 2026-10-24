@@ -1,11 +1,17 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { IconeVolume } from "./icone-volume";
 
 // Contexto de recolhimento: todo Card é recolhível por padrão. O CardHeader vira
 // o gatilho (clica no título ou na seta) e o CardBody some quando recolhido.
 // Cards sem CardHeader não têm como recolher → o corpo fica sempre visível.
-const ColapsoCtx = createContext<{ aberto: boolean; alternar: () => void } | null>(null);
+const ColapsoCtx = createContext<{
+  aberto: boolean;
+  alternar: () => void;
+  corpos: string[];
+  registrarCorpo: (id: string) => () => void;
+} | null>(null);
 
 // Escolha de recolher GUARDADA por card (localStorage). Em tela de análise a
 // pessoa fecha o que não usa e isso tem de continuar fechado amanhã — recolher
@@ -62,10 +68,15 @@ export function Card({
   onAlternar?: () => void;
 }) {
   const [abertoLocal, setAbertoLocal] = useAbertoPersistido(idPersistencia, abertoInicial);
+  const [corpos, setCorpos] = useState<string[]>([]);
+  const registrarCorpo = useCallback((id: string) => {
+    setCorpos(ids => ids.includes(id) ? ids : [...ids, id]);
+    return () => setCorpos(ids => ids.filter(outro => outro !== id));
+  }, []);
   const controlado = abertoControlado !== undefined;
   const aberto = controlado ? abertoControlado : abertoLocal;
   const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((o) => !o));
-  const ctx = colapsavel ? { aberto, alternar } : null;
+  const ctx = colapsavel ? { aberto, alternar, corpos, registrarCorpo } : null;
   return (
     <ColapsoCtx.Provider value={ctx}>
       <div className={cn("card min-w-0", className)}>{children}</div>
@@ -87,11 +98,13 @@ export function CardHeader({
   className?: string;
 }) {
   const ctx = useContext(ColapsoCtx);
+  const tituloId = useId();
+  const acaoId = useId();
   const interior = (
     <>
-      {icon && <div className="mt-0.5 shrink-0 text-brand">{icon}</div>}
+      {icon && <IconeVolume className="text-brand">{icon}</IconeVolume>}
       <div className="min-w-0 break-words">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+        <h3 id={tituloId} className="text-sm font-semibold text-slate-800">{title}</h3>
         {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
       </div>
     </>
@@ -107,14 +120,14 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-3 px-4 py-3",
+        "rh-card-header flex items-start justify-between gap-3 px-4 py-3",
         temAcao && "flex-wrap",
         (!ctx || ctx.aberto) && "border-b border-slate-100",
         className,
       )}
     >
       {ctx ? (
-        <button type="button" onClick={ctx.alternar} aria-expanded={ctx.aberto} className={cn("flex min-w-0 items-start gap-3 text-left", baseDoTitulo)}>
+        <button type="button" onClick={ctx.alternar} aria-expanded={ctx.aberto} aria-controls={ctx.corpos.join(" ") || undefined} className={cn("rh-card-gatilho flex min-w-0 items-center gap-3 text-left", baseDoTitulo)}>
           {interior}
         </button>
       ) : (
@@ -126,9 +139,12 @@ export function CardHeader({
           <button
             type="button"
             onClick={ctx.alternar}
-            aria-label={ctx.aberto ? "Recolher" : "Expandir"}
+            aria-labelledby={`${acaoId} ${tituloId}`}
+            aria-expanded={ctx.aberto}
+            aria-controls={ctx.corpos.join(" ") || undefined}
             className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-600"
           >
+            <span id={acaoId} className="sr-only">{ctx.aberto ? "Recolher" : "Expandir"}</span>
             <ChevronDown className={cn("h-4 w-4 transition-transform", !ctx.aberto && "-rotate-90")} />
           </button>
         )}
@@ -145,8 +161,14 @@ export function CardBody({
   children: React.ReactNode;
 }) {
   const ctx = useContext(ColapsoCtx);
+  const corpoId = useId();
+  const aberto = ctx?.aberto ?? true;
+  const registrarCorpo = ctx?.registrarCorpo;
+  useEffect(() => {
+    if (aberto) return registrarCorpo?.(corpoId);
+  }, [aberto, registrarCorpo, corpoId]);
   if (ctx && !ctx.aberto) return null; // recolhido → esconde o corpo
-  return <div className={cn("p-4", className)}>{children}</div>;
+  return <div id={corpoId} className={cn("p-4", className)}>{children}</div>;
 }
 
 // Mantido por compatibilidade (ficha do colaborador). Como o Card já é recolhível,
@@ -178,17 +200,20 @@ export function SecaoColapsavel({
   children: React.ReactNode;
 }) {
   const [abertoLocal, setAbertoLocal] = useState(defaultOpen);
+  const tituloId = useId();
+  const corpoId = useId();
+  const acaoId = useId();
   const controlado = abertoControlado !== undefined;
   const aberto = controlado ? abertoControlado : abertoLocal;
   const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((o) => !o));
   return (
     <Card className={className} colapsavel={false}>
       {/* Mesma regra do CardHeader: sem ação, a seta fica na linha do título. */}
-      <div className={cn("flex items-start justify-between gap-3 px-4 py-3", action != null && action !== false && "flex-wrap", aberto && "border-b border-slate-100")}>
-        <button type="button" onClick={alternar} aria-expanded={aberto} className={cn("flex min-w-0 items-start gap-3 text-left", action != null && action !== false ? "flex-[1_1_12rem]" : "flex-1")}>
-          {icon && <div className="mt-0.5 text-brand">{icon}</div>}
+      <div className={cn("rh-card-header flex items-start justify-between gap-3 px-4 py-3", action != null && action !== false && "flex-wrap", aberto && "border-b border-slate-100")}>
+        <button type="button" onClick={alternar} aria-expanded={aberto} aria-controls={aberto ? corpoId : undefined} className={cn("rh-card-gatilho flex min-w-0 items-center gap-3 text-left", action != null && action !== false ? "flex-[1_1_12rem]" : "flex-1")}>
+          {icon && <IconeVolume className="text-brand">{icon}</IconeVolume>}
           <div className="min-w-0 break-words">
-            <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+            <h3 id={tituloId} className="text-sm font-semibold text-slate-800">{title}</h3>
             {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
           </div>
         </button>
@@ -197,14 +222,17 @@ export function SecaoColapsavel({
           <button
             type="button"
             onClick={alternar}
-            aria-label={aberto ? "Recolher" : "Expandir"}
+            aria-labelledby={`${acaoId} ${tituloId}`}
+            aria-expanded={aberto}
+            aria-controls={aberto ? corpoId : undefined}
             className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-600"
           >
+            <span id={acaoId} className="sr-only">{aberto ? "Recolher" : "Expandir"}</span>
             <ChevronDown className={cn("h-4 w-4 transition-transform", !aberto && "-rotate-90")} />
           </button>
         </div>
       </div>
-      {aberto && <CardBody className={bodyClassName}>{children}</CardBody>}
+      {aberto && <div id={corpoId}><CardBody className={bodyClassName}>{children}</CardBody></div>}
     </Card>
   );
 }

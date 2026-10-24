@@ -69,6 +69,23 @@ describe("AppShell — a barra lateral sobrevive ao redesenho", () => {
     expect(nav!.querySelectorAll("a").length).toBeGreaterThan(10);
   });
 
+  it("permite pular a navegação e focar o conteúdo", () => {
+    const atalho = container.querySelector<HTMLAnchorElement>('a[href="#conteudo-rh"]')!;
+    act(() => atalho.click());
+    expect(document.activeElement).toBe(container.querySelector("main"));
+  });
+
+  it("guarda a redução de movimentos sem mudar os destinos permitidos", () => {
+    const destinos = [...container.querySelectorAll("nav a")].map(a => a.getAttribute("href"));
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Mais opções"]')!.click());
+    const controle = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(b => b.textContent === "Movimentos: suaves")!;
+    expect(controle.getAttribute("aria-pressed")).toBe("true");
+    act(() => controle.click());
+    expect(document.documentElement.dataset.movimentoRh).toBe("reduzido");
+    expect(localStorage.getItem("rh:visual:movimentos")).toBe("false");
+    expect([...container.querySelectorAll("nav a")].map(a => a.getAttribute("href"))).toEqual(destinos);
+  });
+
   it("mantém aviso visível quando uma gravação local é recusada", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Quota fictícia"); });
     act(() => { gravarArmazem("impresilk.rh.v1:col:tarefas:conta:ficticia:ADMIN_RH", "[]"); });
