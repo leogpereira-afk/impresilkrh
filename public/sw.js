@@ -11,7 +11,7 @@
  * forçar a limpeza do cache antigo. (Assets do Vite têm hash no nome, então o
  * essencial é versionar o casco/HTML.)
  * ======================================================================== */
-const CACHE = "impresilk-rh-v21";
+const CACHE = "impresilk-rh-v22";
 
 // Caminho onde o app é servido = a pasta do próprio SW ("/impresilkrh/" no
 // GitHub Pages, "/" num domínio próprio). Tudo abaixo é relativo a isto — senão

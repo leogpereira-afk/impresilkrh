@@ -58,3 +58,5 @@ atrás da origem em 12/10/2026.
 ## Atualização de 24/10/2026 · Auditoria da aba Dados
 
 - `codex/rh-dados-auditoria`, clone local `/tmp/rh-calendario-acesso-20261024`: revisão dos 39 editores, campos complementares visíveis, chips e correções de validação, cancelamento, conflitos e permissões. Base `33d5319`; desenvolvimento e testes autorizados. Publicação desta implementação ainda depende da aprovação do dono. Registro em `docs/auditorias/2026-10-24-aba-dados.md`. Não juntar automaticamente nem incluir os arquivos locais de prévia.
+
+- Atualização: publicação autorizada por D-018. Commit local `05ed4ef` rebaseado como `587b189` sobre a nova reserva `5c3a24b`; usar somente a versão rebaseada, sem incluir arquivos de prévia.
