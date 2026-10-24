@@ -52,3 +52,5 @@ atrás da origem em 12/10/2026.
 ## Atualização de 24/10/2026 · Prévia visual
 
 - `codex/rh-visual-3d-20261024`, worktree local `/tmp/rh-visual-3d-20261024`: ícones em relevo, sombras, movimentos, campos e navegação. Base `c85147a`; desenvolvimento e prévia autorizados por D-013. Publicação depende da aprovação desta versão. Não juntar automaticamente. Plano em `docs/planos/2026-10-24-visual-3d-rh.md`.
+
+- Atualização da mesma rodada: publicação autorizada por D-014. Commit da prévia `94085a5` integrado por rebase sobre a nova reserva; não juntar a versão antiga novamente.

@@ -66,3 +66,7 @@ Após a prévia local dos dezesseis achados, o dono autorizou “subir”. Escop
 ## D-013 · 24/10/2026 · Prévia visual com relevo
 
 O dono pediu melhoria de navegação e layout e esclareceu: “3d nos icones internos , e nos cartoes sompras e movimentos, e melhorias nas caixas de textos etc”. Aplicar relevo nos ícones, sombras e movimento suave nos controles interativos, melhorar campos e navegação e apresentar prévia local. Preservar dados, regras e permissões. A autorização de publicação D-012 se refere à rodada anterior; esta versão visual aguarda aprovação da prévia. Fonte: resposta direta do dono nesta conversa; registrado pelo Codex; plano docs/planos/2026-10-24-visual-3d-rh.md.
+
+## D-014 · 24/10/2026 · Publicação do visual 3D aprovado
+
+Depois de avaliar a prévia, o dono autorizou: “ficou bom pode publicar essa versão 3D do RH”. Publicar a implementação da D-013, incluindo ícones com relevo, sombras e movimentos, campos, busca e navegação acessíveis, temas e cache v18. Esta decisão encerra a espera por aprovação descrita na D-013. Sem migration, alteração de functions, mudança de permissões ou escrita de teste em dados reais. Fonte: resposta direta do dono nesta conversa; registrado pelo Codex.

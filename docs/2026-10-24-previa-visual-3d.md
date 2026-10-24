@@ -1,6 +1,7 @@
 # Prévia visual do RH com relevo
 
 Estado: implementação local, aguardando aprovação visual para publicar (D-013).
+Atualização posterior: aprovação recebida na D-014; este documento preserva o registro da prévia. A publicação será registrada separadamente.
 Branch `codex/rh-visual-3d-20261024`, base `c85147a`, cache preparado `impresilk-rh-v18`.
 
 ## O que mudou
