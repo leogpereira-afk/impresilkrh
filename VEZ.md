@@ -7,13 +7,13 @@ passar, liberar, aceitar), que monta o commit em cima da origin/main; nunca à
 mão num ramo de trabalho. Regra completa no AGENTS.md (igual ao CLAUDE.md),
 seções 0, 5 e 6.
 
-agente: ninguem
-desde: 2026-10-24T22:14:01.671Z
-ramo: codex/rh-visual-3d-20261024
-tarefa: Publicar versao 3D aprovada do RH
-sessao: -
-versao_reservada: -
-arquivos_em_uso: -
+agente: codex
+desde: 2026-10-24T22:27:33.952Z
+ramo: main
+tarefa: Restringir avisos do calendario ao acesso RH
+sessao: codex:2f18f29b (rh-calendario-acesso-20261024)
+versao_reservada: rh-v19
+arquivos_em_uso: src/pages/Calendario.tsx src/lib/rbac.ts supabase/functions/sync/index.ts
 passou_por: codex
 passou_em: 2026-10-24T22:26:07.956Z
 
@@ -26,12 +26,12 @@ alguém, os campos podem estar em "-" enquanto ele trabalha; com a vez livre
 (ninguem), têm de estar todos cheios. "sessao: -" quer dizer que nenhuma
 sessão se registrou ainda: o primeiro `pegar` do mesmo agente a adota.
 
-no_ar: main 2e40513c9695266ef6a524b73661b1252d1e7394, Deploy 40137882705 e Verificar 40137882682 verdes; Pages 041512e built, 145/145 dist mais 404.html e .nojekyll iguais ao build, CACHE impresilk-rh-v18. Functions inalteradas nesta rodada; versoes herdadas da passagem anterior (nao reconferidas): sync 101, admin-users 73, backup-registros 69, mubi-pagamentos 91, rh-performance 20, rh-programacao 19.
-ramos: Contagens atras/frente contra main 2e40513: codex/rh-visual-3d-20261024 local 0/0, integrado; agenda-so-gente 114/0, claude/admiring-noether-ly12p1 88/0, claude/funny-hypatia-d5uveb 381/0, codex/rh-correcoes-compactacao-20261024 6/0, endomarketing 50/0, endomarketing-lateral-anexos 45/0, f07-fila 65/0, id-pessoa 69/0, ids-anteriores 58/0, ids-bloqueio 54/0 e rh-nps-20261017 19/0 ja integrados, dono decide apagar; claude/lucid-clarke-pquyij 473/1 e publicar 355/2 superados; rh-fluxos-auditoria-20261016 43/1 incorporado por rebase, nao juntar novamente; gh-pages gerada pelo workflow. Demais orientacoes em docs/RAMOS.md.
-feito: Publicada a previa 3D aprovada: 5abdd6f (mesmo produto de 94085a5 apos rebase) e 2e40513 (autorizacao e registro). Icones em relevo, cartoes, sombras, movimentos, campos acessiveis e navegacao. Registro em docs/2026-10-24-publicacao-visual-3d.md; esta passagem complementa a verificacao final.
-pela_metade: nenhum nesta frente visual; pendencias anteriores continuam no plano da frente correspondente.
-decisoes: D-014: dono autorizou publicar esta versao 3D em 24/10/2026; implementacao previamente delimitada por D-013.
-perguntas_ao_dono: nenhuma para esta publicacao; P-001 a P-004 anteriores permanecem conforme docs/DECISOES.md.
-nao_fazer: Nao juntar novamente 94085a5 ou ramos superados; nao testar salvamento de dados reais em producao; nao alterar functions, permissoes ou banco nesta frente visual; nao confundir propagacao temporaria da CDN com deploy concluido sem conferir os chunks.
-testes: npm ci, npm run verificar (2293 testes/164 arquivos, lint, typecheck, 22 protocolo, sete identidade), npm run build, git diff --check e vez conferir passaram; Deploy/Verificar verdes; igualdade 147/147 arquivos servidos; smoke oficial somente leitura em 1280 e 390x844: busca/Enter, navegacao, formulario/cancelar, rotulos, fonte 16px em texto/data, menu/Escape/foco, recarga e sem overflow horizontal. Celular emulado, nenhum teste de escrita produtiva.
-dados: nenhum; nenhuma migration, function, permissao ou registro real alterado; evidencias privadas fora do Git.
+no_ar: -
+ramos: -
+feito: -
+pela_metade: -
+decisoes: -
+perguntas_ao_dono: -
+nao_fazer: -
+testes: -
+dados: -
