@@ -68,7 +68,7 @@ export function Modal({
 
     const visiveis = (raiz: HTMLElement) =>
       Array.from(raiz.querySelectorAll<HTMLElement>(SELETOR_FOCAVEL)).filter(
-        (el) => el.offsetParent !== null,
+        (el) => el.offsetParent !== null && !el.matches(":disabled"),
       );
     const focaveis = () => visiveis(dialog);
 
@@ -108,10 +108,10 @@ export function Modal({
       const primeiro = els[0];
       const ultimo = els[els.length - 1];
       const ativo = document.activeElement;
-      if (e.shiftKey && (ativo === primeiro || !dialog.contains(ativo))) {
+      if (e.shiftKey && (ativo === dialog || ativo === primeiro || !dialog.contains(ativo))) {
         e.preventDefault();
         ultimo.focus();
-      } else if (!e.shiftKey && (ativo === ultimo || !dialog.contains(ativo))) {
+      } else if (!e.shiftKey && (ativo === dialog || ativo === ultimo || !dialog.contains(ativo))) {
         e.preventDefault();
         primeiro.focus();
       }

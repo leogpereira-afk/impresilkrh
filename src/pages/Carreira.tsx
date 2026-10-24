@@ -386,7 +386,7 @@ export default function Carreira() {
                       {etapa.cargoAlvo && <span className="mt-1 inline-block text-[11px] font-medium uppercase tracking-wide text-slate-400">Alvo: {etapa.cargoAlvo}</span>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Toggle checked={etapa.concluida} onChange={() => alternarEtapa(etapa)} />
+                      <Toggle checked={etapa.concluida} onChange={() => alternarEtapa(etapa)} ariaLabel={`Etapa concluída: ${etapa.titulo}`} />
                       {ehRHFlag && (
                         <button
                           type="button"

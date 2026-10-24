@@ -470,6 +470,10 @@ function CargosSecao() {
           rodape={<><button className="btn-outline" onClick={() => { setNovo(false); setEdit(null); }}>Cancelar</button>
             <button className="btn-primary" onClick={() => {
               if (!form.nome?.trim()) return toast("Informe o nome do cargo.", "erro");
+              const faixas = form.faixas ?? [0, 0, 0, 0, 0];
+              if (faixas.some((v) => !Number.isFinite(v) || v < 0)) return toast("Informe faixas salariais válidas, maiores ou iguais a zero.", "erro");
+              const definidas = faixas.filter((v) => v > 0);
+              if (definidas.some((v, i) => i > 0 && v < definidas[i - 1])) return toast("As faixas definidas devem seguir a ordem crescente de N1 a N5. Use zero para um nível ainda não definido.", "erro");
               if (edit) atualizar(edit.id, form); else { try { criar({ id: slug(form.nome), ...form } as Cargo); } catch (e) { toast(e instanceof Error ? e.message : "Já existe um registro com este nome.", "erro"); return; } }
               toast("Cargo salvo."); setNovo(false); setEdit(null);
             }}>Salvar</button></>}>
@@ -484,10 +488,11 @@ function CargosSecao() {
                 {[0, 1, 2, 3, 4].map((i) => (
                   <div key={i}>
                     <span className="mb-1 block text-center text-[10px] text-slate-400">N{i + 1}</span>
-                    <Input type="number" value={form.faixas?.[i] ?? 0} onChange={(e) => setFaixa(i, Number(e.target.value))} />
+                    <Input type="number" min={0} step="0.01" aria-label={`Faixa salarial N${i + 1}`} value={form.faixas?.[i] ?? 0} onChange={(e) => setFaixa(i, Number(e.target.value))} />
                   </div>
                 ))}
               </div>
+              <p className="mt-1 text-xs text-slate-400">Zero indica faixa ainda não definida. Os valores definidos seguem a ordem de N1 a N5.</p>
             </div>
             <Campo label="Descrição"><Input value={form.descricao ?? ""} onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))} /></Campo>
           </div>
@@ -842,7 +847,7 @@ function UsuariosSecao() {
 
   const usuarios = [...(items as Usuario[])].sort((a, b) => a.nome.localeCompare(b.nome));
   const totalModulos = MODULOS.length;
-  const acessoTotal = (u: Usuario) => u.permissoes?.includes("*");
+  const acessoTotal = (u: Usuario) => !u.permissoes || u.permissoes.includes("*");
   const qtdLiberados = (u: Usuario) =>
     acessoTotal(u) ? totalModulos : MODULOS.filter((m) => u.permissoes?.includes(m.chave)).length;
 
@@ -908,7 +913,7 @@ function UsuariosSecao() {
       <div className="border-y border-slate-100 bg-gold-50/40 px-4 py-2.5">
         <p className="flex items-start gap-2 text-xs text-slate-600">
           <ShieldCheck className="mt-px h-4 w-4 shrink-0 text-gold-600" />
-          As permissões definem exatamente quais módulos ficam visíveis para cada usuário. Use <strong>Acesso total</strong> para liberar tudo (recomendado para o nível Administrador de RH).
+          As permissões limitam os módulos visíveis dentro do perfil. Use <strong>Acesso total</strong> para liberar todos os módulos permitidos pelo perfil. Administrador de RH e direção mantêm acesso completo.
         </p>
       </div>
 
@@ -952,12 +957,12 @@ function UsuariosSecao() {
                 <td className="td text-slate-500">{u.colaboradorId ? <LinkFicha id={u.colaboradorId} titulo="Abrir a ficha da pessoa por trás deste login">{d.nomeColab(u.colaboradorId)}</LinkFicha> : "—"}</td>
                 <td className="td">
                   {acessoTotal(u)
-                    ? <Badge variant="success">Tudo</Badge>
+                    ? <Badge variant="success">{u.permissoes ? "Todos do perfil" : "Pelo perfil (legado)"}</Badge>
                     : <span className="text-sm tabular-nums text-slate-600">{qtdLiberados(u)} de {totalModulos}</span>}
                 </td>
                 <td className="td">
                   <div className="flex justify-center">
-                    <Toggle checked={u.ativo} onChange={(v) => void alternarAtivo(u, v)} />
+                    <Toggle checked={u.ativo} onChange={(v) => void alternarAtivo(u, v)} ariaLabel={`Usuário ativo: ${u.nome}`} />
                   </div>
                 </td>
                 <td className="td text-right">
@@ -1034,7 +1039,7 @@ function UsuarioEditor({
   usuario: Usuario | null;
   colaboradores: { id: string; nome: string }[];
   onFechar: () => void;
-  onSalvar: (dados: Pick<Usuario, "nome" | "email" | "perfil" | "colaboradorId" | "permissoes" | "ativo" | "senha">) => void;
+  onSalvar: (dados: Pick<Usuario, "nome" | "email" | "perfil" | "colaboradorId" | "ativo" | "senha"> & { permissoes?: string[] }) => void;
 }) {
   const toast = useToast();
   const [nome, setNome] = useState(usuario?.nome ?? "");
@@ -1042,27 +1047,29 @@ function UsuarioEditor({
   const [perfil, setPerfil] = useState<Perfil>(usuario?.perfil ?? "COLABORADOR");
   const [colaboradorId, setColaboradorId] = useState<string>(usuario?.colaboradorId ?? "");
   const [ativo, setAtivo] = useState<boolean>(usuario?.ativo ?? true);
-  const [permissoes, setPermissoes] = useState<string[]>(usuario?.permissoes ?? []);
+  // Abrir e salvar um legado não cria uma restrição que não existia.
+  // Novos usuários começam sem módulos opcionais; acesso total usa ["*"].
+  const [permissoes, setPermissoes] = useState<string[] | undefined>(usuario ? usuario.permissoes : []);
   // Começa VAZIO de propósito: a senha guardada é um hash, não dá para exibi-la.
   // Em branco = mantém a que já existe.
   const [senha, setSenha] = useState("");
   const jaTemSenha = !!(usuario?.senhaHash || usuario?.senha?.trim());
   const [verSenha, setVerSenha] = useState(false);
 
-  const acessoTotal = permissoes.includes("*");
+  const acessoTotal = permissoes === undefined || permissoes.includes("*");
   const colabsOrdenados = [...colaboradores].sort((a, b) => a.nome.localeCompare(b.nome));
 
   const setAcessoTotal = (v: boolean) => setPermissoes(v ? ["*"] : []);
   const togglePerm = (chave: string) =>
     setPermissoes((p) => {
-      const base = p.filter((c) => c !== "*");
+      const base = (p ?? []).filter((c) => c !== "*");
       return base.includes(chave) ? base.filter((c) => c !== chave) : [...base, chave];
     });
 
   const trocarPerfil = (p: Perfil) => {
     setPerfil(p);
     // Sugere acesso total ao Administrador de RH (nível máximo).
-    if (p === "ADMIN_RH" && permissoes.length === 0) setPermissoes(["*"]);
+    if (p === "ADMIN_RH" && permissoes?.length === 0) setPermissoes(["*"]);
   };
 
   const salvar = () => {
@@ -1073,7 +1080,7 @@ function UsuarioEditor({
       email: email.trim(),
       perfil,
       colaboradorId: colaboradorId || null,
-      permissoes,
+      ...(permissoes === undefined ? {} : { permissoes }),
       ativo,
       senha: senha.trim() || undefined,
     });
@@ -1140,14 +1147,15 @@ function UsuarioEditor({
               {MODULOS.map((m) => (
                 <Toggle
                   key={m.chave}
-                  checked={acessoTotal || permissoes.includes(m.chave)}
+                  checked={acessoTotal || !!permissoes?.includes(m.chave)}
                   onChange={() => togglePerm(m.chave)}
                   label={m.label}
                 />
               ))}
             </div>
           </div>
-          {acessoTotal && <p className="mt-3 text-xs text-gold-700">Acesso total ativo: este usuário vê todos os módulos do sistema.</p>}
+          {acessoTotal && <p className="mt-3 text-xs text-gold-700">{permissoes === undefined ? "Cadastro legado sem restrição por módulo. A seleção só muda se você alterar as permissões." : "Acesso total ativo para os módulos permitidos pelo perfil."}</p>}
+          {!acessoTotal && permissoes?.length === 0 && <p className="mt-3 text-xs text-slate-500">Nenhum módulo opcional selecionado. Meu perfil, Mural de vagas e NPS continuam disponíveis. Administrador de RH e direção mantêm acesso completo.</p>}
         </div>
       </div>
     </Modal>

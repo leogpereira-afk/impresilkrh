@@ -1093,6 +1093,7 @@ function CardChecklist({
                 <AcoesItem item={t} gere={gere} onRenomear={(x) => setRenomeando({ id: x.id, texto: x.titulo })} onExcluir={setExcluindoItem} />
                 <Toggle
                   checked={t.concluida}
+                  ariaLabel={`Item concluído: ${t.titulo}`}
                   onChange={(v) => onAlternar(t, v)}
                 />
               </div>
@@ -1160,6 +1161,7 @@ function CardChecklist({
                     <AcoesItem item={t} gere={gere} onRenomear={(x) => setRenomeando({ id: x.id, texto: x.titulo })} onExcluir={setExcluindoItem} />
                     <Toggle
                       checked={t.concluida}
+                      ariaLabel={`Documento concluído: ${t.titulo}`}
                       onChange={(v) => onAlternar(t, v)}
                     />
                   </div>

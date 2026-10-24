@@ -18,7 +18,7 @@
 // Quem chama valida: onSalvar devolve uma mensagem de erro para recusar o valor
 // (o editor continua aberto com o texto do erro) ou nada para aceitar.
 // ============================================================================
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
 import { Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/cn";
@@ -57,6 +57,8 @@ export function CampoEditavel({
   const [tocado, setTocado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvouAgora, setSalvouAgora] = useState(false);
+  const labelId = useId();
+  const mensagemId = useId();
   // Input/Select do projeto não repassam ref (React 18 exigiria forwardRef);
   // o foco vai pelo container, que é o dono real do elemento.
   const caixa = useRef<HTMLDivElement>(null);
@@ -134,7 +136,7 @@ export function CampoEditavel({
   return (
     <div className={cn("group", className)}>
       <dt className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
+        <span id={labelId}>{label}</span>
         {salvouAgora && <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold normal-case text-green-700"><Check className="h-3 w-3" /> salvo</span>}
       </dt>
       {/* min-h e mensagem flutuante: abrir/fechar o editor NÃO pode mudar a
@@ -174,6 +176,9 @@ export function CampoEditavel({
                  Agora vale o mesmo contrato do texto — Enter, ✓ ou sair salva. */
               <Select
                 autoFocus
+                aria-labelledby={labelId}
+                aria-describedby={erro || dica ? mensagemId : undefined}
+                aria-invalid={!!erro}
                 value={rascunho}
                 onChange={(e) => digitou(e.target.value)}
                 onKeyDown={(e) => {
@@ -198,6 +203,9 @@ export function CampoEditavel({
                  quem chama lê o número no formato brasileiro e nada some. */
               <Input
                 autoFocus
+                aria-labelledby={labelId}
+                aria-describedby={erro || dica ? mensagemId : undefined}
+                aria-invalid={!!erro}
                 type={tipo === "data" ? "date" : "text"}
                 inputMode={tipo === "numero" ? "decimal" : undefined}
                 value={rascunho}
@@ -236,7 +244,7 @@ export function CampoEditavel({
           </div>
         )}
         {(erro || (editando && dica)) && (
-          <p className={cn(
+          <p id={mensagemId} role={erro ? "alert" : undefined} className={cn(
             "absolute left-0 top-full z-10 mt-0.5 max-w-[22rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm",
             erro ? "font-medium text-red-600" : "text-slate-500",
           )}>

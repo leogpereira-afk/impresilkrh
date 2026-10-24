@@ -89,6 +89,7 @@ export default function Vagas() {
   const emEntrevista = candidatos.filter(emEntrevistaOuTeste).length;
 
   const [foco, setFoco] = useState<FocoVagas | null>(null);
+  const [buscaVaga, setBuscaVaga] = useState("");
   const combinaFoco = (v: Vaga, f: FocoVagas) => {
     const lista = candPorVaga.get(v.id) ?? [];
     if (f === "abertas") return v.status === "Aberta" || v.status === "Em triagem";
@@ -104,7 +105,18 @@ export default function Vagas() {
       setAbertas((s) => { const n = new Set(s); for (const v of vagas) if (combinaFoco(v, f)) n.add(v.id); return n; });
     }
   };
-  const vagasVisiveis = foco ? vagasOrdenadas.filter((v) => combinaFoco(v, foco)) : vagasOrdenadas;
+  const vagasVisiveis = vagasOrdenadas.filter((v) =>
+    (!foco || combinaFoco(v, foco)) && `${v.titulo} ${d.nomeArea(v.areaId)}`.toLocaleLowerCase("pt-BR").includes(buscaVaga.trim().toLocaleLowerCase("pt-BR")),
+  );
+  const visiveisExpandidas = vagasVisiveis.some((v) => abertas.has(v.id));
+  const alternarVagasVisiveis = () => setAbertas((atuais) => {
+    const novas = new Set(atuais);
+    for (const vaga of vagasVisiveis) {
+      if (visiveisExpandidas) novas.delete(vaga.id);
+      else novas.add(vaga.id);
+    }
+    return novas;
+  });
 
   const toggle = (id: string) => setAbertas((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -142,8 +154,8 @@ export default function Vagas() {
   };
 
   return (
-    <div>
-      <PageHeader title="Recrutamento e vagas" description="Posições abertas e candidatos com nota para classificar e ranquear.">
+    <div className="rh-piloto-compacto">
+      <PageHeader title="Recrutamento e vagas" description="Vagas, candidatos e etapas da seleção.">
         <button className="btn-primary" onClick={() => setFormVaga("nova")}>
           <Plus className="h-4 w-4" /> Nova vaga
         </button>
@@ -167,14 +179,26 @@ export default function Vagas() {
             icon: <Briefcase className="h-4 w-4" />,
             conteudo: (
               <>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input aria-label="Buscar vaga ou área" className="pl-9" placeholder="Buscar vaga ou área" value={buscaVaga} onChange={(e) => setBuscaVaga(e.target.value)} />
+          </div>
+          <button type="button" className="btn-outline text-xs" disabled={!vagasVisiveis.length} onClick={alternarVagasVisiveis}>{visiveisExpandidas ? "Recolher vagas" : "Expandir vagas"}</button>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500" aria-live="polite">
+          <span>{vagasVisiveis.length} de {vagas.length} vagas</span>
+          {foco && <button className="rh-filtro-chip" onClick={() => setFoco(null)} aria-label="Remover filtro de vagas">{foco === "abertas" ? "Abertas" : foco === "comCandidatos" ? "Com candidatos" : "Entrevista/teste"} ×</button>}
+          {(foco || buscaVaga) && <button className="btn-ghost text-xs" onClick={() => { setFoco(null); setBuscaVaga(""); }}>Limpar filtros</button>}
+        </div>
         {vagasVisiveis.length === 0 ? (
           <EmptyState
-            title={foco ? "Nenhuma vaga neste filtro" : "Nenhuma vaga cadastrada"}
-            description={foco ? "Clique de novo no cartão para ver todas as vagas." : "Crie uma vaga para começar a registrar candidatos e classificá-los."}
+            title={foco || buscaVaga ? "Nenhuma vaga neste filtro" : "Nenhuma vaga cadastrada"}
+            description={foco || buscaVaga ? "Limpe os filtros para ver todas as vagas." : "Crie uma vaga para começar a registrar candidatos e classificá-los."}
             icon={<Briefcase className="h-8 w-8" />}
           />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {vagasVisiveis.map((v) => {
               const lista = candPorVaga.get(v.id) ?? [];
               // Com o foco em entrevista/teste, a lista da vaga mostra só quem está nessa etapa.
@@ -183,13 +207,13 @@ export default function Vagas() {
               const media = lista.length ? lista.reduce((s, c) => s + (c.nota ?? 0), 0) / lista.filter((c) => c.nota != null).length : 0;
               return (
                 <Card key={v.id} className="overflow-hidden">
-                  <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                    <button type="button" onClick={() => toggle(v.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                  <div className="rh-vaga-cabecalho flex flex-wrap items-center gap-3 px-4 py-3">
+                    <button type="button" onClick={() => toggle(v.id)} aria-expanded={aberta} className="flex min-h-10 min-w-0 flex-1 items-center gap-3 text-left">
                       {aberta ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
                       <Briefcase className="h-4 w-4 shrink-0 text-brand" />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-800">{v.titulo}</p>
-                        <p className="truncate text-xs text-slate-400">
+                        <p className="break-words text-sm font-semibold text-slate-800">{v.titulo}</p>
+                        <p className="break-words text-xs text-slate-500">
                           {d.nomeArea(v.areaId)}{v.cargoId ? ` · ${d.cargoById.get(v.cargoId)?.nome ?? ""}` : ""}{v.nivelId ? ` · ${v.nivelId}` : ""}
                         </p>
                       </div>
@@ -376,8 +400,8 @@ export default function Vagas() {
           onFechar={() => setFormCand(null)}
           onSalvar={async (dados, arquivo, id) => {
             let alvoId = id;
-            if (id) {
-              const anterior = candidatos.find((c) => c.id === id);
+            const anterior = candidatos.find((c) => c.id === id);
+            if (id && (formCand.cand || anterior)) {
               atualizarCand(id, dados);
               // Disputa interna vencida: ao virar "Contratado", registra a
               // movimentação no histórico do colaborador (promoção/transferência).
@@ -398,15 +422,33 @@ export default function Vagas() {
                 toast(`${colab?.nome ?? "Colaborador"} venceu a disputa — movimentação registrada no histórico.`, "sucesso");
               }
             }
-            else { const r = criarCand({ etapa: "Triagem", criadoEm: new Date().toISOString(), ...dados }); alvoId = r.id; }
+            else { const r = criarCand({ ...(id ? { id } : {}), etapa: "Triagem", criadoEm: new Date().toISOString(), ...dados }); alvoId = r.id; }
             if (arquivo && alvoId) {
-              void putBlob(`cv:${alvoId}`, arquivo.dataUrl); // cache local (rápido/offline)
-              const subiu = await enviarArquivoNuvem(`cv:${alvoId}`, arquivo.dataUrl); // sobe para a nuvem (todos os PCs)
-              atualizarCand(alvoId, { curriculoArquivo: true, curriculoNome: arquivo.nome, linkCurriculo: "" });
-              if (!subiu) toast("Candidato salvo, mas o currículo não subiu agora (sem rede?). Reabra a vaga online e salve de novo para enviar.", "erro");
+              // A falha do anexo mantém o mesmo cadastro e o arquivo no modal
+              // para retentar, sem chamar criarCand outra vez.
+              let local = false;
+              let subiu = false;
+              try { local = await putBlob(`cv:${alvoId}`, arquivo.dataUrl); } catch { /* A nuvem ainda pode salvar o arquivo. */ }
+              try { subiu = await enviarArquivoNuvem(`cv:${alvoId}`, arquivo.dataUrl); } catch { /* A retentativa fica disponível no modal. */ }
+              if (local || subiu) {
+                try {
+                  atualizarCand(alvoId, { curriculoArquivo: true, curriculoNome: arquivo.nome, linkCurriculo: "" });
+                } catch {
+                  // O cadastro já existe mesmo se a gravação dos metadados ou
+                  // da fila falhar. A retentativa precisa receber o mesmo ID.
+                  toast("Candidato salvo, mas não foi possível registrar o currículo no cadastro. Confira o armazenamento e tente Salvar novamente.", "erro");
+                  return { id: alvoId, completo: false };
+                }
+              }
+              if (!subiu) {
+                toast(local
+                  ? "Candidato salvo. O currículo ficou neste aparelho, mas o envio falhou. Tente Salvar novamente para enviar o mesmo cadastro."
+                  : "Candidato salvo, mas o currículo não foi guardado. Mantenha esta janela aberta e tente Salvar novamente.", "erro");
+                return { id: alvoId, completo: false };
+              }
             }
             toast("Candidato salvo.");
-            setFormCand(null);
+            return { id: alvoId!, completo: true };
           }}
         />
       )}
@@ -605,6 +647,7 @@ function DevolutivaModal({
 
 function VagaForm({ vaga, onFechar, onSalvar }: { vaga: Vaga | null; onFechar: () => void; onSalvar: (dados: Partial<Vaga>, id?: string) => void }) {
   const d = useDominio();
+  const toast = useToast();
   const [titulo, setTitulo] = useState(vaga?.titulo ?? "");
   const [areaId, setAreaId] = useState(vaga?.areaId ?? "");
   const [cargoId, setCargoId] = useState(vaga?.cargoId ?? "");
@@ -617,8 +660,10 @@ function VagaForm({ vaga, onFechar, onSalvar }: { vaga: Vaga | null; onFechar: (
   const cargosArea = d.cargos.filter((c) => !areaId || c.areaId === areaId);
 
   const salvar = () => {
-    if (!titulo.trim()) return;
-    onSalvar({ titulo: titulo.trim(), areaId: areaId || null, cargoId: cargoId || null, nivelId: nivelId || null, quantidade: Number(quantidade) || 1, status, descricao: descricao.trim(), requisitos: requisitos.trim(), divulgacaoInterna, dataAbertura: vaga?.dataAbertura ?? new Date().toISOString().slice(0, 10) }, vaga?.id);
+    if (!titulo.trim()) return toast("Informe o título da vaga.", "erro");
+    const totalVagas = Number(quantidade);
+    if (!Number.isSafeInteger(totalVagas) || totalVagas < 1) return toast("Informe uma quantidade inteira de vagas, maior ou igual a 1.", "erro");
+    onSalvar({ titulo: titulo.trim(), areaId: areaId || null, cargoId: cargoId || null, nivelId: nivelId || null, quantidade: totalVagas, status, descricao: descricao.trim(), requisitos: requisitos.trim(), divulgacaoInterna, dataAbertura: vaga?.dataAbertura ?? diaLocalISO(new Date()) }, vaga?.id);
   };
 
   return (
@@ -644,9 +689,14 @@ function VagaForm({ vaga, onFechar, onSalvar }: { vaga: Vaga | null; onFechar: (
   );
 }
 
-function CandidatoForm({ vagaId, cand, onFechar, onSalvar }: { vagaId: string; cand: Candidato | null; onFechar: () => void; onSalvar: (dados: Partial<Candidato>, arquivo: { nome: string; dataUrl: string } | null, id?: string) => void }) {
+function CandidatoForm({ vagaId, cand, onFechar, onSalvar }: { vagaId: string; cand: Candidato | null; onFechar: () => void; onSalvar: (dados: Partial<Candidato>, arquivo: { nome: string; dataUrl: string } | null, id?: string) => Promise<{ id: string; completo: boolean }> }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const salvandoRef = useRef(false);
+  // Reserva antes da primeira escrita: mesmo uma criação que gravou e lançou
+  // ao enfileirar/voltar o dado anterior será retentada com a mesma identidade.
+  const candidatoId = useRef(cand?.id ?? crypto.randomUUID());
+  const [salvando, setSalvando] = useState(false);
   const [nome, setNome] = useState(cand?.nome ?? "");
   const [email, setEmail] = useState(cand?.email ?? "");
   const [telefone, setTelefone] = useState(cand?.telefone ?? "");
@@ -670,24 +720,36 @@ function CandidatoForm({ vagaId, cand, onFechar, onSalvar }: { vagaId: string; c
     reader.readAsDataURL(f);
   };
 
-  const salvar = () => {
-    if (!nome.trim()) return;
+  const fechar = () => { if (!salvandoRef.current) onFechar(); };
+  const salvar = async () => {
+    if (salvandoRef.current || !nome.trim()) return;
+    salvandoRef.current = true;
+    setSalvando(true);
     const n = nota.trim() === "" ? null : Math.max(0, Math.min(10, Number(nota.replace(",", "."))));
-    onSalvar({
-      // `null`, não string vazia: é `!vagaId` que define "está no banco", e "" e
-      // null se comportam igual aqui — null deixa a intenção explícita no dado.
-      vagaId: vagaId || null,
-      nome: nome.trim(), email: email.trim(), telefone: telefone.trim(), origem: origem.trim(),
-      linkCurriculo: arquivo ? "" : link.trim(), nota: n, etapa, observacao: observacao.trim(),
-      interesseAreaId: interesseAreaId || null,
-      interesseCargoId: interesseCargoId || null,
-    }, arquivo, cand?.id);
+    try {
+      const resultado = await onSalvar({
+        // `null`, não string vazia: é `!vagaId` que define "está no banco", e "" e
+        // null se comportam igual aqui — null deixa a intenção explícita no dado.
+        vagaId: vagaId || null,
+        nome: nome.trim(), email: email.trim(), telefone: telefone.trim(), origem: origem.trim(),
+        linkCurriculo: arquivo ? "" : link.trim(), nota: n, etapa, observacao: observacao.trim(),
+        interesseAreaId: interesseAreaId || null,
+        interesseCargoId: interesseCargoId || null,
+      }, arquivo, candidatoId.current);
+      candidatoId.current = resultado.id;
+      if (resultado.completo) onFechar();
+    } catch {
+      toast("Não foi possível salvar o candidato. Confira os dados e tente novamente.", "erro");
+    } finally {
+      salvandoRef.current = false;
+      setSalvando(false);
+    }
   };
 
   return (
-    <Modal aberto onFechar={onFechar} titulo={cand ? "Editar candidato" : noBanco ? "Guardar currículo no banco" : "Novo candidato"} largura="max-w-lg"
-      rodape={<><button className="btn-ghost" onClick={onFechar}>Cancelar</button><button className="btn-primary" onClick={salvar}>Salvar</button></>}>
-      <div className="space-y-3">
+    <Modal aberto onFechar={fechar} titulo={cand ? "Editar candidato" : noBanco ? "Guardar currículo no banco" : "Novo candidato"} largura="max-w-lg"
+      rodape={<><button className="btn-ghost" disabled={salvando} onClick={fechar}>Cancelar</button><button className="btn-primary" disabled={salvando} aria-busy={salvando} onClick={salvar}>{salvando ? "Salvando…" : "Salvar"}</button></>}>
+      <fieldset disabled={salvando} className="space-y-3">
         <Campo label="Nome"><Input value={nome} onChange={(e) => setNome(e.target.value)} autoFocus /></Campo>
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo label="E-mail"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Campo>
@@ -723,7 +785,7 @@ function CandidatoForm({ vagaId, cand, onFechar, onSalvar }: { vagaId: string; c
         </Campo>
         <Campo label="…ou link do currículo"><Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…  (Drive, LinkedIn)" disabled={!!arquivo} /></Campo>
         <Campo label="Observações"><Textarea rows={2} value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Avaliação, pontos fortes/fracos…" /></Campo>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

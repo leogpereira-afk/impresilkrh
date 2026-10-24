@@ -15,12 +15,17 @@
 // COMO FUNCIONA
 // A leitura precisa ser SÍNCRONA (o getSnapshot do useSyncExternalStore não
 // aceita promessa), então a verdade em uso fica numa cópia em memória e o
-// IndexedDB é o disco, gravado logo depois com uma pequena espera para juntar
-// rajadas. `prontoArmazem()` carrega o disco uma vez, no boot, e migra o que
+// IndexedDB é o disco. Antes de aceitar cada alteração, uma cópia temporária
+// síncrona no localStorage permite recuperá-la se a página fechar durante a
+// espera de 200 ms. A cópia só sai após a transação confirmar. Se não couber,
+// a escrita é recusada e a memória mantém o valor anterior.
+// `prontoArmazem()` carrega o disco uma vez, no boot, e migra o que
 // ainda estiver no localStorage — liberando aquele espaço.
 //
 // SEM IndexedDB (aba anônima, navegador antigo, jsdom dos testes) tudo segue
 // exatamente como antes, direto no localStorage.
+
+import { criarDiario, recuperarDiario, hashRecuperacao, type BaseRecuperacao } from "./armazemDiario";
 
 // Os dois espaços de nome que guardam volume: as coleções do RH e a fila/estado
 // do sync (que usa `impresilk.sync`). O PCP, na mesma origem, usa
@@ -37,6 +42,57 @@ const STORE = "chaves";
 // custo de pessoal. Com a leitura assíncrona essa janela existe de novo, e o
 // marcador é o que a fecha.
 const MARCADOR = "impresilk.rh.armazem";
+const DIARIO = "impresilk.rh.recuperacao:";
+const BASE = "impresilk.rh.base-recuperacao:";
+const chaveDiario = (chave: string) => DIARIO + encodeURIComponent(chave);
+const chaveBase = (chave: string) => BASE + encodeURIComponent(chave);
+const bases = new Map<string, BaseRecuperacao>();
+const recuperacoesBloqueadas = new Set<string>();
+type Pendente = { valor: string | null; diario?: string; legado?: string };
+export type EstadoArmazem = "ok" | "pendente" | "erro";
+let estado: EstadoArmazem = "ok";
+let escritaRecusada = false;
+const ouvintesEstado = new Set<() => void>();
+export function estadoArmazem(): EstadoArmazem { return estado; }
+export function assinarArmazem(cb: () => void): () => void { ouvintesEstado.add(cb); return () => ouvintesEstado.delete(cb); }
+function mudarEstado(proximo: EstadoArmazem) {
+  if (recuperacoesBloqueadas.size) proximo = "erro";
+  if (estado === proximo) return;
+  estado = proximo;
+  ouvintesEstado.forEach(cb => cb());
+}
+
+function lerDiario(chave: string): Pendente | null {
+  const diario = localStorage.getItem(chaveDiario(chave));
+  if (diario === null) return null;
+  return { valor: recuperarDiario(diario, bases.get(chave)), diario };
+}
+
+/** Uma única base estável por chave/conta; não acumula um histórico de versões. */
+async function prepararBases(db: IDBDatabase, valores: Map<string, string>) {
+  for (const [chave, valor] of valores) {
+    if (bases.has(chave)) continue;
+    const hash = await hashRecuperacao(valor);
+    if (!hash) continue;
+    try {
+      // O get e a criação estão na mesma transação: duas abas não substituem
+      // a base que a outra acabou de estabelecer.
+      const raw = await new Promise<string>((resolve, reject) => {
+        const tx = db.transaction(STORE, "readwrite"); const os = tx.objectStore(STORE);
+        const req = os.get(chaveBase(chave)); let resultado = "";
+        req.onsuccess = () => {
+          resultado = typeof req.result === "string" ? req.result : JSON.stringify({ hash, valor });
+          if (req.result === undefined) os.put(resultado, chaveBase(chave));
+        };
+        tx.oncomplete = () => resolve(resultado);
+        tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("Base de recuperação indisponível"));
+      });
+      const base = JSON.parse(raw) as BaseRecuperacao;
+      if (typeof base.valor === "string" && typeof base.hash === "string" && await hashRecuperacao(base.valor) === base.hash) bases.set(chave, base);
+      else avisarCheio(chave);
+    } catch { /* sem base confirmada, uma nova escrita só aceita retrato completo */ }
+  }
+}
 
 // null = ainda não carregado (ou sem IndexedDB): a leitura vai ao localStorage.
 let mem: Map<string, string> | null = null;
@@ -76,7 +132,7 @@ if (canal) {
     try { window.dispatchEvent(new StorageEvent("storage", { key: dado.chave })); } catch { /* ignora */ }
   };
 }
-let pendentes: Map<string, string | null> = new Map();
+const pendentes = new Map<string, Pendente>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 let prontoP: Promise<void> | null = null;
 
@@ -100,7 +156,9 @@ function abrir(): Promise<IDBDatabase | null> {
   });
 }
 
-function avisarCheio(chave: string) {
+function avisarCheio(chave: string, recusada = false) {
+  if (recusada) escritaRecusada = true;
+  mudarEstado("erro");
   try {
     window.dispatchEvent(new CustomEvent("impresilk:armazenamento-cheio", { detail: { key: chave } }));
   } catch {
@@ -114,56 +172,70 @@ function avisarCheio(chave: string) {
 /** A gravação em voo: resolve true quando o disco confirmou, false se falhou. */
 let emVoo: Promise<boolean> | null = null;
 function descarregar() {
-  if (timer) return;
+  if (timer || emVoo) return;
   timer = setTimeout(() => {
     timer = null;
-    emVoo = gravarLote().catch(() => false);
+    void confirmarArmazem();
   }, 200);
 }
+/** Confirma a cópia principal, inclusive para retentar uma falha temporária. */
+export async function confirmarArmazem(): Promise<boolean> {
+  if (timer) { clearTimeout(timer); timer = null; }
+  if (emVoo) return emVoo;
+  emVoo = gravarLote();
+  const ok = await emVoo;
+  emVoo = null;
+  // Uma alteração feita durante a transação tem outra identidade e fica na fila.
+  if (ok && pendentes.size) descarregar();
+  return ok;
+}
 async function gravarLote(): Promise<boolean> {
-  {
-    const lote = pendentes;
-    pendentes = new Map();
+    const lote = new Map(pendentes);
     if (!lote.size) return true;
     const db = await abrir();
     if (!db) {
-      // Perdeu o disco no meio do caminho: devolve para o localStorage, que é
-      // pequeno mas é o que resta — e avisa se nem ele aceitar.
-      for (const [chave, valor] of lote) {
-        try {
-          if (valor === null) localStorage.removeItem(chave);
-          else localStorage.setItem(chave, valor);
-        } catch {
-          avisarCheio(chave);
-        }
-      }
+      // O diário continua durável. Não descarta o lote nem anuncia IDB salvo.
+      for (const chave of lote.keys()) avisarCheio(chave);
       return false;
     }
     try {
+      await prepararBases(db, new Map([...lote].flatMap(([chave, entrada]) => entrada.valor === null ? [] : [[chave, entrada.valor] as [string, string]])));
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE, "readwrite");
         const os = tx.objectStore(STORE);
-        for (const [chave, valor] of lote) {
-          if (valor === null) os.delete(chave);
-          else os.put(valor, chave);
+        for (const [chave, entrada] of lote) {
+          // Outra aba pode ter concluído uma edição posterior enquanto abrir()
+          // aguardava. Sua transação não pode ser seguida por este valor antigo.
+          if (entrada.diario && localStorage.getItem(chaveDiario(chave)) !== entrada.diario) continue;
+          if (!entrada.diario && entrada.legado !== undefined && localStorage.getItem(chave) !== entrada.legado) continue;
+          if (entrada.valor === null) os.delete(chave);
+          else os.put(entrada.valor, chave);
         }
         tx.oncomplete = () => resolve();
         tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("falha ao gravar"));
       });
+      for (const [chave, entrada] of lote) {
+        // Nem uma confirmação antiga nem outra aba apagam a versão mais nova.
+        if (entrada.diario && localStorage.getItem(chaveDiario(chave)) === entrada.diario) localStorage.removeItem(chaveDiario(chave));
+        if (entrada.legado !== undefined && localStorage.getItem(chave) === entrada.legado) localStorage.removeItem(chave);
+        if (pendentes.get(chave) === entrada) pendentes.delete(chave);
+      }
+      mudarEstado(escritaRecusada ? "erro" : pendentes.size ? "pendente" : "ok");
       return true;
     } catch {
       // Disco cheio de verdade: a tela precisa saber, senão o trabalho some em
       // silêncio — que é exatamente o defeito que estamos consertando.
       for (const chave of lote.keys()) avisarCheio(chave);
       return false;
+    } finally {
+      db.close();
     }
-  }
 }
 
-function agendar(chave: string, valor: string | null) {
-  pendentes.set(chave, valor);
+function agendar(chave: string, entrada: Pendente) {
+  pendentes.set(chave, entrada);
+  mudarEstado("pendente");
   descarregar();
-  try { canal?.postMessage({ chave, valor }); } catch { /* ignora */ }
 }
 
 /**
@@ -174,10 +246,11 @@ function agendar(chave: string, valor: string | null) {
 export function prontoArmazem(): Promise<void> {
   if (prontoP) return prontoP;
   prontoP = (async () => {
-    if (!temIDB()) return; // segue no localStorage, como antes
+    if (!temIDB()) { if (armazemEmIDB()) avisarCheio(MARCADOR); return; }
     const db = await abrir();
-    if (!db) return;
+    if (!db) { if (armazemEmIDB()) avisarCheio(MARCADOR); return; }
     const carregado = new Map<string, string>();
+    const basesNoDisco = new Map<string, string>();
     try {
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE, "readonly");
@@ -186,24 +259,39 @@ export function prontoArmazem(): Promise<void> {
         rc.onsuccess = () => {
           const cur = rc.result;
           if (cur) {
-            if (typeof cur.value === "string") carregado.set(String(cur.key), cur.value);
+            if (typeof cur.value === "string") {
+              const chave = String(cur.key);
+              if (chave.startsWith(BASE)) basesNoDisco.set(decodeURIComponent(chave.slice(BASE.length)), cur.value);
+              else carregado.set(chave, cur.value);
+            }
             cur.continue();
           } else resolve();
         };
         rc.onerror = () => reject(rc.error ?? new Error("falha ao ler"));
       });
     } catch {
+      db.close();
+      avisarCheio(MARCADOR);
       return; // sem disco legível: segue no localStorage
     }
 
+    for (const [chave, raw] of basesNoDisco) {
+      try {
+        const base = JSON.parse(raw) as BaseRecuperacao;
+        if (typeof base.valor === "string" && typeof base.hash === "string" && await hashRecuperacao(base.valor) === base.hash) bases.set(chave, base);
+      } catch { /* um diário que dependa desta base será preservado e bloqueado */ }
+    }
+    await prepararBases(db, carregado);
+
     // Migração: o que está no localStorage é o mais recente deste aparelho.
-    // Só as chaves JÁ separadas por conta (":conta:") entram aqui — as antigas,
-    // sem conta, são assunto da cópia de recuperação (copiaAnterior.ts).
+    // Só as chaves JÁ separadas por conta entram, mais as flags de configuração
+    // antigas: elas não podem sumir antes de o store conferir sua autoria.
+    // As demais chaves sem conta pertencem à cópia anterior (copiaAnterior.ts).
     const migrar: string[] = [];
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && PREFIXOS.some((p) => k.startsWith(p)) && k.includes(":conta:")) migrar.push(k);
+        if (k && PREFIXOS.some((p) => k.startsWith(p)) && (k.includes(":conta:") || k === "impresilk.rh.v1:config:sujas")) migrar.push(k);
       }
     } catch {
       /* sem acesso: nada a migrar */
@@ -213,34 +301,49 @@ export function prontoArmazem(): Promise<void> {
         const v = localStorage.getItem(k);
         if (v != null) {
           carregado.set(k, v);
-          agendar(k, v);
+          agendar(k, { valor: v, legado: v });
         }
       } catch {
         /* ignora a chave ilegível */
       }
     }
 
+    // O diário é posterior ao disco e à migração, inclusive para exclusões.
+    // Uma chave por coleção/conta evita regravar todas as contas a cada edição.
+    const recuperar: string[] = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith(DIARIO)) recuperar.push(decodeURIComponent(k.slice(DIARIO.length)));
+      }
+      for (const k of recuperar) {
+        try {
+          const entrada = lerDiario(k);
+          if (!entrada) continue;
+          if (entrada.valor === null) carregado.delete(k); else carregado.set(k, entrada.valor);
+          // A recuperação também substitui eventual legado ainda não migrado.
+          entrada.legado = localStorage.getItem(k) ?? undefined;
+          agendar(k, entrada);
+        } catch { recuperacoesBloqueadas.add(k); pendentes.delete(k); avisarCheio(k); }
+      }
+    } catch { avisarCheio(DIARIO); }
+
     mem = carregado;
 
     // Só libera o localStorage DEPOIS que o disco confirmou a gravação —
     // apagar antes trocaria um problema de espaço por perda de dado.
-    if (migrar.length) {
+    if (migrar.length || recuperar.length) {
       // Espera a GRAVAÇÃO, não o relógio: o timer de 200 ms zerava a fila
       // antes de abrir o banco, o "não há pendência" aos 300 ms era verdade
       // vazia, e o localStorage era apagado com o disco ainda por confirmar
       // (auditoria de 07/09/2026).
-      if (timer) { clearTimeout(timer); timer = null; emVoo = gravarLote().catch(() => false); }
-      const ok = emVoo ? await emVoo : true;
-      if (ok) {
-        for (const k of migrar) {
-          try { localStorage.removeItem(k); } catch { /* ignora */ }
-        }
-      }
+      await confirmarArmazem();
     }
 
     // A partir daqui o disco é a fonte: liga o marcador para que uma próxima
     // abertura saiba esperar em vez de mostrar os dados de exemplo.
     try { localStorage.setItem(MARCADOR, "idb"); } catch { /* ignora */ }
+    db.close();
     hidratado = true;
     for (const cb of ouvintesHidratacao) { try { cb(); } catch { /* ignora */ } }
     ouvintesHidratacao.clear();
@@ -250,23 +353,62 @@ export function prontoArmazem(): Promise<void> {
 
 export function lerArmazem(chave: string): string | null {
   if (mem) return mem.get(chave) ?? null;
-  try { return localStorage.getItem(chave); } catch { return null; }
+  try { const entrada = lerDiario(chave); return entrada ? entrada.valor : localStorage.getItem(chave); } catch { return null; }
+}
+
+/** Inventário local para identificar migrações antigas sem atribuir outra conta. */
+export function chavesArmazem(): string[] {
+  if (mem) return [...mem.keys()];
+  const chaves = new Set<string>();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const chave = localStorage.key(i);
+      if (!chave) continue;
+      if (chave.startsWith(DIARIO)) {
+        const original = decodeURIComponent(chave.slice(DIARIO.length));
+        if (lerArmazem(original) !== null) chaves.add(original);
+      } else if (lerArmazem(chave) !== null) chaves.add(chave);
+    }
+  } catch { /* inventário parcial nunca autoriza migração de IDB não hidratado */ }
+  return [...chaves];
 }
 
 /** Retorna false quando não conseguiu guardar (o chamador avisa o usuário). */
 export function gravarArmazem(chave: string, valor: string): boolean {
-  if (mem) {
-    mem.set(chave, valor);
-    agendar(chave, valor);
+  if (mem || armazemEmIDB()) {
+    let diario: string;
+    try {
+      if (recuperacoesBloqueadas.has(chave)) throw new Error("Recuperação pendente de conferência");
+      // Sem disco legível, não substitui um delta cuja base não está disponível.
+      lerDiario(chave);
+      diario = criarDiario(valor, bases.get(chave));
+      localStorage.setItem(chaveDiario(chave), diario);
+    } catch { avisarCheio(chave, true); return false; }
+    escritaRecusada = false;
+    mem?.set(chave, valor);
+    agendar(chave, { valor, diario, legado: localStorage.getItem(chave) ?? undefined });
+    try { canal?.postMessage({ chave, valor }); } catch { /* ignora */ }
     return true;
   }
-  try { localStorage.setItem(chave, valor); return true; } catch { return false; }
+  try { localStorage.setItem(chave, valor); escritaRecusada = false; mudarEstado("ok"); return true; } catch { avisarCheio(chave, true); return false; }
 }
 
 export function removerArmazem(chave: string): void {
-  if (mem) {
-    mem.delete(chave);
-    agendar(chave, null);
+  if (mem || armazemEmIDB()) {
+    let diario: string;
+    try {
+      if (recuperacoesBloqueadas.has(chave)) throw new Error("Recuperação pendente de conferência");
+      lerDiario(chave);
+      diario = criarDiario(null);
+      localStorage.setItem(chaveDiario(chave), diario);
+    } catch {
+      avisarCheio(chave, true);
+      throw new Error("Não foi possível guardar a exclusão neste aparelho. Libere espaço e tente novamente.");
+    }
+    escritaRecusada = false;
+    mem?.delete(chave);
+    agendar(chave, { valor: null, diario, legado: localStorage.getItem(chave) ?? undefined });
+    try { canal?.postMessage({ chave, valor: null }); } catch { /* ignora */ }
     return;
   }
   try { localStorage.removeItem(chave); } catch { /* ignora */ }

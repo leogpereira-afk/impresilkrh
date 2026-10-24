@@ -1,7 +1,7 @@
 import { usePreferenciaVisual } from "@/lib/preferenciasVisuais";
 import { destinosDaBusca } from "@/lib/buscaTelas";
 import { Modal } from "@/components/ui/modal";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Network, GitBranch, TrendingUp, FileText, UserCircle,
@@ -19,7 +19,8 @@ import { PERFIL_LABEL } from "@/lib/constants";
 import { useSessao } from "@/lib/session";
 import { logoutAuth } from "@/lib/auth";
 import { useDominio } from "@/lib/dominio";
-import { useColecao } from "@/lib/store";
+import { useColecao, configLegadaSemConta } from "@/lib/store";
+import { assinarArmazem, estadoArmazem, confirmarArmazem } from "@/lib/armazemLocal";
 import { modulosLiberados, moduloAcessivel, ehMaster, PERFIS_CONTRATOS_FREELANCER } from "@/lib/rbac";
 import { useToast } from "@/components/ui/toast";
 import { SyncButton } from "./sync-button";
@@ -185,6 +186,8 @@ function NavConteudo({
 }
 
 export function AppShell() {
+  const persistencia = useSyncExternalStore(assinarArmazem, estadoArmazem, estadoArmazem);
+  const configAntigaPendente = configLegadaSemConta();
   const [opcoes, setOpcoes] = useState(false);
   const [compacto, setCompacto] = usePreferenciaVisual("compacto", true);
   const [favoritosSalvos, setFavoritos] = usePreferenciaVisual<string[]>("favoritos", []);
@@ -234,7 +237,7 @@ export function AppShell() {
   useEffect(() => {
     const aviso = () =>
       toast(
-        "Armazenamento do navegador cheio: exporte um backup em Configurações do RH › Marca & Backup e remova arquivos grandes. As últimas alterações podem não ter sido salvas.",
+        "Não foi possível concluir uma gravação neste aparelho. Confira o aviso de salvamento e tente novamente. Se faltar espaço, exporte um backup em Configurações do RH › Marca & Backup.",
         "erro",
       );
     window.addEventListener("impresilk:armazenamento-cheio", aviso);
@@ -385,6 +388,11 @@ export function AppShell() {
             </div>
           </div>
         </header>
+        {configAntigaPendente && <div role="alert" className="no-print border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100 sm:px-6">Há uma configuração antiga pendente de identificar a conta. A cópia foi preservada e o envio dessa configuração está pausado.</div>}
+        {persistencia !== "ok" && <div data-persistencia-local role={persistencia === "erro" ? "alert" : "status"} className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100 sm:px-6">
+          <span>{persistencia === "pendente" ? "Cópia local de recuperação salva. Concluindo a gravação no aparelho…" : "Não foi possível concluir uma gravação neste aparelho. Confira a alteração e tente novamente."}</span>
+          {persistencia === "erro" && <button type="button" className="min-h-10 rounded-lg border border-amber-300 px-3 font-semibold dark:border-amber-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={() => { void confirmarArmazem(); }}>Tentar concluir gravação</button>}
+        </div>}
         <Modal aberto={opcoes} onFechar={() => setOpcoes(false)} titulo="Opções da conta" largura="max-w-sm">
           <p className="mb-3 text-sm">{user.nome} · {PERFIL_LABEL[user.perfil]}</p>
           <div className="grid gap-2">

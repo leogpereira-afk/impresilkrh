@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modulosLiberados, podeVerGestao } from "./rbac";
+import { modulosLiberados, moduloAcessivel, podeVerGestao } from "./rbac";
 import type { Colaborador, Usuario } from "@/data/types";
 import type { Sessao } from "@/lib/session";
 
@@ -36,5 +36,21 @@ describe("modulosLiberados — desativado é sem módulo, não sem restrição",
   });
   it("sem cadastro de usuário: sem restrição (vale o perfil)", () => {
     expect(modulosLiberados(sessao("GESTOR", "zeca"), usuarios)).toBeNull();
+  });
+  it.each(["GESTOR", "COLABORADOR"] as const)("%s com lista vazia explícita não recebe módulos opcionais", (perfil) => {
+    const m = modulosLiberados(sessao(perfil, "pessoa-ficticia"), [
+      { id: "u-ficticio", nome: "Pessoa Fictícia", email: "pessoa@example.invalid", perfil, criadoEm: "2026-10-01", colaboradorId: "pessoa-ficticia", ativo: true, permissoes: [] },
+    ]);
+    expect(m).toEqual(new Set());
+    for (const modulo of ["ferias", "folha-variavel", "colaboradores"]) expect(moduloAcessivel(modulo, m)).toBe(false);
+    for (const modulo of ["meu-perfil", "mural-vagas", "nps"]) expect(moduloAcessivel(modulo, m)).toBe(true);
+  });
+  it("legado sem lista e acesso total explícito mantêm o acesso sujeito ao perfil", () => {
+    for (const extra of [{}, { permissoes: ["*"] }]) {
+      const m = modulosLiberados(sessao("GESTOR", "pessoa-ficticia"), [
+        { id: "u-ficticio", colaboradorId: "pessoa-ficticia", ativo: true, ...extra } as Usuario,
+      ]);
+      expect(m).toBeNull();
+    }
   });
 });

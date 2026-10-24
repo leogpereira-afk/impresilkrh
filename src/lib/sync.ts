@@ -35,7 +35,7 @@ function cabecalhoAuth(): Record<string, string> {
 }
 
 type Tipo = "upsert" | "delete";
-interface Acao { mutationId?: string; baseVersao?: number; tipo: Tipo; colecao: string; id: string; falhas?: number; conflito?: boolean; servidor?: Envelope | null }
+interface Acao { mutationId?: string; baseVersao?: number; registro?: Reg; tipo: Tipo; colecao: string; id: string; falhas?: number; conflito?: boolean; servidor?: Envelope | null }
 interface Envelope { colecao: string; registro: Reg }
 type Reg = { id: string; atualizadoEm?: string } & Record<string, unknown>;
 export type StatusSync = "off" | "ok" | "pending" | "offline" | "syncing" | "conflito" | "erro";
@@ -120,7 +120,7 @@ function gravarMassa(nomes: string[]) { if (!guardar(K_MASSA, JSON.stringify([..
 // ---- caixa de falhas (o que não subiu depois de MAX_TENTATIVAS) ----
 // Antes essas ações eram descartadas em silêncio. Agora ficam aqui, visíveis na
 // tela de sincronização, com o erro — e podem ser recolocadas na fila.
-export interface FalhaSync { tipo: Tipo; colecao: string; id: string; erro: string; em: string }
+export interface FalhaSync { mutationId?: string; baseVersao?: number; registro?: Reg; tipo: Tipo; colecao: string; id: string; erro: string; em: string }
 const K_FALHAS = `${NS}.falhas`;
 export function falhasSync(): FalhaSync[] {
   if (!temWindow) return [];
@@ -131,12 +131,21 @@ function registrarFalha(f: FalhaSync) {
   if (!guardar(K_FALHAS, JSON.stringify([f, ...atuais]))) throw new Error("Não foi possível preservar a alteração que falhou.");
   ouvintes.forEach((cb) => cb());
 }
+function removerFalhasSubstituidas(registro: { colecao: string; id: string }): boolean {
+  const anteriores = falhasSync();
+  const restantes = anteriores.filter(f => !mesma(f, registro));
+  return restantes.length === anteriores.length || guardar(K_FALHAS, JSON.stringify(restantes));
+}
 /** Recoloca as ações que falharam de volta na fila (botão "tentar de novo"). */
 export function retentarFalhas(): number {
   const fs = falhasSync();
   if (!fs.length) return 0;
   const fila = lerFila();
-  for (const f of fs) if (!fila.some((a) => mesma(a, { colecao: f.colecao, id: f.id }) && a.tipo === f.tipo)) fila.push({ mutationId: novaMutacao(), tipo: f.tipo, colecao: f.colecao, id: f.id });
+  for (const f of fs) {
+    // Uma edição/exclusão posterior já na fila substitui a tentativa antiga.
+    if (fila.some(a => mesma(a, f))) continue;
+    fila.push({ mutationId: f.mutationId ?? novaMutacao(), baseVersao: f.baseVersao, registro: f.registro, tipo: f.tipo, colecao: f.colecao, id: f.id });
+  }
   gravarFila(fila);
   guardar(K_FALHAS, "[]");
   recalcStatus();
@@ -158,6 +167,8 @@ function enfileirar(colecao: string, tipo: Tipo, id: string, baseVersao?: number
     fila.push({ mutationId: novaMutacao(), baseVersao, tipo: "upsert", colecao, id });
   }
   gravarFila(fila);
+  // Só retira a falha antiga depois que a operação que a substitui foi salva.
+  removerFalhasSubstituidas({ colecao, id });
   recalcStatus();
   void trySync();
 }
@@ -194,15 +205,18 @@ export async function trySync(): Promise<void> {
   let rebaixar = false;
   try {
     for (const acao of lerFila().filter((a) => !a.conflito)) {
+      let registroEnviado: Reg | undefined;
       try {
         if (acao.tipo === "upsert") {
-          const registro = (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
+          const registro = acao.registro ?? (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
           if (!registro) { gravarFila(lerFila().filter((a) => !mesma(a, acao))); continue; } // sumiu local
+          registroEnviado = registro;
           const resp = await chamar("upsert", { colecao: acao.colecao, registro, baseVersao: acao.baseVersao, mutationId: acao.mutationId });
           if (resp?.conflito) {
             gravarFila(lerFila().map((a) => (mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a)));
             continue;
           }
+          if (!removerFalhasSubstituidas(acao)) throw new Error("Não foi possível atualizar a caixa de falhas.");
           // A confirmação pertence ao envio A. Uma edição B, mesmo no mesmo
           // milissegundo, tem outra identificação e continua aguardando envio.
           if (Number.isSafeInteger(resp.versao)) {
@@ -232,6 +246,7 @@ export async function trySync(): Promise<void> {
             gravarFila(lerFila().map(a => mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a));
             continue;
           }
+          if (!removerFalhasSubstituidas(acao)) throw new Error("Não foi possível atualizar a caixa de falhas.");
           gravarFila(lerFila().filter((a) => !(mesma(a, acao) && a.mutationId === acao.mutationId))); // delete é idempotente → remove
         }
       } catch (e) {
@@ -246,7 +261,7 @@ export async function trySync(): Promise<void> {
         const fila = lerFila().map((a) => (mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, falhas: (a.falhas ?? 0) + 1 } : a));
         const estourou = fila.find((a) => mesma(a, acao) && a.mutationId === acao.mutationId && (a.falhas ?? 0) >= MAX_TENTATIVAS);
         if (estourou) {
-          registrarFalha({ tipo: estourou.tipo, colecao: estourou.colecao, id: estourou.id, erro: msg, em: new Date().toISOString() });
+          registrarFalha({ mutationId: estourou.mutationId, baseVersao: estourou.baseVersao, registro: registroEnviado, tipo: estourou.tipo, colecao: estourou.colecao, id: estourou.id, erro: msg, em: new Date().toISOString() });
           gravarFila(fila.filter((a) => !(mesma(a, acao) && a.mutationId === acao.mutationId)));
         } else {
           gravarFila(fila);

@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
 import { useState, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Modal } from "./modal";
+import { Modal, ConfirmDialog } from "./modal";
 
 /* O Modal decide o que é focável olhando `offsetParent` — o jeito clássico de
    perguntar "isto está visível na tela?". O jsdom não calcula layout e devolve
@@ -143,6 +143,36 @@ describe("Modal — foco", () => {
     });
     // Não é o primeiro campo do corpo: é o que a tela pediu.
     expect(document.activeElement).toBe(document.querySelector('[data-testid="titulo"]'));
+  });
+
+  it("mantém Tab e Shift+Tab dentro da confirmação com foco inicial no diálogo", () => {
+    act(() => {
+      root = createRoot(container);
+      root.render(<ConfirmDialog aberto onFechar={() => {}} onConfirmar={() => {}} titulo="Excluir item" mensagem="Confirma a exclusão?" />);
+    });
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const botoes = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"));
+    expect(document.activeElement).toBe(dialog);
+    for (const shiftKey of [true, false]) {
+      act(() => dialog.focus());
+      const evento = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+      act(() => dialog.dispatchEvent(evento));
+      expect(evento.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(shiftKey ? botoes[botoes.length - 1] : botoes[0]);
+    }
+  });
+
+  it("não inclui campos desabilitados pelo fieldset no ciclo de Tab", () => {
+    act(() => {
+      root = createRoot(container);
+      root.render(<Modal aberto onFechar={() => {}} titulo="Salvando candidato"><fieldset disabled><input aria-label="Nome" /><select aria-label="Etapa"><option>Triagem</option></select></fieldset></Modal>);
+    });
+    const fechar = document.querySelector<HTMLButtonElement>('[aria-label="Fechar"]')!;
+    act(() => fechar.focus());
+    const evento = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    act(() => fechar.dispatchEvent(evento));
+    expect(evento.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(fechar);
   });
 });
 

@@ -223,16 +223,14 @@ Deno.serve(async (req) => {
      lido para quem NÃO é master — quem é master vê tudo mesmo, e uma consulta
      a menos por pedido.
 
-     FALHA DE LEITURA AQUI ABRE UMA FRESTA, e a escolha é consciente: sem o
-     mapa vale só o literal 2.14, então uma conta apontada à mão passaria
-     enquanto o config estiver fora do ar. Derrubar TODA a sincronização do RH
-     por uma leitura de config é pior, e a fresta é estreita e registrada. A
-     porta do ERP (`mubi-pagamentos`) escolhe o contrário — lá uma tela que não
-     carrega é barulho, e o pedido é recusado. */
+     Falha não equivale a mapa vazio: sem o mapa, nenhuma conta pode ser
+     classificada como pública. Pedidos que dependem do plano são recusados;
+     as outras coleções continuam disponíveis em consultas independentes. */
   let vinculosSocioConta: Record<string, string> = {};
+  let mapaSocietarioIndisponivel = false;
   if (!ehMaster) {
     const r = await lerVinculosSocioConta(admin);
-    if (r.falhou) console.error("sync: sigo sem o mapa de vínculos societários — vale só o literal 2.14");
+    mapaSocietarioIndisponivel = r.falhou;
     vinculosSocioConta = r.vinculos;
   }
   /* O DINHEIRO DO SÓCIO SÓ SAI PARA O MASTER — em TODA resposta que carrega a
@@ -248,6 +246,7 @@ Deno.serve(async (req) => {
     return resto;
   };
   const contaConfidencial = (r: any) => {
+    if (mapaSocietarioIndisponivel) return true;
     const bate = (c: unknown) => typeof c === "string" && (c === "2.14" || c.startsWith("2.14."));
     if (bate(r?.codigo) || bate(r?.equivaleA)) return true;
     /* O CONTADOR RENUMEROU E O 2.14 SUMIU (auditoria de fechamento, 08/09/2026).
@@ -587,6 +586,12 @@ Deno.serve(async (req) => {
         const after = body.after != null ? String(body.after) : null;
         const offset = Math.max(0, Number(body.offset ?? 0) | 0);
         const colecoes = Array.isArray(body.colecoes) ? (body.colecoes as unknown[]).map(String).filter(Boolean) : null;
+        // Uma resposta parcial 200 seria interpretada como retrato completo
+        // pelos clientes e apagaria o plano local. O 503 preserva dados e
+        // revisão para retentar; quem não lê o plano segue a máscara normal.
+        if (ehAdmin && mapaSocietarioIndisponivel && (!colecoes?.length || colecoes.includes("planoContas"))) {
+          return json({ erro: "Não foi possível conferir os vínculos societários. O plano de contas não foi carregado. Tente novamente." }, 503);
+        }
         let query = admin.from("registros").select("colecao, id, registro, rh_versao").order("colecao", { ascending: true }).order("id", { ascending: true }).limit(PAGINA);
         if (colecoes && colecoes.length) query = query.in("colecao", colecoes);
         if (after !== null) {

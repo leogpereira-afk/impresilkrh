@@ -771,6 +771,7 @@ function AbaCertificacoesNR() {
 
   const salvar = () => {
     if (!form.colaboradorId || !form.dataTreinamento) { toast("Selecione o colaborador e a data do treinamento.", "erro"); return; }
+    if (!parseData(form.dataTreinamento)) { toast("Informe uma data de treinamento válida.", "erro"); return; }
     /* Treinamento no FUTURO não existe: a validade é contada a partir dele, e
        uma data adiante deixaria o certificado "válido" por anos sem ninguém ter
        feito o curso. O modal de exame já barra data incoerente; este não
@@ -779,12 +780,17 @@ function AbaCertificacoesNR() {
       toast("A data do treinamento não pode ser no futuro.", "erro");
       return;
     }
+    const cargaHoraria = form.cargaHoraria.trim() ? Number(form.cargaHoraria) : undefined;
+    if (cargaHoraria !== undefined && (!Number.isFinite(cargaHoraria) || cargaHoraria < 0)) {
+      toast("Informe uma carga horária válida, maior ou igual a zero.", "erro");
+      return;
+    }
     const payload = {
       colaboradorId: form.colaboradorId,
       nr: form.nr,
       dataTreinamento: form.dataTreinamento,
       dataValidade: calcularValidadeNR(form.dataTreinamento, form.nr),
-      cargaHoraria: form.cargaHoraria ? Number(form.cargaHoraria) : undefined,
+      cargaHoraria,
       instituicao: form.instituicao.trim() || undefined,
     };
     if (editId) {

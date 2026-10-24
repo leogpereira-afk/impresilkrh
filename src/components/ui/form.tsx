@@ -57,18 +57,22 @@ export function Toggle({
   checked,
   onChange,
   label,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
-  label?: React.ReactNode;
-}) {
+} & ({ label: React.ReactNode; ariaLabel?: string } | { label?: never; ariaLabel: string })) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
       onClick={() => onChange(!checked)}
-      className="flex items-center gap-2"
+      className="flex min-h-11 min-w-11 items-center gap-2 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
       <span
+        aria-hidden="true"
         className={cn(
           "relative h-5 w-9 rounded-full transition",
           checked ? "bg-brand" : "bg-slate-300",

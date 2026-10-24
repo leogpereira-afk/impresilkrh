@@ -117,7 +117,9 @@ export function modulosLiberados(sessao: Sessao | null, usuarios: Usuario[]): Se
   // os ativos fazia o inativo cair no `return null` e ganhar todos os
   // módulos do perfil (auditoria de 07/09/2026).
   if (u && u.ativo === false) return new Set();
-  if (!u || !u.permissoes || u.permissoes.length === 0 || u.permissoes.includes("*")) return null;
+  // Ausência é o legado sem restrição extra; [] é uma escolha explícita
+  // de nenhum módulo opcional. Só ["*"] declara acesso total no cadastro.
+  if (!u || !u.permissoes || u.permissoes.includes("*")) return null;
   return new Set(u.permissoes);
 }
 

@@ -2717,13 +2717,17 @@ function ModalLancarAusencia({
   const salvar = () => {
     if (!colaboradorId) return toast("Selecione o colaborador.", "erro");
     if (!data) return toast("Informe a data.", "erro");
+    if (!parseData(data)) return toast("Informe uma data válida.", "erro");
+    if (data > diaLocalISO(new Date())) return toast("A data da ausência não pode ser no futuro.", "erro");
+    const horasInformadas = comHoras && horas.trim() ? Number(horas) : undefined;
+    if (horasInformadas !== undefined && (!Number.isFinite(horasInformadas) || horasInformadas < 0)) return toast("Informe horas válidas, maiores ou iguais a zero.", "erro");
     onSalvar({
       ...(inicial ?? {}),
       colaboradorId,
       data,
       tipo,
       justificada,
-      horas: comHoras && horas ? Number(horas) : undefined,
+      horas: horasInformadas,
       observacao: observacao.trim() || undefined,
     });
   };

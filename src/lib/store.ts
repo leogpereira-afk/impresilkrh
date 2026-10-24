@@ -14,7 +14,7 @@ import {
 } from "@/data";
 import type { Config } from "@/data/types";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
-import { gravarArmazem, lerArmazem, removerArmazem, armazemEmIDB, armazemHidratado, aoHidratar } from "./armazemLocal";
+import { gravarArmazem, lerArmazem, removerArmazem, armazemEmIDB, armazemHidratado, aoHidratar, chavesArmazem } from "./armazemLocal";
 import { obterSessao } from "./session";
 import { lerCopiaAnterior } from "./copiaAnterior";
 import { exportarBlobsAnteriores } from "./blobstore";
@@ -368,18 +368,39 @@ export function obterConfig(): Config {
 // 07/09/2026 — um aparelho defasado apagava vínculos do ERP e tipos criados em
 // outro. Fica no localStorage para sobreviver a aba fechada antes de subir.
 const CONFIG_SUJAS_KEY = `${CONFIG_KEY}:sujas`;
-function lerSujas(): Record<string, true> {
+function sujasLegadas(): Record<string, true> {
   if (!temWindow) return {};
   try { return JSON.parse(lerArmazem(CONFIG_SUJAS_KEY) || "{}") as Record<string, true>; } catch { return {}; }
 }
+export function configLegadaSemConta(): boolean { return Object.keys(sujasLegadas()).length > 0; }
+function migrarSujasLegadas() {
+  const antigas = sujasLegadas();
+  if (!Object.keys(antigas).length || (armazemEmIDB() && !armazemHidratado())) return;
+  const prefixo = `${CONFIG_KEY}:conta:`;
+  const candidatas = chavesArmazem().filter(chave => chave.startsWith(prefixo));
+  // Com mais de uma configuração não existe evidência de autoria. Preserva
+  // o original e sua proteção, pausando só o envio da configuração.
+  if (candidatas.length !== 1) return;
+  const destino = `${CONFIG_SUJAS_KEY}:conta:${candidatas[0].slice(prefixo.length)}`;
+  try {
+    const atuais = JSON.parse(lerArmazem(destino) || "{}");
+    if (gravarArmazem(destino, JSON.stringify({ ...antigas, ...atuais }))) removerArmazem(CONFIG_SUJAS_KEY);
+  } catch { /* mantém o legado protegido enquanto não puder migrar */ }
+}
+function lerSujas(): Record<string, true> {
+  if (!temWindow) return {};
+  migrarSujasLegadas();
+  try { return JSON.parse(lerLocal(CONFIG_SUJAS_KEY) || "{}") as Record<string, true>; } catch { return {}; }
+}
 function gravarSujas(sujas: Record<string, true>) {
   if (!temWindow) return;
-  if (Object.keys(sujas).length === 0) { removerArmazem(CONFIG_SUJAS_KEY); return; }
-  gravarArmazem(CONFIG_SUJAS_KEY, JSON.stringify(sujas));
+  if (Object.keys(sujas).length === 0) { removerLocal(CONFIG_SUJAS_KEY); return; }
+  if (!escrever(CONFIG_SUJAS_KEY, JSON.stringify(sujas))) throw new Error("Não foi possível proteger a configuração pendente neste aparelho. Libere espaço e tente novamente.");
 }
 /** Chaves da config alteradas aqui e ainda não confirmadas pela nuvem. */
 export function chavesSujasDaConfig(): (keyof Config)[] {
-  return Object.keys(lerSujas()) as (keyof Config)[];
+  const sujas = lerSujas();
+  return configLegadaSemConta() ? [] : Object.keys(sujas) as (keyof Config)[];
 }
 /**
  * Marca como enviadas as chaves cujo valor ATUAL ainda é o que subiu. Uma
@@ -397,11 +418,16 @@ export function confirmarChavesEnviadas(enviado: Partial<Config>): void {
 
 export function salvarConfig(patch: Partial<Config>): void {
   const novo = { ...obterConfig(), ...patch };
-  if (!escrever(CONFIG_KEY, JSON.stringify(novo))) throw new Error("A configuração não foi salva. Libere espaço neste aparelho.");
-  configCache = novo;
-  const sujas = lerSujas();
+  const anteriores = lerSujas();
+  const sujas = { ...anteriores };
   for (const k of Object.keys(patch)) sujas[k] = true;
+  // A proteção contra um pull precisa estar durável antes de aceitar o valor.
   gravarSujas(sujas);
+  if (!escrever(CONFIG_KEY, JSON.stringify(novo))) {
+    try { gravarSujas(anteriores); } catch { /* conserva proteção adicional se a recuperação também for recusada */ }
+    throw new Error("A configuração não foi salva. Libere espaço neste aparelho.");
+  }
+  configCache = novo;
   emit("__config__");
 }
 
@@ -412,7 +438,8 @@ export function salvarConfig(patch: Partial<Config>): void {
  * perdia o vínculo na abertura seguinte, quando a nuvem gravava por cima.
  */
 export function aplicarConfigDaNuvem(daNuvem: Partial<Config>): void {
-  const sujas = lerSujas();
+  const atuais = lerSujas();
+  const sujas = { ...sujasLegadas(), ...atuais };
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(daNuvem)) if (!sujas[k]) patch[k] = v;
   if (Object.keys(patch).length === 0) return;

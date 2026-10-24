@@ -10,16 +10,24 @@ vi.mock("./auth", () => ({ MODO_JWT: true, tokenAtual: () => auth.token }));
 vi.mock("./supabase", () => ({ FN_SYNC: "http://rh-teste.local/sync" }));
 
 beforeEach(() => {
+  // Importar sync com uma sessão ativa inicia pull/getCfg em segundo plano.
+  // Este arquivo testa enviarColecao explicitamente; autentica só depois de
+  // importar, para não deixar HTTP do boot vivo além do teardown do jsdom.
+  auth.token = "";
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-07T10:00:00Z")); vi.resetModules(); localStorage.clear();
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
   vi.spyOn(window, "addEventListener").mockImplementation(() => {});
   vi.spyOn(document, "addEventListener").mockImplementation(() => {});
+  // Nenhum HTTP deve começar antes de o caso instalar seu servidor fictício.
+  vi.stubGlobal("fetch", vi.fn(async () => resposta({ ok: true, config: null, registros: [], rev: 0 })));
 });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 async function preparar() {
   const sessao = await import("./session"); sessao.entrar("ADMIN_RH", "admin-ficticio");
   const dados = await import("./store"); const sync = await import("./sync");
+  expect(fetch).not.toHaveBeenCalled();
+  auth.token = "token-ficticio";
   return { sessao, dados, sync };
 }
 const resposta = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });

@@ -13,7 +13,7 @@ import { useColecao } from "@/lib/store";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
-import { formatBRL, formatDate, formatNumber } from "@/lib/format";
+import { formatBRL, formatDate, formatNumber, parseData } from "@/lib/format";
 import { STATUS_VIAGEM, COR_STATUS_VIAGEM } from "@/lib/constants";
 import { HOJE } from "@/data/_gen";
 
@@ -246,6 +246,14 @@ export function ViagensPainel() {
     const valorDiaria = Number(form.valorDiaria);
     if (!form.colaboradorId || !form.destino.trim() || !form.dataInicio || !form.dataFim) {
       toast("Preencha colaborador, destino e o período da viagem.", "erro");
+      return;
+    }
+    if (!parseData(form.dataInicio) || !parseData(form.dataFim)) {
+      toast("Informe datas válidas para o período da viagem.", "erro");
+      return;
+    }
+    if (form.dataFim < form.dataInicio) {
+      toast("A data de término não pode ser anterior à data de início.", "erro");
       return;
     }
     if (!Number.isFinite(dias) || dias <= 0 || !Number.isFinite(valorDiaria) || valorDiaria < 0) {

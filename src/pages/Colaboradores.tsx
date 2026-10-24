@@ -651,7 +651,7 @@ export default function Colaboradores() {
     });
 
   return (
-    <div>
+    <div className="rh-piloto-compacto">
       <PageHeader
         title="Colaboradores"
         description={`${lista.length} colaborador(es) no seu escopo de acesso.${linhasContrato.length ? ` Mais ${linhasContrato.length} contrato(s) de freelancer, fora do quadro.` : ""}`}
@@ -698,6 +698,7 @@ export default function Colaboradores() {
             <button
               type="button"
               onClick={() => setResumoAberto(!aberto)}
+              aria-expanded={aberto}
               className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50/60"
               title={aberto ? "Recolher o resumo" : "Abrir o resumo do quadro"}
             >
@@ -771,7 +772,7 @@ export default function Colaboradores() {
                 >
                   <Avatar nome={c.nome} foto={c.fotoDataUrl} size="sm" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-800">{c.nome}{idDaPessoa(c) && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-normal text-slate-500" title="ID da pessoa (o gravado na ficha; sem ele, os 6 primeiros dígitos do CPF)">ID {idDaPessoa(c)}</span>}</p>
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words text-sm font-semibold text-slate-800">{c.nome}{idDaPessoa(c) && <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-normal text-slate-500" title="ID da pessoa (o gravado na ficha; sem ele, os 6 primeiros dígitos do CPF)">ID {idDaPessoa(c)}</span>}</p>
                     <p className="text-[11px] text-slate-500">
                       {sit.diasDeCasa} dias de casa · {d.nomeCargo(c) || "—"}
                     </p>
@@ -959,6 +960,7 @@ export default function Colaboradores() {
         <button
           type="button"
           onClick={() => setChips(new Set())}
+          aria-pressed={chips.size === 0}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
             chips.size === 0
@@ -975,6 +977,7 @@ export default function Colaboradores() {
               key={a.id}
               type="button"
               onClick={() => toggleChip(a.id)}
+              aria-pressed={ativo}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
                 ativo
@@ -995,16 +998,17 @@ export default function Colaboradores() {
 
 
       <Card className="mb-4 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="rh-colaboradores-toolbar flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative flex-1 sm:min-w-[200px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input className="pl-9" placeholder="Buscar por nome, cargo, e-mail ou área…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <Input aria-label="Buscar colaboradores" className="pl-9" placeholder="Buscar por nome, cargo, e-mail ou área…" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
           {/* Mesma seleção dos chips, em forma de lista: escolher uma área aqui
               marca o chip dela; a 1ª opção limpa. Com mais de uma área marcada
               nos chips, a lista mostra quantas são (não dá para representar
               multi-seleção num Select simples). */}
           <Select
+            aria-label="Filtrar por área"
             value={chips.size === 1 ? [...chips][0] : ""}
             onChange={(e) => setChips(e.target.value ? new Set([e.target.value]) : new Set())}
             className="sm:w-56"
@@ -1054,6 +1058,7 @@ export default function Colaboradores() {
             <button
               type="button"
               onClick={() => setVisao("setor")}
+              aria-pressed={visao === "setor"}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
                 visao === "setor" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700",
@@ -1064,6 +1069,7 @@ export default function Colaboradores() {
             <button
               type="button"
               onClick={() => setVisao("lista")}
+              aria-pressed={visao === "lista"}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
                 visao === "lista" ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700",

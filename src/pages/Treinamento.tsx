@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   GraduationCap, Plus, Trophy, Clock, CheckCircle2, Trash2, Pencil, ListChecks, Users, BookOpen,
-  MessageSquare,
+  MessageSquare, Search,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Badge, DotBadge } from "@/components/ui/badge";
 import { Modal, ConfirmDialog } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { Avatar, Progress } from "@/components/ui/misc";
@@ -20,6 +20,7 @@ import { useSessao } from "@/lib/session";
 import { colaboradoresVisiveis, podeGerir } from "@/lib/rbac";
 import { formatDate, formatPercent, diaLocalISO } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { idDaPessoa } from "@/lib/identidade";
 import {
   TIPOS_TREINAMENTO, STATUS_TREINAMENTO, CATALOGO_TREINAMENTOS,
   EFEITOS_ELOGIO, AVISO_NAO_E_PUNICAO,
@@ -122,14 +123,17 @@ export default function Treinamento() {
   // próprio arrasto e a ficha do colaborador só mostra a CONTAGEM. Agora dá
   // para ver os concluídos e voltar atrás.
   const [verConcluidos, setVerConcluidos] = useState(false);
+  const [busca, setBusca] = useState("");
   const emTreinamento = useMemo(
     () =>
-      (verConcluidos ? lista : ativos).slice().sort((a, b) => {
+      (verConcluidos ? lista : ativos).filter((t) =>
+        `${d.nomeColab(t.colaboradorId)} ${t.titulo} ${t.tipo}`.toLocaleLowerCase("pt-BR").includes(busca.trim().toLocaleLowerCase("pt-BR")),
+      ).sort((a, b) => {
         const pa = a.prazo ? String(a.prazo).slice(0, 10) : "9999-99-99";
         const pb = b.prazo ? String(b.prazo).slice(0, 10) : "9999-99-99";
         return pa.localeCompare(pb);
       }),
-    [ativos, lista, verConcluidos],
+    [ativos, lista, verConcluidos, busca, d],
   );
 
   // "O que precisa treinar": agrupa treinamentos PENDENTES por título.
@@ -185,10 +189,10 @@ export default function Treinamento() {
   const excluirReg = excluir ? lista.find((t) => t.id === excluir) : null;
 
   return (
-    <div>
+    <div className="rh-piloto-compacto">
       <PageHeader
         title="Treinamentos"
-        description="Quem está em treinamento e o que cada colaborador ainda precisa treinar."
+        description="Capacitação, prazos e progresso da equipe."
       >
         {podeEditar && (
           <button className="btn-primary" onClick={() => setNovo(true)}>
@@ -203,45 +207,45 @@ export default function Treinamento() {
         {/* Card zerado fica sem onClick de propósito: sem onClick o StatCard volta a ser uma <div>
             comum, então ninguém clica num número 0 para receber uma lista vazia. */}
         <StatCard
-          label="Em treinamento" value={ativos.length} hint="Treinamentos não concluídos" icon={<GraduationCap className="h-5 w-5" />} accent="brand"
+          label="Em treinamento" value={ativos.length} icon={<GraduationCap className="h-5 w-5" />} accent="brand"
           onClick={ativos.length ? () => drillRegs("Em treinamento", ativos, `${pessoasDe(ativos).length} pessoa(s) com treinamento em aberto`) : undefined}
           title={ativos.length ? "Ver quem tem treinamento em aberto" : undefined}
         />
         <StatCard
-          label="Concluídos" value={concluidos.length} hint="Capacitações finalizadas" icon={<CheckCircle2 className="h-5 w-5" />} accent="green"
+          label="Concluídos" value={concluidos.length} icon={<CheckCircle2 className="h-5 w-5" />} accent="green"
           onClick={concluidos.length ? () => drillRegs("Treinamentos concluídos", concluidos, `${pessoasDe(concluidos).length} pessoa(s) com treinamento concluído`) : undefined}
           title={concluidos.length ? "Ver quem já concluiu treinamentos" : undefined}
         />
         <StatCard
-          label="Pendentes" value={pendentes.length} hint="Ainda não iniciados" icon={<Clock className="h-5 w-5" />} accent="amber"
+          label="Pendentes" value={pendentes.length} icon={<Clock className="h-5 w-5" />} accent="amber"
           onClick={pendentes.length ? () => drillRegs("Treinamentos pendentes", pendentes, `${pessoasDe(pendentes).length} pessoa(s) com pendência`) : undefined}
           title={pendentes.length ? "Ver quem tem treinamento pendente" : undefined}
         />
-        <StatCard label="Progresso médio" value={lista.length ? formatPercent(progressoMedio, 0) : "—"} hint="Média de conclusão" icon={<Trophy className="h-5 w-5" />} accent="gold" />
+        <StatCard label="Progresso médio" value={lista.length ? formatPercent(progressoMedio, 0) : "—"} icon={<Trophy className="h-5 w-5" />} accent="gold" />
       </div>
 
       <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="Quem está em treinamento"
-          subtitle={`${emTreinamento.length} treinamento(s)${verConcluidos ? " (incluindo concluídos)" : " em andamento ou pendentes"}, por prazo`}
+          subtitle={`${emTreinamento.length} de ${lista.length} registros, por prazo`}
           icon={<GraduationCap className="h-[18px] w-[18px]" />}
-          action={
-            <button
-              className={verConcluidos ? "btn-primary h-8 px-3 py-0 text-xs" : "btn-outline h-8 px-3 py-0 text-xs"}
-              onClick={() => setVerConcluidos((v) => !v)}
-              title="Concluído sai da lista por padrão; ligue para corrigir ou reabrir um registro"
-            >
-              {verConcluidos ? "Ocultar concluídos" : "Mostrar concluídos"}
-            </button>
-          }
         />
+        <CardBody className="!p-0">
+        <div className="rh-lista-filtros flex flex-wrap items-center gap-2 border-b border-slate-100 p-3">
+          <div className="relative min-w-0 flex-1">
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input aria-label="Buscar treinamento ou colaborador" className="pl-9" placeholder="Buscar pessoa ou treinamento" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          </div>
+          <button type="button" className={cn("rh-filtro-chip text-xs", verConcluidos && "bg-slate-100 font-semibold")} onClick={() => setVerConcluidos((v) => !v)} aria-pressed={verConcluidos} aria-label={verConcluidos ? "Ocultar concluídos" : "Mostrar concluídos"} title="Incluir os treinamentos concluídos">Concluídos</button>
+          {(busca || verConcluidos) && <button className="btn-ghost text-xs" onClick={() => { setBusca(""); setVerConcluidos(false); }}>Limpar filtros</button>}
+        </div>
         {emTreinamento.length === 0 ? (
-          <CardBody>
-            <p className="text-sm text-slate-500">Ninguém em treinamento. {lista.length ? "Todos os treinamentos do seu escopo estão concluídos." : "Nenhum treinamento registrado para conferir a capacitação."}</p>
-          </CardBody>
+          <div className="p-4">
+            <p className="text-sm text-slate-500">{busca ? "Nenhum treinamento corresponde à busca." : lista.length ? "Todos os treinamentos do seu escopo estão concluídos." : "Nenhum treinamento registrado para conferir a capacitação."}</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="rh-treinamentos-tabela w-full">
               <thead className="border-b border-slate-100 bg-slate-50/50">
                 <tr>
                   <th className="th">Colaborador</th>
@@ -256,29 +260,28 @@ export default function Treinamento() {
               <tbody className="divide-y divide-slate-100">
                 {emTreinamento.map((t) => (
                   <tr key={t.id} className="transition hover:bg-slate-50/60">
-                    <td className="td">
+                    <td className="td rh-treinamento-pessoa" data-label="Colaborador">
                       <Link to={`/colaboradores/${t.colaboradorId}`} className="flex items-center gap-3 text-left">
                         <Avatar nome={d.nomeColab(t.colaboradorId)} foto={d.fotoColab(t.colaboradorId)} size="sm" />
-                        <span className="font-medium text-slate-800 hover:text-brand">{d.nomeColab(t.colaboradorId)}</span>
+                        <span className="min-w-0 break-words font-medium text-slate-800 hover:text-brand">
+                          {d.nomeColab(t.colaboradorId)}
+                          <span className="block text-xs font-normal text-slate-500">ID {idDaPessoa(d.colabById.get(t.colaboradorId)) ?? "não informado"}</span>
+                        </span>
                       </Link>
                     </td>
-                    <td className="td">
+                    <td className="td rh-treinamento-titulo" data-label="Treinamento">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-slate-700">{t.titulo}</p>
-                        {t.descricao && <p className="truncate text-xs text-slate-400">{t.descricao}</p>}
+                        <p className="break-words font-medium text-slate-700">{t.titulo}</p>
+                        {t.descricao && <details className="mt-1 text-xs text-slate-500"><summary className="cursor-pointer">Descrição</summary><p className="mt-1 whitespace-pre-wrap break-words">{t.descricao}</p></details>}
                       </div>
                     </td>
-                    <td className="td hidden sm:table-cell">
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
-                        style={{ backgroundColor: `${COR_TIPO[t.tipo] ?? "#64748b"}14`, color: COR_TIPO[t.tipo] ?? "#64748b", boxShadow: "inset 0 0 0 1px currentColor" }}
-                      >
-                        {t.tipo}
-                      </span>
+                    <td className="td hidden sm:table-cell" data-label="Tipo">
+                      <DotBadge label={t.tipo} cor={COR_TIPO[t.tipo] ?? "#64748b"} />
                     </td>
-                    <td className="td">
+                    <td className="td" data-label="Status">
                       {podeEditar ? (
                         <Select
+                          aria-label={`Status de ${t.titulo}, ${d.nomeColab(t.colaboradorId)}`}
                           value={t.status}
                           onChange={(e) => {
                             const status = e.target.value;
@@ -300,10 +303,11 @@ export default function Treinamento() {
                         <Badge variant={VAR_STATUS[t.status] ?? "neutral"}>{t.status}</Badge>
                       )}
                     </td>
-                    <td className="td">
+                    <td className="td" data-label="Progresso">
                       {podeEditar ? (
                         <div className="flex items-center gap-2">
                           <Input
+                            aria-label={`Progresso de ${t.titulo}, ${d.nomeColab(t.colaboradorId)}`}
                             type="range"
                             min={0}
                             max={100}
@@ -332,9 +336,9 @@ export default function Treinamento() {
                         </div>
                       )}
                     </td>
-                    <td className="td hidden md:table-cell text-slate-500">{diaData(t.prazo)}</td>
+                    <td className="td hidden md:table-cell text-slate-500" data-label="Prazo">{diaData(t.prazo)}</td>
                     {podeEditar && (
-                      <td className="td text-right">
+                      <td className="td rh-treinamento-acoes text-right" data-label="Ações">
                         {/* Sem o lápis, corrigir o prazo, o tipo ou o título de
                             um treinamento já lançado exigia apagar e refazer. */}
                         <button
@@ -360,6 +364,7 @@ export default function Treinamento() {
             </table>
           </div>
         )}
+        </CardBody>
       </Card>
 
       {/* TURMAS — e o elo com o feedback. Quem deu um treinamento para seis

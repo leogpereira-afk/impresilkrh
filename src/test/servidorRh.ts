@@ -7,7 +7,7 @@ import { contaApontadaAoSocio, lerVinculosSocioConta } from "../../supabase/func
 import { contratoNaPorta } from "../../supabase/functions/_shared/freelancerContrato";
 import * as reguaIdPessoa from "../../supabase/functions/_shared/idPessoa";
 
-export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false, rpcResposta }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean; rpcResposta?: (nome: string, args: any) => any } = {}) {
+export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false, rpcResposta }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean | string[]; rpcResposta?: (nome: string, args: any) => any } = {}) {
   let handler: (req: Request) => Promise<Response>;
   const escritas: any[] = [];
   const arquivos: any[] = [];
@@ -51,7 +51,8 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
           const data = table === "perfis" ? [{ user_id: "auth-ficticio", colaborador_id: pessoa, perfil, ativo: true }]
             : table === "meta" ? [{ chave: "rev", valor: { rev: 1, porColecao: {} } }] : rows;
           const filtrados = data.filter(r => filtros.every(f => f(r))).slice(inicio, fim).slice(0, limit);
-          return Promise.resolve(erroConsulta && table !== "perfis" && !mutation
+          const falha = Array.isArray(erroConsulta) ? erroConsulta.includes(table) : erroConsulta;
+          return Promise.resolve(falha && table !== "perfis" && !mutation
             ? { data: null, error: { message: "Falha fictícia de consulta" } }
             : { data: single ? filtrados[0] ?? null : filtrados, count: filtrados.length, error: null }).then(resolve, reject);
         },

@@ -408,6 +408,10 @@ function ModalEditarCargo({ cargo, areas, onSalvar, onFechar }: {
   const salvar = () => {
     if (!String(form.nome ?? "").trim()) return toast("O cargo precisa de um nome.", "erro");
     if (!String(form.areaId ?? "").trim()) return toast("Escolha a área do cargo.", "erro");
+    const textoSalario = salarioTexto.trim().replace(/^R\$\s*/, "");
+    if (salarioTexto.trim() && (!/^\d[\d.,]*$/.test(textoSalario) || parseBRL(textoSalario) === null)) {
+      return toast("Informe um salário válido, maior ou igual a zero.", "erro");
+    }
     /* Cargo novo nasce com a faixa zerada: ela pertence ao PLANO DE CARREIRA e
        se ajusta em Configurações do RH. Aqui só existe um salário — dois números
        para a mesma pergunta fariam a proposta sair do errado. */

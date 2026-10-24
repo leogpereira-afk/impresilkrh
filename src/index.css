@@ -524,3 +524,46 @@ main h1, main h2, main h3 { color: var(--rh-title); }
 @media (min-width: 640px) {
   [data-densidade="compacta"] .td { padding-top: .55rem; padding-bottom: .55rem; }
 }
+
+/* Piloto de densidade: mantém a escolha de conforto e todos os detalhes. */
+[data-densidade="compacta"] .rh-piloto-compacto .silk-faixa { padding: 12px 16px; gap: 12px; margin-bottom: 12px; border-radius: 14px; }
+[data-densidade="compacta"] .rh-piloto-compacto .silk-faixa .silk-imagem { width: 48px; height: 54px; }
+[data-densidade="compacta"] .rh-piloto-compacto .silk-faixa h1 { font-size: clamp(21px, 2vw, 26px); }
+[data-densidade="compacta"] .rh-piloto-compacto .silk-contexto { font-size: 10px; margin-bottom: 3px; }
+[data-densidade="compacta"] .rh-piloto-compacto .silk-texto > p:last-child:not(.silk-contexto) { margin-top: 3px; font-size: 12px; }
+.rh-filtro-chip { display: inline-flex; align-items: center; min-height: 40px; gap: .4rem; padding: .35rem .75rem; border: 1px solid currentColor; border-radius: 999px; color: #24506b; }
+.dark .rh-filtro-chip { color: #b9d8ed; }
+/* O menu de exportação fica em superfície própria, fora das cores da faixa. */
+.silk-faixa .silk-acoes details > div button { color: #19364f; background: #fff; border-color: #d8e0e8; }
+.dark .silk-faixa .silk-acoes details > div button { color: #e2e8f0; background: #1e293b; border-color: #475569; }
+@media (max-width: 639px) {
+  [data-densidade="compacta"] .rh-piloto-compacto .silk-faixa { padding: 10px 12px; gap: 8px; }
+  [data-densidade="compacta"] .rh-piloto-compacto .silk-faixa .silk-imagem { width: 36px; height: 42px; }
+  [data-densidade="compacta"] .rh-piloto-compacto .silk-faixa .silk-texto { flex-basis: calc(100% - 52px); }
+  [data-densidade="compacta"] .rh-piloto-compacto .rh-stat { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 6px; padding: .55rem .65rem; }
+  [data-densidade="compacta"] .rh-piloto-compacto .rh-stat > :nth-child(2) { margin-top: 0; }
+  [data-densidade="compacta"] .rh-piloto-compacto .rh-stat > p { grid-column: 1 / -1; }
+  .rh-colaboradores-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .rh-colaboradores-toolbar > * { min-width: 0; max-width: 100%; }
+  .rh-colaboradores-toolbar > .relative, .rh-colaboradores-toolbar > label, .rh-colaboradores-toolbar > div:last-child { grid-column: 1 / -1; }
+  .rh-colaboradores-toolbar select { font-size: 12px; }
+  .rh-vaga-cabecalho > button:first-child { flex-basis: 100%; }
+  .rh-vaga-cabecalho > div:last-child { margin-left: auto; }
+  .rh-vaga-cabecalho > div:last-child button { min-height: 40px; min-width: 40px; }
+  .rh-colaboradores-toolbar > label, .rh-colaboradores-toolbar button, .rh-piloto-compacto .silk-acoes summary { min-height: 44px; }
+  .rh-treinamentos-tabela { display: block; }
+  .rh-treinamentos-tabela thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); }
+  .rh-treinamentos-tabela thead .th { display: block; }
+  .rh-treinamentos-tabela tbody { display: grid; padding: .75rem; gap: .75rem; }
+  .rh-treinamentos-tabela tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem .8rem; border: 1px solid #dce4ec; border-radius: .75rem; padding: .75rem; }
+  .dark .rh-treinamentos-tabela tr { border-color: #334155; }
+  .rh-treinamentos-tabela .td { display: block; min-width: 0; padding: 0; white-space: normal; }
+  .rh-treinamentos-tabela .td::before { content: attr(data-label); display: block; margin-bottom: .25rem; font-size: 11px; font-weight: 600; color: #64748b; }
+  .dark .rh-treinamentos-tabela .td::before { color: #94a3b8; }
+  .rh-treinamentos-tabela .rh-treinamento-pessoa, .rh-treinamentos-tabela .rh-treinamento-titulo { grid-column: 1 / -1; }
+  .rh-treinamentos-tabela .rh-treinamento-pessoa::before, .rh-treinamentos-tabela .rh-treinamento-titulo::before { display: none; }
+  .rh-treinamentos-tabela .rh-treinamento-acoes { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: .5rem; }
+  .rh-treinamentos-tabela .rh-treinamento-acoes::before { margin-right: auto; align-self: center; }
+  .rh-treinamentos-tabela input[type="range"] { width: 100%; min-width: 0; min-height: 40px; background: transparent; border: 0; box-shadow: none; }
+  .rh-treinamentos-tabela :is(button,select,summary) { min-height: 44px; }
+}

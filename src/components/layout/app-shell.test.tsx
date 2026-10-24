@@ -17,13 +17,14 @@
  * se a marca sobreviveu — se o React o tivesse remontado, a marca teria ido
  * embora junto com o nó antigo.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { AppShell } from "./app-shell";
 import { ToastProvider } from "@/components/ui/toast";
 import { entrar, sair } from "@/lib/session";
+import { gravarArmazem } from "@/lib/armazemLocal";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -53,6 +54,7 @@ describe("AppShell — a barra lateral sobrevive ao redesenho", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     act(() => root.unmount());
     container.remove();
     sair();
@@ -65,6 +67,14 @@ describe("AppShell — a barra lateral sobrevive ao redesenho", () => {
     const nav = container.querySelector("nav");
     expect(nav).toBeTruthy();
     expect(nav!.querySelectorAll("a").length).toBeGreaterThan(10);
+  });
+
+  it("mantém aviso visível quando uma gravação local é recusada", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Quota fictícia"); });
+    act(() => { gravarArmazem("impresilk.rh.v1:col:tarefas:conta:ficticia:ADMIN_RH", "[]"); });
+    const aviso = container.querySelector('[data-persistencia-local][role="alert"]');
+    expect(aviso).toBeTruthy();
+    expect(aviso?.textContent).toMatch(/gravação.*aparelho/i);
   });
 
   it("o <nav> continua sendo o mesmo nó depois de recolher um grupo", () => {
