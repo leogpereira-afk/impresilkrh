@@ -7,15 +7,15 @@ passar, liberar, aceitar), que monta o commit em cima da origin/main; nunca à
 mão num ramo de trabalho. Regra completa no AGENTS.md (igual ao CLAUDE.md),
 seções 0, 5 e 6.
 
-agente: codex
+agente: ninguem
 desde: 2026-10-24T21:57:16.383Z
 ramo: codex/rh-visual-3d-20261024
 tarefa: Previa visual do RH: icones 3D, cartoes, campos e navegacao
-sessao: codex:acdd02e0 (rh-visual-3d-20261024)
-versao_reservada: rh-v18
-arquivos_em_uso: src/components/layout src/components/ui src/index.css src/visual-rh.css public/sw.js docs
+sessao: -
+versao_reservada: -
+arquivos_em_uso: -
 passou_por: codex
-passou_em: 2026-10-24T21:52:06.586Z
+passou_em: 2026-10-24T22:12:21.654Z
 
 ## Passagem (o que o último agente deixou para o próximo)
 
@@ -26,12 +26,12 @@ alguém, os campos podem estar em "-" enquanto ele trabalha; com a vez livre
 (ninguem), têm de estar todos cheios. "sessao: -" quer dizer que nenhuma
 sessão se registrou ainda: o primeiro `pegar` do mesmo agente a adota.
 
-no_ar: -
-ramos: -
-feito: -
-pela_metade: -
-decisoes: -
-perguntas_ao_dono: -
-nao_fazer: -
-testes: -
-dados: -
+no_ar: main c85147a, Deploy40136468693 e Verificar40136468671 verdes conferidos pela API; apenas reserva da vez, produto c3da4b3 e CACHE v17 preservados. Functions herdadas da passagem anterior, nao republicadas ou reconsultadas nesta rodada: sync101, admin-users73, backup-registros69, mubi-pagamentos91, rh-performance20, rh-programacao19.
+ramos: codex/rh-visual-3d-20261024 local 94085a5, 1 a frente/0 atras da main antes desta devolucao; worktree /tmp/rh-visual-3d-20261024, preservar e aguardar aprovacao da previa. Nao publicado nem enviado a origem; codex/rh-correcoes-compactacao-20261024 ja publicado na rodada anterior.
+feito: 94085a5 local: icones com relevo, sombras, movimento suave/reduzido, campos rotulados, busca e cards acessiveis, temas e marca. Registro local docs/2026-10-24-previa-visual-3d.md e plano local docs/planos/2026-10-24-visual-3d-rh.md.
+pela_metade: implementacao e previa prontas; publicacao desta rodada ainda nao autorizada. Previa local localhost5575/treinamento com fixtures e backend desligado. Nao foi auditoria manual de todas as telas nem teste em aparelho fisico.
+decisoes: D-013 registrada somente no ramo local: melhoria de relevo, cartoes, movimento e campos, com previa antes de publicar; D-012 autorizava apenas a rodada anterior.
+perguntas_ao_dono: aguarda avaliacao e autorizacao da publicacao da nova previa visual; P-001 a P-004 preexistentes permanecem conforme docs/DECISOES.md.
+nao_fazer: nao publicar 94085a5 sem aprovacao desta previa; retomar com nova reserva, rebase e conferir. Nao repetir a publicacao de functions nem escrever dados reais. Harness e capturas privados ficam fora do repo. Manter as garantias de IDs, acesso e diario da rodada anterior.
+testes: Node20 verificar passou: 2293 testes/164 arquivos, protocolo22, IDs7, lint e typecheck. Build final aprovado; casco6 testes apos ajuste da marca; diff sem erro. UI com fixtures em390 e1440px, temas, busca, menu, campos, recolher, favoritos e salvamento apos recarga conferidos.
+dados: nenhum dado real alterado; nenhuma migration, function ou codigo de producao publicado nesta rodada; somente fixtures locais.
