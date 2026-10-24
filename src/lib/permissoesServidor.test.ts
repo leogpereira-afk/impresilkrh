@@ -17,3 +17,14 @@ it.each([undefined, [], ["*"], ["ferias"]])("devolve permissões %j sem converte
   const gravacao = await s.call({ action: "upsert", colecao: "planoContas", registro: { id: "conta-ficticia", codigo: "8.8" } });
   expect(gravacao.status).toBe(403);
 });
+
+it.each(["COLABORADOR", "GESTOR", "ADMIN_RH"])("eventos privados respeitam perfil %s no servidor", async (perfil) => {
+  const registro = { id: "aviso-ficticio", titulo: "Aviso restrito fictício", data: "2026-10-01" };
+  const s = servidorRh({ perfil, rows: [{ colecao: "eventos", id: registro.id, registro }] });
+  const r = await s.call({ action: "list", colecoes: ["eventos"] });
+  expect(r.status).toBe(200);
+  expect(r.body.registros).toHaveLength(perfil === "ADMIN_RH" ? 1 : 0);
+  if (perfil !== "ADMIN_RH") {
+    expect((await s.call({ action: "upsert", colecao: "eventos", registro })).status).toBe(403);
+  }
+});

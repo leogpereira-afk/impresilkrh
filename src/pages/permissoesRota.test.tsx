@@ -34,3 +34,9 @@ it("Acesso total não concede ao gestor a página de cargos reservada ao RH", as
   expect(tela.querySelector("main")?.textContent).toContain("Acesso restrito");
   expect(tela.querySelector('nav a[href="/ferias"]')).not.toBeNull();
 });
+
+it("calendário RH não abre por URL direta para gestor com acesso total", async () => {
+  const tela = await abrir("/calendario", ["*"]);
+  expect(tela.querySelector('nav a[href="/calendario"]')).toBeNull();
+  expect(tela.querySelector("main")?.textContent).toContain("Acesso restrito");
+});

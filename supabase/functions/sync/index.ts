@@ -181,7 +181,7 @@ const ESCOPO: Record<string, { nivel: "rh" | "gestao" | "meu" | "todos"; campos?
   niveis: { nivel: "todos" },
   status: { nivel: "todos" },
   ciclos: { nivel: "todos" },
-  eventos: { nivel: "todos" },
+  eventos: { nivel: "rh" },
   vagas: { nivel: "todos" },            // tem mural publico
   pops: { nivel: "todos" },
   institucionais: { nivel: "todos" },

@@ -22,7 +22,7 @@ import { visivel, alternarFoco, esquecerTipo } from "@/lib/focoCalendario";
 import { separarAgenda } from "@/lib/agendaDoMes";
 import { useDominio, noQuadro } from "@/lib/dominio";
 import { useSessao } from "@/lib/session";
-import { podeGerir } from "@/lib/rbac";
+import { ehRH, podeGerir } from "@/lib/rbac";
 import { cn } from "@/lib/cn";
 import { parseData, MESES_PT, formatDate } from "@/lib/format";
 import { situacaoExperiencia, situacaoFerias, inicioDoHistorico } from "@/lib/clt";
@@ -77,6 +77,8 @@ const iconDe = (t: string) => TIPOS.find((x) => x.tipo === t)?.Icon ?? CalendarD
 type Item = { dia: number; tipo: string; titulo: string; sub?: string; eventoId?: string };
 
 export default function Calendario() {
+  const sessao = useSessao();
+  if (!ehRH(sessao)) return <EmptyState title="Acesso restrito" description="O calendário de RH está disponível somente para a equipe autorizada do RH." />;
   return <CalendarioGeral/>;
 }
 function CalendarioGeral() {
@@ -347,7 +349,7 @@ function CalendarioGeral() {
       <PageHeader title="Calendário">
         <div className="flex items-center gap-1.5">
           <button className="btn-outline min-h-10 min-w-10 px-2" onClick={() => navMes(-1)} aria-label="Mês anterior"><ChevronLeft className="h-4 w-4" /></button>
-          <span className="min-w-[9.5rem] text-center text-base font-semibold text-brand-ink">{MESES_PT[mes]} {ano}</span>
+          <span className="min-w-[9.5rem] text-center text-base font-semibold text-white">{MESES_PT[mes]} {ano}</span>
           <button className="btn-outline min-h-10 min-w-10 px-2" onClick={() => navMes(1)} aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button>
           <button className="btn-ghost text-sm" onClick={() => { setMes(HOJE.getMonth()); setAno(HOJE.getFullYear()); setDiaSelecionado(null); }}>Hoje</button>
         </div>

@@ -70,3 +70,7 @@ O dono pediu melhoria de navegação e layout e esclareceu: “3d nos icones int
 ## D-014 · 24/10/2026 · Publicação do visual 3D aprovado
 
 Depois de avaliar a prévia, o dono autorizou: “ficou bom pode publicar essa versão 3D do RH”. Publicar a implementação da D-013, incluindo ícones com relevo, sombras e movimentos, campos, busca e navegação acessíveis, temas e cache v18. Esta decisão encerra a espera por aprovação descrita na D-013. Sem migration, alteração de functions, mudança de permissões ou escrita de teste em dados reais. Fonte: resposta direta do dono nesta conversa; registrado pelo Codex.
+
+## D-015 · 24/10/2026 · Privacidade do calendário RH
+
+Confirmado pelo dono: avisos e dados do calendário operacional do RH são restritos ao perfil ADMIN_RH ativo. Acesso geral ao Painel ou calendário da empresa não concede acesso a esses dados. Autorizar no servidor antes de consultar e proteger menu/rota do RH. Validação com dados fictícios e publicação autorizadas. Mês do cabeçalho em branco para contraste.

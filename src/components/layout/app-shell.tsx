@@ -44,7 +44,7 @@ const RH = ["ADMIN_RH"];
 
 const NAV: ItemNav[] = [
   { href: "/painel", label: "Painel", icon: LayoutDashboard, perfis: TODOS, grupo: "Visão geral" },
-  { href: "/calendario", label: "Calendário", icon: CalendarDays, perfis: TODOS, grupo: "Visão geral" },
+  { href: "/calendario", label: "Calendário", icon: CalendarDays, perfis: RH, grupo: "Visão geral" },
   // Pessoas — operações do quadro. Desempenho e Treinamento ficam aninhados
   // sob Colaboradores (subitens indentados).
   { href: "/colaboradores", label: "Colaboradores", icon: Users, perfis: GESTAO, grupo: "Pessoas" },
