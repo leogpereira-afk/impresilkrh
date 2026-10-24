@@ -58,3 +58,7 @@ O dono aprovou a central com chips de tela inteira, reaproveitamento dos feedbac
 ## D-011 · 17/10/2026 · Publicação da central
 
 Após a prévia com Silk e emojis, o dono autorizou “subir”. Escopo: as cinco migrations, a função sync e a interface Feedback & Pesquisas já verificadas. Nenhum ciclo, convite, entrevista ou resposta real será criado automaticamente.
+
+## D-012 · 24/10/2026 · Publicação das correções da auditoria e compactação
+
+Após a prévia local dos dezesseis achados, o dono autorizou “subir”. Escopo: as correções de acessos, persistência, formulários e acessibilidade, a compactação de Treinamentos, Vagas e Colaboradores e a function sync correspondente. Preservar IDs, históricos e cadastros. Nenhuma migration ou escrita de teste em produção integra esta publicação. Fonte: resposta direta do dono nesta conversa; registrado pelo Codex.
