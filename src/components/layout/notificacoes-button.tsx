@@ -4,6 +4,7 @@ import { Bell, FileWarning, Award, ClipboardCheck, Palmtree, Cake, Check, Calend
 import { useNotificacoes, type CategoriaNotif, type SeveridadeNotif, type Notificacao } from "@/lib/notificacoes";
 import { useSessao } from "@/lib/session";
 import { lerLidas, gravarLidas, naoLido, marcarTodas, limpar, type Lidas } from "@/lib/notificacoesLidas";
+import { ehRH } from "@/lib/rbac";
 import { cn } from "@/lib/cn";
 
 const ICONE: Record<CategoriaNotif, typeof Bell> = {
@@ -42,6 +43,8 @@ export function NotificacoesButton() {
     setLidas(novo);
     gravarLidas(usuarioId, novo);
   };
+
+  if (!ehRH(sessao)) return null;
 
   return (
     <div className="relative">

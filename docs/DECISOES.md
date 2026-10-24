@@ -74,3 +74,5 @@ Depois de avaliar a prévia, o dono autorizou: “ficou bom pode publicar essa v
 ## D-015 · 24/10/2026 · Privacidade do calendário RH
 
 Confirmado pelo dono: avisos e dados do calendário operacional do RH são restritos ao perfil ADMIN_RH ativo. Acesso geral ao Painel ou calendário da empresa não concede acesso a esses dados. Autorizar no servidor antes de consultar e proteger menu/rota do RH. Validação com dados fictícios e publicação autorizadas. Mês do cabeçalho em branco para contraste.
+
+- D-016 · 24/10/2026 · "corrige as notificações pra só quem tem acesso ao RH ver esses alertas, testa com o perfil do comercial e pode subir e conferir no site". Complementa D-015: alertas derivados no sino exclusivos de ADMIN_RH, inclusive com cache antigo e troca de sessão. Não revoga o acesso existente à própria ficha/documentos nem à gestão da equipe. Fonte: conversa do dono; registrado por codex. Aplicação: useNotificacoes e NotificacoesButton.

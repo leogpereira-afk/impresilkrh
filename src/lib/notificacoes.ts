@@ -1,12 +1,12 @@
 // Central de notificações: junta num só lugar o que o app já calcula —
 // documentos e NRs a vencer/vencidos, avaliações pendentes, férias e
-// aniversários — respeitando o ESCOPO do usuário (RH vê tudo; gestor a equipe;
-// colaborador a si). Cada item leva a uma tela. Tudo derivado das coleções, sem
+// aniversários, exclusivos do perfil autorizado de RH. Cada item leva a uma
+// tela. Tudo derivado das coleções, sem
 // estado próprio: muda sozinho quando os dados mudam.
 import { useMemo } from "react";
 import { useColecao } from "@/lib/store";
 import { useSessao } from "@/lib/session";
-import { colaboradoresVisiveis } from "@/lib/rbac";
+import { colaboradoresVisiveis, ehRH } from "@/lib/rbac";
 import { parseData, diasDeCalendario } from "@/lib/format";
 import { HOJE } from "@/data/_gen";
 import { JANELA_ALERTA_DIAS } from "@/lib/constants";
@@ -49,7 +49,7 @@ export function useNotificacoes(): Notificacao[] {
   const { items: ferias } = useColecao("ferias");
 
   return useMemo(() => {
-    if (!sessao) return [];
+    if (!sessao || !ehRH(sessao)) return [];
     const escopo = colaboradoresVisiveis(sessao, colaboradores);
     /* Não existe mais um Set do escopo inteiro aqui de propósito. Ele existia e
        era usado como se fosse "quem está na empresa", mas escopo é PERMISSÃO
