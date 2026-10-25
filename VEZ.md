@@ -10,10 +10,10 @@ seções 0, 5 e 6.
 agente: codex
 desde: 2026-10-25T04:52:07.150Z
 ramo: codex/rh-exclusao-imediata
-tarefa: Atualizar exclusao da ficha imediatamente nos outros acessos
+tarefa: Exclusao imediata e gravacao segura do formulario completo
 sessao: codex:4bab1e4b (rh-exclusao-imediata-20261025)
-versao_reservada: rh-v25
-arquivos_em_uso: src/lib/sync.ts src/lib/auth.ts src/lib/vigiaCadastros.ts src/lib/canalCadastros.ts src/lib/armazemLocal.ts src/lib/*test* supabase/migrations docs/planos/2026-10-25-exclusao-imediata.md docs/DECISOES.md public/sw.js
+versao_reservada: rh-v26
+arquivos_em_uso: src/lib/sync.ts src/lib/auth.ts src/lib/vigiaCadastros.ts src/lib/armazemLocal.ts src/lib/*test* src/components/colaboradores/colaborador-form.tsx src/pages/ColaboradorDados.test.tsx src/components/colaboradores/colaborador-form-armazem.test.tsx docs/planos/2026-10-25-exclusao-imediata.md docs/DECISOES.md public/sw.js
 passou_por: codex
 passou_em: 2026-10-25T02:39:17.757Z
 
