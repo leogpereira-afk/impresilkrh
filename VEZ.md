@@ -13,7 +13,7 @@ ramo: codex/rh-gravacao-local
 tarefa: Corrigir aviso de gravacao local e validar exclusao em navegadores independentes
 sessao: codex:47321f2f (rh-gravacao-local-20261024)
 versao_reservada: rh-v24
-arquivos_em_uso: src/lib/armazemLocal.ts src/lib/sync.ts src/components docs public/sw.js
+arquivos_em_uso: src/lib/armazemLocal.ts src/lib/armazemDiario.ts src/lib/store.ts src/lib/sync.ts src/lib/*test.ts src/components docs public/sw.js package.json package-lock.json
 passou_por: codex
 passou_em: 2026-10-25T01:18:35.169Z
 
