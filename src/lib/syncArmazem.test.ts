@@ -113,3 +113,33 @@ it('não perde o sinal remoto recebido durante a confirmação local, sem depend
   expect(pedidos).toEqual(['rev', 'list']);
   expect(sync.pendentesSync()).toBe(0);
 });
+
+it('retira ficha por sinal mesmo durante leitura longa e não ressuscita com a resposta antiga', async () => {
+  const armazem = await import('./armazemLocal'); await armazem.prontoArmazem();
+  (await import('./session')).entrar('ADMIN_RH', 'ficticio');
+  const store = await import('./store'); const sync = await import('./sync');
+  const antiga = { id: 'excluir', nome: 'Ficha fictícia', _rhRev: 1 };
+  const controle = { id: 'preservar', nome: 'Controle fictício', _rhRev: 1 };
+  store.definirColecaoDinamica('colaboradores', [antiga, controle]); await armazem.confirmarArmazem();
+  let liberar!: () => void; let iniciou!: () => void; let primeira = true;
+  const leituraIniciada = new Promise<void>(r => { iniciou = r; });
+  const espera = new Promise<void>(r => { liberar = r; });
+  const pedidos: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+    const p = JSON.parse(String(options?.body)); pedidos.push(p.action);
+    if (p.action === 'rev') return new Response(JSON.stringify({ rev: 2, porColecao: { colaboradores: 2 } }));
+    if (!p.colecoes && primeira) { primeira = false; iniciou(); await espera;
+      return new Response(JSON.stringify({ registros: [antiga, controle].map(registro => ({ colecao: 'colaboradores', registro })), nextAfter: null }));
+    }
+    if (p.colecoes) expect(p.colecoes).toEqual(['colaboradores']);
+    return new Response(JSON.stringify({ registros: [{ colecao: 'colaboradores', registro: { ...antiga, _rhRev: 2, _apagado: true } }, { colecao: 'colaboradores', registro: controle }], nextAfter: null }));
+  }));
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+  const geral = sync.pull(); await leituraIniciada;
+  try {
+    await sync.pull(true);
+    expect(store.obterDinamico('colaboradores')).toEqual([controle]);
+  } finally { liberar(); await geral; }
+  expect(store.obterDinamico('colaboradores')).toEqual([controle]);
+  expect(sync.pendentesSync()).toBe(0); expect(pedidos).not.toContain('upsert');
+});

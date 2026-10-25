@@ -26,3 +26,11 @@ O banco já publica um contador privado de cadastros, com trigger e RLS de RH at
 O formulário completo ainda gravava pelo diário síncrono, embora edição no lugar e exclusão já usassem transação durável. O teste de criação com quota cheia reproduziu a exceção não tratada. Criação e edição completas agora confirmam a mesma transação antes de fechar; falha mantém o rascunho e permite tentar novamente. Não altera acesso nem exige novos campos.
 
 Nova regressão comprova criação sem duplicação, preservação da ficha de controle, falha do disco sem fechar o editor e nova tentativa bem-sucedida. Formulário exercitado na cópia isolada com armazenamento sob pressão e nenhum aviso local. Verificação completa: 177 arquivos / 2476 testes, 22 testes do protocolo, lint, TypeScript, 7 conferências de identidade e build aprovados. Cache rh-v26.
+
+### Prioridade durante leitura de histórico
+
+A medição contínua no site revelou que o sinal ainda aguardava a conclusão de uma leitura geral com muitas páginas. O sinal de cadastro agora pede somente colaboradores, em uma leitura independente. Ao aplicar a mudança, invalida a resposta geral anterior para impedir que uma ficha excluída reapareça. A fila de alterações locais e as máscaras de acesso continuam preservadas.
+
+Regressão reproduzida mantendo a leitura geral suspensa: a ficha precisa sair antes de essa leitura terminar e não pode reaparecer quando a resposta antiga chega. Passou após a correção, sem gerar upsert dos demais cadastros. Repetição em Chrome e navegador integrado, origens distintas e consulta periódica desativada: retirada no receptor em 20 ms após a confirmação do servidor isolado (342 ms desde o clique), controle integralmente preservado e zero avisos locais.
+
+Verificação completa final: 177 arquivos / 2477 testes, 22 testes do protocolo, lint, TypeScript, 7 conferências de identidade e build aprovados. Cache rh-v27. A latência do site depende da confirmação de rede e será registrada na passagem após a publicação.

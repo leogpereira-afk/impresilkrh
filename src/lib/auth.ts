@@ -37,7 +37,7 @@ let sessaoAtual: Session | null = null;
 if (temWindow && supabase) {
   const cadastros = criarVigiaCadastros({
     podeAtualizar: () => obterSessao()?.perfil === "ADMIN_RH" && navigator.onLine,
-    atualizar: async () => { await (await import("./sync")).pull(); },
+    atualizar: async () => { await (await import("./sync")).pull(true); },
     observar: (sinal, conectado) => {
       const canal = supabase!.channel(`rh-cadastros:${crypto.randomUUID()}`).on("postgres_changes", {
         event: "*", schema: "public", table: "rh_cadastros_sinais",

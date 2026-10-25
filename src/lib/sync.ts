@@ -399,19 +399,23 @@ function zerarRev() { if (temWindow) { try { removerLocal(K_REV); } catch { /* i
  */
 export function rebaixarTudo(): void { epocaDados++; zerarRev(); if (temWindow) void pull(); }
 
-let puxando = false;
-let puxarNovamente = false;
-export async function pull(): Promise<void> {
+const leituras = {
+  geral: { puxando: false, repetir: false },
+  cadastros: { puxando: false, repetir: false },
+};
+/** Sinal de cadastros tem leitura própria para não esperar páginas de histórico. */
+export async function pull(somenteCadastros = false): Promise<void> {
+  const leitura = somenteCadastros ? leituras.cadastros : leituras.geral;
   const contextoPedido = contextoDoUsuario();
   if (edicaoLocalEmCurso()) await aguardarEdicaoLocal();
   if (contextoPedido !== contextoDoUsuario()) return;
   if (!syncHabilitado()) return;
-  if (puxando) { puxarNovamente = true; return; }
+  if (leitura.puxando) { leitura.repetir = true; return; }
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
-  const epocaInicio = epocaDados;
+  let epocaInicio = epocaDados;
   const contextoInicio = contextoDoUsuario();
-  puxando = true;
+  leitura.puxando = true;
   // SEM NINGUÉM LOGADO o app não baixa a base: antes bastava abrir o endereço
   // para o navegador puxar folha, CPFs e prontuários inteiros para o disco, sem
   // digitar nada. Agora, deslogado, ele traz só `usuarios` — o mínimo para
@@ -427,8 +431,8 @@ export async function pull(): Promise<void> {
     let revPorColecao: Record<string, number> | null = null;
     // Quais coleções pedir. `null` = todas (primeiro pull, ou servidor antigo
     // que ainda não manda o mapa por coleção).
-    let pedir: string[] | null = restrito ? [...COLECOES_PRE_LOGIN] : null;
-    if (!restrito) {
+    let pedir: string[] | null = restrito ? [...COLECOES_PRE_LOGIN] : somenteCadastros ? ["colaboradores"] : null;
+    if (!restrito && !somenteCadastros) {
       try {
         const r = (await chamar("rev")) as { rev?: number | null; porColecao?: Record<string, number> | null };
         revAtual = r?.rev ?? null;
@@ -513,9 +517,16 @@ export async function pull(): Promise<void> {
           }
           return [...porId.values()] as RegistroGenerico[];
         });
-        if (JSON.stringify(proxima) !== JSON.stringify(anteriores) && !await receberColecaoDaNuvem(nome, proxima, anteriores, () => epocaInicio === epocaDados)) {
-          puxarNovamente = true;
-          continue;
+        if (JSON.stringify(proxima) !== JSON.stringify(anteriores)) {
+          if (!await receberColecaoDaNuvem(nome, proxima, anteriores, () => epocaInicio === epocaDados)) {
+            leitura.repetir = true;
+            continue;
+          }
+          if (somenteCadastros) {
+            // Uma página geral anterior ao sinal não pode ressuscitar a ficha.
+            epocaInicio = ++epocaDados;
+            if (leituras.geral.puxando) leituras.geral.repetir = true;
+          }
         }
         if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar a cópia local. A leitura será tentada novamente.");
         aplicadas.add(nome);
@@ -529,7 +540,7 @@ export async function pull(): Promise<void> {
     if (epocaInicio !== epocaDados || contextoInicio !== contextoDoUsuario()) return;
     // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
     // (deslogado) faria o app achar que já tem tudo e nunca baixar o resto.
-    if (!restrito) {
+    if (!restrito && !somenteCadastros) {
       const marcos = { ...conhecida.porColecao };
       // Marca como em dia apenas as coleções que ESTE pull trouxe.
       for (const n of aplicadas) if (revPorColecao?.[n] != null) marcos[n] = revPorColecao[n];
@@ -544,8 +555,8 @@ export async function pull(): Promise<void> {
     // a exceção — apenas reflete no status. Erro de rede → offline; HTTP → erro.
     if (!(e instanceof SessaoAlterada)) { marcarErro("leitura", e); recalcStatus(); }
   } finally {
-    puxando = false;
-    if (puxarNovamente) { puxarNovamente = false; void pull(); }
+    leitura.puxando = false;
+    if (leitura.repetir) { leitura.repetir = false; void pull(somenteCadastros); }
   }
 }
 
