@@ -5,6 +5,8 @@ import { UserMinus, Trash2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
 import { useColecao, obter, obterDinamico, removerEm } from "@/lib/store";
+import { executarEdicaoLocal } from "@/lib/armazemLocal";
+import { contextoDoUsuario } from "@/lib/armazenamentoUsuario";
 import { erroDatasCadastro, erroContatosCadastro, camposEmConflito } from "@/lib/edicaoCadastro";
 import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 import { useDominio, enquadrar, noQuadro, faixaDefinida } from "@/lib/dominio";
@@ -155,6 +157,7 @@ export function ColaboradorForm({
 
   // ---- Apagar o cadastro e tudo que está pendurado nele ----
   const [confirmarApagar, setConfirmarApagar] = useState(false);
+  const [apagando, setApagando] = useState(false);
   const [nomeDigitado, setNomeDigitado] = useState("");
   // Conta ANTES de perguntar: "tem certeza?" ninguém lê; "somem 73 lançamentos
   // de folha" faz parar. Só monta quando o diálogo abre — varrer 24 coleções a
@@ -179,8 +182,13 @@ export function ColaboradorForm({
   const podeConfirmarApagar = !!inventario && !impedimento
     && (!exigeDigitarProva(inventario) || provaConfere(nomeDigitado, inventario.colaboradorId));
 
-  const apagarTudo = () => {
-    if (!rh || !editar || !inventario || !podeConfirmarApagar) return;
+  const apagarTudo = async () => {
+    if (!rh || !editar || !inventario || !podeConfirmarApagar || apagando) return;
+    setApagando(true);
+    const contextoEdicao = contextoDoUsuario();
+    try {
+    await executarEdicaoLocal(() => {
+    if (contextoEdicao !== contextoDoUsuario()) throw new Error("A sessão mudou.");
     // Uma linha só no histórico, com o tamanho do estrago: apagar 24 coleções
     // gerando uma linha por registro enterraria o resto do dia.
     emLote(`Apagou o cadastro de ${editar.nome} e ${inventario.total} registro(s)`, () => {
@@ -201,9 +209,12 @@ export function ColaboradorForm({
       removerColaborador(editar.id);
     });
     registrarAcaoManual("Apagou cadastro e todos os dados", `${editar.nome} · ${inventario.total} registro(s)`, "colaboradores");
+    });
     toast(`Cadastro de ${editar.nome} apagado com ${inventario.total} registro(s).`, "sucesso");
     setConfirmarApagar(false);
     onFechar();
+    } catch { toast("Não foi possível confirmar a exclusão. O cadastro foi mantido; tente novamente.", "erro"); }
+    finally { setApagando(false); }
   };
 
   /* A COMPLETUDE AO VIVO. A regra é a mesma da ficha e da lista
@@ -718,10 +729,10 @@ export function ColaboradorForm({
             <button className="btn-outline" onClick={() => setConfirmarApagar(false)}>Cancelar</button>
             <button
               className="btn-danger disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={!podeConfirmarApagar}
+              disabled={!podeConfirmarApagar || apagando}
               onClick={apagarTudo}
             >
-              <Trash2 className="h-4 w-4" /> Apagar tudo
+              <Trash2 className="h-4 w-4" /> {apagando ? "Apagando…" : "Apagar tudo"}
             </button>
           </>}
         >

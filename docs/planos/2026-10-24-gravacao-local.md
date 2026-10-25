@@ -33,3 +33,11 @@ Verificação de código: 175 arquivos e 2460 testes aprovados; lint, TypeScript
 A conferência da edição no site identificou também uma base de recuperação antiga: o diário pode crescer mesmo quando o campo alterado é pequeno. A regressão reproduziu coleção recebida após uma base vazia e edição recusada por quota. O diário grande agora usa compactação sem perdas quando há redução relevante; mantém a base estável, a confirmação síncrona e a leitura dos formatos anteriores. Uma falha real de armazenamento continua recusando a escrita, preservando o valor anterior.
 
 2469 testes em 176 arquivos, lint, TypeScript, 22 verificações de protocolo, 7 verificações de IDs e build aprovados. Chrome e Safari isolados: edição refletida no outro acesso, exclusão refletida sem recarga, zero avisos e cadastro de controle integralmente preservado. Transporte enviou somente a ficha editada, sua exclusão e a trilha de acesso; nenhuma importação integral.
+
+## Confirmação direta da edição
+
+A conferência no site mostrou que a compactação ainda depende de alguma sobra no localStorage. A edição dos campos e a exclusão da ficha agora executam coleção, fila e histórico na mesma transação IndexedDB. A tela aguarda o commit antes do sucesso; uma transação abortada mantém o rascunho e o dado anterior. Confirmações do servidor também guardam revisão e retirada da fila juntas, sem um novo retrato no localStorage.
+
+O sincronizador aguarda a transação; a leitura remota não substitui uma edição em confirmação. As gravações verificam o valor anterior no disco, recusam concorrência divergente e respeitam a conta de origem. Os fluxos síncronos anteriores continuam com diário recuperável.
+
+Ensaio adicional com o diário de colaboradores explicitamente indisponível: navegador integrado e Safari independentes, edição refletida, exclusão sem recarga, zero avisos locais e cadastro de controle integralmente preservado. Regressões cobrem quota zero, aborto sem escrita parcial, reabertura, fila/revisão confirmadas e edição concorrente.

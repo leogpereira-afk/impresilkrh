@@ -66,3 +66,24 @@ it('preserva uma edição feita enquanto confirma a coleção anterior', async (
   expect(store.obterDinamico('colaboradores')[0].nome).toBe('Edição durante leitura');
   expect(armazem.estadoArmazem()).toBe('ok');
 });
+
+it('edita, confirma a revisão e esvazia a fila sem depender de espaço no localStorage', async () => {
+  const armazem = await import('./armazemLocal'); await armazem.prontoArmazem();
+  (await import('./session')).entrar('ADMIN_RH', 'ficticio');
+  const store = await import('./store'); const sync = await import('./sync');
+  store.definirColecaoDinamica('colaboradores', [{ id: 'pessoa-ficticia', nome: 'Antes', _rhRev: 1 }, { id: 'preservar', nome: 'Controle', _rhRev: 1 }]);
+  await armazem.confirmarArmazem();
+  const pedidos: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+    pedidos.push(JSON.parse(String(options?.body)));
+    return new Response(JSON.stringify({ ok: true, versao: 2 }));
+  }));
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota fictícia', 'QuotaExceededError'); });
+  await armazem.executarEdicaoLocal(() => store.atualizarEm('colaboradores', 'pessoa-ficticia', { nome: 'Depois' }));
+  expect(sync.pendentesSync()).toBe(1);
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+  await sync.trySync();
+  expect(pedidos).toHaveLength(1); expect(pedidos[0].action).toBe('upsert');
+  expect(sync.pendentesSync()).toBe(0); expect(sync.statusSync()).toBe('ok'); expect(armazem.estadoArmazem()).toBe('ok');
+  expect(store.obterDinamico('colaboradores')).toEqual([{ id: 'pessoa-ficticia', nome: 'Depois', _rhRev: 2, atualizadoEm: expect.any(String) }, { id: 'preservar', nome: 'Controle', _rhRev: 1 }]);
+});

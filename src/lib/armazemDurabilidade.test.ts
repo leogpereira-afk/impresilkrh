@@ -34,6 +34,47 @@ it("recebe a nuvem direto no disco com diário sem espaço e reabre com a mesma 
   expect((await abrir()).lerArmazem(chave)).toBe("conteudo remoto ficticio");
 });
 
+it("confirma edição e fila juntas mesmo quando não cabe nenhum byte no diário", async () => {
+  await prepararDisco("antes"); const pagina = await abrir();
+  const fila = chave + "-fila";
+  const quota = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Quota fictícia", "QuotaExceededError"); });
+  await pagina.executarEdicaoLocal(() => {
+    expect(pagina.gravarArmazem(chave, "depois")).toBe(true);
+    expect(pagina.lerArmazem(chave)).toBe("depois");
+    expect(pagina.gravarArmazem(fila, "mutacao ficticia")).toBe(true);
+  });
+  expect(pagina.estadoArmazem()).toBe("ok"); quota.mockRestore();
+  const reaberta = await abrir();
+  expect(reaberta.lerArmazem(chave)).toBe("depois"); expect(reaberta.lerArmazem(fila)).toBe("mutacao ficticia");
+});
+
+it("transação de edição abortada não confirma coleção nem fila", async () => {
+  await prepararDisco("antes"); const pagina = await abrir();
+  const original = IDBObjectStore.prototype.put;
+  const abortar = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function(this: IDBObjectStore, ...args) {
+    const req = original.apply(this, args); if (args[1] === chave) this.transaction.abort(); return req;
+  });
+  await expect(pagina.executarEdicaoLocal(() => {
+    pagina.gravarArmazem(chave, "depois"); pagina.gravarArmazem(chave + "-fila", "mutacao ficticia");
+  })).rejects.toThrow();
+  abortar.mockRestore();
+  expect(pagina.lerArmazem(chave)).toBe("antes");
+  const reaberta = await abrir(); expect(reaberta.lerArmazem(chave)).toBe("antes"); expect(reaberta.lerArmazem(chave + "-fila")).toBeNull();
+});
+
+it("callback recusado e escrita concorrente não deixam uma edição parcial", async () => {
+  await prepararDisco("antes"); const pagina = await abrir();
+  await expect(pagina.executarEdicaoLocal(() => { pagina.gravarArmazem(chave, "rascunho"); throw new Error("recusada"); })).rejects.toThrow("recusada");
+  expect(pagina.lerArmazem(chave)).toBe("antes");
+  const original = IDBObjectStore.prototype.put;
+  const alterar = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function(this: IDBObjectStore, ...args) {
+    const req = original.apply(this, args); if (args[1] === chave && args[0] === "rascunho") pagina.gravarArmazem(chave, "edicao concorrente"); return req;
+  });
+  await expect(pagina.executarEdicaoLocal(() => { pagina.gravarArmazem(chave, "rascunho"); })).rejects.toThrow();
+  alterar.mockRestore(); await pagina.confirmarArmazem();
+  expect((await abrir()).lerArmazem(chave)).toBe("edicao concorrente");
+});
+
 it("recebimento abortado não aparece na tela nem substitui o dado confirmado", async () => {
   await prepararDisco("antes"); const pagina = await abrir();
   const original = IDBObjectStore.prototype.put;

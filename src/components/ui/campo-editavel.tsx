@@ -22,6 +22,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
 import { Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/cn";
+import { executarEdicaoLocal } from "@/lib/armazemLocal";
+import { contextoDoUsuario } from "@/lib/armazenamentoUsuario";
 
 export type OpcaoCampo = { valor: string; rotulo: string };
 export type TipoCampoEditavel = "texto" | "numero" | "data" | "select" | "chips";
@@ -57,6 +59,8 @@ export function CampoEditavel({
   const [tocado, setTocado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvouAgora, setSalvouAgora] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const gravando = useRef(false);
   const labelId = useId();
   const mensagemId = useId();
   // Input/Select do projeto não repassam ref (React 18 exigiria forwardRef);
@@ -120,7 +124,7 @@ export function CampoEditavel({
    *    ele vazio não apaga nada: o editor fica aberto avisando.
    */
   const confirmar = (texto: string, explicito: boolean) => {
-    if (!emAberto.current || !editavel) return; // já resolvido: blur atrasado não repete a gravação
+    if (!emAberto.current || !editavel || gravando.current) return; // blur não duplica a gravação
     if (texto === valor) { fechar(); return; }
     if (valor !== valorAoAbrir.current) {
       setErro("Este campo foi atualizado em outro acesso. Seu rascunho foi mantido. Cancele e reabra para conferir o valor atual.");
@@ -130,12 +134,21 @@ export function CampoEditavel({
       setErro("Sair do campo não apaga o valor. Corrija, ou aperte Esc para desistir.");
       return;
     }
-    let problema: string | void;
-    try { problema = onSalvar(texto); }
-    catch { problema = "Não foi possível salvar. Seu texto foi mantido. Tente novamente."; }
-    if (typeof problema === "string" && problema) { setErro(problema); if (explicito) focar(); return; }
-    fechar();
-    setSalvouAgora(true);
+    const terminar = (problema?: string | void) => {
+      gravando.current = false; setSalvando(false);
+      if (typeof problema === "string" && problema) { setErro(problema); if (explicito) focar(); return; }
+      fechar(); setSalvouAgora(true);
+    };
+    gravando.current = true; setSalvando(true);
+    const contextoEdicao = contextoDoUsuario();
+    try {
+      const resultado = executarEdicaoLocal(() => {
+        if (!emAberto.current || contextoEdicao !== contextoDoUsuario()) return "O acesso mudou. Reabra a ficha para editar.";
+        return onSalvar(texto);
+      });
+      if (resultado instanceof Promise) void resultado.then(terminar, () => terminar("Não foi possível salvar. Seu texto foi mantido. Tente novamente."));
+      else terminar(resultado);
+    } catch { terminar("Não foi possível salvar. Seu texto foi mantido. Tente novamente."); }
   };
   const podeConfirmar = rascunho !== valor;
 
@@ -183,15 +196,16 @@ export function CampoEditavel({
           )
         ) : (
           <div ref={caixa} className="flex items-start gap-1"
+            aria-busy={salvando}
             onBlur={(e) => {
               if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
               confirmar(rascunho, false);
             }}
-            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancelar(); } }}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); if (!gravando.current) cancelar(); } }}
           >
             {tipo === "chips" ? (
               <div role="group" aria-labelledby={labelId} aria-describedby={erro || dica ? mensagemId : undefined} className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                {opcoesFinais.map((o, i) => <button key={o.valor} type="button" autoFocus={o.valor === rascunho || (!rascunho && i === 0)}
+                {opcoesFinais.map((o, i) => <button key={o.valor} type="button" disabled={salvando} autoFocus={o.valor === rascunho || (!rascunho && i === 0)}
                   aria-pressed={rascunho === o.valor} onClick={() => digitou(o.valor)}
                   className={cn("min-h-9 rounded-full border px-3 py-1 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand",
                     rascunho === o.valor ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100")}
@@ -204,6 +218,7 @@ export function CampoEditavel({
                  some. Pelo teclado era pior: a primeira seta gravava o vizinho.
                  Agora vale o mesmo contrato do texto — Enter, ✓ ou sair salva. */
               <Select
+                disabled={salvando}
                 autoFocus
                 aria-labelledby={labelId}
                 aria-describedby={erro || dica ? mensagemId : undefined}
@@ -230,6 +245,7 @@ export function CampoEditavel({
                  roda do mouse alterar o valor com o campo focado. Como texto,
                  quem chama lê o número no formato brasileiro e nada some. */
               <Input
+                disabled={salvando}
                 autoFocus
                 aria-labelledby={labelId}
                 aria-describedby={erro || dica ? mensagemId : undefined}
@@ -246,9 +262,11 @@ export function CampoEditavel({
                 className="h-8 py-0 text-sm"
               />
             )}
+            {salvando && <span role="status" className="text-xs text-slate-500">Salvando…</span>}
             {podeConfirmar && (
               <button
                 type="button"
+                disabled={salvando}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => confirmar(rascunho, true)}
                 title="Salvar (Enter)"
@@ -260,6 +278,7 @@ export function CampoEditavel({
             )}
             <button
               type="button"
+              disabled={salvando}
               onMouseDown={(e) => e.preventDefault()}
               onClick={cancelar}
               title="Cancelar (Esc)"

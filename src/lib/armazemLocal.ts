@@ -135,6 +135,70 @@ if (canal) {
 const pendentes = new Map<string, Pendente>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 let prontoP: Promise<void> | null = null;
+let edicaoConfirmando = false;
+let preparandoEdicao: Map<string, string | null> | null = null;
+let transacaoEdicao: { tx: IDBTransaction; chaves: Set<string> } | null = null;
+let ultimaEdicao: Promise<unknown> = Promise.resolve();
+export function edicaoLocalEmCurso(): boolean { return edicaoConfirmando; }
+
+/** Confirma coleção, fila e histórico na mesma transação antes de anunciar salvo.
+ * O callback permanece síncrono; só a confirmação durável é assíncrona.
+ */
+export function executarEdicaoLocal<T>(editar: () => T, notificar = true): T | Promise<T> {
+  if (!mem) return editar();
+  const edicao = ultimaEdicao.then(() => confirmarEdicao(editar, notificar));
+  ultimaEdicao = edicao.catch(() => undefined);
+  return edicao;
+}
+async function confirmarEdicao<T>(editar: () => T, notificar: boolean): Promise<T> {
+  if (edicaoConfirmando) throw new Error("Aguarde a gravação anterior terminar.");
+  edicaoConfirmando = true;
+  let db: IDBDatabase | null = null;
+  const alteracoes = new Map<string, string | null>();
+  try {
+    if (!await confirmarArmazem()) throw new Error("Confira a gravação local pendente antes de continuar.");
+    db = await abrir();
+    if (!db) throw new Error("O armazenamento local não está disponível.");
+    preparandoEdicao = alteracoes;
+    let resultado: T;
+    try { resultado = editar(); } finally { preparandoEdicao = null; }
+    const anteriores = new Map([...alteracoes.keys()].map(chave => [chave, mem!.get(chave) ?? null]));
+    // O store pode ter colocado o rascunho em seu cache síncrono. Releia a
+    // memória confirmada até o commit; a tela mantém o editor e o rascunho.
+    window.dispatchEvent(new StorageEvent("storage"));
+    if (!alteracoes.size) return resultado;
+    await new Promise<void>((resolve, reject) => {
+      const tx = db!.transaction(STORE, "readwrite"); const os = tx.objectStore(STORE);
+      transacaoEdicao = { tx, chaves: new Set(alteracoes.keys()) };
+      let restantes = alteracoes.size;
+      let divergente = false;
+      for (const [chave, anterior] of anteriores) {
+        if (recuperacoesBloqueadas.has(chave)) { tx.abort(); break; }
+        const req = os.get(chave);
+        req.onsuccess = () => {
+          if ((req.result ?? null) !== anterior || (mem!.get(chave) ?? null) !== anterior || pendentes.has(chave) || localStorage.getItem(chaveDiario(chave)) !== null) divergente = true;
+          if (--restantes) return;
+          if (divergente) { tx.abort(); return; }
+          for (const [k, valor] of alteracoes) { if (valor === null) os.delete(k); else os.put(valor, k); }
+        };
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(new Error("Não foi possível confirmar a gravação. Seu rascunho foi mantido; confira e tente novamente."));
+    });
+    transacaoEdicao = null;
+    for (const [chave, valor] of alteracoes) {
+      if (valor === null) mem!.delete(chave); else mem!.set(chave, valor);
+      try { canal?.postMessage({ chave, valor }); } catch { /* próximo pull confere */ }
+    }
+    escritaRecusada = false; mudarEstado(pendentes.size ? "pendente" : "ok");
+    window.dispatchEvent(new StorageEvent("storage"));
+    return resultado;
+  } finally {
+    preparandoEdicao = null; transacaoEdicao = null; edicaoConfirmando = false; db?.close();
+    window.dispatchEvent(new StorageEvent("storage"));
+    if (notificar) window.dispatchEvent(new Event("impresilk:edicao-confirmada"));
+  }
+}
 
 function temIDB(): boolean {
   return typeof indexedDB !== "undefined" && typeof localStorage !== "undefined";
@@ -352,6 +416,7 @@ export function prontoArmazem(): Promise<void> {
 }
 
 export function lerArmazem(chave: string): string | null {
+  if (preparandoEdicao?.has(chave)) return preparandoEdicao.get(chave) ?? null;
   if (mem) return mem.get(chave) ?? null;
   try { const entrada = lerDiario(chave); return entrada ? entrada.valor : localStorage.getItem(chave); } catch { return null; }
 }
@@ -375,6 +440,8 @@ export function chavesArmazem(): string[] {
 
 /** Retorna false quando não conseguiu guardar (o chamador avisa o usuário). */
 export function gravarArmazem(chave: string, valor: string): boolean {
+  if (preparandoEdicao) { preparandoEdicao.set(chave, valor); return true; }
+  if (transacaoEdicao?.chaves.has(chave)) { try { transacaoEdicao.tx.abort(); } catch { /* já terminou */ } }
   if (mem || armazemEmIDB()) {
     let diario: string;
     try {
@@ -408,7 +475,7 @@ export async function receberArmazem(chave: string, valor: string, podeAplicar: 
   if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar as edições locais pendentes.");
   const db = await abrir();
   if (!db) throw new Error("O armazenamento local não está disponível. Tente sincronizar novamente.");
-  const continuaAtual = () => podeAplicar() && lerArmazem(chave) === anterior && !pendentes.has(chave) && localStorage.getItem(chaveDiario(chave)) === null;
+  const continuaAtual = () => !edicaoConfirmando && podeAplicar() && lerArmazem(chave) === anterior && !pendentes.has(chave) && localStorage.getItem(chaveDiario(chave)) === null;
   let gravou = false;
   let encontrado: string | null = anterior;
   try {
@@ -439,6 +506,8 @@ export async function receberArmazem(chave: string, valor: string, podeAplicar: 
 }
 
 export function removerArmazem(chave: string): void {
+  if (preparandoEdicao) { preparandoEdicao.set(chave, null); return; }
+  if (transacaoEdicao?.chaves.has(chave)) { try { transacaoEdicao.tx.abort(); } catch { /* já terminou */ } }
   if (mem || armazemEmIDB()) {
     let diario: string;
     try {

@@ -14,7 +14,7 @@ import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
 import { obterSessao } from "@/lib/session";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
-import { gravarArmazem, confirmarArmazem } from "./armazemLocal";
+import { gravarArmazem, confirmarArmazem, edicaoLocalEmCurso, executarEdicaoLocal } from "./armazemLocal";
 import { prepararCopiaAnterior } from "./copiaAnterior";
 
 // Coleções que o app pode baixar ANTES de alguém entrar. Como o Supabase exige
@@ -210,9 +210,15 @@ const eRede = (e: unknown) => e instanceof TypeError || (e instanceof Error && e
 // --------------------------- envio (push) -----------------------------------
 let _syncing = false;
 export async function trySync(): Promise<void> {
+  if (edicaoLocalEmCurso()) return;
   if (!syncHabilitado() || _syncing) return;
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   _syncing = true;
+  const contextoEnvio = contextoDoUsuario();
+  const confirmarRetorno = (aplicar: () => void) => executarEdicaoLocal(() => {
+    if (contextoEnvio !== contextoDoUsuario()) throw new SessaoAlterada("A sessão mudou.");
+    aplicar();
+  }, false);
   marcarErro("envio");
   setStatus("syncing");
   let rebaixar = false;
@@ -222,13 +228,14 @@ export async function trySync(): Promise<void> {
       try {
         if (acao.tipo === "upsert") {
           const registro = acao.registro ?? (obterDinamico(acao.colecao) as unknown as Reg[]).find((r) => r.id === acao.id);
-          if (!registro) { gravarFila(lerFila().filter((a) => !mesma(a, acao))); continue; } // sumiu local
+          if (!registro) { await confirmarRetorno(() => gravarFila(lerFila().filter((a) => !mesma(a, acao)))); continue; } // sumiu local
           registroEnviado = registro;
           const resp = await chamar("upsert", { colecao: acao.colecao, registro, baseVersao: acao.baseVersao, mutationId: acao.mutationId });
           if (resp?.conflito) {
-            gravarFila(lerFila().map((a) => (mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a)));
+            await confirmarRetorno(() => gravarFila(lerFila().map((a) => (mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a))));
             continue;
           }
+          await confirmarRetorno(() => {
           if (!removerFalhasSubstituidas(acao)) throw new Error("Não foi possível atualizar a caixa de falhas.");
           // A confirmação pertence ao envio A. Uma edição B, mesmo no mesmo
           // milissegundo, tem outra identificação e continua aguardando envio.
@@ -248,6 +255,7 @@ export async function trySync(): Promise<void> {
             aplicarSemSync(() => definirColecaoDinamica(acao.colecao, obterDinamico(acao.colecao).map(r => r.id === acao.id ? { ...(doServidor ?? r), _rhRev: resp.versao, ...(idGravadoAgora ? { idPessoa: idGravadoAgora } : {}) } : r)));
           }
           gravarFila(lerFila().filter(a => !(mesma(a, acao) && a.mutationId === acao.mutationId)).map(a => mesma(a, acao) && Number.isSafeInteger(resp.versao) ? { ...a, baseVersao: resp.versao } : a));
+          });
           // O servidor gravou, mas descartou parte do que foi enviado (ex.: vínculos
           // de O.S. da apuração de performance, que agora moram no PCP). Avisa e
           // rebaixa a coleção para a cópia local ficar igual ao banco.
@@ -256,11 +264,13 @@ export async function trySync(): Promise<void> {
         } else {
           const resp = await chamar("delete", { colecao: acao.colecao, id: acao.id, baseVersao: acao.baseVersao, mutationId: acao.mutationId });
           if (resp?.conflito) {
-            gravarFila(lerFila().map(a => mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a));
+            await confirmarRetorno(() => gravarFila(lerFila().map(a => mesma(a, acao) && a.mutationId === acao.mutationId ? { ...a, conflito: true, servidor: resp.servidor } : a)));
             continue;
           }
-          if (!removerFalhasSubstituidas(acao)) throw new Error("Não foi possível atualizar a caixa de falhas.");
-          gravarFila(lerFila().filter((a) => !(mesma(a, acao) && a.mutationId === acao.mutationId))); // delete é idempotente → remove
+          await confirmarRetorno(() => {
+            if (!removerFalhasSubstituidas(acao)) throw new Error("Não foi possível atualizar a caixa de falhas.");
+            gravarFila(lerFila().filter((a) => !(mesma(a, acao) && a.mutationId === acao.mutationId))); // delete é idempotente → remove
+          });
         }
       } catch (e) {
         if (e instanceof SessaoAlterada) return;
@@ -392,6 +402,7 @@ export function rebaixarTudo(): void { epocaDados++; zerarRev(); if (temWindow) 
 let puxando = false;
 let puxarNovamente = false;
 export async function pull(): Promise<void> {
+  if (edicaoLocalEmCurso()) return;
   if (!syncHabilitado()) return;
   if (puxando) { puxarNovamente = true; return; }
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
@@ -891,6 +902,7 @@ if (temWindow) {
   ciclo(); // ao abrir
   void puxarConfig(); // config da empresa desce uma vez, ao abrir
   window.addEventListener("online", () => { recalcStatus(); ciclo(); });
+  window.addEventListener("impresilk:edicao-confirmada", () => { recalcStatus(); ciclo(); });
   window.addEventListener("offline", () => recalcStatus());
   // Logou → baixa a base completa. Zera a revisão memorizada, senão o pull
   // restrito de antes do login faria o app achar que já está em dia.
