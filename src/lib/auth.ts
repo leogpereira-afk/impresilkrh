@@ -13,6 +13,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, SUPABASE_CONFIGURADO, FN_ADMIN_USERS, FN_ACESSO_ENTRAR, ANON_PUBLICA } from "@/lib/supabase";
 import { entrar, sair, obterSessao, type Sessao } from "@/lib/session";
 import { criarVigiaAcesso } from "@/lib/vigiaAcesso";
+import { criarVigiaCadastros } from "@/lib/vigiaCadastros";
 import { suspenderAcessoRH, confirmarAcessoRH } from "@/lib/session";
 import type { Perfil } from "@/data/types";
 
@@ -34,6 +35,16 @@ export class ErroAuth extends Error {
 // SÍNCRONA do token atual. Mantida em dia pelo listener + getSession inicial.
 let sessaoAtual: Session | null = null;
 if (temWindow && supabase) {
+  const cadastros = criarVigiaCadastros({
+    podeAtualizar: () => obterSessao()?.perfil === "ADMIN_RH" && navigator.onLine,
+    atualizar: async () => { await (await import("./sync")).pull(); },
+    observar: (sinal, conectado) => {
+      const canal = supabase!.channel("rh-cadastros").on("postgres_changes", {
+        event: "*", schema: "public", table: "rh_cadastros_sinais",
+      }, sinal).subscribe(status => { if (status === "SUBSCRIBED") conectado(); });
+      return () => { void supabase!.removeChannel(canal); };
+    },
+  });
   const vigia = criarVigiaAcesso<Sessao>({
     consultar: perfilDoUsuario,
     suspender: suspenderAcessoRH,
@@ -52,6 +63,7 @@ if (temWindow && supabase) {
   window.addEventListener("impresilk:sessao-encerrada", () => {
     const tinhaSessao = !!sessaoAtual;
     sessaoAtual = null;
+    cadastros.usuario(null);
     vigia.parar();
     if (tinhaSessao) void supabase!.auth.signOut({ scope: "local" });
   });
@@ -64,6 +76,7 @@ if (temWindow && supabase) {
     const versao = eventoAuth;
     queueMicrotask(() => {
       if (versao !== eventoAuth) return;
+      cadastros.usuario(s?.user.id ?? null);
       if (!s) { vigia.usuario(null); if (ev === "SIGNED_OUT") sair(); return; }
       vigia.usuario(s.user.id);
     });
@@ -72,6 +85,7 @@ if (temWindow && supabase) {
   void supabase.auth.getSession().then(({ data }) => {
     if (inicio !== eventoAuth) return;
     sessaoAtual = data.session ?? null;
+    cadastros.usuario(data.session?.user.id ?? null);
     if (!data.session || !obterSessao()) { sair(); return; }
     vigia.usuario(data.session.user.id);
   }).catch(() => vigia.suspender());

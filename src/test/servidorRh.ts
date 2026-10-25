@@ -7,7 +7,7 @@ import { contaApontadaAoSocio, lerVinculosSocioConta } from "../../supabase/func
 import { contratoNaPorta } from "../../supabase/functions/_shared/freelancerContrato";
 import * as reguaIdPessoa from "../../supabase/functions/_shared/idPessoa";
 
-export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false, rpcResposta }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean | string[]; rpcResposta?: (nome: string, args: any) => any } = {}) {
+export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], erroConsulta = false, rpcResposta, meta }: { perfil?: string; pessoa?: string; rows?: any[]; erroConsulta?: boolean | string[]; rpcResposta?: (nome: string, args: any) => any; meta?: () => Record<string, unknown> } = {}) {
   let handler: (req: Request) => Promise<Response>;
   const escritas: any[] = [];
   const arquivos: any[] = [];
@@ -24,7 +24,7 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
         const atual = (rows.find((r: any) => r.id === true)?.config ?? {}) as Record<string, unknown>;
         return { data: { ...atual, ...(args?.p_patch ?? {}) }, error: null };
       }
-      const propria = rpcResposta?.(nome, args);
+      const propria = await rpcResposta?.(nome, args);
       if (propria !== undefined) return { data: propria, error: null };
       return { data: { ok: true, versao: 2 }, error: null };
     },
@@ -49,7 +49,7 @@ export function servidorRh({ perfil = "COLABORADOR", pessoa = "ana", rows = [], 
         delete() { mutation = true; escritas.push({ table, apagar: true }); return chain; },
         then(resolve: any, reject: any) {
           const data = table === "perfis" ? [{ user_id: "auth-ficticio", colaborador_id: pessoa, perfil, ativo: true }]
-            : table === "meta" ? [{ chave: "rev", valor: { rev: 1, porColecao: {} } }] : rows;
+            : table === "meta" ? [{ chave: "rev", valor: meta?.() ?? { rev: 1, porColecao: {} } }] : rows;
           const filtrados = data.filter(r => filtros.every(f => f(r))).slice(inicio, fim).slice(0, limit);
           const falha = Array.isArray(erroConsulta) ? erroConsulta.includes(table) : erroConsulta;
           return Promise.resolve(falha && table !== "perfis" && !mutation

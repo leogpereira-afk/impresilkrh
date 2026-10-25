@@ -377,8 +377,10 @@ function zerarRev() { if (temWindow) { try { removerLocal(K_REV); } catch { /* i
 export function rebaixarTudo(): void { epocaDados++; zerarRev(); if (temWindow) void pull(); }
 
 let puxando = false;
+let puxarNovamente = false;
 export async function pull(): Promise<void> {
-  if (!syncHabilitado() || puxando) return;
+  if (!syncHabilitado()) return;
+  if (puxando) { puxarNovamente = true; return; }
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
   const epocaInicio = epocaDados;
@@ -449,21 +451,41 @@ export async function pull(): Promise<void> {
     const porColecao = new Map<string, Reg[]>();
     for (const { colecao, registro } of remoto.values()) { const arr = porColecao.get(colecao) ?? []; arr.push(registro); porColecao.set(colecao, arr); }
 
+    const aplicadas = new Set<string>();
+    let falhaAplicacao: unknown;
     aplicarSemSync(() => {
       const fila = [...lerFila(), ...falhasSync()];
       const importacoes = new Set(lerMassa());
       for (const nome of pedir ?? NOMES_COLECOES) {
         if (importacoes.has(nome)) continue;
-        const remotos = porColecao.get(nome) ?? [];
-        const atuais = new Map((obterDinamico(nome) as Reg[]).map(r => [r.id, r]));
-        const porId = new Map(remotos.filter(r => !r._apagado).map(r => [r.id, r]));
-        // O retrato completo substitui o cache, incluindo campos removidos por
-        // permissão. Apenas alterações explicitamente pendentes ficam por cima.
-        for (const acao of fila.filter(a => a.colecao === nome)) {
-          if (acao.tipo === "delete") porId.delete(acao.id);
-          else if (atuais.has(acao.id)) porId.set(acao.id, atuais.get(acao.id)!);
+        try {
+          const remotos = porColecao.get(nome) ?? [];
+          const atuais = new Map((obterDinamico(nome) as Reg[]).map(r => [r.id, r]));
+          const porId = new Map(remotos.filter(r => !r._apagado).map(r => [r.id, r]));
+          const apagados = new Map(remotos.filter(r => r._apagado).map(r => [r.id, r]));
+          // O retrato completo substitui o cache, incluindo campos removidos por
+          // permissão. Apenas alterações explicitamente pendentes ficam por cima.
+          for (const acao of fila.filter(a => a.colecao === nome)) {
+            const apagado = apagados.get(acao.id);
+            if (apagado && acao.tipo === "upsert") {
+              // A ficha sai da tela. A edição não enviada fica preservada no
+              // conflito, sem manter um cadastro já excluído aberto para editar.
+              const conflito: Acao = { ...acao, conflito: true, servidor: { colecao: nome, registro: apagado }, registro: acao.registro ?? atuais.get(acao.id) };
+              gravarFila([...lerFila().filter(a => !mesma(a, acao)), conflito]);
+              removerFalhasSubstituidas(acao);
+              continue;
+            }
+            if (acao.tipo === "delete") porId.delete(acao.id);
+            else if (atuais.has(acao.id)) porId.set(acao.id, atuais.get(acao.id)!);
+          }
+          const proxima = [...porId.values()] as RegistroGenerico[];
+          if (JSON.stringify(proxima) !== JSON.stringify([...atuais.values()])) definirColecaoDinamica(nome, proxima);
+          aplicadas.add(nome);
+        } catch (e) {
+          // Uma coleção sem espaço não impede a retirada de fichas nas outras.
+          // O marco da coleção que falhou fica antigo para uma nova tentativa.
+          falhaAplicacao = e;
         }
-        definirColecaoDinamica(nome, [...porId.values()] as RegistroGenerico[]);
       }
     });
     // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
@@ -471,16 +493,20 @@ export async function pull(): Promise<void> {
     if (!restrito) {
       const marcos = { ...conhecida.porColecao };
       // Marca como em dia apenas as coleções que ESTE pull trouxe.
-      for (const n of pedir ?? NOMES_COLECOES) if (revPorColecao?.[n] != null) marcos[n] = revPorColecao[n];
-      gravarRev({ rev: revAtual, porColecao: marcos });
+      for (const n of aplicadas) if (revPorColecao?.[n] != null) marcos[n] = revPorColecao[n];
+      const completo = (pedir ?? NOMES_COLECOES).every(n => aplicadas.has(n));
+      gravarRev({ rev: completo ? revAtual : null, porColecao: marcos });
     }
-    marcarErro("leitura");
+    marcarErro("leitura", falhaAplicacao);
     recalcStatus();
   } catch (e) {
     // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga
     // a exceção — apenas reflete no status. Erro de rede → offline; HTTP → erro.
     if (!(e instanceof SessaoAlterada)) { marcarErro("leitura", e); recalcStatus(); }
-  } finally { puxando = false; }
+  } finally {
+    puxando = false;
+    if (puxarNovamente) { puxarNovamente = false; void pull(); }
+  }
 }
 
 // ---- prévia do "tornar este computador oficial" ----

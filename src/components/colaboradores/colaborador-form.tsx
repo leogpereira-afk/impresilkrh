@@ -4,7 +4,7 @@ import { CAMPOS_FICHA, completudeDaFicha, preenchido, type Completude } from "@/
 import { UserMinus, Trash2, AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Campo, Input, Select, Textarea } from "@/components/ui/form";
-import { useColecao, obter, obterDinamico, definirColecaoDinamica } from "@/lib/store";
+import { useColecao, obter, obterDinamico, removerEm } from "@/lib/store";
 import { erroDatasCadastro, erroContatosCadastro, camposEmConflito } from "@/lib/edicaoCadastro";
 import { patchDoQueMudou } from "@/lib/patchDoQueMudou";
 import { useDominio, enquadrar, noQuadro, faixaDefinida } from "@/lib/dominio";
@@ -18,7 +18,6 @@ import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
 import { desligamentoDeHoje, avisoDoDesligamento, podeDesligar } from "@/lib/desligamento";
 import { inventarioDaPessoa, resumoDoQueSome, exigeDigitarProva, provaConfere, impedimentoParaApagar, COLECOES_DA_PESSOA } from "@/lib/apagarColaborador";
-import { apagarRegistrosNuvem, enviarColecao } from "@/lib/sync";
 import { retratoDaPessoa } from "@/lib/retratoDaPessoa";
 import { registrarAcaoManual, emLote } from "@/lib/auditoria";
 import type { Colaborador, ContatoEmergencia } from "@/data/types";
@@ -181,7 +180,7 @@ export function ColaboradorForm({
     && (!exigeDigitarProva(inventario) || provaConfere(nomeDigitado, inventario.colaboradorId));
 
   const apagarTudo = () => {
-    if (!editar || !inventario) return;
+    if (!rh || !editar || !inventario || !podeConfirmarApagar) return;
     // Uma linha só no histórico, com o tamanho do estrago: apagar 24 coleções
     // gerando uma linha por registro enterraria o resto do dia.
     emLote(`Apagou o cadastro de ${editar.nome} e ${inventario.total} registro(s)`, () => {
@@ -189,9 +188,9 @@ export function ColaboradorForm({
         const itens = obterDinamico(colecao) as { id: string; colaboradorId?: string | null }[];
         const meus = itens.filter((r) => r?.colaboradorId === editar.id).map((r) => r.id);
         if (!meus.length) continue;
-        definirColecaoDinamica(colecao, itens.filter((r) => r?.colaboradorId !== editar.id));
-        apagarRegistrosNuvem(colecao, meus);
-        void enviarColecao(colecao);
+        // Cada exclusão guarda a revisão anterior e entra na fila durável.
+        // Os outros registros da coleção não são enviados novamente.
+        for (const id of meus) removerEm(colecao, id);
       }
       // Quem apontava para ela como chefe ou padrinho fica com um id morto: o
       // <select> passa a exibir a PRIMEIRA opção da lista enquanto o dado
@@ -200,8 +199,6 @@ export function ColaboradorForm({
         atualizar(q.id, q.papel === "gestor" ? { gestorId: null } : { padrinhoId: null });
       }
       removerColaborador(editar.id);
-      apagarRegistrosNuvem("colaboradores", [editar.id]);
-      void enviarColecao("colaboradores");
     });
     registrarAcaoManual("Apagou cadastro e todos os dados", `${editar.nome} · ${inventario.total} registro(s)`, "colaboradores");
     toast(`Cadastro de ${editar.nome} apagado com ${inventario.total} registro(s).`, "sucesso");

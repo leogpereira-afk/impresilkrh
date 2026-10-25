@@ -15,6 +15,7 @@ import type { Colaborador } from '@/data/types';
 import { definirColecao, obter, registrarMutacao } from '@/lib/store';
 import { lerLocal } from '@/lib/armazenamentoUsuario';
 import { useDominio } from '@/lib/dominio';
+import { enviarColecao, apagarRegistrosNuvem } from '@/lib/sync';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let el: HTMLDivElement, root: Root;
@@ -213,4 +214,30 @@ it('apelido duplicado é recusado com orientação', async () => {
   await act(async () => definirColecao('colaboradores', [base, { id: 'outra-ficticia', nome: 'Outra Fictícia', apelido: 'outroteste' }]));
   const caixa = await abrir('Apelido (login)'); await preencher(caixa, 'Outro Teste'); await salvar(caixa);
   expect(caixa.querySelector('[role="alert"]')?.textContent).toContain('já é'); expect(mutacao).not.toHaveBeenCalled();
+});
+
+it('exclui apenas a ficha e suas dependências pelas versões conhecidas, sem reenviar coleções', async () => {
+  vi.mocked(enviarColecao).mockClear(); vi.mocked(apagarRegistrosNuvem).mockClear();
+  const outra = structuredClone(obter('colaboradores')[1]);
+  await act(async () => {
+    definirColecao('colaboradores', [{ ...base, _rhRev: 7 } as Colaborador, outra]);
+    definirColecao('documentos', [
+      { id:'doc-teste', colaboradorId:base.id, nome:'Documento fictício', _rhRev:4 },
+      { id:'doc-outra', colaboradorId:outra.id, nome:'Preservado', _rhRev:9 },
+    ] as never);
+  });
+  await montarCompleto();
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent?.trim()==='Apagar cadastro')!.click());
+  const prova = document.querySelector<HTMLInputElement>(`input[placeholder="${base.id}"]`);
+  if (prova) await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(prova,base.id);
+    prova.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent?.trim()==='Apagar tudo')!.click());
+  expect(obter('colaboradores')).toEqual([outra]);
+  expect(obter('documentos')).toEqual([{id:'doc-outra',colaboradorId:outra.id,nome:'Preservado',_rhRev:9}]);
+  expect(mutacao).toHaveBeenCalledWith('colaboradores','delete',base.id,7);
+  expect(mutacao).toHaveBeenCalledWith('documentos','delete','doc-teste',4);
+  expect(enviarColecao).not.toHaveBeenCalled();
+  expect(apagarRegistrosNuvem).not.toHaveBeenCalled();
 });
