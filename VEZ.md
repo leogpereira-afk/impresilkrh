@@ -7,13 +7,13 @@ passar, liberar, aceitar), que monta o commit em cima da origin/main; nunca à
 mão num ramo de trabalho. Regra completa no AGENTS.md (igual ao CLAUDE.md),
 seções 0, 5 e 6.
 
-agente: ninguem
-desde: 2026-10-25T00:48:02.049Z
-ramo: codex/rh-exclusao-sincronizada
-tarefa: Corrigir exclusao entre acessos sem reenviar cadastros; testar isolado e publicar
-sessao: -
-versao_reservada: -
-arquivos_em_uso: -
+agente: codex
+desde: 2026-10-25T01:27:05.976Z
+ramo: codex/rh-gravacao-local
+tarefa: Corrigir aviso de gravacao local e validar exclusao em navegadores independentes
+sessao: codex:47321f2f (rh-gravacao-local-20261024)
+versao_reservada: rh-v24
+arquivos_em_uso: src/lib/armazemLocal.ts src/lib/sync.ts src/components docs public/sw.js
 passou_por: codex
 passou_em: 2026-10-25T01:18:35.169Z
 
@@ -26,12 +26,12 @@ alguém, os campos podem estar em "-" enquanto ele trabalha; com a vez livre
 (ninguem), têm de estar todos cheios. "sessao: -" quer dizer que nenhuma
 sessão se registrou ainda: o primeiro `pegar` do mesmo agente a adota.
 
-no_ar: 8dae7c2, cache rh-v23; migration rh_cadastros_sinais aplicada; Deploy e Verificar aprovados e arquivos publicos conferidos.
-ramos: codex/rh-exclusao-sincronizada, integrado; copia isolada fora do iCloud.
-feito: Exclusao individual versionada, sem reenvio integral; sinal privado de cadastros; retrato continua por API; falhas locais por colecao e rascunho conflitante preservado.
-pela_metade: Aviso intermitente de gravacao local preexistente continua; prova independente hospedada limitada pelo navegador interno sem resposta aos controles. Detalhes no plano.
-decisoes: D-019; docs/planos/2026-10-24-exclusao-entre-acessos.md.
-perguntas_ao_dono: nenhuma para esta publicacao.
-nao_fazer: Nao limpar armazenamento nem reenviar colecoes para contornar alertas; nao editar cadastros reais nos testes.
-testes: 2458 testes, lint, TypeScript, build, protocolo e IDs aprovados; dois acessos isolados e duas abas oficiais; exclusao confirmada no banco.
-dados: Cadastros preexistentes intactos inclusive versoes; ficha ficticia criada e arquivada pela tela, sem vinculos operacionais; trilhas mantidas.
+no_ar: -
+ramos: -
+feito: -
+pela_metade: -
+decisoes: -
+perguntas_ao_dono: -
+nao_fazer: -
+testes: -
+dados: -
