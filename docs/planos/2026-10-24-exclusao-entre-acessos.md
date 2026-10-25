@@ -22,3 +22,9 @@ Autorização: D-019. Cópia isolada, dados fictícios e publicação após veri
 Ordem: migration `rh_cadastros_sinais`, tela com cache rh-v23, CI, arquivos servidos e conferência no site. Functions não mudam. Se necessário reverter o cliente, o contador continua inofensivo; não reverter/excluir dados.
 
 A conferência ao vivo será registrada na Passagem. A prova de atualização por evento na cópia isolada não substitui a conferência do Realtime hospedado.
+
+## Conferência publicada
+
+Deploy e Verificar do commit 8dae7c2 aprovados; Pages atualizado. Arquivos públicos iguais aos da publicação, incluindo o chunk da ficha e cache rh-v23. Ficha fictícia criada e excluída pela tela: banco confirmou a lápide e outra aba do site retirou a ficha sem recarga; cadastros preexistentes íntegros, inclusive versões e timestamps, e nenhum vínculo operacional do teste ficou ativo. Trilha de auditoria preservada.
+
+Limites: a prova independente entre origens é a isolada; as duas abas oficiais compartilham armazenamento e não isolam Realtime de BroadcastChannel. O navegador interno não respondeu aos controles de conferência; não se declara aprovado o ensaio hospedado entre navegadores independentes. Persistiu aviso intermitente de gravação local já observado antes da correção; não houve limpeza geral do armazenamento.
