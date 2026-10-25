@@ -76,11 +76,24 @@ export function desligarSync(): void { gravarCfg({ desligado: true }); recalcSta
 // ------------------------------- status -------------------------------------
 let status: StatusSync = syncHabilitado() ? "pending" : "off";
 const erros = new Map<string, { leitura?: StatusSync; envio?: StatusSync }>();
-function marcarErro(tipo: "leitura" | "envio", erro?: unknown) {
+const detalhesErros = new Map<string, Partial<Record<"leitura" | "envio", string>>>();
+function marcarErro(tipo: "leitura" | "envio", erro?: unknown, etapa?: string) {
   const contexto = contextoDoUsuario();
   const atual = erros.get(contexto) ?? {};
   atual[tipo] = erro == null ? undefined : eRede(erro) ? "offline" : "erro";
   erros.set(contexto, atual);
+  const detalhes = detalhesErros.get(contexto) ?? {};
+  // HTTP pode trazer conteúdo do servidor; exibe só o código, nunca o corpo.
+  const motivo = erro instanceof ErroHttp ? `A nuvem recusou a operação (HTTP ${erro.status}). Tente sincronizar novamente.`
+    : eRede(erro) ? "A conexão com a nuvem foi interrompida. Tente novamente quando ela voltar."
+    : erro instanceof Error ? erro.message : "Não foi possível concluir esta operação.";
+  detalhes[tipo] = erro == null ? undefined : `${etapa ?? (tipo === "leitura" ? "Leitura da nuvem" : "Envio para a nuvem")}: ${motivo}`;
+  detalhesErros.set(contexto, detalhes);
+  ouvintes.forEach(cb => cb());
+}
+export function detalheErroSync(): string | null {
+  const detalhes = detalhesErros.get(contextoDoUsuario());
+  return detalhes?.leitura ?? detalhes?.envio ?? null;
 }
 const ouvintes = new Set<() => void>();
 export function statusSync(): StatusSync { return status; }
@@ -454,6 +467,7 @@ export async function pull(): Promise<void> {
 
     const aplicadas = new Set<string>();
     let falhaAplicacao: unknown;
+    let etapaFalha: string | undefined;
     // O diário é compartilhado com os outros sistemas da origem. Confirma cada
     // coleção antes da próxima para não acumular todos os retratos no localStorage.
     await confirmarArmazem();
@@ -492,6 +506,7 @@ export async function pull(): Promise<void> {
         // Uma coleção sem espaço não impede a retirada de fichas nas outras.
         // O marco da coleção que falhou fica antigo para uma nova tentativa.
         falhaAplicacao = e;
+        etapaFalha = `Gravação local de ${nome}`;
       }
     }
     if (epocaInicio !== epocaDados || contextoInicio !== contextoDoUsuario()) return;
@@ -505,7 +520,7 @@ export async function pull(): Promise<void> {
       gravarRev({ rev: completo ? revAtual : null, porColecao: marcos });
       if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar a atualização neste aparelho.");
     }
-    marcarErro("leitura", falhaAplicacao);
+    marcarErro("leitura", falhaAplicacao, etapaFalha);
     recalcStatus();
   } catch (e) {
     // pull roda em segundo plano (ao abrir, online, a cada minuto): nunca propaga

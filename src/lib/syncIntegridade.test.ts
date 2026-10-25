@@ -75,12 +75,16 @@ it("resposta da sessão anterior não altera os dados de quem entrou depois", as
 });
 
 it("uma falha de leitura não anuncia sincronização concluída", async () => {
-  const { sync } = await preparar();
+  const { sync, sessao } = await preparar();
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ erro: "Leitura indisponível" }), { status: 500 })));
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
   await expect(sync.sincronizarAgora()).rejects.toThrow();
   await sync.trySync();
   expect(sync.statusSync()).toBe("erro");
+  expect(sync.detalheErroSync()).toContain("HTTP 500");
+  expect(sync.detalheErroSync()).not.toContain("Leitura indisponível");
+  sessao.entrar("COLABORADOR", "outra-pessoa-ficticia");
+  expect(sync.detalheErroSync()).toBeNull();
 });
 
 it("limpeza recusada pela nuvem preserva os dados e a fila locais", async () => {

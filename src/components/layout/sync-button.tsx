@@ -11,7 +11,7 @@ import {
   conflitosSync, ligarSync, desligarSync, testarConexao, sincronizarAgora,
   enviarTudo, aceitarServidor, sobrescreverServidor, diagnosticar,
   apagarColecoes, falhasSync, retentarFalhas, limparFalhas, previaEnviarTudo, limparLapides,
-  type StatusSync, type PassoDiag, type LinhaOficial,
+  detalheErroSync, type StatusSync, type PassoDiag, type LinhaOficial,
 } from "@/lib/sync";
 import { Stethoscope } from "lucide-react";
 import { MODO_JWT } from "@/lib/auth";
@@ -46,6 +46,7 @@ export function SyncButton() {
   const pendentes = pendentesSync();
   const conflitos = conflitosSync();
   const falhas = falhasSync();
+  const detalheErro = detalheErroSync();
   const vis = VISUAL[status];
 
   const [ocupado, setOcupado] = useState(false);
@@ -207,6 +208,12 @@ export function SyncButton() {
               </button>
             )}
           </div>
+
+          {ligado && detalheErro && (
+            <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {detalheErro}
+            </p>
+          )}
 
           {/* Conflitos (só aparecem quando existem) */}
           {conflitos.length > 0 && (

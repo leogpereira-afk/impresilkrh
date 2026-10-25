@@ -16,4 +16,6 @@ Confirmar cada coleção no IndexedDB antes de aplicar a seguinte e gravar o mar
 
 Sem migration nem alteração das functions. Cache da interface: rh-v24.
 
+O diálogo da nuvem também passa a mostrar a causa da falha e, quando local, a coleção afetada. Erros HTTP mostram apenas o código, sem o corpo da resposta; a informação fica separada por conta e desaparece após nova leitura bem-sucedida. Isso evita um aviso genérico sem orientação na conferência entre navegadores.
+
 Verificação de código: 175 arquivos e 2460 testes aprovados; lint, TypeScript, 22 testes de protocolo e conferência de IDs aprovados. O ensaio isolado confirmou uma chamada de exclusão versionada, nenhum reenvio/importação integral e nenhuma mudança no outro cadastro, inclusive versão e timestamp. Os registros adicionais foram apenas trilhas de acesso do ensaio.

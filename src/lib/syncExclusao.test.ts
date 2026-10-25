@@ -36,9 +36,12 @@ it('aplica a exclusão mesmo quando outra coleção falha e retenta a coleção 
   expect(store.obterDinamico('colaboradores')).toEqual([]);
   expect(store.obterDinamico('areas')[0].nome).toBe('Antes');
   expect(sync.statusSync()).toBe('erro');
+  expect(sync.detalheErroSync()).toContain('areas');
+  expect(sync.detalheErroSync()).toContain('guardar');
   quota.mockRestore(); await sync.pull();
   expect(store.obterDinamico('areas')[0].nome).toBe('Depois');
   expect(sync.statusSync()).toBe('ok');
+  expect(sync.detalheErroSync()).toBeNull();
 });
 it('retira a ficha excluída mesmo com edição pendente, preservando o rascunho no conflito', async () => {
   const { store, sync } = await acesso();
