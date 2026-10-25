@@ -141,6 +141,12 @@ let transacaoEdicao: { tx: IDBTransaction; chaves: Set<string> } | null = null;
 let ultimaEdicao: Promise<unknown> = Promise.resolve();
 export function edicaoLocalEmCurso(): boolean { return edicaoConfirmando; }
 
+/** Recebimento remoto aguarda o commit, sem descartar o aviso que o originou. */
+export async function aguardarEdicaoLocal(): Promise<void> {
+  let atual: Promise<unknown>;
+  do { atual = ultimaEdicao; await atual; } while (atual !== ultimaEdicao);
+}
+
 /** Confirma coleção, fila e histórico na mesma transação antes de anunciar salvo.
  * O callback permanece síncrono; só a confirmação durável é assíncrona.
  */

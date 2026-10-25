@@ -86,3 +86,7 @@ Confirmado pelo dono: avisos e dados do calendário operacional do RH são restr
 ## D-020 · 24/10/2026 · Gravação local e conferência independente
 
 O dono autorizou corrigir o aviso de gravação local, testar a exclusão em dois navegadores independentes primeiro na cópia isolada, publicar e conferir no site. Preservar cadastros reais; ensaio ao vivo restrito à ficha fictícia descartável já autorizado na D-019. Nenhuma limpeza geral de armazenamento. Fonte: pedido direto nesta conversa; registrado por codex; plano docs/planos/2026-10-24-gravacao-local.md.
+
+## D-021 · 25/10/2026 · Exclusão sem espera do ciclo periódico
+
+O dono pediu: “quero que a ficha excluída suma na hora no outro acesso, sem esperar esses 21 segundos, testa na cópia isolada com dois navegadores mantendo os dados reais e pode subir e conferir no site”. Complementa D-019 e D-020: aviso por evento e validação do recebimento entre navegadores independentes. Dados reais preservados; ensaio no site somente com ficha fictícia descartável. Fonte: pedido direto nesta conversa; registrado por codex; plano docs/planos/2026-10-25-exclusao-imediata.md.

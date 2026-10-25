@@ -87,3 +87,29 @@ it('edita, confirma a revisão e esvazia a fila sem depender de espaço no local
   expect(sync.pendentesSync()).toBe(0); expect(sync.statusSync()).toBe('ok'); expect(armazem.estadoArmazem()).toBe('ok');
   expect(store.obterDinamico('colaboradores')).toEqual([{ id: 'pessoa-ficticia', nome: 'Depois', _rhRev: 2, atualizadoEm: expect.any(String) }, { id: 'preservar', nome: 'Controle', _rhRev: 1 }]);
 });
+
+it('não perde o sinal remoto recebido durante a confirmação local, sem depender do timer', async () => {
+  const armazem = await import('./armazemLocal'); await armazem.prontoArmazem();
+  (await import('./session')).entrar('ADMIN_RH', 'ficticio');
+  const store = await import('./store'); const sync = await import('./sync');
+  const controle = { id: 'preservar', nome: 'Controle fictício', _rhRev: 1 };
+  store.definirColecaoDinamica('colaboradores', [{ id: 'excluir', nome: 'Ficha fictícia', _rhRev: 1 }, controle]);
+  await armazem.confirmarArmazem();
+  const pedidos: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+    const p = JSON.parse(String(options?.body)); pedidos.push(p.action);
+    return new Response(JSON.stringify(p.action === 'rev' ? { rev: 2, porColecao: { colaboradores: 2 } } : {
+      registros: [{ colecao: 'colaboradores', registro: { id: 'excluir', _rhRev: 2, _apagado: true } }, { colecao: 'colaboradores', registro: controle }], nextAfter: null,
+    }));
+  }));
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+  let recebimento: Promise<void> | undefined;
+  await armazem.executarEdicaoLocal(() => {
+    armazem.gravarArmazem('confirmacao-ficticia', 'gravada');
+    recebimento = sync.pull(); // sinal durante ACK, que não emite edicao-confirmada
+  }, false);
+  await recebimento;
+  expect(store.obterDinamico('colaboradores')).toEqual([controle]);
+  expect(pedidos).toEqual(['rev', 'list']);
+  expect(sync.pendentesSync()).toBe(0);
+});

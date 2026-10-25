@@ -14,7 +14,7 @@ import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
 import { obterSessao } from "@/lib/session";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
-import { gravarArmazem, confirmarArmazem, edicaoLocalEmCurso, executarEdicaoLocal } from "./armazemLocal";
+import { gravarArmazem, confirmarArmazem, edicaoLocalEmCurso, executarEdicaoLocal, aguardarEdicaoLocal } from "./armazemLocal";
 import { prepararCopiaAnterior } from "./copiaAnterior";
 
 // Coleções que o app pode baixar ANTES de alguém entrar. Como o Supabase exige
@@ -402,7 +402,9 @@ export function rebaixarTudo(): void { epocaDados++; zerarRev(); if (temWindow) 
 let puxando = false;
 let puxarNovamente = false;
 export async function pull(): Promise<void> {
-  if (edicaoLocalEmCurso()) return;
+  const contextoPedido = contextoDoUsuario();
+  if (edicaoLocalEmCurso()) await aguardarEdicaoLocal();
+  if (contextoPedido !== contextoDoUsuario()) return;
   if (!syncHabilitado()) return;
   if (puxando) { puxarNovamente = true; return; }
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }

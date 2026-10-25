@@ -39,9 +39,9 @@ if (temWindow && supabase) {
     podeAtualizar: () => obterSessao()?.perfil === "ADMIN_RH" && navigator.onLine,
     atualizar: async () => { await (await import("./sync")).pull(); },
     observar: (sinal, conectado) => {
-      const canal = supabase!.channel("rh-cadastros").on("postgres_changes", {
+      const canal = supabase!.channel(`rh-cadastros:${crypto.randomUUID()}`).on("postgres_changes", {
         event: "*", schema: "public", table: "rh_cadastros_sinais",
-      }, sinal).subscribe(status => { if (status === "SUBSCRIBED") conectado(); });
+      }, sinal).subscribe(status => conectado(status === "SUBSCRIBED"));
       return () => { void supabase!.removeChannel(canal); };
     },
   });
@@ -91,8 +91,8 @@ if (temWindow && supabase) {
   }).catch(() => vigia.suspender());
   // Login termina depois do callback Auth: reconfere quando a sessão local nasce.
   window.addEventListener("impresilk:autenticado", () => { if (sessaoAtual) void vigia.conferir(); });
-  window.addEventListener("offline", () => vigia.desconectar());
-  window.addEventListener("online", () => vigia.reconectar());
+  window.addEventListener("offline", () => { vigia.desconectar(); cadastros.desconectar(); });
+  window.addEventListener("online", () => { vigia.reconectar(); cadastros.reconectar(); });
   window.addEventListener("focus", () => { void vigia.conferir(); });
   window.addEventListener("storage", e => {
     if (e.key === "impresilk.rh.v1:sessao" || e.key === null) void vigia.conferir();
