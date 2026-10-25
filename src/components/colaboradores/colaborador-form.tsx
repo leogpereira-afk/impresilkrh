@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { NIVEIS_RISCO, PERFIS_COMPORTAMENTAIS, HUMORES, ESTILOS_APRENDIZAGEM, EMPRESAS, CATEGORIAS_CNH, MODELOS_CAMISA, TAMANHOS_CAMISA, TAMANHOS_CALCA, NUMEROS_BOTA } from "@/lib/constants";
 import { OpcoesDaLista } from "./opcoes-da-lista";
 import { areaParaCriar, cargoParaCriar } from "@/lib/novaOpcao";
-import { useSessao } from "@/lib/session";
+import { useSessao, obterSessao } from "@/lib/session";
 import { ehRH } from "@/lib/rbac";
 import { valorDigitado, dinheiroAmbiguo } from "@/lib/pontoFolha";
 import { registrarMovimentacaoDeCarreira } from "@/lib/movimentacoes";
@@ -57,6 +57,7 @@ export function ColaboradorForm({
   editar?: Colaborador | null;
 }) {
   const toast = useToast();
+  const [salvando, setSalvando] = useState(false);
   const d = useDominio();
   const { criar, atualizar, remover: removerColaborador } = useColecao("colaboradores");
   const { criar: criarMov } = useColecao("movimentacoes");
@@ -230,7 +231,8 @@ export function ColaboradorForm({
     return def.peso === "essencial" ? "falta" : "neutro";
   };
 
-  const salvar = () => {
+  const salvar = async () => {
+    if (salvando) return;
     if (!rh) { toast("Seu acesso de edição foi retirado.", "erro"); return; }
     if (!form.nome?.trim()) {
       toast("Informe o nome do colaborador.", "erro");
@@ -311,46 +313,55 @@ export function ColaboradorForm({
       dataDesligamento: (form.statusId === "ativo" && retrato?.statusId !== "ativo") ? null : (form.dataDesligamento ?? null),
     };
 
-    if (editar) {
-      // O retrato de abertura pode estar velho: o pull de 20 s traz o que outra
-      // pessoa mudou enquanto este formulário estava aberto. Se o registro
-      // mudou de versão, não grava por cima — avisa e pede para reabrir. E o
-      // que grava é só a diferença contra o retrato, nunca a cópia inteira.
-      const atual = obter("colaboradores").find((c) => c.id === editar.id) as (Colaborador & { _rhRev?: number }) | undefined;
-      const revAbriu = retrato?._rhRev;
-      if (atual && revAbriu !== undefined && atual._rhRev !== undefined && atual._rhRev !== revAbriu) {
-        toast("Este cadastro foi alterado por outra pessoa enquanto você editava. Feche e reabra para continuar.", "erro");
-        return;
-      }
-      if (!atual) { toast("Este cadastro deixou de existir. Feche e confira a lista antes de continuar.", "erro"); return; }
-      const patch = patchDoQueMudou(retrato ?? editar, dados, {
-        nunca: ["id"],
+    setSalvando(true);
+    const contextoEdicao = contextoDoUsuario();
+    try {
+      await executarEdicaoLocal(() => {
+        if (contextoEdicao !== contextoDoUsuario() || !ehRH(obterSessao())) throw new Error("Seu acesso de edição mudou. Confira antes de continuar.");
+        if (editar) {
+          // O retrato de abertura pode estar velho: o recebimento remoto traz o que outra
+          // pessoa mudou enquanto este formulário estava aberto. Se o registro
+          // mudou de versão, não grava por cima — avisa e pede para reabrir. E o
+          // que grava é só a diferença contra o retrato, nunca a cópia inteira.
+          const atual = obter("colaboradores").find((c) => c.id === editar.id) as (Colaborador & { _rhRev?: number }) | undefined;
+          const revAbriu = retrato?._rhRev;
+          if (atual && revAbriu !== undefined && atual._rhRev !== undefined && atual._rhRev !== revAbriu) {
+            throw new Error("Este cadastro foi alterado por outra pessoa enquanto você editava. Feche e reabra para continuar.");
+          }
+          if (!atual) throw new Error("Este cadastro deixou de existir. Feche e confira a lista antes de continuar.");
+          const patch = patchDoQueMudou(retrato ?? editar, dados, {
+            nunca: ["id"],
+          });
+          if (camposEmConflito(retrato ?? editar, atual, patch).length) {
+            throw new Error("Um dos campos editados mudou em outro acesso. Feche e reabra a ficha para conferir antes de salvar.");
+          }
+          atualizar(editar.id, patch);
+          // Mesmo registro que a edição no lugar faz: sem isto, promover pelo
+          // formulário grande continuava invisível na linha do tempo.
+          registrarMovimentacaoDeCarreira(retrato ?? editar, { ...(retrato ?? editar), ...dados } as Colaborador, d, criarMov);
+
+        } else {
+          const novo = criar(dados);
+          if (form.dataAdmissao) {
+            criarMov({
+              colaboradorId: novo.id,
+              tipo: "Admissão",
+              data: form.dataAdmissao,
+              descricao: `Admissão no cargo de ${cargo?.nome ?? "—"}.`,
+              cargoNovo: cargo?.nome ?? null,
+              nivelNovo: form.nivelId ?? null,
+              salarioNovo: salario, // o do formulário; `form.salario` só é preenchido no `dados` acima
+              registradoPor: "RH",
+            });
+          }
+
+        }
       });
-      if (camposEmConflito(retrato ?? editar, atual, patch).length) {
-        toast("Um dos campos editados mudou em outro acesso. Feche e reabra a ficha para conferir antes de salvar.", "erro"); return;
-      }
-      atualizar(editar.id, patch);
-      // Mesmo registro que a edição no lugar faz: sem isto, promover pelo
-      // formulário grande continuava invisível na linha do tempo.
-      registrarMovimentacaoDeCarreira(retrato ?? editar, { ...(retrato ?? editar), ...dados } as Colaborador, d, criarMov);
-      toast("Colaborador atualizado.");
-    } else {
-      const novo = criar(dados);
-      if (form.dataAdmissao) {
-        criarMov({
-          colaboradorId: novo.id,
-          tipo: "Admissão",
-          data: form.dataAdmissao,
-          descricao: `Admissão no cargo de ${cargo?.nome ?? "—"}.`,
-          cargoNovo: cargo?.nome ?? null,
-          nivelNovo: form.nivelId ?? null,
-          salarioNovo: salario, // o do formulário; `form.salario` só é preenchido no `dados` acima
-          registradoPor: "RH",
-        });
-      }
-      toast("Colaborador cadastrado.");
-    }
-    onFechar();
+      toast(editar ? "Colaborador atualizado." : "Colaborador cadastrado.");
+      onFechar();
+    } catch (erro) {
+      toast(erro instanceof Error ? erro.message : "Não foi possível confirmar a gravação. Seu rascunho foi mantido.", "erro");
+    } finally { setSalvando(false); }
   };
 
   return (
@@ -366,13 +377,14 @@ export function ColaboradorForm({
             <button
               className="btn-outline mr-auto text-red-600"
               onClick={() => { setNomeDigitado(""); setConfirmarApagar(true); }}
+              disabled={salvando}
               title="Apaga a ficha e todos os registros dela no sistema"
             >
               <Trash2 className="h-4 w-4" /> Apagar cadastro
             </button>
           )}
-          <button className="btn-outline" onClick={onFechar}>Cancelar</button>
-          <button className="btn-primary" onClick={salvar}>Salvar</button>
+          <button className="btn-outline" onClick={onFechar} disabled={salvando}>Cancelar</button>
+          <button className="btn-primary" onClick={salvar} disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
         </>
       }
     >

@@ -20,3 +20,9 @@ O banco já publica um contador privado de cadastros, com trigger e RLS de RH at
 - Chrome e navegador integrado independentes, origens distintas, banco isolado com dados fictícios e cliente Supabase real conectado ao transporte de teste. Consulta periódica de vinte segundos desativada. A ficha desapareceu no segundo acesso 223 ms após a confirmação da exclusão no servidor, sem recarregar.
 - Cadastro de controle integralmente preservado; somente a ficha descartável foi excluída, sem reenvio das demais fichas. Nenhum aviso de gravação local, inclusive com armazenamento local sob pressão de espaço.
 - Evidências detalhadas ficam fora do repositório público. Conferência de produção será registrada na passagem após o deploy.
+
+### Complemento encontrado na conferência
+
+O formulário completo ainda gravava pelo diário síncrono, embora edição no lugar e exclusão já usassem transação durável. O teste de criação com quota cheia reproduziu a exceção não tratada. Criação e edição completas agora confirmam a mesma transação antes de fechar; falha mantém o rascunho e permite tentar novamente. Não altera acesso nem exige novos campos.
+
+Nova regressão comprova criação sem duplicação, preservação da ficha de controle, falha do disco sem fechar o editor e nova tentativa bem-sucedida. Formulário exercitado na cópia isolada com armazenamento sob pressão e nenhum aviso local. Verificação completa: 177 arquivos / 2476 testes, 22 testes do protocolo, lint, TypeScript, 7 conferências de identidade e build aprovados. Cache rh-v26.
