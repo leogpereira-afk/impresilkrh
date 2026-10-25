@@ -250,6 +250,24 @@ it("base incompatível mantém o diário intacto e bloqueia sua substituição",
   expect(Object.keys(localStorage).filter(k => k.includes("recuperacao:")).map(k => localStorage.getItem(k))).toEqual(diariosAntes);
 });
 
+it("edita e recupera uma coleção que cresceu na nuvem mesmo com base antiga e pouco espaço", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  await prepararDisco("[]");
+  const pagina = await abrir();
+  const registros = Array.from({ length: 400 }, (_, i) => ({ id: `ficticio-${i}`, nome: `Pessoa fictícia ${i}`, observacao: "Informação sintética para ensaio ".repeat(60), tamanho: "M" }));
+  const atual = JSON.stringify(registros);
+  expect(await pagina.receberArmazem(chave, atual, () => true)).toBe(true);
+  const original = Storage.prototype.setItem;
+  const quota = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) {
+    if (value.length > 20_000) throw new DOMException("Quota fictícia", "QuotaExceededError");
+    original.call(this, key, value);
+  });
+  registros[0].tamanho = "G";
+  expect(pagina.gravarArmazem(chave, JSON.stringify(registros))).toBe(true);
+  vi.clearAllTimers(); quota.mockRestore();
+  expect((await abrir()).lerArmazem(chave)).toBe(JSON.stringify(registros));
+});
+
 it("migração atrasada não sobrescreve edição que outra aba já confirmou", async () => {
   const recente = await abrir(); localStorage.setItem(chave, "legado antigo");
   vi.resetModules(); const migrando = await import("./armazemLocal");

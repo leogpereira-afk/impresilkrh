@@ -27,3 +27,9 @@ O recebimento da nuvem agora confirma diretamente no IndexedDB antes de publicar
 2465 testes aprovados em 175 arquivos, lint, TypeScript, protocolo e IDs aprovados; build aprovado. Novo ensaio Chrome/Safari em origens independentes com 4,9 milhões de caracteres de preenchimento sintético e coleções de 600 mil caracteres: sem avisos, exclusão refletida sem recarga, uma chamada delete, nenhum reenvio de coleção e cadastro de controle integralmente preservado. Incluídos testes de transação abortada, edição concorrente, reabertura e aba atrasada.
 
 Verificação de código: 175 arquivos e 2460 testes aprovados; lint, TypeScript, 22 testes de protocolo e conferência de IDs aprovados. O ensaio isolado confirmou uma chamada de exclusão versionada, nenhum reenvio/importação integral e nenhuma mudança no outro cadastro, inclusive versão e timestamp. Os registros adicionais foram apenas trilhas de acesso do ensaio.
+
+## Edições após crescimento da coleção
+
+A conferência da edição no site identificou também uma base de recuperação antiga: o diário pode crescer mesmo quando o campo alterado é pequeno. A regressão reproduziu coleção recebida após uma base vazia e edição recusada por quota. O diário grande agora usa compactação sem perdas quando há redução relevante; mantém a base estável, a confirmação síncrona e a leitura dos formatos anteriores. Uma falha real de armazenamento continua recusando a escrita, preservando o valor anterior.
+
+2469 testes em 176 arquivos, lint, TypeScript, 22 verificações de protocolo, 7 verificações de IDs e build aprovados. Chrome e Safari isolados: edição refletida no outro acesso, exclusão refletida sem recarga, zero avisos e cadastro de controle integralmente preservado. Transporte enviou somente a ficha editada, sua exclusão e a trilha de acesso; nenhuma importação integral.

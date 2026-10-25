@@ -1,5 +1,6 @@
 // Diário versionado. A base é uma cópia estável no IndexedDB, conferida por
 // SHA-256 antes do uso. Nunca aplica uma diferença sobre outra base.
+import { gzipSync, gunzipSync, strToU8, strFromU8 } from "fflate";
 export type BaseRecuperacao = { hash: string; valor: string };
 type Registro = Record<string, unknown> & { id: string };
 type Patch = { tipo: "texto"; inicio: number; remover: number; trecho: string }
@@ -41,7 +42,7 @@ function aplicar(base: string, patch: Patch): string {
 export function criarDiario(valor: string | null, base?: BaseRecuperacao): string {
   const id = crypto.randomUUID();
   let escolhido = JSON.stringify({ v: 1, id, valor });
-  if (valor === null || !base) return escolhido;
+  if (valor === null || !base) return compactar(escolhido);
   const escolher = (patch: Patch) => {
     // Só aceita uma representação que reconstrói exatamente a escrita original.
     if (aplicar(base.valor, patch) !== valor) return;
@@ -63,11 +64,25 @@ export function criarDiario(valor: string | null, base?: BaseRecuperacao): strin
     const ordem = depois.map(r => r.id);
     escolher({ tipo: "colecao", alterados, removidos, ...(JSON.stringify(natural) === JSON.stringify(ordem) ? {} : { ordem }) });
   }
-  return escolhido;
+  return compactar(escolhido);
+}
+
+function compactar(diario: string): string {
+  // Uma base antiga pode produzir um retrato grande após várias leituras da
+  // nuvem. Compacta o próprio diário, sem trocar sua base nem a durabilidade.
+  if (diario.length > 16_384) {
+    const gzip = btoa(strFromU8(gzipSync(strToU8(diario)), true));
+    const compacto = JSON.stringify({ v: 2, gzip });
+    if (compacto.length < diario.length * 0.8) return compacto;
+  }
+  return diario;
 }
 
 export function recuperarDiario(diario: string, base?: BaseRecuperacao): string | null {
-  const dado = JSON.parse(diario);
+  let dado = JSON.parse(diario);
+  if (dado?.v === 2 && typeof dado.gzip === "string") {
+    dado = JSON.parse(strFromU8(gunzipSync(strToU8(atob(dado.gzip), true))));
+  }
   // Compatível com o diário completo anterior, que não tinha campo v.
   if (dado && (dado.valor === null || typeof dado.valor === "string")) return dado.valor;
   if (dado?.v !== 1 || !base || dado.base !== base.hash) throw new Error("A base de recuperação não corresponde ao diário");
