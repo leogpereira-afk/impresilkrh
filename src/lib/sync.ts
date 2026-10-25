@@ -14,7 +14,7 @@ import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
 import { obterSessao } from "@/lib/session";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
-import { gravarArmazem } from "./armazemLocal";
+import { gravarArmazem, confirmarArmazem } from "./armazemLocal";
 import { prepararCopiaAnterior } from "./copiaAnterior";
 
 // Coleções que o app pode baixar ANTES de alguém entrar. Como o Supabase exige
@@ -384,6 +384,7 @@ export async function pull(): Promise<void> {
   if (temWindow && !navigator.onLine) { setStatus("offline"); return; }
   setStatus("syncing");
   const epocaInicio = epocaDados;
+  const contextoInicio = contextoDoUsuario();
   puxando = true;
   // SEM NINGUÉM LOGADO o app não baixa a base: antes bastava abrir o endereço
   // para o navegador puxar folha, CPFs e prontuários inteiros para o disco, sem
@@ -453,12 +454,16 @@ export async function pull(): Promise<void> {
 
     const aplicadas = new Set<string>();
     let falhaAplicacao: unknown;
-    aplicarSemSync(() => {
-      const fila = [...lerFila(), ...falhasSync()];
-      const importacoes = new Set(lerMassa());
-      for (const nome of pedir ?? NOMES_COLECOES) {
-        if (importacoes.has(nome)) continue;
-        try {
+    // O diário é compartilhado com os outros sistemas da origem. Confirma cada
+    // coleção antes da próxima para não acumular todos os retratos no localStorage.
+    await confirmarArmazem();
+    for (const nome of pedir ?? NOMES_COLECOES) {
+      if (epocaInicio !== epocaDados || contextoInicio !== contextoDoUsuario()) return;
+      if (lerMassa().includes(nome)) continue;
+      try {
+        aplicarSemSync(() => {
+          // Pode haver uma edição enquanto o disco confirma a coleção anterior.
+          const fila = [...lerFila(), ...falhasSync()];
           const remotos = porColecao.get(nome) ?? [];
           const atuais = new Map((obterDinamico(nome) as Reg[]).map(r => [r.id, r]));
           const porId = new Map(remotos.filter(r => !r._apagado).map(r => [r.id, r]));
@@ -480,14 +485,16 @@ export async function pull(): Promise<void> {
           }
           const proxima = [...porId.values()] as RegistroGenerico[];
           if (JSON.stringify(proxima) !== JSON.stringify([...atuais.values()])) definirColecaoDinamica(nome, proxima);
-          aplicadas.add(nome);
-        } catch (e) {
-          // Uma coleção sem espaço não impede a retirada de fichas nas outras.
-          // O marco da coleção que falhou fica antigo para uma nova tentativa.
-          falhaAplicacao = e;
-        }
+        });
+        if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar a cópia local. A leitura será tentada novamente.");
+        aplicadas.add(nome);
+      } catch (e) {
+        // Uma coleção sem espaço não impede a retirada de fichas nas outras.
+        // O marco da coleção que falhou fica antigo para uma nova tentativa.
+        falhaAplicacao = e;
       }
-    });
+    }
+    if (epocaInicio !== epocaDados || contextoInicio !== contextoDoUsuario()) return;
     // Só memoriza a revisão quando o retrato foi COMPLETO — senão um pull restrito
     // (deslogado) faria o app achar que já tem tudo e nunca baixar o resto.
     if (!restrito) {
@@ -496,6 +503,7 @@ export async function pull(): Promise<void> {
       for (const n of aplicadas) if (revPorColecao?.[n] != null) marcos[n] = revPorColecao[n];
       const completo = (pedir ?? NOMES_COLECOES).every(n => aplicadas.has(n));
       gravarRev({ rev: completo ? revAtual : null, porColecao: marcos });
+      if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar a atualização neste aparelho.");
     }
     marcarErro("leitura", falhaAplicacao);
     recalcStatus();
