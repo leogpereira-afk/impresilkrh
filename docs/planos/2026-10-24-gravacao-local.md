@@ -18,4 +18,12 @@ Sem migration nem alteração das functions. Cache da interface: rh-v24.
 
 O diálogo da nuvem também passa a mostrar a causa da falha e, quando local, a coleção afetada. Erros HTTP mostram apenas o código, sem o corpo da resposta; a informação fica separada por conta e desaparece após nova leitura bem-sucedida. Isso evita um aviso genérico sem orientação na conferência entre navegadores.
 
+## Complemento após conferir o site
+
+A sessão independente ainda recusava a coleção de colaboradores: uma coleção sozinha podia ultrapassar o espaço temporário disponível. A regressão adicional reproduziu esse caso e falhou antes do complemento.
+
+O recebimento da nuvem agora confirma diretamente no IndexedDB antes de publicar na memória; o diário síncrono continua protegendo as edições do usuário. A transação compara o conteúdo anterior no disco e respeita alterações durante a espera. Se outra aba gravou primeiro, a leitura adota o disco e refaz a mescla. Recuperações bloqueadas são preservadas, sem limpeza forçada. A revisão da coleção só avança após confirmação.
+
+2465 testes aprovados em 175 arquivos, lint, TypeScript, protocolo e IDs aprovados; build aprovado. Novo ensaio Chrome/Safari em origens independentes com 4,9 milhões de caracteres de preenchimento sintético e coleções de 600 mil caracteres: sem avisos, exclusão refletida sem recarga, uma chamada delete, nenhum reenvio de coleção e cadastro de controle integralmente preservado. Incluídos testes de transação abortada, edição concorrente, reabertura e aba atrasada.
+
 Verificação de código: 175 arquivos e 2460 testes aprovados; lint, TypeScript, 22 testes de protocolo e conferência de IDs aprovados. O ensaio isolado confirmou uma chamada de exclusão versionada, nenhum reenvio/importação integral e nenhuma mudança no outro cadastro, inclusive versão e timestamp. Os registros adicionais foram apenas trilhas de acesso do ensaio.

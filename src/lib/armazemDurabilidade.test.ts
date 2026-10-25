@@ -25,6 +25,47 @@ beforeEach(() => {
 });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it("recebe a nuvem direto no disco com diário sem espaço e reabre com a mesma cópia", async () => {
+  const pagina = await abrir();
+  const quota = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Quota fictícia", "QuotaExceededError"); });
+  expect(await pagina.receberArmazem(chave, "conteudo remoto ficticio", () => true)).toBe(true);
+  expect(pagina.lerArmazem(chave)).toBe("conteudo remoto ficticio");
+  quota.mockRestore();
+  expect((await abrir()).lerArmazem(chave)).toBe("conteudo remoto ficticio");
+});
+
+it("recebimento abortado não aparece na tela nem substitui o dado confirmado", async () => {
+  await prepararDisco("antes"); const pagina = await abrir();
+  const original = IDBObjectStore.prototype.put;
+  const abortar = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function(this: IDBObjectStore, ...args) {
+    const request = original.apply(this, args); if (args[1] === chave) this.transaction.abort(); return request;
+  });
+  await expect(pagina.receberArmazem(chave, "depois", () => true)).rejects.toThrow();
+  expect(pagina.lerArmazem(chave)).toBe("antes");
+  abortar.mockRestore(); expect((await abrir()).lerArmazem(chave)).toBe("antes");
+});
+
+it("edição durante o recebimento vence e permanece recuperável mesmo fechando a página", async () => {
+  await prepararDisco("antes"); const pagina = await abrir();
+  const original = IDBObjectStore.prototype.put;
+  const editar = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function(this: IDBObjectStore, ...args) {
+    const request = original.apply(this, args);
+    if (args[1] === chave && args[0] === "nuvem") pagina.gravarArmazem(chave, "edicao pendente");
+    return request;
+  });
+  expect(await pagina.receberArmazem(chave, "nuvem", () => true)).toBe(false);
+  expect(pagina.lerArmazem(chave)).toBe("edicao pendente");
+  editar.mockRestore(); expect((await abrir()).lerArmazem(chave)).toBe("edicao pendente");
+});
+
+it("aba com cópia antiga não desfaz o recebimento que outra aba confirmou", async () => {
+  await prepararDisco("antes"); const atrasada = await abrir(); const recente = await abrir();
+  expect(await recente.receberArmazem(chave, "nova", () => true)).toBe(true);
+  expect(await atrasada.receberArmazem(chave, "antiga", () => true)).toBe(false);
+  expect(atrasada.lerArmazem(chave)).toBe("nova");
+  expect((await abrir()).lerArmazem(chave)).toBe("nova");
+});
+
 it("recupera alteração aceita se a página encerrar antes dos 200 ms", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const pagina = await abrir();

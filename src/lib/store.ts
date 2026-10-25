@@ -14,7 +14,7 @@ import {
 } from "@/data";
 import type { Config } from "@/data/types";
 import { chaveLocal, contextoDoUsuario, lerLocal, removerLocal } from "./armazenamentoUsuario";
-import { gravarArmazem, lerArmazem, removerArmazem, armazemEmIDB, armazemHidratado, aoHidratar, chavesArmazem } from "./armazemLocal";
+import { gravarArmazem, receberArmazem, lerArmazem, removerArmazem, armazemEmIDB, armazemHidratado, aoHidratar, chavesArmazem } from "./armazemLocal";
 import { obterSessao } from "./session";
 import { lerCopiaAnterior } from "./copiaAnterior";
 import { exportarBlobsAnteriores } from "./blobstore";
@@ -319,6 +319,17 @@ export function obterDinamico(nome: string): RegistroGenerico[] {
 export function definirColecaoDinamica(nome: string, itens: RegistroGenerico[]): void {
   if (!ehNomeColecao(nome)) return;
   gravar(nome, itens as never);
+}
+
+/** Recebe da nuvem sem enfileirar reenvios e sem substituir uma edição concorrente. */
+export async function receberColecaoDaNuvem(nome: string, itens: RegistroGenerico[], anteriores: RegistroGenerico[], contextoValido: () => boolean): Promise<boolean> {
+  if (!ehNomeColecao(nome)) return false;
+  const contexto = contextoDoUsuario();
+  const antes = JSON.stringify(anteriores);
+  const podeAplicar = () => contextoValido() && contexto === contextoDoUsuario() && JSON.stringify(obterDinamico(nome)) === antes;
+  const aplicado = await receberArmazem(chaveLocal(keyCol(nome)), JSON.stringify(itens), podeAplicar);
+  if (contexto === contextoDoUsuario()) { cache.delete(nome); emit(nome); }
+  return aplicado;
 }
 
 // ---- Hook reativo ----

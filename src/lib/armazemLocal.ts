@@ -393,6 +393,51 @@ export function gravarArmazem(chave: string, valor: string): boolean {
   try { localStorage.setItem(chave, valor); escritaRecusada = false; mudarEstado("ok"); return true; } catch { avisarCheio(chave, true); return false; }
 }
 
+/** Recebimento remoto: só publica na memória depois do commit, sem diário grande.
+ * Uma edição feita enquanto o disco responde vence; o sincronizador refaz a mescla.
+ * A cópia já existe na nuvem, portanto não precisa do diário síncrono das edições.
+ */
+export async function receberArmazem(chave: string, valor: string, podeAplicar: () => boolean): Promise<boolean> {
+  const anterior = lerArmazem(chave);
+  if (!mem) {
+    if (!podeAplicar()) return false;
+    if (!gravarArmazem(chave, valor)) throw new Error("Não foi possível guardar a alteração neste aparelho. Libere espaço antes de tentar novamente.");
+    return true;
+  }
+  if (recuperacoesBloqueadas.has(chave)) throw new Error("Há uma recuperação local pendente de conferência. O conteúdo foi preservado.");
+  if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar as edições locais pendentes.");
+  const db = await abrir();
+  if (!db) throw new Error("O armazenamento local não está disponível. Tente sincronizar novamente.");
+  const continuaAtual = () => podeAplicar() && lerArmazem(chave) === anterior && !pendentes.has(chave) && localStorage.getItem(chaveDiario(chave)) === null;
+  let gravou = false;
+  let encontrado: string | null = anterior;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite"); const os = tx.objectStore(STORE);
+      const req = os.get(chave);
+      req.onsuccess = () => {
+        encontrado = typeof req.result === "string" ? req.result : null;
+        // Compara dentro da transação: uma aba atrasada não desfaz outra escrita.
+        if (continuaAtual() && encontrado === anterior) { os.put(valor, chave); gravou = true; }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("A gravação local não foi concluída. Tente sincronizar novamente."));
+    });
+    if (gravou) await prepararBases(db, new Map([[chave, valor]]));
+    if (!continuaAtual()) return false;
+    // Se outra aba confirmou primeiro, adota o disco para refazer a mescla.
+    const confirmado = gravou ? valor : encontrado;
+    if (confirmado === null) mem.delete(chave); else mem.set(chave, confirmado);
+    mudarEstado(escritaRecusada ? "erro" : pendentes.size ? "pendente" : "ok");
+    try { window.dispatchEvent(new StorageEvent("storage", { key: chave })); } catch { /* cache será invalidado pelo chamador */ }
+    if (gravou) { try { canal?.postMessage({ chave, valor }); } catch { /* a próxima leitura confere o disco */ } }
+    return gravou;
+  } catch (e) {
+    avisarCheio(chave);
+    throw e;
+  } finally { db.close(); }
+}
+
 export function removerArmazem(chave: string): void {
   if (mem || armazemEmIDB()) {
     let diario: string;

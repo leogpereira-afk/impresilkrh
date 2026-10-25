@@ -8,7 +8,7 @@
 // 100% local (como antes).
 // ============================================================================
 import { NOMES_COLECOES } from "@/data";
-import { obter, definirColecao, obterDinamico, definirColecaoDinamica, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, chavesSujasDaConfig, confirmarChavesEnviadas, aplicarConfigDaNuvem, type RegistroGenerico } from "@/lib/store";
+import { obter, definirColecao, obterDinamico, definirColecaoDinamica, receberColecaoDaNuvem, aplicarSemSync, registrarMutacao, registrarPosImport, obterConfig, chavesSujasDaConfig, confirmarChavesEnviadas, aplicarConfigDaNuvem, type RegistroGenerico } from "@/lib/store";
 import type { Config } from "@/data/types";
 import { MODO_JWT, tokenAtual } from "@/lib/auth";
 import { FN_SYNC } from "@/lib/supabase";
@@ -475,11 +475,12 @@ export async function pull(): Promise<void> {
       if (epocaInicio !== epocaDados || contextoInicio !== contextoDoUsuario()) return;
       if (lerMassa().includes(nome)) continue;
       try {
-        aplicarSemSync(() => {
+        const anteriores = obterDinamico(nome);
+        const proxima = aplicarSemSync(() => {
           // Pode haver uma edição enquanto o disco confirma a coleção anterior.
           const fila = [...lerFila(), ...falhasSync()];
           const remotos = porColecao.get(nome) ?? [];
-          const atuais = new Map((obterDinamico(nome) as Reg[]).map(r => [r.id, r]));
+          const atuais = new Map((anteriores as Reg[]).map(r => [r.id, r]));
           const porId = new Map(remotos.filter(r => !r._apagado).map(r => [r.id, r]));
           const apagados = new Map(remotos.filter(r => r._apagado).map(r => [r.id, r]));
           // O retrato completo substitui o cache, incluindo campos removidos por
@@ -497,9 +498,12 @@ export async function pull(): Promise<void> {
             if (acao.tipo === "delete") porId.delete(acao.id);
             else if (atuais.has(acao.id)) porId.set(acao.id, atuais.get(acao.id)!);
           }
-          const proxima = [...porId.values()] as RegistroGenerico[];
-          if (JSON.stringify(proxima) !== JSON.stringify([...atuais.values()])) definirColecaoDinamica(nome, proxima);
+          return [...porId.values()] as RegistroGenerico[];
         });
+        if (JSON.stringify(proxima) !== JSON.stringify(anteriores) && !await receberColecaoDaNuvem(nome, proxima, anteriores, () => epocaInicio === epocaDados)) {
+          puxarNovamente = true;
+          continue;
+        }
         if (!await confirmarArmazem()) throw new Error("Não foi possível confirmar a cópia local. A leitura será tentada novamente.");
         aplicadas.add(nome);
       } catch (e) {

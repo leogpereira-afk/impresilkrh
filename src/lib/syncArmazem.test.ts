@@ -1,6 +1,6 @@
 // Dados sintéticos; duas coleções cabem isoladamente, mas não simultaneamente no diário.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { webcrypto } from 'node:crypto';
 vi.mock('./auth', () => ({ MODO_JWT: true, tokenAtual: () => 'ficticio' }));
 vi.mock('./supabase', () => ({ FN_SYNC: 'http://teste.local/sync' }));
@@ -12,7 +12,7 @@ beforeEach(() => {
   vi.spyOn(document, 'addEventListener').mockImplementation(() => {});
 });
 afterEach(() => { vi.clearAllTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-it('confirma cada coleção no disco antes de ocupar o diário com a próxima', async () => {
+it.each([130_000, 40_000])('recebe e confirma coleções mesmo com apenas %i caracteres livres no diário', async (limite) => {
   const armazem = await import('./armazemLocal'); await armazem.prontoArmazem();
   (await import('./session')).entrar('ADMIN_RH', 'ficticio');
   const store = await import('./store'); const sync = await import('./sync');
@@ -20,7 +20,7 @@ it('confirma cada coleção no disco antes de ocupar o diário com a próxima', 
   const original = Storage.prototype.setItem;
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function(this: Storage, key, value) {
     const soma = Object.keys(this).filter(k => k !== key).reduce((s, k) => s + this.getItem(k)!.length, 0);
-    if (soma + value.length > 130_000) throw new DOMException('Quota compartilhada fictícia', 'QuotaExceededError');
+    if (soma + value.length > limite) throw new DOMException('Quota compartilhada fictícia', 'QuotaExceededError');
     original.call(this, key, value);
   });
   vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
@@ -43,13 +43,14 @@ it('preserva uma edição feita enquanto confirma a coleção anterior', async (
   const store = await import('./store'); const sync = await import('./sync');
   store.definirColecaoDinamica('colaboradores', [{ id: 'pessoa-ficticia', nome: 'Antes', _rhRev: 1 }]);
   await armazem.confirmarArmazem();
-  const original = Storage.prototype.setItem; let editou = false;
-  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function(this: Storage, key, value) {
-    original.call(this, key, value);
-    if (!editou && key.includes('col%3Aareas')) {
+  const original = IDBObjectStore.prototype.put; let editou = false;
+  vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function(this: IDBObjectStore, ...args) {
+    const request = original.apply(this, args);
+    if (!editou && String(args[1]).includes(':col:areas')) {
       editou = true;
       queueMicrotask(() => store.atualizarEm('colaboradores', 'pessoa-ficticia', { nome: 'Edição durante leitura' }));
     }
+    return request;
   });
   vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
     const p = JSON.parse(String(options?.body));
